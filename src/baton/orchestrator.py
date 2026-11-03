@@ -24,8 +24,9 @@ class Orchestrator:
     def __init__(self, store: ManagedStore, providers=None):
         self.store = store
         if providers is None:
-            from .execution import CodexCLIProvider, GMSProvider, MockProvider
-            providers = {"codex": CodexCLIProvider(), "gms": GMSProvider(scratch=store.directory / "requests"), "mock": MockProvider()}
+            # GMS is an opt-in extension: it is registered only by an explicit --enable-gms.
+            from .execution import CodexCLIProvider, MockProvider
+            providers = {"codex": CodexCLIProvider(), "mock": MockProvider()}
         self.providers = providers
 
     def control(self, task, lease):
@@ -88,6 +89,8 @@ class Orchestrator:
                     return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason)
                 provider = self.providers.get(provider_name)
                 if provider is None:
+                    if provider_name == "gms":
+                        return self.finish(task_id, lease, "BLOCKED", reason="provider_disabled")
                     return self.finish(task_id, lease, "WAITING_FOR_PROVIDER", reason="provider_unavailable")
                 self.store.update(task_id, lease, "RUNNING", result={"provider": provider_name})
                 request = json.loads(json.dumps(task))
@@ -122,7 +125,8 @@ class Orchestrator:
                     if error in {"quota", "quota_exhausted"}:
                         self.store.update(task_id, lease, "QUOTA_EXHAUSTED", result={"reason": error})
                         fallback = task["execution"]["fallback_provider"]
-                        if task["execution"]["allow_fallback"] and fallback != provider_name and after == before:
+                        if (task["execution"]["allow_fallback"] and fallback != provider_name and fallback in self.providers
+                                and after == before):
                             self.store.update(task_id, lease, "RUNNING", result={"switch_reason": "quota_no_new_changes", "previous_provider": provider_name})
                             provider_name = fallback
                             # No fallback loops, even if another provider also reports quota.

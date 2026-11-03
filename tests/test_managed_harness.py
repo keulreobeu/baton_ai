@@ -124,6 +124,27 @@ class ManagedHarnessTests(unittest.TestCase):
         result = Orchestrator(self.store, {"codex": Provider(dirty), "mock": MockProvider()}).run("TASK-DIRTY")
         self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
 
+    def test_gms_is_opt_in_and_default_fallback_is_none(self):
+        body = deepcopy(self.body); body["task_id"] = "TASK-DEFAULTS"; body["execution"] = {}
+        self.assertEqual(self.store.create(body)["task"]["execution"]["fallback_provider"], "none")
+        gms = Provider(lambda *args: ExecutionResult("success"))
+        # An existing task that still names gms keeps that value, but GMS is never called when disabled.
+        body = deepcopy(self.body); body["task_id"] = "TASK-GMS-FALLBACK"
+        body["execution"].update(preferred_provider="codex", fallback_provider="gms", allow_fallback=True)
+        self.store.create(body)
+        quota = Provider(lambda *args: ExecutionResult("error", "quota"))
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-GMS-FALLBACK")
+        self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
+        self.assertEqual(self.store.get("TASK-GMS-FALLBACK")["task"]["execution"]["fallback_provider"], "gms")
+        body["task_id"] = "TASK-NONE-FALLBACK"; body["execution"]["fallback_provider"] = "none"; self.store.create(body)
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-NONE-FALLBACK")
+        self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
+        body["task_id"] = "TASK-GMS-PREFERRED"; body["execution"].update(preferred_provider="gms", allow_fallback=False)
+        self.store.create(body)
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-GMS-PREFERRED")
+        self.assertEqual((result["state"], result["result"]["reason"]), ("BLOCKED", "provider_disabled"))
+        self.assertEqual(gms.calls, 0)
+
     def test_draft_apply_revalidate_and_tamper_gate(self):
         provider = Provider(lambda *args: ExecutionResult("draft", summary="review this proposed change"))
         result = self.runner(provider).run("TASK-ONE")

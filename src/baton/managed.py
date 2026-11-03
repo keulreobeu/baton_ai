@@ -42,14 +42,16 @@ def validate(body, root):
         if priority not in PRIORITIES:
             raise HarnessError("invalid_priority")
         execution = dict(body.get("execution", {}))
-        defaults = {"preferred_provider": "codex", "fallback_provider": "gms", "max_attempts": 2,
+        defaults = {"preferred_provider": "codex", "fallback_provider": "none", "max_attempts": 2,
                     "timeout_seconds": 1800, "total_timeout_seconds": 3600, "sandbox": "workspace-write",
                     "allow_fallback": False}
         for k, v in defaults.items():
             execution.setdefault(k, v)
-        for key in ("preferred_provider", "fallback_provider"):
-            if execution[key] not in {"codex", "gms", "mock"}:
-                raise HarnessError("unsupported_provider")
+        if execution["preferred_provider"] not in {"codex", "gms", "mock"}:
+            raise HarnessError("unsupported_provider")
+        # "none" disables quota fallback; existing "gms" values are kept but GMS is opt-in at runtime.
+        if execution["fallback_provider"] not in {"codex", "gms", "mock", "none"}:
+            raise HarnessError("unsupported_provider")
         for key, cap in (("max_attempts", 5), ("timeout_seconds", 7200), ("total_timeout_seconds", 14400)):
             if type(execution[key]) is not int or not 1 <= execution[key] <= cap:
                 raise HarnessError("invalid_execution_limit")

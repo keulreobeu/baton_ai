@@ -18,6 +18,7 @@ def main(argv=None, *, workspace=None):
     p.add_argument("--state-dir", default=".local_runtime/harness-managed")
     p.add_argument("--codex-bin", default=None)
     p.add_argument("--gms-port", type=int, default=8786)
+    p.add_argument("--enable-gms", action="store_true", help="Register the GMS extension provider (off by default).")
     sub = p.add_subparsers(dest="command", required=True)
     from .wiki_cli import parser as wiki_parser
     wiki_parser(sub)
@@ -57,8 +58,9 @@ def main(argv=None, *, workspace=None):
             return 0
         store = ManagedStore(directory, root)
         from .execution import CodexCLIProvider, GMSProvider, MockProvider
-        providers = {"codex": CodexCLIProvider(**({"binary": args.codex_bin} if args.codex_bin else {})),
-                     "gms": GMSProvider(port=args.gms_port, scratch=store.directory / "requests"), "mock": MockProvider()}
+        providers = {"codex": CodexCLIProvider(**({"binary": args.codex_bin} if args.codex_bin else {})), "mock": MockProvider()}
+        if args.enable_gms:
+            providers["gms"] = GMSProvider(port=args.gms_port, scratch=store.directory / "requests")
         runner = Orchestrator(store, providers)
         if args.command in {"create", "new-task"}:
             result = store.create(read_json(args.request))
