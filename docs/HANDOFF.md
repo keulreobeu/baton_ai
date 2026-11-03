@@ -79,3 +79,14 @@ V3/v6에서 요구한 예약/대기/승인/로컬 의존성·불확실성·중�
 실제 등록·hi·종료는 수행하지 않는다. 종료 가드는 TASK-POWER-001에서 기본 OFF로 다룬다.
 기존 Codex KAN-41/42의 backup/restore/input-check/계측은 아직 BATON에 이식되지 않았다.
 외부 프로젝트 정책 발견기와 템플릿 라이브러리는 후속이며 현재 명령으로 광고하지 않는다.
+
+### 2026-11-04 작업 마무리
+
+자체 SDD 도입 코드는 로컬 `codex/baton-sdd-20261103`에 보존한다. 첫 구현3b81d10,
+추적 보완a970925 이후 ATX 들여쓰기 경계를 추가 보완했다. 최신 SHA는 해당 branch의 HEAD와
+KAN-45 기록을 확인한다. 작업 규칙은 AGENTS.md/CLAUDE.md/docs/sdd.md, 수락 기준은
+docs/tasks/TASK-SDD-001.md, 실제 증거는 docs/sdd/validation.md에 있다.
+전체204개(skip1)와 마지막 영향 범위 SDD24개(두Python/skip0)의 검증 범위를 구분했다.
+Task는 실제 CI 미실행으로 in_progress이며 원격main에 반영하지 않았다. 기존 Claude의
+미게시6커밋도 그대로 보존한다. 사용자 우선 마무리 지시에 따라 후속 스케줄러 구현은 시작하지 않았다.
+재개 시 TASK-SCHED-001의07:00 mock/dry-run 계약부터 진행하고 실핑/실등록/종료는 별도 승인이다.

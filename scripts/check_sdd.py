@@ -135,7 +135,7 @@ def requirement_headings(text):
         opening = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
         if opening:
             marker = opening.group(1); fence = (marker[0], len(marker)); continue
-        match = re.match(r"^#{1,6} ([A-Z][A-Z0-9-]*-(?:REQ|AC)-[A-Za-z0-9_-]+)(?:\s|$)", line)
+        match = re.match(r"^ {0,3}#{1,6}[ \t]+([A-Z][A-Z0-9-]*-(?:REQ|AC)-[A-Za-z0-9_-]+)(?:[ \t]|$)", line)
         if match: found.append(match.group(1))
     require(len(found) == len(set(found)), "DUPLICATE_HEADING")
     return set(found)

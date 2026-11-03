@@ -144,8 +144,12 @@ class SddTests(unittest.TestCase):
 
     def test_unregistered_contract_headings_are_rejected(self):
         original = (self.root / self.spec).read_text(encoding="utf-8")
-        self.write(self.spec, original + "\n## F-001-REQ-02\n### F-001-AC-02\n")
-        self.rejected("UNREGISTERED_REQUIREMENT_OR_AC")
+        for indent in range(4):
+            for separator in (" ", "\t"):
+                with self.subTest(indent=indent, separator=separator):
+                    prefix = " " * indent
+                    self.write(self.spec, original + "\n" + prefix + "##" + separator + "F-001-REQ-02\n" + prefix + "###" + separator + "F-001-AC-02\n")
+                    self.rejected("UNREGISTERED_REQUIREMENT_OR_AC")
         self.write(self.spec, original + "\n### F-001-AC-01\n")
         self.rejected("DUPLICATE_HEADING")
 

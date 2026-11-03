@@ -35,6 +35,17 @@ skipped = 1
 expected_failures = 0
 
 [[verification]]
+command = "python -X utf8 -m unittest discover -s tests -t . -p test_sdd.py -q"
+result = "passed"
+evidence = "docs/sdd/validation.md"
+acs = ["SDD-001-AC-01", "SDD-001-AC-02", "SDD-001-AC-03", "SDD-001-AC-04", "SDD-001-AC-05", "SDD-001-AC-06", "SDD-001-AC-07", "SDD-001-AC-08", "SDD-001-AC-09", "SDD-001-AC-10"]
+tests_run = 24
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
 command = "GitHub Actions .github/workflows/verify.yml"
 result = "not_run"
 evidence = "docs/sdd/validation.md"
@@ -54,3 +65,8 @@ CI/검증 진입점 L3 분류를 보완했다. 실제 Git 원장 삭제/소스 �
 초기 수정24개 PASS 후 추가 assertion을 넣은 최신 전체204개123.608초/skip1/exit0.
 표준 Python의 최종 SDD24개3.236초/skip0도 PASS다. 미실행 CI와 플랫폼 skip을 보존하며
 verified로 승격하지 않는다. 고정 SHA별 독립 검토 결과·범위·한계는 KAN-45 댓글에서 확인한다.
+
+2026-11-04 마무리: a970925 재검토의 들여쓴 ATX 제목 누락을 regex1줄로 수정했다.
+선행0~3공백/space·tab 구분자8조합 반례와 SDD24개가 두 Python에서 각각3.607초/5.405초,
+skip0/exit0. 전체204 결과는 이1줄 수정 이전이며 이후에는 영향받은 SDD24개만 재확인했다.
+사용자 우선 마무리 지시에 따라 TASK-SCHED-001 구현은 시작하지 않는다. 실제 CI 미실행은 유지한다.
