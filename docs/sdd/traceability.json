@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "4e2f205a7e21064fa43617bd2cf73e571ed40195",
+  "documents": [
+    "docs/specs/SDD-001.md",
+    "docs/tasks/TASK-SDD-001.md",
+    "docs/plans/sdd-adoption.md",
+    "docs/adr/ADR-001-policy-ownership.md"
+  ],
+  "features": [
+    {
+      "id": "SDD-001",
+      "spec": "docs/specs/SDD-001.md",
+      "requirements": [
+        {
+          "id": "SDD-001-REQ-01",
+          "acs": [
+            "SDD-001-AC-01"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-02",
+          "acs": [
+            "SDD-001-AC-02"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-03",
+          "acs": [
+            "SDD-001-AC-03"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-04",
+          "acs": [
+            "SDD-001-AC-04"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-05",
+          "acs": [
+            "SDD-001-AC-05"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-06",
+          "acs": [
+            "SDD-001-AC-06"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-07",
+          "acs": [
+            "SDD-001-AC-07"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-08",
+          "acs": [
+            "SDD-001-AC-08"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-09",
+          "acs": [
+            "SDD-001-AC-09"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-10",
+          "acs": [
+            "SDD-001-AC-10"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "SDD-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_policy_is_read_only"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_no_external_commands_or_policy_modification"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_l0_is_explicit_and_rules_are_not_exempt"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_l3_requires_plan_and_adr"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_templates_match_contract"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_bad_metadata_and_duplicates"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_paths_reject_escape_and_absolute"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_symlink_before_external_read"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_refs_are_real_tests"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_requirement_and_task_links"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_verified_latest_result_and_counts"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_skips_and_expected_failures_cannot_certify"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_draft_spec_cannot_start"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_scope_requires_updated_task"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_git_delta_and_adoption_baseline"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_ci_sha_fence_and_zero_before"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_baseline_cannot_advance"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_policy_is_read_only"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_existing_legacy_docs_not_reapproved"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-08",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_no_external_commands_or_policy_modification"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_cli_failure_has_code"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-09",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_existing_legacy_docs_not_reapproved"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-10",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_approval_and_missing_evidence_are_rejected"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_cli_failure_has_code"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

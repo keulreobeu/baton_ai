@@ -56,3 +56,11 @@ $env:PYTHONPATH = "src"; python -X utf8 -m unittest discover -s tests -t .
 
 - 대상 저장소 레이아웃 `outputs/budongi_mvp_temp/{src,tests,docs}` (managed scope, wiki, worktree PYTHONPATH, observability AGENTS.md).
 - GMS provider는 대상 저장소의 `budongi.gms_work`를 지연 import한다. 없으면 호출 없이 `unavailable`. 기본 비활성(`--enable-gms`).
+
+## BATON 개발 SDD
+
+[개발 계약](docs/sdd.md), [현재 Task](docs/tasks/current.md), [검증 기록](docs/sdd/validation.md).
+`python -X utf8 scripts/check_sdd.py`는 문서/참조/변경 범위만 확인한다.
+`python -X utf8 scripts/verify_environment.py`는 기존 오프라인 테스트까지 실행한다.
+테스트 skip과 실제 Provider/Windows 현장 미실행은 별도로 보고하며 실제 완료로 소급하지 않는다.
+연결 프로젝트의 AGENTS/SDD/Skill은 프로젝트가 소유한다.

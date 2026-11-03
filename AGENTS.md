@@ -25,3 +25,14 @@ python -m baton quota-window status                   # BATON_HOME을 임시 폴
 - GMS 통합 테스트는 jipdam `.venv`(cryptography 포함)에서만 실행되고 그 외에는 skip된다:
   `C:\Users\SSAFY\Desktop\jipdam\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -t .`
 - 설계 결정은 `docs/designs/`, 수락 기준·증거는 `docs/tasks/`에 기록한다. 결정이 바뀌면 설계 문서의 "Eng Review Amendments"와 Task 표를 같이 고친다.
+
+## BATON 자체 SDD — 2026-11-03
+
+BATON 소스·개발 규칙 변경은 [docs/sdd.md](docs/sdd.md)를 따른다. 시작 전
+[현재 Task](docs/tasks/current.md)를 확인하고 L1 이상은 영구 Task와 변경 범위를 연결한다.
+L0는 비계약 README 설명만 명시 면제할 수 있다. AGENTS/SDD/Skill 수정은 L0가 아니다.
+L3는 Spec/Plan/ADR/Task·독립 검토와 필요한 사용자 승인을 유지한다.
+`python -X utf8 scripts/verify_environment.py`는 로컬 SDD와 오프라인 회귀만 검사한다.
+연결 프로젝트에는 그 프로젝트의 규칙을 적용하며 이 SDD를 자동 복제하지 않는다.
+현재 GMS는 사용자 최신 요청에 따라 DEFERRED_GMS이며 `--enable-gms` 실행·키/잔액 조회도
+재승인 전 금지다. 기존 코드·원장을 보존한다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.

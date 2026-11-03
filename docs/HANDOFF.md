@@ -68,3 +68,14 @@ P0 목적: 매일 07:00·12:05 KST에 Claude·Codex에 최소 핑 1회 → 5시�
 
 - 리뷰 반영 후 전체 회귀: 180 tests OK (system Python 3.12 skipped=6, jipdam .venv skipped=1), git diff --check OK.
 - 동시성 테스트(`test_concurrent_runs…`, `test_persist_failure…`, `test_tolerance_boundaries…`)는 15회 반복 OK.
+
+## Codex SDD 도입 후속 — KAN-45
+
+사용자 첨부 BATON_SDD_Claude_Code_구현인계_20261103.md에 따라 자체 개발 SDD를 도입한다.
+정본은 docs/sdd.md, TASK-SDD-001, docs/sdd/validation.md다. 기존 P0 문서/검증을 수정하거나
+소급 승인하지 않는다. 다음 우선순위는 TASK-SCHED-001의 07:00 mock/dry-run이다.
+현재 quota-window(사용량 창 핑)와 실제 작업 큐를 판단하는 07시 스케줄러는 다른 기능이다.
+V3/v6에서 요구한 예약/대기/승인/로컬 의존성·불확실성·중복 기동 가드를 먼저 검증하며
+실제 등록·hi·종료는 수행하지 않는다. 종료 가드는 TASK-POWER-001에서 기본 OFF로 다룬다.
+기존 Codex KAN-41/42의 backup/restore/input-check/계측은 아직 BATON에 이식되지 않았다.
+외부 프로젝트 정책 발견기와 템플릿 라이브러리는 후속이며 현재 명령으로 광고하지 않는다.
