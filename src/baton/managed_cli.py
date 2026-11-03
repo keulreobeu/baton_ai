@@ -24,6 +24,8 @@ def main(argv=None, *, workspace=None):
     wiki_parser(sub)
     from .metrics_cli import parser as metrics_parser
     metrics_parser(sub)
+    from .quota_window_cli import parser as quota_parser
+    quota_parser(sub)
     for name in ("status", "tasks"):
         s = sub.add_parser(name); s.add_argument("--task"); s.add_argument("--state")
     for name in ("new-task", "create"):
@@ -44,6 +46,10 @@ def main(argv=None, *, workspace=None):
     s = sub.add_parser("worker"); s.add_argument("--once", action="store_true")
     args = p.parse_args(argv)
     try:
+        if args.command == "quota-window":
+            # Per-user ledger (BATON_HOME): usage windows belong to the account, not the workspace.
+            from .quota_window_cli import run as quota_run
+            return quota_run(args)
         if args.command == "wiki":
             from .wiki_cli import run as wiki_run
             result = wiki_run(args, root)
