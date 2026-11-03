@@ -86,6 +86,9 @@ for event in [
         self.assertNotIn("abcdefgh", result.summary)
         self.assertEqual(classify_error("429 insufficient_quota"), "quota")
         self.assertEqual(classify_error("429 quota status unknown"), "rate_limit")
+        # Codex CLI 0.164.0 subscription limit, observed verbatim on 2026-11-03.
+        self.assertEqual(classify_error("ERROR: You’ve hit your usage limit. Upgrade to Pro"), "quota")
+        self.assertEqual(classify_error("ERROR: You've hit your usage limit."), "quota")
         for message, expected in [("401 unauthorized", "auth"), ("permission denied", "permission"),
                                   ("connection refused", "network"), ("bad invocation", "unknown")]:
             self.assertEqual(classify_error(message), expected)
@@ -143,6 +146,14 @@ else:
         self.assertEqual(result[3], "paused")
         time.sleep(1.6)
         self.assertFalse(marker.exists())
+
+    def test_env_remove_makes_variables_absent_in_child(self):
+        source = "import json,os;print(json.dumps({k: k in os.environ for k in ('BATON_T_KEY','BATON_T_KEEP')}))"
+        with patch.dict(os.environ, {"BATON_T_KEY": "secret", "BATON_T_KEEP": "1"}):
+            rc, stdout, _, _ = run_process([sys.executable, "-c", source], self.root, None, 10, lambda: None,
+                                           env_overrides={"BATON_T_KEY": ""}, env_remove=("BATON_T_KEY",))
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(stdout), {"BATON_T_KEY": False, "BATON_T_KEEP": True})
 
     def test_redaction(self):
         synthetic_credential_text = 'Bearer abcdef api_key="secret_value" serviceKey=urlsecret&x=1 sk-abcdefghijklm'
