@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -106,13 +107,19 @@ class QuotaWindowTests(unittest.TestCase):
             result = w.run(trigger, apply=True)
             self.assertEqual(set(self.outcomes(result).values()), {expected})
             self.assertEqual(w.exit_code(result), 3)
-        # The second provider is judged at its own ping time: a slow first ping pushes it past 3:00.
+        # D4: a hung first ping must not make the other provider late. Claude's ping waits until
+        # Codex's ping has started; a sequential implementation would time out here.
         self.clock.now = kst(7, 2, 30, day=6)
+        codex_started = threading.Event()
         def slow(argv):
-            self.clock.now += timedelta(seconds=40)
+            self.assertTrue(codex_started.wait(5), "pings are not concurrent")
+            self.clock.now += timedelta(seconds=200)
             return 0, json.dumps({"is_error": False}), "", None
-        self.runner.ping["claude"] = slow
-        self.assertEqual(self.outcomes(w.run("0700", apply=True)), {"claude": "SENT", "codex": "SKIPPED_LATE"})
+        def codex(argv):
+            codex_started.set()
+            return 0, "hi", "", None
+        self.runner.ping.update(claude=slow, codex=codex)
+        self.assertEqual(self.outcomes(w.run("0700", apply=True)), {"claude": "SENT", "codex": "SENT"})
 
     def test_kst_date_boundary_and_skipped_runs_do_not_take_the_slot(self):
         w = self.live()
@@ -163,8 +170,9 @@ class QuotaWindowTests(unittest.TestCase):
         cases = [("claude", 0, json.dumps({"is_error": False}), "", None, "SENT"),
                  ("claude", 0, json.dumps({"is_error": True, "result": "usage limit reached"}), "", None, "LIMITED"),
                  ("claude", 0, "not json", "", None, "UNKNOWN"),
+                 ("claude", 0, "[]", "", None, "UNKNOWN"),
                  ("codex", 1, "", "ERROR: You’ve hit your usage limit.", None, "LIMITED"),
-                 ("codex", 1, "", "401 unauthorized", None, "FAILED"),
+                 ("codex", 1, "", "401 unauthorized", None, "UNKNOWN"),  # D2: may follow a delivered request
                  ("codex", 1, "", "connection reset", None, "UNKNOWN"),
                  ("codex", -1, "", "", "timeout", "UNKNOWN")]
         for provider, rc, out, err, stop, expected in cases:
@@ -185,7 +193,7 @@ class QuotaWindowTests(unittest.TestCase):
 
     def test_retry_limit_holds_even_after_a_second_failure(self):
         w = self.live(providers=["codex"])
-        self.runner.ping["codex"] = (1, "", "401 unauthorized", None)
+        self.runner.ping["codex"] = lambda argv: (_ for _ in ()).throw(FileNotFoundError("codex"))
         w.run("0700", apply=True)
         self.assertEqual(self.outcomes(w.retry("0700", "codex")), {"codex": "FAILED"})
         self.assertEqual(self.outcomes(w.retry("0700", "codex")), {"codex": "DUPLICATE"})
@@ -233,19 +241,26 @@ class QuotaWindowTests(unittest.TestCase):
         flat = sorted(r["outcome"] for result in results for r in result["results"])
         self.assertEqual(flat, ["DUPLICATE", "DUPLICATE", "SENT", "SENT"])
 
-    def test_persist_failure_after_ping_keeps_intent(self):
-        w = self.live(providers=["codex"])
+    def test_persist_failure_after_ping_keeps_intent_and_other_providers_continue(self):
+        w = self.live()
         real = w.tx
+        codex_threads = set()
+        def codex(argv):  # codex's ping goes out; storing its result on that thread then fails
+            codex_threads.add(threading.get_ident())
+            return 0, "hi", "", None
         def flaky():
-            if self.runner.pings:  # the ping went out; storing its result fails
+            if threading.get_ident() in codex_threads:
                 raise sqlite3.OperationalError("database is locked")
             return real()
+        self.runner.ping["codex"] = codex
         with patch.object(w, "tx", side_effect=flaky):
-            with self.assertRaises(PersistError):
-                w.run("0700", apply=True)
+            result = w.run("0700", apply=True)
+        self.assertEqual(self.outcomes(result)["codex"], "PERSIST_ERROR")
+        self.assertEqual(w.exit_code(result), 2)
         with real() as c:
-            self.assertEqual(c.execute("SELECT state FROM quota_slots").fetchone()[0], "INTENT")
-        self.assertEqual(self.runner.pings, ["codex"])
+            state = c.execute("SELECT state FROM quota_slots WHERE provider='codex'").fetchone()[0]
+        self.assertEqual(state, "INTENT")
+        self.assertEqual(sorted(self.runner.pings), ["claude", "codex"])
 
     def test_window_state_confidence_and_open_window_detection(self):
         w = self.live(providers=["codex"])
@@ -311,8 +326,120 @@ class QuotaWindowTests(unittest.TestCase):
         self.clock.now = kst(9, 0)
         with redirect_stdout(io.StringIO()):
             self.assertEqual(quota_window_cli.run(args, window=w), 3)
-        with redirect_stdout(io.StringIO()) as out:
+        # install-task reads the host timezone; pin it so the test does not depend on the CI host.
+        with patch("baton.quota_window.time.daylight", 0), patch("baton.quota_window.time.timezone", -9 * 3600),                 redirect_stdout(io.StringIO()) as out:
             self.assertEqual(quota_window_cli.run(argparse.Namespace(quota_command="install-task"), window=w), 0)
+        self.assertFalse(json.loads(out.getvalue())["registered"])
+
+
+    def test_auth_and_billing_paths_block_the_right_provider(self):
+        cases = [({"claude": json.dumps({"loggedIn": False, "authMethod": "none"})}, {}, {"claude": "BLOCKED_AUTH", "codex": "SENT"}),
+                 ({"claude": json.dumps({"loggedIn": True, "authMethod": "api_key"})}, {}, {"claude": "BLOCKED_BILLING", "codex": "SENT"}),
+                 ({"claude": "[]"}, {}, {"claude": "BLOCKED_AUTH", "codex": "SENT"}),
+                 ({"codex": "Logged in using an API key"}, {}, {"claude": "SENT", "codex": "BLOCKED_BILLING"}),
+                 ({"codex": "Not logged in"}, {}, {"claude": "SENT", "codex": "BLOCKED_AUTH"}),
+                 ({}, {"OPENAI_API_KEY": "x"}, {"claude": "SENT", "codex": "BLOCKED_BILLING"}),
+                 ({}, {"ANTHROPIC_API_KEY": "x"}, {"claude": "BLOCKED_BILLING", "codex": "SENT"})]
+        for index, (auth, env, expected) in enumerate(cases):
+            self.runner = Runner(auth=auth)
+            w = self.window(env=env, home=f"exact{index}", enabled=True, dry_run=False)
+            self.assertEqual(self.outcomes(w.run("0700", apply=True)), expected, (auth, env))
+            self.assertEqual(sorted(self.runner.pings), sorted(p for p, o in expected.items() if o == "SENT"))
+
+    def test_preflight_guard_branches_never_ping(self):
+        def failing(argv, cwd, timeout, env_remove):
+            raise OSError("spawn failed")
+        def timed_out(argv, cwd, timeout, env_remove):
+            return -1, "", "", "timeout"
+        rows = [({"resolve": lambda p: None}, "cli_not_installed"),
+                ({"runner": failing}, "auth_status_unavailable"),
+                ({"runner": timed_out}, "auth_status_timeout"),
+                ({"runner": Runner(auth={"claude": "not json"})}, "auth_status_unparsed")]
+        for index, (options, reason) in enumerate(rows):
+            w = QuotaWindow(self.root / f"guard{index}", clock=self.clock, runner=options.get("runner", self.runner), env={},
+                            user_home=self.user_home, resolve=options.get("resolve", lambda p: [p]))
+            w.configure(enabled=True, dry_run=False, providers=["claude"])
+            result = w.run("0700", apply=True)["results"][0]
+            self.assertEqual((result["outcome"], result["reason"]), ("BLOCKED_AUTH", reason))
+        self.assertEqual(self.runner.pings, [])
+
+    def test_unreadable_and_redirected_settings_block_billing(self):
+        (self.user_home / ".claude").mkdir(); (self.user_home / ".codex").mkdir()
+        (self.user_home / ".claude/settings.json").write_text("{broken", encoding="utf-8")
+        (self.user_home / ".codex/config.toml").write_text("not = = toml", encoding="utf-8")
+        w = self.window(home="corrupt", enabled=True, dry_run=False)
+        result = {r["provider"]: r["reason"] for r in w.run("0700", apply=True)["results"]}
+        self.assertEqual(result, {"claude": "claude_settings_unreadable", "codex": "codex_config_unreadable"})
+        other = self.root / "claude-config"; other.mkdir()
+        (other / "settings.json").write_text(json.dumps({"apiKeyHelper": "helper.cmd"}), encoding="utf-8")
+        (self.user_home / ".claude/settings.json").write_text("{}", encoding="utf-8")
+        (self.user_home / ".codex/config.toml").write_text(
+            'profile = "work"\n[profiles.work]\nmodel_provider = "azure"\n', encoding="utf-8")
+        w = self.window(env={"CLAUDE_CONFIG_DIR": str(other)}, home="redirected", enabled=True, dry_run=False)
+        self.assertEqual({r["provider"]: r["reason"] for r in w.run("0700", apply=True)["results"]},
+                         {"claude": "settings.apiKeyHelper", "codex": "config.profiles.model_provider"})
+        (self.user_home / ".codex/config.toml").write_text('[model_providers.proxy]\nbase_url = "https://example.invalid"\n',
+                                                          encoding="utf-8")
+        self.assertIn("config.model_providers", self.window(home="custom").billing_findings("codex"))
+        self.assertEqual(self.runner.pings, [])
+
+    def test_invalid_config_is_rejected_and_not_persisted(self):
+        w = self.window(enabled=True)
+        for change in ({"timeout_seconds": 5}, {"window_hours": "x"}, {"tolerance_seconds": {"0700": 86400}},
+                       {"tolerance_seconds": {"0700": -1}}, {"claude_model": "--dangerously"},
+                       {"codex_reasoning_effort": 'low" x="y'}, {"providers": ["gemini"]}, {"enabled": "yes"}):
+            with self.assertRaisesRegex(Exception, "invalid_quota_config"):
+                w.configure(**change)
+            self.assertTrue(w.config()["enabled"])
+            self.assertEqual(w.config()["timeout_seconds"], 120)
+        w.config_path.write_text("[1, 2]", encoding="utf-8")
+        with self.assertRaisesRegex(Exception, "invalid_quota_config"):
+            w.config()
+
+    def test_retry_guards(self):
+        w = self.window(enabled=True, providers=["codex"])
+        self.assertEqual(self.outcomes(w.retry("0700", "codex")), {"codex": "DISABLED"})
+        with self.assertRaisesRegex(Exception, "unknown_provider"):
+            w.retry("0700", "claude")
+        w.configure(dry_run=False)
+        self.clock.now = kst(9, 0)
+        self.assertEqual(self.outcomes(w.retry("0700", "codex")), {"codex": "SKIPPED_LATE"})
+        self.assertEqual(self.runner.pings, [])
+
+    def test_duplicate_reason_matches_ledger(self):
+        w = self.live(providers=["codex"])
+        w.run("0700", apply=True)
+        result = w.run("0700", apply=True)["results"][0]
+        with w.tx() as c:
+            stored = c.execute("SELECT reason FROM quota_attempts WHERE outcome='DUPLICATE'").fetchone()[0]
+        self.assertEqual((result["reason"], stored), ("slot_sent", "slot_sent"))
+
+    def test_install_task_quotes_paths_for_powershell(self):
+        w = QuotaWindow(self.root / "O'Brien", clock=self.clock, runner=self.runner, env={"BATON_HOME": "x"},
+                        user_home=self.user_home, resolve=lambda p: [p])
+        printed = w.install_task(python="C:/Users/O'Brien/python.exe", offset_seconds=9 * 3600, dst=False)
+        self.assertIn("-Execute 'C:/Users/O''Brien/python.exe'", printed["powershell"])
+        self.assertIn("O''Brien", printed["powershell"].split("-WorkingDirectory ")[1])
+        self.assertIn("BATON_HOME", printed["warning"])
+
+    def test_cli_wiring_through_baton_main(self):
+        from baton.__main__ import main
+        with patch.dict("os.environ", {"BATON_HOME": str(self.root / "cli-home")}), redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(main(["quota-window", "status"]), 0)
+        self.assertEqual(json.loads(out.getvalue())["home"], str(self.root / "cli-home"))
+
+    def test_cli_reports_persist_error_with_exit_2(self):
+        w = self.window()
+        args = argparse.Namespace(quota_command="run", trigger="0700", apply=True)
+        result = {"results": [{"provider": "codex", "outcome": "PERSIST_ERROR", "reason": "ping_result_not_persisted"}]}
+        with patch.object(w, "run", return_value=result), redirect_stdout(io.StringIO()), \
+                patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(quota_window_cli.run(args, window=w), 2)
+        self.assertIn("will not be resent", err.getvalue())
+        with patch.object(w, "run", side_effect=PersistError("ping_result_not_persisted")), redirect_stdout(io.StringIO()) as out, \
+                patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(quota_window_cli.run(args, window=w), 2)
+        self.assertEqual(json.loads(out.getvalue())["error"], "ping_result_not_persisted")
 
 
 if __name__ == "__main__":

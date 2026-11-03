@@ -132,6 +132,8 @@ class Orchestrator:
                             # No fallback loops, even if another provider also reports quota.
                             task["execution"]["allow_fallback"] = False
                             continue
+                        if task["execution"]["allow_fallback"] and fallback not in self.providers and fallback != "none":
+                            return self.finish(task_id, lease, "WAITING_FOR_PROVIDER", reason="fallback_provider_disabled")
                         return self.finish(task_id, lease, "WAITING_FOR_PROVIDER", reason="quota_or_changes_require_review")
                     if error in {"rate_limit", "network"} and provider_name != "gms" and after == before:
                         if row["attempt"] < task["execution"]["max_attempts"]:

@@ -212,7 +212,7 @@ Windows Task Scheduler (등록은 별도 승인; P0는 명령 출력만)
 - D14 핑 기본 모델: Claude `haiku`, Codex `model_reasoning_effort="low"`(설정 가능). 작은 모델 요청이 5h 창을 여는지는 첫 실핑에서 확인.
 - D15 `0700` 허용 지연 3:00(5:00에서 변경), provider마다 핑 직전에 재판정.
 - D16 OS 시간대가 DST를 쓰면 install-task 거부.
-- D17 원장·ping-cwd는 사용자 단위 `BATON_HOME` 또는 `%LOCALAPPDATA%aton`(작업 공간별 아님).
+- D17 원장·ping-cwd는 사용자 단위 `BATON_HOME` 또는 `%LOCALAPPDATA%\baton`(작업 공간별 아님).
 - D18 공용 `classify_error`에 Codex 한도 문구 `hit your usage limit` 추가(기존 하네스 quota 경로도 복구).
 - 필수 구현으로 반영: 종료 코드 집계(2 > 3 > 0), `run_process(env_remove=)`, Claude JSON `is_error` 확인, 창 시작 보수 경계 finished_at, 0700 UNKNOWN → inside_open_window=unknown, 열린 창 안 SENT는 리셋 불변, 핑 후 저장 실패 → INTENT 유지·exit 2·재전송 없음.
 - 구현 메모: stale INTENT 회수는 시간 조건(timeout+120s)만 사용한다. Windows에서 `os.kill(pid, 0)`은 생존 확인이 아니므로 pid 조건은 쓰지 않는다(회수가 늦어질 뿐 재전송은 없음).

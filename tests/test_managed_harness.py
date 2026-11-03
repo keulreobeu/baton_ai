@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from contextlib import redirect_stdout
 
 from baton.contracts import HarnessError
@@ -144,6 +145,26 @@ class ManagedHarnessTests(unittest.TestCase):
         result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-GMS-PREFERRED")
         self.assertEqual((result["state"], result["result"]["reason"]), ("BLOCKED", "provider_disabled"))
         self.assertEqual(gms.calls, 0)
+        for bad in ({"preferred_provider": "none"}, {"fallback_provider": "bogus"}):
+            body = deepcopy(self.body); body["task_id"] = "TASK-BAD-PROVIDER"; body["execution"].update(bad)
+            with self.assertRaisesRegex(HarnessError, "unsupported_provider"):
+                self.store.create(body)
+
+    def test_enable_gms_flag_registers_the_extension(self):
+        state = ".local_runtime/harness-managed/gms-flag"
+        for argv, present in ((["--state-dir", state, "providers"], False), (["--state-dir", state, "--enable-gms", "providers"], True)):
+            with patch("baton.execution.GMSProvider.availability", return_value={"provider": "gms", "available": False}), \
+                    redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(main(argv, workspace=self.root), 0)
+            self.assertEqual("gms" in json.loads(out.getvalue()), present)
+
+    def test_skipped_disabled_fallback_has_its_own_reason(self):
+        body = deepcopy(self.body); body["task_id"] = "TASK-FALLBACK-OFF"
+        body["execution"].update(preferred_provider="codex", fallback_provider="gms", allow_fallback=True)
+        self.store.create(body)
+        quota = Provider(lambda *args: ExecutionResult("error", "quota"))
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-FALLBACK-OFF")
+        self.assertEqual((result["state"], result["result"]["reason"]), ("WAITING_FOR_PROVIDER", "fallback_provider_disabled"))
 
     def test_draft_apply_revalidate_and_tamper_gate(self):
         provider = Provider(lambda *args: ExecutionResult("draft", summary="review this proposed change"))

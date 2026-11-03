@@ -39,7 +39,7 @@ baton quota-window retry --trigger 0700 --provider codex   # 확실히 미전송
 baton quota-window install-task                 # 작업 스케줄러 등록 PowerShell을 출력만 함
 ```
 
-원장은 사용자 단위(`BATON_HOME` 또는 `%LOCALAPPDATA%aton`)다. 구독 로그인만 허용하며 API 과금 경로(환경변수·설정 파일)가 보이면 핑하지 않는다.
+원장은 사용자 단위(`BATON_HOME` 또는 `%LOCALAPPDATA%\baton`)다. 구독 로그인만 허용하며 API 과금 경로(환경변수·설정 파일)가 보이면 핑하지 않는다.
 작업 스케줄러에서 실행하려면 `python -m pip install -e <baton_ai>`로 설치해 `python -m baton`이 어디서든 import되게 한다.
 
 ## GMS

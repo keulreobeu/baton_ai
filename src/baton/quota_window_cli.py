@@ -51,5 +51,8 @@ def run(args, *, window=None) -> int:
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         print(encode({"status": "error", "error": "invalid_quota_window_input_or_storage"}))
         return 2
+    if any(r.get("outcome") == "PERSIST_ERROR" for r in result.get("results", [])) if isinstance(result, dict) else False:
+        print("baton quota-window: a ping result could not be stored; it may have been sent and will not be resent",
+              file=sys.stderr)
     print(encode(result))
     return code

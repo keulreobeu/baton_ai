@@ -7,11 +7,14 @@ response is UNKNOWN and is never resent.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
 from datetime import date, datetime, timedelta, timezone
+import copy
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import sys
@@ -28,6 +31,12 @@ TRIGGERS = {"0700": (7, 0), "1205": (12, 5)}
 PROVIDERS = ("claude", "codex")
 EARLY_SECONDS = 60
 RECOVER_MARGIN_SECONDS = 120
+AUTH_STATUS_TIMEOUT_SECONDS = 30
+REASON_MAX_CHARS = 500
+KST_OFFSET_SECONDS = 9 * 3600
+MAX_TOLERANCE_SECONDS = 3600
+CLAUDE_MODEL_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+CODEX_EFFORTS = ("minimal", "low", "medium", "high")
 DEFAULTS = {"enabled": False, "dry_run": True, "providers": ["claude", "codex"], "timeout_seconds": 120,
             "window_hours": 5, "tolerance_seconds": {"0700": 180, "1205": 900},
             "claude_model": "haiku", "codex_reasoning_effort": "low"}
@@ -61,6 +70,10 @@ def _parse(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
 
+def _safe_reason(reason: str | None) -> str:
+    return redact(reason or "")[:REASON_MAX_CHARS]
+
+
 def _default_runner(argv, cwd, timeout, env_remove):
     return run_process(argv, cwd, None, timeout, lambda: None, env_remove=env_remove)
 
@@ -75,6 +88,11 @@ def _resolve(provider: str, which) -> list[str] | None:
         return command if Path(command[0]).exists() or which(command[0]) else None
     found = which("claude")
     return [found] if found else None
+
+
+def _ps_quote(value) -> str:
+    """PowerShell single-quoted literal: an embedded quote is escaped by doubling it."""
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 class QuotaWindow:
@@ -99,7 +117,8 @@ class QuotaWindow:
               kst_date TEXT NOT NULL, trigger_id TEXT NOT NULL, provider TEXT NOT NULL, outcome TEXT NOT NULL,
               reason TEXT, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS quota_slots(kst_date TEXT NOT NULL, trigger_id TEXT NOT NULL,
-              provider TEXT NOT NULL, state TEXT NOT NULL, owner_run_id TEXT NOT NULL, owner_pid INTEGER,
+              provider TEXT NOT NULL, state TEXT NOT NULL, owner_run_id TEXT NOT NULL,
+              owner_pid INTEGER, -- forensic only; Windows has no safe liveness probe, recovery is time based
               started_at TEXT NOT NULL, finished_at TEXT, exit_code INTEGER, reason TEXT,
               inside_open_window TEXT, retry_count INTEGER NOT NULL DEFAULT 0,
               PRIMARY KEY(kst_date, trigger_id, provider));
@@ -125,25 +144,47 @@ class QuotaWindow:
 
     # -- configuration -----------------------------------------------------------------
     def config(self) -> dict:
-        values = json.loads(json.dumps(DEFAULTS))
+        stored = {}
         if self.config_path.is_file():
             stored = json.loads(self.config_path.read_text(encoding="utf-8"))
             if not isinstance(stored, dict):
                 raise HarnessError("invalid_quota_config")
-            tolerance = {**values["tolerance_seconds"], **(stored.get("tolerance_seconds") or {})}
-            values.update({k: v for k, v in stored.items() if k in DEFAULTS})
-            values["tolerance_seconds"] = tolerance
-        if type(values["enabled"]) is not bool or type(values["dry_run"]) is not bool:
+        return self._validated(stored)
+
+    @staticmethod
+    def _validated(stored: dict) -> dict:
+        values = copy.deepcopy(DEFAULTS)
+        tolerance = stored.get("tolerance_seconds") or {}
+        if not isinstance(tolerance, dict):
             raise HarnessError("invalid_quota_config")
-        if not set(values["providers"]) <= set(PROVIDERS) or not 10 <= int(values["timeout_seconds"]) <= 600:
+        values.update({k: v for k, v in stored.items() if k in DEFAULTS})
+        values["tolerance_seconds"] = {**DEFAULTS["tolerance_seconds"], **tolerance}
+
+        def number(value, low, high):
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and low <= value <= high
+
+        checks = [type(values["enabled"]) is bool, type(values["dry_run"]) is bool,
+                  isinstance(values["providers"], list) and set(values["providers"]) <= set(PROVIDERS),
+                  type(values["timeout_seconds"]) is int and 10 <= values["timeout_seconds"] <= 600,
+                  number(values["window_hours"], 1, 24),
+                  set(values["tolerance_seconds"]) == set(TRIGGERS)
+                  and all(number(v, 0, MAX_TOLERANCE_SECONDS) for v in values["tolerance_seconds"].values()),
+                  isinstance(values["claude_model"], str) and bool(re.fullmatch(CLAUDE_MODEL_PATTERN, values["claude_model"])),
+                  values["codex_reasoning_effort"] in CODEX_EFFORTS]
+        if not all(checks):
             raise HarnessError("invalid_quota_config")
         return values
 
     def configure(self, **changes) -> dict:
-        values = self.config()
-        values.update({k: v for k, v in changes.items() if v is not None})
-        self.config_path.write_text(json.dumps(values, indent=2), encoding="utf-8")
-        return {"config_path": str(self.config_path), **self.config()}
+        stored = json.loads(self.config_path.read_text(encoding="utf-8")) if self.config_path.is_file() else {}
+        if not isinstance(stored, dict):
+            raise HarnessError("invalid_quota_config")
+        stored.update({k: v for k, v in changes.items() if v is not None})
+        values = self._validated(stored)  # reject before writing: a bad change must not brick later runs
+        temp = self.config_path.with_name(self.config_path.name + ".tmp")
+        temp.write_text(json.dumps(values, indent=2), encoding="utf-8")
+        os.replace(temp, self.config_path)
+        return {"config_path": str(self.config_path), **values}
 
     # -- judgment ------------------------------------------------------------------------
     def _scheduled(self, trigger: str, now: datetime) -> tuple[date, datetime]:
@@ -157,14 +198,14 @@ class QuotaWindow:
         delay = (self.clock() - scheduled).total_seconds()
         if delay < -EARLY_SECONDS:
             return "SKIPPED_EARLY"
-        if delay > float(cfg["tolerance_seconds"][trigger]):
+        if delay > cfg["tolerance_seconds"][trigger]:
             return "SKIPPED_LATE"
         return None
 
     def billing_findings(self, provider: str) -> list[str]:
         found = [name for name in BILLING_ENV[provider] if name in self.env]
         if provider == "claude":
-            settings = self.user_home / ".claude/settings.json"
+            settings = Path(self.env.get("CLAUDE_CONFIG_DIR") or self.user_home / ".claude") / "settings.json"
             try:
                 data = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
             except (OSError, ValueError):
@@ -179,14 +220,21 @@ class QuotaWindow:
                 data = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
             except (OSError, ValueError):
                 return found + ["codex_config_unreadable"]
-            if data.get("model_provider") not in (None, "openai"):
-                found.append("config.model_provider")
+            profiles = data.get("profiles") if isinstance(data.get("profiles"), dict) else {}
+            active = profiles.get(data.get("profile")) if data.get("profile") else None
+            active_provider = active.get("model_provider") if isinstance(active, dict) else None
+            for where, value in (("config.model_provider", data.get("model_provider")),
+                                 ("config.profiles.model_provider", active_provider)):
+                if value not in (None, "openai"):
+                    found.append(where)
+            if data.get("model_providers"):
+                found.append("config.model_providers")
             for key in ("preferred_auth_method", "forced_login_method"):
                 if "api" in str(data.get(key, "")).lower():
                     found.append(f"config.{key}")
         return found
 
-    def preflight(self, provider: str, cfg: dict) -> tuple[str | None, str]:
+    def preflight(self, provider: str) -> tuple[str | None, str]:
         """Returns (blocking outcome or None, reason). Never sends a model request."""
         billing = self.billing_findings(provider)
         if billing:
@@ -196,7 +244,7 @@ class QuotaWindow:
             return "BLOCKED_AUTH", "cli_not_installed"
         argv = command + (["auth", "status"] if provider == "claude" else ["login", "status"])
         try:
-            rc, stdout, stderr, stop = self.runner(argv, self.ping_cwd, 30, STRIP_ENV)
+            rc, stdout, stderr, stop = self.runner(argv, self.ping_cwd, AUTH_STATUS_TIMEOUT_SECONDS, STRIP_ENV)
         except OSError:
             return "BLOCKED_AUTH", "auth_status_unavailable"
         if stop:
@@ -205,6 +253,8 @@ class QuotaWindow:
             try:
                 status = json.loads(stdout)
             except ValueError:
+                return "BLOCKED_AUTH", "auth_status_unparsed"
+            if not isinstance(status, dict):
                 return "BLOCKED_AUTH", "auth_status_unparsed"
             method = status.get("authMethod")
             if method in API_AUTH:
@@ -241,6 +291,8 @@ class QuotaWindow:
                 payload = json.loads(stdout)
             except ValueError:
                 return "UNKNOWN", "unparsed_success_output"
+            if not isinstance(payload, dict):
+                return "UNKNOWN", "unparsed_success_output"
             if payload.get("is_error") is True:
                 kind = classify_error(str(payload.get("result", "")))
                 return ("LIMITED", "quota") if kind == "quota" else ("UNKNOWN", f"is_error:{kind}")
@@ -250,20 +302,20 @@ class QuotaWindow:
         kind = classify_error(stdout + "\n" + stderr)
         if kind == "quota":
             return "LIMITED", "quota"
-        if kind == "auth":
-            return "FAILED", "auth"
+        if kind == "auth":  # D2: a ping-time auth error is not proof of non-delivery; never retryable
+            return "UNKNOWN", "auth_error_after_send_possible"
         return "UNKNOWN", f"exit_{rc}:{kind}"
 
     # -- ledger ---------------------------------------------------------------------------
     def _attempt(self, c, run_id, kst_date, trigger, provider, outcome, reason):
         c.execute("INSERT INTO quota_attempts(run_id,kst_date,trigger_id,provider,outcome,reason,created_at)"
                   " VALUES(?,?,?,?,?,?,?)", (run_id, str(kst_date), trigger, provider, outcome,
-                                               redact(reason or "")[:500], _iso(self.clock())))
+                                               _safe_reason(reason), _iso(self.clock())))
 
     def _record(self, run_id, kst_date, trigger, provider, outcome, reason):
         with self.tx() as c:
             self._attempt(c, run_id, kst_date, trigger, provider, outcome, reason)
-        return {"provider": provider, "outcome": outcome, "reason": reason}
+        return {"provider": provider, "outcome": outcome, "reason": _safe_reason(reason)}
 
     def _inside_open_window(self, c, kst_date, trigger, provider, now) -> str:
         row = c.execute("SELECT expected_reset_at FROM quota_windows WHERE provider=?", (provider,)).fetchone()
@@ -302,8 +354,8 @@ class QuotaWindow:
                   " expected_reset_at=excluded.expected_reset_at, confidence=excluded.confidence,"
                   " source=excluded.source, observed_at=excluded.observed_at", (provider, *values, _iso(now)))
 
-    def _claim(self, run_id, kst_date, trigger, provider, cfg, *, retry=False) -> str | None:
-        """Atomically claims the slot. Returns None on success or the non-sending outcome."""
+    def _claim(self, run_id, kst_date, trigger, provider, cfg, *, retry=False) -> tuple[str, str] | None:
+        """Atomically claims the slot. Returns None on success or the non-sending (outcome, reason)."""
         now = self.clock()
         key = (str(kst_date), trigger, provider)
         with self.tx() as c:
@@ -317,18 +369,19 @@ class QuotaWindow:
             if retry:
                 if not row or row["state"] != "FAILED":
                     self._attempt(c, run_id, kst_date, trigger, provider, "DUPLICATE", "retry_requires_failed_slot")
-                    return "DUPLICATE"
+                    return "DUPLICATE", "retry_requires_failed_slot"
                 changed = c.execute("UPDATE quota_slots SET state='INTENT', owner_run_id=?, owner_pid=?, started_at=?,"
                                     " finished_at=NULL, exit_code=NULL, reason=NULL, retry_count=retry_count+1"
                                     " WHERE kst_date=? AND trigger_id=? AND provider=? AND state='FAILED' AND retry_count=0",
                                     (run_id, os.getpid(), _iso(now), *key)).rowcount
                 if changed != 1:
                     self._attempt(c, run_id, kst_date, trigger, provider, "DUPLICATE", "retry_limit_reached")
-                    return "DUPLICATE"
+                    return "DUPLICATE", "retry_limit_reached"
                 return None
             if row:
-                self._attempt(c, run_id, kst_date, trigger, provider, "DUPLICATE", f"slot_{row['state'].lower()}")
-                return "DUPLICATE"
+                reason = f"slot_{row['state'].lower()}"
+                self._attempt(c, run_id, kst_date, trigger, provider, "DUPLICATE", reason)
+                return "DUPLICATE", reason
             c.execute("INSERT INTO quota_slots(kst_date,trigger_id,provider,state,owner_run_id,owner_pid,started_at)"
                       " VALUES(?,?,?,'INTENT',?,?,?)", (*key, run_id, os.getpid(), _iso(now)))
         return None
@@ -357,6 +410,11 @@ class QuotaWindow:
                 self._attempt(c, run_id, kst_date, trigger, provider, state, reason)
                 if changed == 1:
                     self._update_window(c, provider, state, inside, started, finished, cfg)
+                else:  # recovered as UNKNOWN by another run while this ping was in flight
+                    row = c.execute("SELECT state FROM quota_slots WHERE kst_date=? AND trigger_id=? AND provider=?",
+                                    key).fetchone()
+                    persisted = row["state"] if row else "MISSING"
+                    state, reason, inside = (persisted if row else "UNKNOWN"), f"slot_already_{persisted.lower()}", None
         except sqlite3.Error as exc:
             # The request may already be accepted: leave INTENT for later UNKNOWN recovery, never resend.
             raise PersistError("ping_result_not_persisted") from exc
@@ -368,16 +426,16 @@ class QuotaWindow:
         run_id = uuid.uuid4().hex
         kst_date, scheduled = self._scheduled(trigger, self.clock())
         real = cfg["enabled"] and not cfg["dry_run"] and apply
-        results = []
+        results, ready = [], []
         for provider in cfg["providers"]:
             if not cfg["enabled"]:  # D11: a disabled scheduler is never reported as failing
                 results.append(self._record(run_id, kst_date, trigger, provider, "DISABLED", "enabled=false"))
                 continue
-            timing = self._timing(trigger, scheduled, cfg)  # D15: re-evaluated right before each ping
+            timing = self._timing(trigger, scheduled, cfg)
             if timing:
                 results.append(self._record(run_id, kst_date, trigger, provider, timing, "trigger_tolerance"))
                 continue
-            blocked, reason = self.preflight(provider, cfg)
+            blocked, reason = self.preflight(provider)
             if blocked:
                 results.append(self._record(run_id, kst_date, trigger, provider, blocked, reason))
                 continue
@@ -385,12 +443,27 @@ class QuotaWindow:
                 results.append(self._record(run_id, kst_date, trigger, provider, "WOULD_PING",
                                             "dry_run" if cfg["dry_run"] else "apply_not_given"))
                 continue
-            claimed = self._claim(run_id, kst_date, trigger, provider, cfg)
-            if claimed:
-                results.append({"provider": provider, "outcome": claimed, "reason": "slot_taken"})
-                continue
-            results.append(self._ping(run_id, kst_date, trigger, provider, cfg))
+            ready.append(provider)
+        if ready:
+            # D4: subscription windows are independent; one slow CLI must not make the other late.
+            with ThreadPoolExecutor(max_workers=len(ready)) as pool:
+                sent = dict(zip(ready, pool.map(lambda p: self._send(run_id, kst_date, trigger, scheduled, p, cfg), ready)))
+            results += [sent[p] for p in ready]
+        order = {p: i for i, p in enumerate(cfg["providers"])}
+        results.sort(key=lambda r: order[r["provider"]])
         return self._result(run_id, kst_date, trigger, cfg, real, results)
+
+    def _send(self, run_id, kst_date, trigger, scheduled, provider, cfg, *, retry=False) -> dict:
+        timing = self._timing(trigger, scheduled, cfg)  # D15: re-evaluated right before the ping
+        if timing:
+            return self._record(run_id, kst_date, trigger, provider, timing, "trigger_tolerance")
+        claimed = self._claim(run_id, kst_date, trigger, provider, cfg, retry=retry)
+        if claimed:
+            return {"provider": provider, "outcome": claimed[0], "reason": claimed[1]}
+        try:
+            return self._ping(run_id, kst_date, trigger, provider, cfg)
+        except PersistError:  # D3: keep going for other providers; the INTENT slot is never resent
+            return {"provider": provider, "outcome": "PERSIST_ERROR", "reason": "ping_result_not_persisted"}
 
     def retry(self, trigger: str, provider: str) -> dict:
         cfg = self.config()
@@ -402,17 +475,16 @@ class QuotaWindow:
             result = self._record(run_id, kst_date, trigger, provider, "DISABLED", "retry_requires_real_mode")
         elif timing := self._timing(trigger, scheduled, cfg):
             result = self._record(run_id, kst_date, trigger, provider, timing, "trigger_tolerance")
-        elif (blocked := self.preflight(provider, cfg))[0]:
+        elif (blocked := self.preflight(provider))[0]:
             result = self._record(run_id, kst_date, trigger, provider, *blocked)
-        elif claimed := self._claim(run_id, kst_date, trigger, provider, cfg, retry=True):
-            result = {"provider": provider, "outcome": claimed, "reason": "retry_not_allowed"}
         else:
-            result = self._ping(run_id, kst_date, trigger, provider, cfg)
+            result = self._send(run_id, kst_date, trigger, scheduled, provider, cfg, retry=True)
         return self._result(run_id, kst_date, trigger, cfg, True, [result])
 
     @staticmethod
     def exit_code(result: dict) -> int:
-        return 3 if any(r["outcome"] in ISSUE for r in result["results"]) else 0
+        outcomes = {r["outcome"] for r in result["results"]}
+        return 2 if "PERSIST_ERROR" in outcomes else 3 if outcomes & ISSUE else 0
 
     def _result(self, run_id, kst_date, trigger, cfg, real, results) -> dict:
         return {"schema_version": 1, "run_id": run_id, "kst_date": str(kst_date), "trigger": trigger,
@@ -424,7 +496,7 @@ class QuotaWindow:
         with self.tx() as c:
             slots = [dict(r) for r in c.execute("SELECT * FROM quota_slots WHERE kst_date=? ORDER BY trigger_id, provider", (today,))]
             windows = [dict(r) for r in c.execute("SELECT * FROM quota_windows ORDER BY provider")]
-        notes = {"assumed": "estimated from a BATON ping after the BATON-tracked window elapsed; manual use outside BATON is not observed",
+        notes = {"assumed": "estimated from a quota-window ping after the previous estimate elapsed; manual use and BATON task runs are not observed",
                  "unverified": "estimated; an earlier manual or unknown request may have opened the window",
                  "unknown": "reset time unknown"}
         for window in windows:
@@ -440,12 +512,16 @@ class QuotaWindow:
         python = python or sys.executable
         lines, triggers = [], {}
         for trigger, (hour, minute) in TRIGGERS.items():
-            local = (datetime(2000, 1, 1, hour, minute) + timedelta(seconds=offset - 9 * 3600)).strftime("%H:%M")
+            local = (datetime(2000, 1, 1, hour, minute) + timedelta(seconds=offset - KST_OFFSET_SECONDS)).strftime("%H:%M")
             triggers[trigger] = local
-            lines += [f"$action = New-ScheduledTaskAction -Execute '{python}' -Argument '-m baton quota-window run --trigger {trigger} --apply' -WorkingDirectory '{self.ping_cwd}'",
+            lines += [f"$action = New-ScheduledTaskAction -Execute {_ps_quote(python)} -Argument '-m baton quota-window run --trigger {trigger} --apply' -WorkingDirectory {_ps_quote(self.ping_cwd)}",
                       f"$trigger = New-ScheduledTaskTrigger -Daily -At {local}",
                       "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable",
                       "$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive",
                       f"Register-ScheduledTask -TaskPath '\\BATON\\' -TaskName 'quota-window-{trigger}' -Action $action -Trigger $trigger -Settings $settings -Principal $principal"]
-        warning = None if offset == 9 * 3600 else f"OS timezone offset {offset}s is not KST; trigger times converted"
+        warnings = [] if offset == KST_OFFSET_SECONDS else [f"OS timezone offset {offset}s is not KST; trigger times converted"]
+        if self.env.get("BATON_HOME"):
+            warnings.append("BATON_HOME is set in this shell but not in the scheduled task; set it as a user environment"
+                            " variable so both use one ledger")
+        warning = "; ".join(warnings) or None
         return {"registered": False, "local_trigger_times": triggers, "warning": warning, "powershell": "\n".join(lines)}
