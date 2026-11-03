@@ -148,6 +148,14 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_draft_spec_cannot_start"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_unregistered_contract_headings_are_rejected"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_fenced_examples_do_not_define_contract_headings"
             }
           ]
         },
@@ -169,6 +177,10 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_baseline_cannot_advance"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_deleted_registry_cannot_create_a_new_adoption_boundary"
             }
           ]
         },

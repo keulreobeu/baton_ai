@@ -124,10 +124,36 @@ def commit(root, ref):
     return git(root, "rev-parse", "--verify", ref + "^{commit}").strip()
 
 
+def requirement_headings(text):
+    """Only Markdown headings outside fenced examples define contract IDs."""
+    found, fence = [], None
+    for line in text.splitlines():
+        if fence:
+            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + "{" + str(fence[1]) + r",}[ \t]*", line):
+                fence = None
+            continue
+        opening = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if opening:
+            marker = opening.group(1); fence = (marker[0], len(marker)); continue
+        match = re.match(r"^#{1,6} ([A-Z][A-Z0-9-]*-(?:REQ|AC)-[A-Za-z0-9_-]+)(?:\s|$)", line)
+        if match: found.append(match.group(1))
+    require(len(found) == len(set(found)), "DUPLICATE_HEADING")
+    return set(found)
+
+
 def changes(root, registry, base=None, ci_event=None):
     baseline = registry.get("baseline_commit")
     require(isinstance(baseline, str) and re.fullmatch(r"[0-9a-f]{40}", baseline), "INVALID_BASELINE")
+    head = commit(root, "HEAD")
     commit(root, baseline)
+    # Anchor to the FIRST committed registry, before any caller-controlled
+    # baseline clamp. A deleted registry is not a fresh adoption boundary.
+    history = git(root, "log", "--reverse", "--format=%H", "HEAD", "--", "docs/sdd/traceability.json").splitlines()
+    if history:
+        original = json_object(git(root, "show", history[0] + ":docs/sdd/traceability.json"))
+        require(original.get("baseline_commit") == baseline, "BASELINE_CHANGED")
+    else:
+        require(baseline == head, "BASELINE_CHANGED")
     if ci_event is not None:
         require(isinstance(ci_event, dict), "INVALID_CI_EVENT")
         if "pull_request" in ci_event:
@@ -178,6 +204,8 @@ def test_reference(root, reference):
 
 def required_level(name):
     lowered = name.lower()
+    if name.startswith(".github/workflows/") or name == "scripts/verify_environment.py":
+        return 3
     if any(s in lowered for s in ("shutdown", "power", "credential", "auth", "provider", "quota_window", "git_lifecycle", "check_sdd.py")):
         return 3
     if name in {"AGENTS.md", "CLAUDE.md", "docs/sdd.md"} or "/skills/" in name or name.startswith("docs/templates/"):
@@ -206,6 +234,7 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
         require(feature["spec"] in documents, "MISSING_SPEC")
         spec, text = documents[feature["spec"]]
         require(spec["kind"] == "spec" and spec["id"] == feature["id"], "SPEC_ID_MISMATCH")
+        headings = requirement_headings(text)
         require(isinstance(feature["acs"], list) and 1 <= len(feature["acs"]) <= 100, "INVALID_ACS")
         local = set()
         for ac in feature["acs"]:
@@ -213,21 +242,23 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
             key = ac["id"]
             require(isinstance(key, str) and re.fullmatch(re.escape(spec["id"]) + r"-AC-\d{2}", key), "INVALID_AC_ID")
             require(key not in ids, "DUPLICATE_ID"); ids.add(key); local.add(key)
-            require(re.search(r"^#{1,6} " + re.escape(key) + r"(?:\s|$)", text, re.M), "MISSING_AC_HEADING")
+            require(key in headings, "MISSING_AC_HEADING")
             require(isinstance(ac["tests"], list) and 1 <= len(ac["tests"]) <= 30, "MISSING_TEST_REFERENCE")
             effective = [test_reference(root, ref) for ref in ac["tests"]]
             test_effective[key] = all(effective)
         require(isinstance(feature["requirements"], list) and 1 <= len(feature["requirements"]) <= 100, "INVALID_REQUIREMENTS")
-        covered = set()
+        covered, requirement_ids = set(), set()
         for req in feature["requirements"]:
             require(isinstance(req, dict) and set(req) == {"id", "acs"}, "INVALID_REQUIREMENT")
             key = req["id"]
             require(isinstance(key, str) and re.fullmatch(re.escape(spec["id"]) + r"-REQ-\d{2}", key), "INVALID_REQUIREMENT_ID")
             require(key not in ids, "DUPLICATE_ID"); ids.add(key)
-            require(re.search(r"^#{1,6} " + re.escape(key) + r"(?:\s|$)", text, re.M), "MISSING_REQUIREMENT_HEADING")
+            require(key in headings, "MISSING_REQUIREMENT_HEADING")
+            requirement_ids.add(key)
             require(set(values(req["acs"], "INVALID_REQUIREMENT_ACS")) <= local, "UNKNOWN_AC")
             covered.update(req["acs"])
         require(covered == local, "UNMAPPED_AC")
+        require(headings == local | requirement_ids, "UNREGISTERED_REQUIREMENT_OR_AC")
         all_acs.update(local)
     tasks, task_coverage = [], set()
     for name, (task, _) in documents.items():

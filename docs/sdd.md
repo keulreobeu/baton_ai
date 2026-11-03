@@ -47,6 +47,9 @@ P0 문서는 그대로 보존하며 수정 시 별도 계약으로 편입한다.
 --base는 지정 commit 이후를 검사한다. 첫 채택 기준은 traceability의 고정 baseline_commit이다.
 그 이전 base 요청은 기준까지 명시적으로 한정하고 pre_adoption_history_excluded로 보고한다.
 기존 원장 baseline은 검사 변경에서 앞으로 이동할 수 없다. 과거 변경을 인증하는 정책이 아니다.
+baseline은 현재 후보가 아닌 Git 이력의 최초 committed 원장에서 고정한다. 원장을 삭제/재생성해도
+새 채택으로 취급하지 않는다. 실제 REQ/AC 제목과 원장은 양방향 일치해야 하고 fenced 예시 제목은 제외한다.
+검증 진입점과 CI workflow 변경은 L3다.
 CI --ci는 push의 before/after 또는 PR base와 현재 HEAD를 사용하며 네트워크 조회를 하지 않는다.
 
 `python -X utf8 scripts/check_sdd.py [--base REF | --ci]`

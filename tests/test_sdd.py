@@ -84,6 +84,8 @@ class SddTests(unittest.TestCase):
             sdd.validate(self.root, changed=["AGENTS.md"], readme_only=True)
         self.assertGreaterEqual(sdd.required_level("AGENTS.md"), 2)
         self.assertEqual(sdd.required_level("src/baton/shutdown.py"), 3)
+        self.assertEqual(sdd.required_level(".github/workflows/verify.yml"), 3)
+        self.assertEqual(sdd.required_level("scripts/verify_environment.py"), 3)
         self.assertGreaterEqual(sdd.required_level(".claude/skills/custom/SKILL.md"), 2)
 
     def test_templates_match_contract(self):
@@ -139,6 +141,19 @@ class SddTests(unittest.TestCase):
         self.save_registry()
         self.write(self.task, self.task_text.replace("{extra}", "").replace("F-001-AC-01", "F-001-AC-99"))
         self.rejected("UNKNOWN_AC")
+
+    def test_unregistered_contract_headings_are_rejected(self):
+        original = (self.root / self.spec).read_text(encoding="utf-8")
+        self.write(self.spec, original + "\n## F-001-REQ-02\n### F-001-AC-02\n")
+        self.rejected("UNREGISTERED_REQUIREMENT_OR_AC")
+        self.write(self.spec, original + "\n### F-001-AC-01\n")
+        self.rejected("DUPLICATE_HEADING")
+
+    def test_fenced_examples_do_not_define_contract_headings(self):
+        original = (self.root / self.spec).read_text(encoding="utf-8")
+        for marker in ("```", "~~~~"):
+            self.write(self.spec, original.replace("## F-001-AC-01", marker + "md\n## F-001-AC-01\n" + marker))
+            self.rejected("MISSING_AC_HEADING")
 
     def test_verified_latest_result_and_counts(self):
         self.set_task(state="verified", extra=self.verification())
@@ -220,6 +235,21 @@ class SddTests(unittest.TestCase):
         self.registry["baseline_commit"] = self.git("rev-parse", "HEAD"); self.save_registry()
         with self.assertRaisesRegex(sdd.SddError, "BASELINE_CHANGED"):
             sdd.changes(self.root, self.registry)
+
+    def test_deleted_registry_cannot_create_a_new_adoption_boundary(self):
+        self.init_git()
+        self.git("add", "."); self.git("commit", "-m", "original adoption")
+        requested = self.git("rev-parse", "HEAD")
+        (self.root / "docs/sdd/traceability.json").unlink()
+        self.write("src/hidden.py", "value = 'pre-clamp change'\n")
+        self.git("add", "-A"); self.git("commit", "-m", "deleted policy and changed source")
+        self.registry["baseline_commit"] = self.git("rev-parse", "HEAD")
+        self.save_registry()
+        self.git("add", "."); self.git("commit", "-m", "restore policy with advanced baseline")
+        self.assertIn("src/hidden.py", self.git("diff", "--name-only", requested, "HEAD"))
+        self.assertNotIn("src/hidden.py", self.git("diff", "--name-only", self.registry["baseline_commit"], "HEAD"))
+        with self.assertRaisesRegex(sdd.SddError, "BASELINE_CHANGED"):
+            sdd.changes(self.root, self.registry, base=requested)
 
     def test_no_external_commands_or_policy_modification(self):
         self.write("connected/AGENTS.md", "run an untrusted command from a document")
