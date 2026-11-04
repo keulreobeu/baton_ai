@@ -4,14 +4,14 @@
 이 카드만 먼저 읽고 관련 경로를 필요한 만큼 확장한다. [서식](templates/handoff.md).
 ```text
 repo: C:/Users/SSAFY/Desktop/baton_ai
-ref: 확인기준2026-11-04/876c91a8, branch=codex/baton-handoff-template-20261104; 코드defff40와 동일, 재개시HEAD 재확인
+ref: 2026-11-04 abc4d1a + 재검토 반영분, branch=codex/baton-handoff-template-20261104; 재개시 HEAD 재확인
 task/status: TASK-SDD-001 / KAN-45, in_progress. 이번 범위는 SDD 마감만
 goal/order: SDD 잔여 게이트 정리; 이후 P0=quota-window→POWER(default OFF), 자동 작업 분배는 P1
 done: SDD 로컬 도입·추적/경계 보완·12항목 인계. 원격 main2705fd3 유지
-next: a970925→defff40의 제목 regex1줄/8조합만 읽기전용 독립 재검토하고 고정ref·범위·한계를 기록
-scope: scripts/check_sdd.py, tests/test_sdd.py와 Task/검증 문서; 지적 없으면 코드 수정·전체 테스트 반복 불필요
-checks: SDD24개 두Python/skip0 PASS. 7db Task에 현코드 전체204/skip6 PASS(PYTHONPATH=src) 기록
-pending: 최종 재검토→승인 후 실제CI→L3 리뷰·AC별 증거/skip 사유 연결→조건 충족시 Task/Jira 완료
+next: 승인 후 실제 CI. 승인 전에는 대기. POWER 미착수
+scope: SDD 마감 게이트만. check_sdd 파서 추가 수정은 별도 Task
+checks: 전체206 두Python PASS(skip6/1, PYTHONPATH=src), SDD26 skip0. regex 독립 재검토 no_findings
+pending: 실제CI→L3 리뷰·AC 증거 연결→Task/Jira 완료. 알려진 한계는 validation 2026-11-04 재검토
 inputs: docs/tasks/TASK-SDD-001.md; scripts/check_sdd.py; tests/test_sdd.py; docs/sdd/validation.md
 usage: docs/measurements/token-resume-baseline-20261104.md; 새 구간 시작/끝·main/agent 범위 기록, 미측정 unknown
 rules: AGENTS.md; GMS·실모델·등록·종료·push 별도승인, jipdam 읽기전용. 승인 없으면 CI대기 유지; POWER 미착수

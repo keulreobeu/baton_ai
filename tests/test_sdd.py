@@ -153,6 +153,24 @@ class SddTests(unittest.TestCase):
         self.write(self.spec, original + "\n### F-001-AC-01\n")
         self.rejected("DUPLICATE_HEADING")
 
+    def test_requirement_heading_boundaries(self):
+        heading = {"F-001-REQ-02"}
+        rows = [("## F-001-REQ-02", heading), ("   ## F-001-REQ-02", heading), ("##\tF-001-REQ-02", heading),
+                ("## F-001-REQ-02 ##", heading), ("## F-001-REQ-02　title", heading), ("## F-001-REQ-02 title", heading),
+                ("    ## F-001-REQ-02", set()), ("\t## F-001-REQ-02", set()), ("##F-001-REQ-02", set()), ("####### F-001-REQ-02", set())]
+        for text, expected in rows:
+            with self.subTest(text=text):
+                self.assertEqual(sdd.requirement_headings(text), expected)
+
+    def test_list_and_comment_blocks_stay_fail_closed(self):
+        # The checker does not model list items or HTML blocks. Tracking them with regexes hid every
+        # later heading when a list ended, so it must keep seeing headings here (documented limitation).
+        for text in ("- ```\n  x\n\n## F-001-REQ-02", "- ```code``` is inline\n\n## F-001-REQ-02", "-     ```\n\n## F-001-REQ-02",
+                     "text\n2. ```\n\n## F-001-REQ-02", "- x\n  <!-- y\n\n## F-001-REQ-02", "<!--\n  ## F-001-REQ-02\n-->",
+                     "- ```\n  ## F-001-REQ-02\n  ```"):
+            with self.subTest(text=text):
+                self.assertEqual(sdd.requirement_headings(text), {"F-001-REQ-02"})
+
     def test_fenced_examples_do_not_define_contract_headings(self):
         original = (self.root / self.spec).read_text(encoding="utf-8")
         for marker in ("```", "~~~~"):
