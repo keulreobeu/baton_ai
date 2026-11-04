@@ -492,16 +492,45 @@ class QuotaWindow:
                 "results": results}
 
     def status(self) -> dict:
-        today = str(self.clock().astimezone(KST).date())
-        with self.tx() as c:
+        now = self.clock()
+        today = str(now.astimezone(KST).date())
+        cfg = self.config()
+        # A single read snapshot; status must neither claim slots nor recover stale intents.
+        uri = self.path.resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True, timeout=5)) as c:
+            c.row_factory = sqlite3.Row
+            c.execute("BEGIN")
             slots = [dict(r) for r in c.execute("SELECT * FROM quota_slots WHERE kst_date=? ORDER BY trigger_id, provider", (today,))]
             windows = [dict(r) for r in c.execute("SELECT * FROM quota_windows ORDER BY provider")]
+            attempts = {(r["trigger_id"], r["provider"]): r["outcome"] for r in c.execute(
+                "SELECT trigger_id,provider,outcome FROM quota_attempts WHERE id IN"
+                " (SELECT MAX(id) FROM quota_attempts WHERE kst_date=? GROUP BY trigger_id,provider)", (today,))}
+        recorded = {(r["trigger_id"], r["provider"]): r["state"] for r in slots}
+        trigger_status = []
+        for trigger in TRIGGERS:
+            _, scheduled = self._scheduled(trigger, now)
+            deadline = scheduled + timedelta(seconds=cfg["tolerance_seconds"][trigger])
+            for provider in PROVIDERS:
+                if provider not in cfg["providers"]:
+                    continue
+                key = (trigger, provider)
+                if key in recorded:
+                    state, source = recorded[key], "slot"
+                elif key in attempts:
+                    state, source = attempts[key], "attempt"
+                elif not cfg["enabled"]:
+                    state, source = "DISABLED", "config"
+                else:
+                    state, source = ("MISSING" if now > deadline else "PENDING"), "schedule"
+                trigger_status.append({"trigger": trigger, "provider": provider, "state": state,
+                                       "source": source, "scheduled_at": _iso(scheduled), "deadline_at": _iso(deadline)})
         notes = {"assumed": "estimated from a quota-window ping after the previous estimate elapsed; manual use and BATON task runs are not observed",
                  "unverified": "estimated; an earlier manual or unknown request may have opened the window",
                  "unknown": "reset time unknown"}
         for window in windows:
             window["note"] = notes.get(window["confidence"], "")
-        return {"home": str(self.home), "kst_date": today, "config": self.config(), "slots": slots, "windows": windows}
+        return {"home": str(self.home), "kst_date": today, "config": cfg, "slots": slots, "windows": windows,
+                "trigger_status": trigger_status}
 
     def install_task(self, *, python=None, offset_seconds=None, dst=None) -> dict:
         """Prints Task Scheduler registration only. Nothing is registered (D16: DST zones refused)."""

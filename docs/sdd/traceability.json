@@ -5,7 +5,11 @@
     "docs/specs/SDD-001.md",
     "docs/tasks/TASK-SDD-001.md",
     "docs/plans/sdd-adoption.md",
-    "docs/adr/ADR-001-policy-ownership.md"
+    "docs/adr/ADR-001-policy-ownership.md",
+    "docs/specs/QW-STATUS-001.md",
+    "docs/tasks/TASK-QW-STATUS-001.md",
+    "docs/plans/qw-status.md",
+    "docs/adr/ADR-QW-STATUS-001.md"
   ],
   "features": [
     {
@@ -229,6 +233,88 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_cli_failure_has_code"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "QW-STATUS-001",
+      "spec": "docs/specs/QW-STATUS-001.md",
+      "requirements": [
+        {
+          "id": "QW-STATUS-001-REQ-01",
+          "acs": [
+            "QW-STATUS-001-AC-01",
+            "QW-STATUS-001-AC-02"
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-REQ-02",
+          "acs": [
+            "QW-STATUS-001-AC-03",
+            "QW-STATUS-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "QW-STATUS-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_deadlines_and_custom_tolerance"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_disabled_and_excluded_providers"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_dry_run_is_expected_but_recorded_judgment_is_not_missing"
+            }
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_last_attempt_wins_without_a_slot"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_slot_wins_over_duplicate_or_new_config"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_intent_is_neither_recovered_nor_hidden"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_kst_midnight_ignores_yesterday_and_uses_one_clock_sample"
+            }
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_status_reads_during_writer_and_does_not_call_providers_or_write"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_missing_database_is_error_not_fabricated_missing"
+            }
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_cli_json_reports_missing_and_keeps_exit_zero"
             }
           ]
         }
