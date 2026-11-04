@@ -62,7 +62,8 @@ CI 파일은 준비할 수 있지만 원격 push/PR/merge는 현재 별도 승�
 
 ## P0 우선순위
 
-SDD 고급 기능보다 TASK-SCHED-001(07:00 mock/dry-run)을 우선한다. 기존 quota-window의
-핑 타이밍 제어를 실제 작업 예약/재개·종료 준비 판정과 혼동하지 않는다. 이후 POWER(default OFF),
+SDD 고급 기능보다 P0를 우선한다. P0는 quota-window(구현됨)이고, 마지막 단계로 TASK-POWER-001
+조건부 종료(default OFF)를 추가한다. 종료 판단에 필요한 작업·예약·승인 조회는 읽기 전용으로 POWER에
+포함하며 quota-window의 핑 타이밍 제어와 혼동하지 않는다. 작업 자동 실행·분배는 P1이다. 이후
 Provider, Backup, 외부 Policy 발견, 조건부 Review 순서다. 실제 핑/등록/종료·GMS·유료 API는 금지다.
 이 문서는 연결 프로젝트를 온보딩하거나 규칙/host 등록본을 수정하는 명령을 만들지 않는다.

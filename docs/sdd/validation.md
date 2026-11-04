@@ -45,7 +45,7 @@ CI 파일 존재를 실제 Actions 성공으로 바꾸지 않는다.
 | 06 | NOT_RUN | 로컬 scope/CI payload 합성 검사 PASS, 실제 Actions는 미게시 |
 | 07 | PASS | 기존 P0 문서 hash·연결 프로젝트 규칙 보존, 설정 수정 없음 |
 | 08 | PASS | 문서 명령 미실행·오프라인0호출·no provider import |
-| 09 | PASS | Plan/current/HANDOFF의 다음 TASK-SCHED-001 명시 |
+| 09 | PASS | Plan/current/HANDOFF의 다음 P0 작업 명시(2026-11-04부터 TASK-POWER-001) |
 | 10 | PASS | 실제 명령/skip/미실행/채택 baseline 구분 |
 
 L3 독립 검토/실제 CI 게이트 전 Task/Jira는 in_progress다. 테스트 수가 늘어난 것을 생산성·절감률로 주장하지 않는다.

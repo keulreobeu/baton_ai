@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/SDD-001.md"]
 plan = "docs/plans/sdd-adoption.md"
 adr = "docs/adr/ADR-001-policy-ownership.md"
-scope = ["AGENTS.md", "CLAUDE.md", "README.md", "docs/HANDOFF.md", "docs/sdd.md", "docs/specs/SDD-001.md", "docs/tasks/TASK-SDD-001.md", "docs/tasks/current.md", "docs/plans/sdd-adoption.md", "docs/adr/ADR-001-policy-ownership.md", "docs/templates/spec.md", "docs/templates/task.md", "docs/templates/plan.md", "docs/templates/adr.md", "docs/sdd/traceability.json", "docs/sdd/validation.md", "scripts/check_sdd.py", "scripts/verify_environment.py", "tests/test_sdd.py", ".github/workflows/verify.yml"]
+scope = ["AGENTS.md", "CLAUDE.md", "README.md", "docs/HANDOFF.md", "docs/sdd.md", "docs/specs/SDD-001.md", "docs/tasks/TASK-SDD-001.md", "docs/tasks/current.md", "docs/plans/sdd-adoption.md", "docs/adr/ADR-001-policy-ownership.md", "docs/templates/spec.md", "docs/templates/task.md", "docs/templates/plan.md", "docs/templates/adr.md", "docs/sdd/traceability.json", "docs/sdd/validation.md", "scripts/check_sdd.py", "scripts/verify_environment.py", "tests/test_sdd.py", ".github/workflows/verify.yml", "docs/measurements/token-resume-baseline-20261104.md"]
 acs = ["SDD-001-AC-01", "SDD-001-AC-02", "SDD-001-AC-03", "SDD-001-AC-04", "SDD-001-AC-05", "SDD-001-AC-06", "SDD-001-AC-07", "SDD-001-AC-08", "SDD-001-AC-09", "SDD-001-AC-10"]
 
 [[verification]]
@@ -70,3 +70,11 @@ verified로 승격하지 않는다. 고정 SHA별 독립 검토 결과·범위·
 선행0~3공백/space·tab 구분자8조합 반례와 SDD24개가 두 Python에서 각각3.607초/5.405초,
 skip0/exit0. 전체204 결과는 이1줄 수정 이전이며 이후에는 영향받은 SDD24개만 재확인했다.
 사용자 우선 마무리 지시에 따라 TASK-SCHED-001 구현은 시작하지 않는다. 실제 CI 미실행은 유지한다.
+
+2026-11-04 사용자 요청으로 재개 방식별 토큰 측정 기록(docs/measurements/token-resume-baseline-20261104.md)을
+scope에 추가했다. 제품·SDD 계약 변경이 아닌 기록 문서다. 같은 날 defff40에서 `PYTHONPATH=src`로
+`python -X utf8 scripts/verify_environment.py --base origin/main`을 다시 실행해 204개 PASS, skip6, exit0을 확인했다.
+`PYTHONPATH` 없이 실행하면 하위 프로세스 테스트 3개가 `No module named 'baton'`으로 실패한다.
+
+2026-11-04 사용자 결정으로 P0를 quota-window + 마지막 TASK-POWER-001로 정리하고 sdd.md, Plan, current, HANDOFF의
+다음 작업 표기를 맞췄다. AC-09의 근거는 이제 TASK-POWER-001 handoff다.
