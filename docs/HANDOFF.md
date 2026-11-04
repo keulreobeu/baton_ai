@@ -1,20 +1,20 @@
 <!-- BATON_RESUME_START -->
-# BATON 재개 요약
+# BATON SDD 잔여 작업 인계
 
-이 카드부터 읽고 필요한 경로만 확장한다. 상세 이력은 필요할 때 참조한다. [서식](templates/handoff.md).
+이 카드만 먼저 읽고 관련 경로를 필요한 만큼 확장한다. [서식](templates/handoff.md).
 ```text
 repo: C:/Users/SSAFY/Desktop/baton_ai
-ref: codex/baton-handoff-template-20261104; 작성기준2026-11-04/7db3e90, 코드defff40; 실제HEAD는 재확인
-task/status: TASK-SDD-001 / KAN-45, in_progress
-goal/order: BATON 독립 하네스. P0=quota-window→마지막 POWER(default OFF); 작업 자동 실행·분배는 P1
-done: SDD 로컬 도입·검증·인계 보존. POWER 구현 미착수
-next: SDD 마지막 제목 regex1줄의 독립 재검토. 이후 POWER는 Spec/Task·mock AC부터 정의
-scope: 이번 인계 문서4파일; 재개 시 Task 허용범위·dirty·다른 writer부터 확인
-checks: 전체204/skip1 PASS는 마지막1줄 수정 전; 이후 관련SDD24개는 두Python/skip0 PASS
-pending: 마지막1줄 독립 재검토·실제CI 미완료. 원격 게시 없음
-inputs: docs/tasks/TASK-SDD-001.md; docs/tasks/current.md; docs/sdd/validation.md (필요한 부분만)
-usage: docs/measurements/token-resume-baseline-20261104.md; 새 구간 미측정은 unknown
-rules: AGENTS.md; GMS보류, 실모델·실핑·등록·종료·push 별도승인, jipdam 읽기전용. 목표·필수AC 보존
+ref: 확인기준2026-11-04/876c91a8, branch=codex/baton-handoff-template-20261104; 코드defff40와 동일, 재개시HEAD 재확인
+task/status: TASK-SDD-001 / KAN-45, in_progress. 이번 범위는 SDD 마감만
+goal/order: SDD 잔여 게이트 정리; 이후 P0=quota-window→POWER(default OFF), 자동 작업 분배는 P1
+done: SDD 로컬 도입·추적/경계 보완·12항목 인계. 원격 main2705fd3 유지
+next: a970925→defff40의 제목 regex1줄/8조합만 읽기전용 독립 재검토하고 고정ref·범위·한계를 기록
+scope: scripts/check_sdd.py, tests/test_sdd.py와 Task/검증 문서; 지적 없으면 코드 수정·전체 테스트 반복 불필요
+checks: SDD24개 두Python/skip0 PASS. 7db Task에 현코드 전체204/skip6 PASS(PYTHONPATH=src) 기록
+pending: 최종 재검토→승인 후 실제CI→L3 리뷰·AC별 증거/skip 사유 연결→조건 충족시 Task/Jira 완료
+inputs: docs/tasks/TASK-SDD-001.md; scripts/check_sdd.py; tests/test_sdd.py; docs/sdd/validation.md
+usage: docs/measurements/token-resume-baseline-20261104.md; 새 구간 시작/끝·main/agent 범위 기록, 미측정 unknown
+rules: AGENTS.md; GMS·실모델·등록·종료·push 별도승인, jipdam 읽기전용. 승인 없으면 CI대기 유지; POWER 미착수
 ```
 <!-- BATON_RESUME_END -->
 

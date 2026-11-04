@@ -74,3 +74,16 @@ ATX 제목 누락 finding을 보고했다. 제목 regex1줄을 선행0~3공백 �
 고정 SHA의 이1줄 수정 재검토 결과는 KAN-45 댓글/로컬 영수증을 따른다.
 원격 게시·실제 CI·Provider/GMS·Windows실등록/전원은 실행하지 않았다.
 사용자 요청으로 이번 도입 단계에서 마무리하고 다음 TASK-SCHED-001 구현은 미착수로 보존한다.
+
+## SDD 잔여 확인·인계 준비 — 2026-11-04
+
+확인 HEAD876c91a8, dirty 없음. defff40 이후 src/scripts/tests/.github 코드 변경 없음.
+공식 GitHub 연결 읽기: 원격 main2705fd38be08a009bde922eabfa1044e0a154e76,
+defff40/876c91a8 각각 Actions run0건. KAN-45는 진행 중이다.
+최종 로컬 영수증의 regex 재검토 pending과 Task의 AC-06 CI not_run이 남아 있으며,
+L3 완료용 independent_review 메타데이터도 아직 연결되지 않았다.
+
+후속7db Task 기록은 PYTHONPATH=src에서 defff40 현 코드204개/skip6/exit0이며 이는 문서 기록을
+재사용한 값이다(이번 감사에서 재실행하지 않음). 기존 직접 실행204개/skip1은 마지막1줄 수정 전이고
+마지막 관련SDD24개는 두 Python/skip0 통과였다. 인계 카드의 이전 요약을 이 차이에 맞춰 갱신했다.
+새 리뷰·테스트·CI·모델 호출·게시를 수행한 것이 아니라 미완료 상태와 재개 절차만 정리했다.

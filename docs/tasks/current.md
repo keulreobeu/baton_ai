@@ -9,3 +9,9 @@
 - TASK-SCHED-001의 07시 작업 자동 실행은 P1로 이동. 이후 PROVIDER, BACKUP, POLICY, REVIEW. 실제 실행은 별도 승인.
 
 기존 Codex KAN-41/42 변경은 이 저장소에 미이식이며 의존성을 명시한 후 후속 이관한다.
+
+## SDD 재개 우선 확인 — 2026-11-04
+
+이번 재개 인계는 TASK-SDD-001의 최종1줄 독립 재검토·실제CI·증거 연결/완료 판정까지다.
+실제 지시/체크리스트는 [SDD Task](TASK-SDD-001.md#2026-11-04-sdd-잔여-작업-재개-체크리스트),
+첫 입력은 [HANDOFF 상단 요약](../HANDOFF.md). POWER 구현은 SDD 잔여와 섞지 않는다.
