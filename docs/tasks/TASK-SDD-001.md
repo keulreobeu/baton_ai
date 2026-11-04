@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/SDD-001.md"]
 plan = "docs/plans/sdd-adoption.md"
 adr = "docs/adr/ADR-001-policy-ownership.md"
-scope = ["AGENTS.md", "CLAUDE.md", "README.md", "docs/HANDOFF.md", "docs/sdd.md", "docs/specs/SDD-001.md", "docs/tasks/TASK-SDD-001.md", "docs/tasks/current.md", "docs/plans/sdd-adoption.md", "docs/adr/ADR-001-policy-ownership.md", "docs/templates/spec.md", "docs/templates/task.md", "docs/templates/plan.md", "docs/templates/adr.md", "docs/sdd/traceability.json", "docs/sdd/validation.md", "scripts/check_sdd.py", "scripts/verify_environment.py", "tests/test_sdd.py", ".github/workflows/verify.yml", "docs/measurements/token-resume-baseline-20261104.md"]
+scope = ["AGENTS.md", "CLAUDE.md", "README.md", "docs/HANDOFF.md", "docs/sdd.md", "docs/specs/SDD-001.md", "docs/tasks/TASK-SDD-001.md", "docs/tasks/current.md", "docs/plans/sdd-adoption.md", "docs/adr/ADR-001-policy-ownership.md", "docs/templates/spec.md", "docs/templates/task.md", "docs/templates/plan.md", "docs/templates/adr.md", "docs/sdd/traceability.json", "docs/sdd/validation.md", "scripts/check_sdd.py", "scripts/verify_environment.py", "tests/test_sdd.py", ".github/workflows/verify.yml", "docs/measurements/token-resume-baseline-20261104.md", "docs/templates/handoff.md"]
 acs = ["SDD-001-AC-01", "SDD-001-AC-02", "SDD-001-AC-03", "SDD-001-AC-04", "SDD-001-AC-05", "SDD-001-AC-06", "SDD-001-AC-07", "SDD-001-AC-08", "SDD-001-AC-09", "SDD-001-AC-10"]
 
 [[verification]]
@@ -78,3 +78,13 @@ scope에 추가했다. 제품·SDD 계약 변경이 아닌 기록 문서다. 같
 
 2026-11-04 사용자 결정으로 P0를 quota-window + 마지막 TASK-POWER-001로 정리하고 sdd.md, Plan, current, HANDOFF의
 다음 작업 표기를 맞췄다. AC-09의 근거는 이제 TASK-POWER-001 handoff다.
+
+## 2026-11-04 짧은 인계 문서 보완
+
+사용자 요청으로 새 handoff 메시지 서식(기존4종 SDD 메타데이터와 별개)을 추가하고,
+AGENTS에서 HANDOFF 상단 요약 우선 읽기·필요한 경로만 확장하도록 안내한다.
+목표·P0 최신 결정·검증 범위/한계·승인·기존 측정 및 이력은 보존한다.
+보완 범위는 AGENTS.md, docs/HANDOFF.md, docs/templates/handoff.md와 이 Task뿐이다.
+문서 길이·필수 필드·링크·이력 보존 수동 검사와 `scripts/check_sdd.py --base 7db3e90`로 검증한다.
+런타임 코드 변경이 없어 전체 테스트/추가 AI 리뷰를 반복하지 않는다. 토큰 절감률은 미측정이다.
+현재 보완 검증: PASS. 요약872자/17줄, 12필드 일치·링크·원본 이력 byte 보존·공백·SDD scope4파일 확인. 기존 실제 CI·마지막 regex 독립 재검토와 Task in_progress는 유지한다.

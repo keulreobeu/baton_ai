@@ -1,7 +1,10 @@
 # BATON — Agent rules (Codex, Claude Code, Antigravity 공통)
 
 BATON(`baton-ai`, 패키지 `baton`, CLI `baton`)은 Provider-independent AI agent harness다.
-Pass the task. Keep the progress. 작업 인계 상태는 [docs/HANDOFF.md](docs/HANDOFF.md)를 먼저 읽는다.
+Pass the task. Keep the progress. 재개 시 [docs/HANDOFF.md](docs/HANDOFF.md)의
+`BATON_RESUME_START/END` 사이 요약만 먼저 읽고, 관련 Task·Spec·코드를 필요한 범위로 확장한다.
+새 인계는 [짧은 템플릿](docs/templates/handoff.md)을 재사용한다. 전체 이력·Spec·로그를 기본 재출력하지 않는다.
+필수 공통 규칙·안전 경계·전체 목표·AC는 보존하고 실제 Git/검증 상태를 확인한다.
 
 ## 경계 (반드시 지킨다)
 
