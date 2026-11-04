@@ -1,5 +1,14 @@
 # BATON 현재 개발
 
+## 최신 상태 — 2026-11-04 KAN-47
+
+- [TASK-QW-STATUS-001](TASK-QW-STATUS-001.md): MISSING 표시 구현·독립검토·통합 관련36개 PASS.
+  실제 CI 미실행으로 in_progress. [증거/사용법](../validation/qw-status.md), [짧은 인계](../HANDOFF.md).
+- Claude의 SDD 결과 c807ccf2를 통합했고 KAN-45의 실제 CI 대기는 유지한다.
+- 다음 후보는 TASK-PROFILE(아직 미착수). POWER는 사용자 지시대로 P0 마지막까지 보류한다.
+
+## 이전 기록 (당시 상태, 최신 우선순위는 위 항목)
+
 - TASK-SDD-001 / KAN-45: [자체 SDD 기초](TASK-SDD-001.md), in_progress.
 - 2026-11-04 사용자 요청으로 도입 단계 마무리. 로컬 구현·검증은 보존하고 실제 CI 미실행을 남긴다.
   후속 P0 구현은 아직 시작하지 않았다. 재개 근거는 [인계](../HANDOFF.md)와 [검증](../sdd/validation.md).

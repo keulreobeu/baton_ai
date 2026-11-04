@@ -1,20 +1,19 @@
 <!-- BATON_RESUME_START -->
-# BATON SDD 잔여 작업 인계
+# BATON 다음 작업 인계
 
-이 카드만 먼저 읽고 관련 경로를 필요한 만큼 확장한다. [서식](templates/handoff.md).
 ```text
-repo: C:/Users/SSAFY/Desktop/baton_ai
-ref: 2026-11-04 abc4d1a + 재검토 반영분, branch=codex/baton-handoff-template-20261104; 재개시 HEAD 재확인
-task/status: TASK-SDD-001 / KAN-45, in_progress. 이번 범위는 SDD 마감만
-goal/order: SDD 잔여 게이트 정리; 이후 P0=quota-window→POWER(default OFF), 자동 작업 분배는 P1
-done: SDD 로컬 도입·추적/경계 보완·12항목 인계. 원격 main2705fd3 유지
-next: 승인 후 실제 CI. 승인 전에는 대기. POWER 미착수
-scope: SDD 마감 게이트만. check_sdd 파서 추가 수정은 별도 Task
-checks: 전체206 두Python PASS(skip6/1, PYTHONPATH=src), SDD26 skip0. regex 독립 재검토 no_findings
-pending: 실제CI→L3 리뷰·AC 증거 연결→Task/Jira 완료. 알려진 한계는 validation 2026-11-04 재검토
-inputs: docs/tasks/TASK-SDD-001.md; scripts/check_sdd.py; tests/test_sdd.py; docs/sdd/validation.md
-usage: docs/measurements/token-resume-baseline-20261104.md; 새 구간 시작/끝·main/agent 범위 기록, 미측정 unknown
-rules: AGENTS.md; GMS·실모델·등록·종료·push 별도승인, jipdam 읽기전용. 승인 없으면 CI대기 유지; POWER 미착수
+repo: C:/Users/SSAFY/Desktop/baton_ai/.local_runtime/worktrees/qw-status-20261104
+ref: codex/baton-qw-status-20261104; 기능c39861ba+Claude SDD c807ccf2, 통합8fe408e7; 재개시HEAD확인
+task/status: TASK-QW-STATUS-001 / KAN-47, 로컬검증 완료·실제CI대기(in_progress); SDD KAN-45도CI대기
+goal/order: quota-window 보완→후속분리 작업, POWER는P0마지막; 작업자동분배P1
+done: status trigger_status(PENDING/MISSING/기록우선), read-only조회, 독립review no_findings; Claude결과병합
+next: TASK-PROFILE 후보의 하드코딩/범위 확인; 실제CI는게시승인후
+scope: 이번기능src/baton/quota_window.py와신규test/계약; SDD파서추가수정은별도Task
+checks: 기능전체214/skip1 PASS(병합전); 통합관련36/skip0·SDD추적PASS
+pending: 실제CI·첫실핑·OS등록/전원미검증; SDD한계는docs/sdd/validation.md참조
+inputs: docs/tasks/TASK-QW-STATUS-001.md; docs/validation/qw-status.md; 기존HANDOFF다음후보
+usage: 합성원장·fake clock/runner; 실데이터0, 이번구간토큰미측정(unknown)
+rules: AGENTS.md; GMS·실모델·등록·종료·원격Git별도승인, jipdam읽기전용, 원본Claude branch보존
 ```
 <!-- BATON_RESUME_END -->
 
