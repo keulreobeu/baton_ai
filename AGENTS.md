@@ -12,7 +12,7 @@ Pass the task. Keep the progress. 재개 시 [docs/HANDOFF.md](docs/HANDOFF.md)�
 - **실제 모델 호출 금지(사용자 승인 전).** `baton quota-window run --apply` 실핑, `codex exec`, `claude -p`를 테스트·검증 목적으로 실행하지 않는다. 테스트는 fake runner/clock으로 모델 호출 0.
 - **Windows 작업 스케줄러 등록 금지.** `install-task`는 출력만 한다. 실제 등록·PC 종료는 사용자 몫.
 - **jipdam 원본 불변.** `C:\Users\SSAFY\Desktop\jipdam`은 읽기만 한다. 물리 분리(jipdam이 baton을 쓰도록 바꾸기)는 사용자 확인 후.
-- **Git:** 커밋 작성자는 이 저장소 설정(`lwwde07`). push·force·amend·reset은 사용자 요청 없이는 하지 않는다. 원격 `origin/main`은 아직 2705fd3.
+- **Git:** 커밋 작성자는 이 저장소 설정(`lwwde07`). 완료한 작업 단위는 관련 검증과 Task/증거 갱신 후 자동 로컬 커밋한다. push는 아래 전체 커밋 점검을 통과한 현재 승인 대상에만 한다. force·amend·reset은 별도 사용자 요청 없이는 하지 않는다.
 - 비밀값·토큰·계정 이메일·원장 DB를 커밋하거나 출력하지 않는다.
 
 ## 개발
@@ -39,3 +39,12 @@ L3는 Spec/Plan/ADR/Task·독립 검토와 필요한 사용자 승인을 유지�
 연결 프로젝트에는 그 프로젝트의 규칙을 적용하며 이 SDD를 자동 복제하지 않는다.
 현재 GMS는 사용자 최신 요청에 따라 DEFERRED_GMS이며 `--enable-gms` 실행·키/잔액 조회도
 재승인 전 금지다. 기존 코드·원장을 보존한다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.
+
+
+## Git 작업 완료와 push — 2026-11-04 사용자 승인
+
+- Codex·Claude·Antigravity 공통: 완료한 작업 단위의 허용 파일만 자동 로컬 커밋하고 SHA를 보고한다. 전체 Task가 CI 대기여도 검증된 로컬 작업 단위는 저장할 수 있으며 Task를 verified로 올리지 않는다. 미검증·실패·다른 작업자의 변경을 완료 커밋에 섞지 않는다.
+- 커밋 직전 branch/HEAD·dirty·index·scope를 재확인한다. 다른 작업자가 작성 중이면 고정 snapshot의 SHA/파일 해시로 검증 대상을 고정하고 Git 담당자 한 명만 저장한다. 기존 staged 변경·원본·키·로그·DB·raw·runtime을 포함하지 않는다. 커밋 후 포함 파일·검증 내용 일치와 실제 HEAD를 확인한다. 커밋 실패는 실패로 보고하고 완료 저장으로 표시하지 않는다.
+- push 전 실제 원격 refs를 확인하고, 대상 branch에서 원격 refs로 도달할 수 없는 **기존 커밋 전부**와 새 커밋을 목록화한다. 각 커밋의 변경/민감정보/승인 범위를 점검하고 최종 후보의 계약·관련 회귀·필요 독립 검토를 확인한다. HEAD만 검사해 과거 미게시 커밋을 생략하지 않는다. 다른 로컬 branch의 미게시 커밋은 미포함 목록으로 남긴다.
+- 점검 결과를 Task에 남긴 뒤 현재 요청으로 정해진 원격·branch·범위만 push한다. 점검 이후 HEAD나 원격 상태가 달라지면 다시 확인한다. 실패·차단·미확인 finding이 남거나 대상이 정해지지 않았으면 push 대기다. push 후 원격 SHA read-back 전에는 게시 완료라고 하지 않는다.
+- 최초 push로 실행되는 실제 CI는 push 전 로컬 검증과 구분하고 결과 확인 전 Task/Jira 완료로 승격하지 않는다. 이 지시는 main 병합·타인 branch 정리·강제 갱신·실모델·GMS·전원 실행 승인으로 확대하지 않는다.

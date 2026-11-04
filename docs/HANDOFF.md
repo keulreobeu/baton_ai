@@ -3,7 +3,8 @@
 
 ```text
 repo: C:/Users/SSAFY/Desktop/baton_ai/.local_runtime/worktrees/qw-status-20261104
-ref: codex/baton-qw-status-20261104; 기능c39861ba+Claude SDD c807ccf2, 통합8fe408e7; 재개시HEAD확인
+ref: codex/baton-qw-status-20261104; 기준HEAD f5d4bb10; 토큰/Git정책후속커밋은재개시HEAD확인
+handoff: Codex → Codex; 2026-11-04 새 채팅 재개, 토큰은측정문서참조
 task/status: TASK-QW-STATUS-001 / KAN-47, 로컬검증 완료·실제CI대기(in_progress); SDD KAN-45도CI대기
 goal/order: quota-window 보완→후속분리 작업, POWER는P0마지막; 작업자동분배P1
 done: status trigger_status(PENDING/MISSING/기록우선), read-only조회, 독립review no_findings; Claude결과병합
@@ -12,8 +13,8 @@ scope: 이번기능src/baton/quota_window.py와신규test/계약; SDD파서추�
 checks: 기능전체214/skip1 PASS(병합전); 통합관련36/skip0·SDD추적PASS
 pending: 실제CI·첫실핑·OS등록/전원미검증; SDD한계는docs/sdd/validation.md참조
 inputs: docs/tasks/TASK-QW-STATUS-001.md; docs/validation/qw-status.md; 기존HANDOFF다음후보
-usage: 합성원장·fake clock/runner; 실데이터0, 이번구간토큰미측정(unknown)
-rules: AGENTS.md; GMS·실모델·등록·종료·원격Git별도승인, jipdam읽기전용, 원본Claude branch보존
+usage: 이번재개메인 427,719토큰/8회(중간집계); docs/measurements/token-resume-baseline-20261104.md
+rules: AGENTS.md; GMS·실모델·등록·종료보류; 완료단위자동commit/push전전체점검; jipdam읽기전용·Claude branch보존
 ```
 <!-- BATON_RESUME_END -->
 

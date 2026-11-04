@@ -115,3 +115,85 @@ POWER·Provider·Backup 구현은 이 SDD 마감 인계 범위 밖이며 P0 사�
 2026-11-04 regex 독립 재검토를 3회 진행해 최종 no_findings를 받았다. 코드 변경은 꼬리 토큰 1개와 테스트 2개다.
 목록·주석 추적 시도는 fail-open을 만들어 폐기했다. 근거는 docs/sdd/validation.md의 2026-11-04 재검토 절이다.
 전체 206개 PASS(skip6/1), SDD 26개 PASS. 실제 CI가 남아 있어 상태는 in_progress를 유지한다.
+
+
+## 2026-11-04 Codex → Codex 인계 토큰 기록 / KAN-45
+
+사용자 요청으로 HANDOFF/짧은 템플릿에 host 방향을 표시하고 기존 토큰 측정 문서에 예상/실측 대조를 추가했다.
+범위는 docs/HANDOFF.md, docs/templates/handoff.md, docs/measurements/token-resume-baseline-20261104.md와 이 Task다.
+새 제품/SDD 정책/런타임 변경이 아닌 기존 scope의 증거 문서 보완이다. 실제 모델 호출0, Git 쓰기0.
+Claude 기존13회 표는 보존하고 정확한 시각으로 재집계한14회는 별도 표에 기록했다. 새 세션 절감 실측은 미확인이다.
+Codex → Codex는 이번 새 채팅의 usage 중간 스냅샷이며 이후 호출/최종 응답은 제외했다.
+원본 로그는 로컬에서 읽기만 하며 Git에 넣지 않는다. docs 측정 기록만 보관한다.
+검증: 문서 카드/링크/수식·원본 usage 대조 및 scripts/check_sdd.py --base f5d4bb10, git diff --check (아래 실행 결과 참조).
+실제 CI 미실행과 기존 Task in_progress는 유지한다. 위키 SKIP: BATON 내부 측정 기록으로 로컬 문서가 정본이다.
+
+실행 결과: SDD 정적 계약 검사 PASS(변경4파일, provider_calls=0), git diff --check PASS.
+카드952자/17줄, 인계 방향/링크/계산식/usage8회 단조증가와 합계 일치 PASS.
+HANDOFF의 BATON_RESUME_END 이후 기존 이력은 byte 단위 동일하다. 런타임 변경이 없어 회귀는 반복하지 않았다.
+
+
+## 2026-11-04 자동 커밋 / push 전 전체 점검 정책 — KAN-45
+
+사용자 현재 요청을 AGENTS.md 공통 Git 규칙에 기록했다. 검증된 로컬 작업 단위는 자동 커밋하고,
+원격 대상이 정해진 push는 기존 미게시 커밋 전체 및 최종 후보의 검증/승인 범위를 확인한 뒤 실행한다.
+이 절은 기존 원격 보류 기록보다 현재 요청 범위에서 우선하며 main 병합·branch 삭제를 승인하지 않는다.
+변경 scope: AGENTS.md와 이 Task, 직전 완료 문서4개 중 이 Task를 제외한3개(총5파일).
+기존 Jira/Task CI 대기는 유지한다. push 대상/Claude 정리 결과가 확정되지 않은 현재는 local commit까지만 수행한다.
+Git 전담은 BATON local-only 경로의 별도 worker가 맡는다. Jipdam 전용 harness 역할을 BATON에 강제로 적용하지 않는다.
+독립 검토와 기존17개 미게시 커밋 감사·최종 후보 검증은 아래 결과를 따른다.
+
+
+### push 사전 감사 — 기존 미게시17개
+
+기준 원격 main2705fd38(직전 GitHub read-back), 점검 대상 qw HEAD f5d4bb10 및 Claude ad8f4f8c.
+모든 로컬 branch에서 원격 refs로 도달하지 않는17개를 점검했다. qw 게시 후보에는16개가 들어가며,
+Claude ad8f4f8c는 별도 branch에만 있다. 이 후속 문서 commit은 별도로 포함 파일/검증을 확인한다.
+
+| 커밋 | 점검 범위 |
+|---|---|
+| 40daaf87 | GMS opt-in/fallback |
+| 2b7cbe80 | quota 분류/env_remove |
+| ddd0c697 | quota-window 구현 |
+| bdf5a4d5 | quota-window 문서 |
+| 443a4137 | quota-window 리뷰 반영 |
+| 4e2f205a | AGENTS/인계 |
+| 3b81d100 | SDD 도입/CI |
+| a970925d | SDD baseline/추적 |
+| defff40b | ATX 제목 |
+| 7db3e908 | 토큰/P0 |
+| 876c91a8 | 짧은 인계 |
+| abc4d1ad | SDD 마감 |
+| c807ccf2 | Unicode 구분자 |
+| c39861ba | MISSING |
+| 8fe408e7 | Claude SDD 병합 |
+| ad8f4f8c | 별도 Claude fence 보완 |
+| f5d4bb10 | QW 검증/인계 |
+
+독립 native reviewer가17개 변경 파일/소스 delta/CI·SDD/민감 경로·키 패턴을 읽기 전용 점검했다.
+민감 경로·해당 자격증명 패턴 검출0(완전 부재 보증 아님), 새 AGENTS/Task 정책 P1/P2 없음.
+실행한 parser 반례: qw f5에서는 `requirement_headings("```code``` x\n## F-001-REQ-02")`가 set()로
+요구를 누락하고 Claude ad8에서는 정상 집합을 반환한다. 최신 SDD까지 통합한 후보로 게시하려면
+Claude 변경을 보존·통합·재검증해야 한다. 담당자가 branch 정리 중이므로 이번 문서 작업에서 병합하지 않았다.
+기존 bdf5a4d5의 docs/designs/baton-p0-quota-window.md:99 trailing whitespace1건도 최종 후보에 남는다.
+개별 diff --check는16개 PASS, bdf5a4d5 exit2; 원격 기준 전체 diff --check도 exit2다.
+이번5파일 delta의 diff --check와 과거 전체 history 결과를 혼동하지 않는다.
+기존 P0 문서는 이번 정책 scope 밖이므로 임의 수정하지 않았다. 이 두 항목과 push 대상 정리가 남아 push 대기다.
+
+정규 gstack 런타임은 BATON에 없으며 체크리스트를 수동 적용했다. 외부 CLI 리뷰/모델/원격Git쓰기0.
+최초 전체 회귀는 sandbox TEMP 쓰기 WinError5와 localhost 제한 때문에 FAIL(216개/실패4/오류363/skip1).
+코드 수정 없이 workspace 내부 TEMP와 localhost를 허용한 offline 재실행으로 검증 환경을 분리한다.
+원본 실패를 성공으로 덮지 않고 다음 결과를 별도 기록한다.
+
+
+### 현재 문서 후보 최종 검증
+
+workspace TEMP 재실행: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 <jipdam-venv-python> -B -X utf8 scripts/verify_environment.py --base origin/main`.
+전체216개/144.492초/실패0/오류0/skip1/exit0 PASS. 실제 모델 호출0, live_provider_validation=NOT_RUN,
+verified_evidence_eligible=false(기존 optional skip 유지). 실제 CI/현장 운용을 대신하지 않는다.
+로컬 원본 로그: BATON .local_runtime/validation/commit-policy-20261104/offline-tests.log(비추적).
+새 정책5파일의 SDD 검사 `python -B -X utf8 scripts/check_sdd.py --base f5d4bb10` PASS,
+이번 delta `git diff --check` PASS, 정확한5파일/빈index·카드973자/17줄 PASS.
+독립 reviewer 결과: 새 Git 정책 P1/P2 없음. 기존 history의 미통합 Claude 수정·공백 항목은 앞 절대로 유지한다.
+이 검증된 문서 단위와 직전 토큰 기록을 Git 담당자에게 frozen snapshot으로 인계해 자동 로컬 커밋한다.
+커밋 SHA는 자기 참조를 피하려고 Git log/Jira read-back으로 보고한다. 전체 Task/Jira는 CI 대기로 in_progress다.
