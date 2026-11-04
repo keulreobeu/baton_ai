@@ -115,3 +115,6 @@ POWER·Provider·Backup 구현은 이 SDD 마감 인계 범위 밖이며 P0 사�
 2026-11-04 regex 독립 재검토를 3회 진행해 최종 no_findings를 받았다. 코드 변경은 꼬리 토큰 1개와 테스트 2개다.
 목록·주석 추적 시도는 fail-open을 만들어 폐기했다. 근거는 docs/sdd/validation.md의 2026-11-04 재검토 절이다.
 전체 206개 PASS(skip6/1), SDD 26개 PASS. 실제 CI가 남아 있어 상태는 in_progress를 유지한다.
+
+2026-11-04 재검토에서 남긴 fence opener fail-open을 수정했다(regex 1개, 테스트 1개). 독립 재검토 no_findings, 전체 207개 PASS(skip6/1).
+근거는 docs/sdd/validation.md의 fence opener 절이다. 실제 CI가 남아 있어 상태는 in_progress를 유지한다.

@@ -162,6 +162,17 @@ class SddTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(sdd.requirement_headings(text), expected)
 
+    def test_backtick_fence_info_string_rules(self):
+        # CommonMark: a backtick fence's info string has no backtick, so these lines are text, not fences.
+        heading = {"F-001-REQ-02"}
+        rows = [("```code``` x\n## F-001-REQ-02", heading), ("```a`b\n## F-001-REQ-02", heading), ("   ````x``\n## F-001-REQ-02", heading),
+                ("```python\n## F-001-REQ-02\n```", set()), ("``` \n## F-001-REQ-02\n```", set()), ("````\n## F-001-REQ-02\n````", set()),
+                ("~~~x`y\n## F-001-REQ-02\n~~~", set()), ("~~~x~~~\n## F-001-REQ-02\n~~~", set()),
+                ("```python\nx\n```\n## F-001-REQ-02", heading), ("``x\n## F-001-REQ-02", heading)]
+        for text, expected in rows:
+            with self.subTest(text=text):
+                self.assertEqual(sdd.requirement_headings(text), expected)
+
     def test_list_and_comment_blocks_stay_fail_closed(self):
         # The checker does not model list items or HTML blocks. Tracking them with regexes hid every
         # later heading when a list ended, so it must keep seeing headings here (documented limitation).
