@@ -111,3 +111,7 @@ AGENTS에서 HANDOFF 상단 요약 우선 읽기·필요한 경로만 확장하�
 
 POWER·Provider·Backup 구현은 이 SDD 마감 인계 범위 밖이며 P0 사용자 결정은 보존한다.
 인계 문서 점검 상태: PASS. 요약1022자/17줄·12필드·참조·기존이력 보존·SDD scope4·공백 확인. 실제 리뷰/CI/추가 테스트는 미실행.
+
+2026-11-04 regex 독립 재검토를 3회 진행해 최종 no_findings를 받았다. 코드 변경은 꼬리 토큰 1개와 테스트 2개다.
+목록·주석 추적 시도는 fail-open을 만들어 폐기했다. 근거는 docs/sdd/validation.md의 2026-11-04 재검토 절이다.
+전체 206개 PASS(skip6/1), SDD 26개 PASS. 실제 CI가 남아 있어 상태는 in_progress를 유지한다.
