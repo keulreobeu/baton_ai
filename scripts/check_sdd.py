@@ -132,7 +132,7 @@ def requirement_headings(text):
             if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + "{" + str(fence[1]) + r",}[ \t]*", line):
                 fence = None
             continue
-        opening = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        opening = re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", line)
         if opening:
             marker = opening.group(1); fence = (marker[0], len(marker)); continue
         match = re.match(r"^ {0,3}#{1,6}[ \t]+([A-Z][A-Z0-9-]*-(?:REQ|AC)-[A-Za-z0-9_-]+)(?:\s|$)", line)

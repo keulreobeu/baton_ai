@@ -116,6 +116,8 @@ POWER·Provider·Backup 구현은 이 SDD 마감 인계 범위 밖이며 P0 사�
 목록·주석 추적 시도는 fail-open을 만들어 폐기했다. 근거는 docs/sdd/validation.md의 2026-11-04 재검토 절이다.
 전체 206개 PASS(skip6/1), SDD 26개 PASS. 실제 CI가 남아 있어 상태는 in_progress를 유지한다.
 
+2026-11-04 재검토에서 남긴 fence opener fail-open을 수정했다(regex 1개, 테스트 1개). 독립 재검토 no_findings, 전체 207개 PASS(skip6/1).
+근거는 docs/sdd/validation.md의 fence opener 절이다. 실제 CI가 남아 있어 상태는 in_progress를 유지한다.
 
 ## 2026-11-04 Codex → Codex 인계 토큰 기록 / KAN-45
 
@@ -197,3 +199,8 @@ verified_evidence_eligible=false(기존 optional skip 유지). 실제 CI/현장 
 독립 reviewer 결과: 새 Git 정책 P1/P2 없음. 기존 history의 미통합 Claude 수정·공백 항목은 앞 절대로 유지한다.
 이 검증된 문서 단위와 직전 토큰 기록을 Git 담당자에게 frozen snapshot으로 인계해 자동 로컬 커밋한다.
 커밋 SHA는 자기 참조를 피하려고 Git log/Jira read-back으로 보고한다. 전체 Task/Jira는 CI 대기로 in_progress다.
+
+## 2026-11-04 브랜치 통합 / KAN-45
+
+qw-status c39d807과 sdd-fence ad8f4f8을 codex/baton-integration-20261104에 로컬 병합했다. 측정 문서와 이 Task의 끝부분 추가 충돌은 양쪽 내용을 모두 보존해 해결했다.
+통합 결과 verify_environment 전체 217개 PASS(skip6), check_sdd --base main PASS. 오프라인 검증이며 실제 CI가 남아 있어 상태는 in_progress를 유지한다. main 병합과 push는 하지 않았다.

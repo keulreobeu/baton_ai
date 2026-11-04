@@ -2,15 +2,15 @@
 # BATON 다음 작업 인계
 
 ```text
-repo: C:/Users/SSAFY/Desktop/baton_ai/.local_runtime/worktrees/qw-status-20261104
-ref: codex/baton-qw-status-20261104; 기준HEAD f5d4bb10; 토큰/Git정책후속커밋은재개시HEAD확인
+repo: C:/Users/SSAFY/Desktop/baton_ai
+ref: codex/baton-integration-20261104; qw-status c39d807+sdd-fence ad8f4f8 통합; 재개시HEAD확인
 handoff: Codex → Codex; 2026-11-04 새 채팅 재개, 토큰은측정문서참조
 task/status: TASK-QW-STATUS-001 / KAN-47, 로컬검증 완료·실제CI대기(in_progress); SDD KAN-45도CI대기
 goal/order: quota-window 보완→후속분리 작업, POWER는P0마지막; 작업자동분배P1
 done: status trigger_status(PENDING/MISSING/기록우선), read-only조회, 독립review no_findings; Claude결과병합
 next: TASK-PROFILE 후보의 하드코딩/범위 확인; 실제CI는게시승인후
 scope: 이번기능src/baton/quota_window.py와신규test/계약; SDD파서추가수정은별도Task
-checks: 기능전체214/skip1 PASS(병합전); 통합관련36/skip0·SDD추적PASS
+checks: 통합후 전체217/skip6 PASS·SDD추적PASS(오프라인)
 pending: 실제CI·첫실핑·OS등록/전원미검증; SDD한계는docs/sdd/validation.md참조
 inputs: docs/tasks/TASK-QW-STATUS-001.md; docs/validation/qw-status.md; 기존HANDOFF다음후보
 usage: 이번재개메인 427,719토큰/8회(중간집계); docs/measurements/token-resume-baseline-20261104.md

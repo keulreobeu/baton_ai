@@ -104,5 +104,14 @@ L3 완료용 independent_review 메타데이터도 아직 연결되지 않았다
 
 알려진 한계(수정하지 않음, `test_list_and_comment_blocks_stay_fail_closed`로 고정):
 - 목록 안 fence와 HTML 주석 안의 ID 제목은 제목으로 센다. 미등록 ID는 거부되므로 안전하지만, 등록 ID의 유일한 제목이 그 안에 있으면 MISSING 검사를 통과한다.
-- 0칸 들여쓰기 `` ```code``` x `` 줄은 fence로 처리되어 뒤 제목을 숨긴다. 기존부터 있는 실제 fail-open이며 후속 Task 대상이다.
+- 0칸 들여쓰기 `` ```code``` x `` 줄이 뒤 제목을 숨기던 fail-open은 아래 fence opener 수정에서 해결했다.
 - `## ID: title`, 인용·목록 안 제목, setext 제목은 인식하지 않는다. 규칙 범위는 계약 판단이 필요하다.
+
+## 2026-11-04 fence opener 수정
+
+CommonMark 규칙대로 백틱 fence의 info string에 백틱이 있으면 fence로 보지 않는다. 코드 변경은 opener regex 1개다.
+RED 3건 후 GREEN, 변이 3개를 테스트가 잡았다. 전체 207개: system 143.080초/skip6, venv 145.086초/skip1, 둘 다 exit0(`PYTHONPATH=src`). SDD 27개 skip0.
+독립 재검토(c807ccf+작업트리): no_findings. 8종 줄 조합 37,448개 차등 비교에서 HEAD와 달라진 3,546건은 모두 HEAD가 규칙과 어긋난 경우였다.
+비교 기준은 손으로 쓴 스캐너이며 실제 Markdown 파서가 아니다. 목록·인용·HTML 문맥은 이 비교에 포함하지 않았다.
+문서 판정 변화는 이 저장소 19개, jipdam 384개에서 0건이다.
+남은 fail-open: `splitlines()`가 `\x0c`, `\u2028`에서도 줄을 나눠 `x\x0c```` 같은 입력이 fence를 열 수 있다. 이번 변경과 무관하게 기존부터 있다.
