@@ -8,7 +8,7 @@ Source and test hashes were compared before and after the run and did not change
 
 | Check | Result |
 | --- | --- |
-| `python -B -X utf8 -m unittest discover -s tests -t .` | 297 run, 0 failures, 0 errors, 6 skipped (GMS tests need the Jipdam venv) |
+| `python -B -X utf8 -m unittest discover -s tests -t .` | 299 run, 0 failures, 0 errors, 6 skipped (GMS tests need the Jipdam venv) |
 | `python -B -X utf8 scripts/qualify_flow_package.py` | PASS: isolated wheel import, CLI without Orca, doctor writes no state, skill integrity, 0 provider calls |
 | `python -B -X utf8 scripts/check_sdd.py` | PASS, static contract check only |
 
@@ -113,5 +113,30 @@ Still NOT_RUN:
 - live cancellation and an unknown stop;
 - Codex and Antigravity workers;
 - CI, because nothing has been pushed.
+
+## Pre-push audit (2026-11-05)
+
+User-approved push of `codex/baton-flow-20261105` to `origin`. No merge to `main`. The repository is public, so this publishes every commit below. The user was told this before approving.
+
+Real remote refs were read with `git ls-remote`: only `main` at `2705fd3`. Every commit unreachable from them was listed and its added lines scanned one commit at a time, so content removed by a later commit still counts.
+
+- No API keys, tokens, private keys, DB, log, binary or `.env` files.
+- The 3 pattern hits in `2c69631` are deliberate fixtures in `tests/test_flow_runtime.py`.
+- Emails are `.invalid` fixtures or false positives.
+- Upstream pstack text is MIT, with the notice kept in `skills/baton-flow/LICENSE.pstack`.
+- Published on purpose: `C:\Users\SSAFY\...` paths in `AGENTS.md`, `docs/HANDOFF.md` and one design document, a `kwulreobeu.atlassian.net` link in `docs/sdd/validation.md`, and the author email already public on `main`.
+
+CI-equivalent runs on clean clones with a simulated first-push event and no `GIT_ALLOW_PROTOCOL`. The first round failed on Windows and exposed two real defects, both fixed in `50783d6`:
+
+- A clean Windows checkout converted hash-locked skill files to CRLF, so the integrity check failed. `.gitattributes` now keeps them byte-exact.
+- `os.replace` failed intermittently with `PermissionError` on real paths, the same error seen once in the skill rename. `replace_file` now retries a bounded number of times. The transient cause itself is unconfirmed.
+
+| Environment | Result at `50783d6` |
+| --- | --- |
+| Windows, Python 3.11 | PASS, 298 tests, skip 6, 419 s |
+| Windows, Python 3.12 | PASS, 298 tests, skip 6, 410 s |
+| Ubuntu 24.04 (WSL), Python 3.12 | PASS, 298 tests, skip 6, 119 s |
+
+One test added in `50783d6` sat under the `__main__` guard and never ran. It was moved into its class and now fails when `.gitattributes` is emptied, giving 299 tests on Windows Python 3.12. Ubuntu with Python 3.11 was not reproduced. Real CI has not run yet.
 
 The external Claude design review was not used: one call timed out, and sending source to it was refused by the approval check. GMS, OS registration and remote publication remain excluded. No CI has run because nothing was pushed.

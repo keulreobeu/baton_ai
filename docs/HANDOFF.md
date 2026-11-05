@@ -3,14 +3,14 @@
 
 ```text
 repo: C:/Users/SSAFY/Desktop/baton_ai
-ref: codex/baton-flow-20261105; 재개시HEAD확인, 미push
+ref: codex/baton-flow-20261105; 재개시HEAD확인, 브랜치 push 승인됨, main 병합은 사용자 나중 확인
 handoff: Codex → Claude → 다음 담당; 2026-11-05 Codex 한도로 중단분을 Claude가 이어서 마침
 task/status: TASK-FLOW-001 / KAN-48, 오프라인검증 완료(in_progress); KAN-45/47 CI대기 유지
 goal/order: Orca 실연결 검증→push/CI 승인 시 게시, POWER는P0마지막
 done: Orca 실행연결·작업/worktree소유권·검증증거·로컬후보·통합게이트·baton-flow 스킬, 독립리뷰 no_findings
-next: push·CI 승인 판단; 이후 실제 취소·FAIL 리뷰·Codex worker 검증은 모델호출 승인필요; docs/validation/multi-agent-flow.md
+next: 실제 CI 결과 확인 뒤 main 병합 판단(사용자); 실제 취소·FAIL 리뷰·Codex worker 검증은 모델호출 승인필요; docs/validation/multi-agent-flow.md
 scope: docs/tasks/TASK-FLOW-001.md의 scope
-checks: 전체297/skip6 PASS·패키지 PASS·SDD PASS(모델호출0); 실제 Orca 1.4.248 Claude worker 3회로 author·review·approve 전체 게이트 PASS; 테스트에 GIT_ALLOW_PROTOCOL=file 필요
+checks: 전체299/skip6 PASS·깨끗한 clone CI재현(Win3.11·3.12, Ubuntu) PASS·패키지 PASS·SDD PASS(모델호출0); 실제 Orca 1.4.248 Claude worker 3회로 author·review·approve 전체 게이트 PASS; 테스트에 GIT_ALLOW_PROTOCOL=file 필요
 pending: 실제 취소·FAIL 리뷰·다중후보·Codex worker·CI 미검증; Orca CLI는 PATH에 없어 ORCA_CLI_COMMAND 필요; 권한 게이트는 Orca 터미널에서만 신뢰
 inputs: docs/specs/FLOW-001.md; docs/validation/multi-agent-flow.md
 rules: AGENTS.md; GMS·실모델·등록·종료보류; 완료단위자동commit/push전전체점검; jipdam읽기전용

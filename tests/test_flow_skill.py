@@ -135,12 +135,12 @@ class FlowSkillTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertEqual(json.loads(output.getvalue())["status"], "installed")
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_hashed_skill_files_keep_their_bytes_on_checkout(self):
         root = Path(__file__).resolve().parents[1]
         for name in ("skills/baton-flow/SKILL.md", "skills/baton-flow/references/source-lock.json", "tooling/pstack-source.json"):
             result = subprocess.run(["git", "-C", str(root), "check-attr", "text", "--", name], capture_output=True, text=True)
             self.assertTrue(result.stdout.strip().endswith(": text: unset"), name)
+
+
+if __name__ == "__main__":
+    unittest.main()

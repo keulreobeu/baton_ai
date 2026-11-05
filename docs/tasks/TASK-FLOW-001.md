@@ -17,7 +17,7 @@ command = "python -B -X utf8 -m unittest discover -s tests -t ."
 result = "passed"
 evidence = "docs/validation/multi-agent-flow.md"
 acs = ["FLOW-001-AC-01", "FLOW-001-AC-02", "FLOW-001-AC-03", "FLOW-001-AC-04", "FLOW-001-AC-05", "FLOW-001-AC-06", "FLOW-001-AC-07", "FLOW-001-AC-08"]
-tests_run = 297
+tests_run = 299
 failures = 0
 errors = 0
 skipped = 6
@@ -35,4 +35,4 @@ acs = ["FLOW-001-AC-07", "FLOW-001-AC-08"]
 
 Approved plan D1–D7 is the implementation contract. Claude development/review calls are now permitted; tests remain offline/fake. No remote push/merge, GMS, OS registration or Jipdam edits. Completed units are saved by the dedicated Git agent after verification. Live Orca/provider readiness remains separate.
 
-Offline regression, package qualification and independent review are complete. Read-only measurement against real Orca 1.4.248 found and fixed two defects fake receipts could not show. Real Claude workers then ran the full author, review, evidence and approval path on Orca. The Task stays in_progress until CI runs, which needs a push. Live cancellation and other providers remain unqualified; see the validation record. See the validation record for known limits.
+Offline regression, package qualification and independent review are complete. Read-only measurement against real Orca 1.4.248 found and fixed two defects fake receipts could not show. Real Claude workers then ran the full author, review, evidence and approval path on Orca. The pre-push audit is in the validation record. The Task stays in_progress until real CI is confirmed. Live cancellation and other providers remain unqualified. See the validation record for known limits.
