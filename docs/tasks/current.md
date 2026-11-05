@@ -1,5 +1,11 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-05 KAN-48
+
+- [TASK-FLOW-001](TASK-FLOW-001.md): 승인한 D1–D7의 Orca 실행 연결·소유권·검증 증거·로컬 후보·스킬 포팅 구현과 오프라인 검증 완료. 실제 Orca 검증·CI는 미실행.
+- [검증 기록](../validation/multi-agent-flow.md)에 오프라인 결과와 실제 연결 준비 게이트를 구분한다.
+- KAN-45/47의 기존 CI 대기, POWER 보류, GMS 보류, 집담 원본 불변은 유지한다.
+
 ## 최신 상태 — 2026-11-04 KAN-47
 
 - [TASK-QW-STATUS-001](TASK-QW-STATUS-001.md): MISSING 표시 구현·독립검토·통합 관련36개 PASS.

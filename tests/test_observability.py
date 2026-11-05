@@ -19,6 +19,7 @@ from baton.managed_cli import main
 from baton.observability import (CodexUsageCollector, GATES, MetricsStore,
                                          hashed, normalize_usage)
 from baton.orchestrator import Orchestrator
+from tests.test_flow_evidence import attest
 
 
 class NormalizationTests(unittest.TestCase):
@@ -344,6 +345,10 @@ class ManagedObservationTests(unittest.TestCase):
         context = self.root / "outputs/budongi_mvp_temp/src/context.py"
         context.parent.mkdir(parents=True)
         context.write_text("VALUE = 'committed execution context'\n", encoding="utf-8")
+        # Project-specific context roots are explicit configuration, never BATON defaults.
+        (self.root / "tooling").mkdir()
+        (self.root / "tooling/baton-project.json").write_text(
+            json.dumps({"context_roots": ["src", "tests", "docs", "outputs/budongi_mvp_temp/src"]}), encoding="utf-8")
         (self.root / ".gitignore").write_text(".local_runtime/\n__pycache__/\n")
         git(self.root, "add", "."); git(self.root, "commit", "-m", "fixture")
         self.store = ManagedStore(self.root / ".local_runtime/managed", self.root)
@@ -362,9 +367,16 @@ class ManagedObservationTests(unittest.TestCase):
         return Provider()
 
     def test_shadow_keeps_approval_semantics_and_reports_after_restart(self):
-        result = Orchestrator(self.store, {"codex": self.provider()}).run("TASK-OBS")
+        provider = self.provider()
+        original = provider.execute
+        def execute(task, context, cwd, stop):
+            (cwd / "tests/test_extra.py").write_text("import unittest\nclass Extra(unittest.TestCase):\n def test_extra(self): pass\n", encoding="utf-8", newline="\n")
+            return original(task, context, cwd, stop)
+        provider.execute = execute
+        result = Orchestrator(self.store, {"codex": provider}).run("TASK-OBS")
         self.assertEqual(result["state"], "REVIEW_REQUIRED")
         self.assertEqual(result["measurement"]["complete_run_tokens"], 12)
+        attest(self.store, self.root, "TASK-OBS")
         self.store.approve("TASK-OBS", "operator")
         reopened = ManagedStore(self.store.directory, self.root)
         r = reopened.export("TASK-OBS")

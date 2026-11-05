@@ -58,7 +58,9 @@ class ManagedHarnessTests(unittest.TestCase):
         self.assertTrue(result["result"]["validation_passed"])
         self.assertEqual(git(self.root, "status", "--porcelain").strip(), "")
         reopened = ManagedStore(self.store.directory, self.root)
-        self.assertEqual(reopened.approve("TASK-ONE", "operator")["state"], "COMPLETED")
+        with self.assertRaisesRegex(HarnessError, "independent_review_required"):
+            reopened.approve("TASK-ONE", "operator")
+        self.assertEqual(reopened.get("TASK-ONE")["state"], "REVIEW_REQUIRED")
         self.assertTrue((self.store.directory / "reports/TASK-ONE.json").exists())
         self.assertTrue((self.store.directory / "events.jsonl").exists())
 
@@ -220,7 +222,8 @@ class ManagedHarnessTests(unittest.TestCase):
         from baton.isolation import repository_lock
         other = ManagedStore(self.root / ".local_runtime/another-state", self.root)
         other.create(self.body)
-        with repository_lock(self.root):
+        from baton.runtime import execution_lock
+        with execution_lock(self.root, "task", "TASK-ONE"):
             with self.assertRaisesRegex(HarnessError, "worker_busy"): Orchestrator(other, {"mock": MockProvider()}).run("TASK-ONE")
         row = self.store.claim("TASK-ONE")
         self.store.update("TASK-ONE", row["lease"], "RETRYING", release=True)

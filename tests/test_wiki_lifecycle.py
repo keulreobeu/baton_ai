@@ -286,16 +286,19 @@ class WikiLifecycleTests(unittest.TestCase):
         store = ManagedStore(self.root / ".local_runtime/harness-managed", self.root)
         task = {"task_id": "TASK-AUTOMATIC", "objective": "Verify a changed operating contract",
                 "scope": {"allowed_paths": ["docs"]}, "acceptance_criteria": ["AC1"],
-                "validation": [{"argv": ["git", "diff", "--check"], "acs": ["AC1"]}],
+                "validation": [{"argv": ["python", "-m", "unittest", "discover", "-s", "docs"], "acs": ["AC1"]}],
                 "execution": {"preferred_provider": "mock"}, "safety": {"require_approval": False}}
         store.create(task)
         class Provider:
             def execute(self, task, context, cwd, stop):
-                (cwd / "docs/operations.md").write_text("Updated operating contract\n", encoding="utf-8")
+                (cwd / "docs/operations.md").write_text("Updated operating contract\n", encoding="utf-8", newline="\n")
+                (cwd / "docs/test_operations.py").write_text("import unittest\nclass Docs(unittest.TestCase):\n def test_docs(self): pass\n", encoding="utf-8", newline="\n")
                 return ExecutionResult()
         row = Orchestrator(store, {"mock": Provider()}).run("TASK-AUTOMATIC")
         self.assertEqual(row["state"], "REVIEW_REQUIRED")
         self.assertEqual(row["result"]["wiki"]["action"], "REVIEW_REQUIRED")
+        from tests.test_flow_evidence import attest
+        attest(store, self.root, "TASK-AUTOMATIC")
         with self.assertRaisesRegex(HarnessError, "wiki_review_required"):
             store.approve("TASK-AUTOMATIC", "operator")
         event = self.event(resolves=row["result"]["wiki"]["event_id"], task_id="TASK-AUTOMATIC",

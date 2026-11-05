@@ -21,18 +21,20 @@ def main(argv=None, *, workspace=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     start = commands.add_parser("start"); start.add_argument("--request", required=True)
-    for name in ("snapshot", "checkpoint", "status", "verify", "refresh-base", "prepare-finish", "receipt"):
+    start.add_argument("--local-only", action="store_true", help="Create a local publisher at source HEAD without remote access.")
+    for name in ("snapshot", "checkpoint", "local-candidate", "status", "verify", "refresh-base", "prepare-finish", "receipt"):
         command = commands.add_parser(name); command.add_argument("--task", required=True)
         if name == "snapshot": command.add_argument("--stage", required=True)
-        if name == "checkpoint": command.add_argument("--snapshot")
+        if name in {"checkpoint", "local-candidate"}: command.add_argument("--snapshot")
         if name == "prepare-finish": command.add_argument("--documentation", required=True)
         if name == "receipt": command.add_argument("--request", required=True)
     args = parser.parse_args(argv)
     try:
         lifecycle = GitLifecycle(workspace or Path.cwd())
-        if args.command == "start": result = lifecycle.start(_json(args.request))
+        if args.command == "start": result = lifecycle.start(_json(args.request), local_only=args.local_only)
         elif args.command == "snapshot": result = lifecycle.snapshot(args.task, args.stage)
         elif args.command == "checkpoint": result = lifecycle.checkpoint(args.task, args.snapshot)
+        elif args.command == "local-candidate": result = lifecycle.local_candidate(args.task, args.snapshot)
         elif args.command == "status": result = lifecycle.status(args.task)
         elif args.command == "verify": result = lifecycle.verify(args.task)
         elif args.command == "refresh-base": result = lifecycle.refresh_base(args.task)
