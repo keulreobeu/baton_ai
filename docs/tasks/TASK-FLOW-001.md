@@ -35,4 +35,4 @@ acs = ["FLOW-001-AC-07", "FLOW-001-AC-08"]
 
 Approved plan D1–D7 is the implementation contract. Claude development/review calls are now permitted; tests remain offline/fake. No remote push/merge, GMS, OS registration or Jipdam edits. Completed units are saved by the dedicated Git agent after verification. Live Orca/provider readiness remains separate.
 
-Offline regression, package qualification and independent review are complete. Read-only measurement against real Orca 1.4.248 found and fixed two defects fake receipts could not show. The Task stays in_progress until a real worker run and CI, neither of which has happened. See the validation record for known limits.
+Offline regression, package qualification and independent review are complete. Read-only measurement against real Orca 1.4.248 found and fixed two defects fake receipts could not show. One real Claude worker then ran the author path end to end on Orca. The Task stays in_progress until the live reviewer dispatch and CI, neither of which has happened. See the validation record for known limits.
