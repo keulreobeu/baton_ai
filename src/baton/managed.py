@@ -9,7 +9,7 @@ import sqlite3
 import time
 import uuid
 
-from .contracts import HarnessError, canonical_path, digest, encode, identifier, overlaps, safe
+from .contracts import HarnessError, canonical_path, digest, encode, identifier, overlaps, replace_file, safe
 
 ACTIVE = {"PLANNING", "RUNNING", "VALIDATING", "RETRYING"}
 TERMINAL = {"COMPLETED", "CANCELLED"}
@@ -411,10 +411,10 @@ class ManagedStore:
         # Unique temporary file + replace; snapshots are derivative, DB remains authoritative.
         target = directory / (identifier(task) + ".json")
         tmp = target.with_suffix("." + uuid.uuid4().hex + ".tmp")
-        tmp.write_text(encode(report), encoding="utf-8"); tmp.replace(target)
+        tmp.write_text(encode(report), encoding="utf-8"); replace_file(tmp, target)
         lines = self.directory / "events.jsonl"
         tmp = lines.with_suffix("." + uuid.uuid4().hex + ".tmp")
-        tmp.write_text("".join(encode(e) + "\n" for e in self.events()), encoding="utf-8"); tmp.replace(lines)
+        tmp.write_text("".join(encode(e) + "\n" for e in self.events()), encoding="utf-8"); replace_file(tmp, lines)
         return report
 
     def auto_commit_setting(self, enabled=None):

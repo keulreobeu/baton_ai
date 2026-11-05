@@ -18,7 +18,7 @@ import time
 import uuid
 
 from .autocommit import eligible_paths, scan_content
-from .contracts import HarnessError, digest, identifier
+from .contracts import HarnessError, digest, identifier, replace_file
 from .isolation import repository_lock
 
 
@@ -41,7 +41,7 @@ def _write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    replace_file(temporary, path)
 
 
 def _path(name):

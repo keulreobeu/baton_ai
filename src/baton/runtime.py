@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 
-from .contracts import HarnessError, canonical_path, digest, encode, identifier, safe
+from .contracts import HarnessError, canonical_path, digest, encode, identifier, replace_file, safe
 from .isolation import check_scope, git, snapshot
 
 
@@ -246,7 +246,7 @@ def _reservation(store, task_id, *, release=False, check_only=False, role="autho
         return
     if not release and not check_only:
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(encode(owner), encoding="utf-8"); tmp.replace(path)
+        tmp.write_text(encode(owner), encoding="utf-8"); replace_file(tmp, path)
 
 
 def assert_no_external_assignment(store, task_id, worktree=None):
@@ -273,7 +273,7 @@ def _bind_reserved_workspace(store, task_id, role, workspace):
                     if assigned.get("worktree_path") and Path(assigned["worktree_path"]).resolve() == worktree:
                         raise HarnessError("external_worktree_already_assigned")
             saved["worktree_path"] = str(worktree)
-            tmp = path.with_suffix(".tmp"); tmp.write_text(encode(saved), encoding="utf-8"); tmp.replace(path)
+            tmp = path.with_suffix(".tmp"); tmp.write_text(encode(saved), encoding="utf-8"); replace_file(tmp, path)
 
 
 def _reserve_slot(store, task_id, role, cap, *, release=False):

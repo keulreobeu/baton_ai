@@ -709,3 +709,19 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         client.settle("dispatch-1"); client.workers["dispatch-1"]["ownership_state"] = "released"
         ingest(self.store, "ORCA", self.receipt(), client)
         self.assertEqual(Orchestrator(self.store).verify("ORCA")["state"], "REVIEW_REQUIRED")
+
+    def test_atomic_replace_survives_a_briefly_refused_file(self):
+        from baton.contracts import replace_file
+        source, target = self.root / "replace.tmp", self.root / "replace.json"
+        source.write_text("x", encoding="utf-8")
+        original = Path.replace
+        attempts = []
+        def refuse_once(path, destination):
+            attempts.append(path)
+            if len(attempts) == 1: raise PermissionError("busy")
+            return original(path, destination)
+        with patch("pathlib.Path.replace", refuse_once), patch("baton.contracts.time.sleep"):
+            replace_file(source, target)
+        self.assertEqual((len(attempts), target.read_text(encoding="utf-8")), (2, "x"))
+        with patch("pathlib.Path.replace", side_effect=PermissionError("held")), patch("baton.contracts.time.sleep"):
+            with self.assertRaises(PermissionError): replace_file(target, source)
