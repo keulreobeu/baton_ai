@@ -8,7 +8,7 @@ Source and test hashes were compared before and after the run and did not change
 
 | Check | Result |
 | --- | --- |
-| `python -B -X utf8 -m unittest discover -s tests -t .` | 292 run, 0 failures, 0 errors, 6 skipped (GMS tests need the Jipdam venv) |
+| `python -B -X utf8 -m unittest discover -s tests -t .` | 297 run, 0 failures, 0 errors, 6 skipped (GMS tests need the Jipdam venv) |
 | `python -B -X utf8 scripts/qualify_flow_package.py` | PASS: isolated wheel import, CLI without Orca, doctor writes no state, skill integrity, 0 provider calls |
 | `python -B -X utf8 scripts/check_sdd.py` | PASS, static contract check only |
 
@@ -16,11 +16,11 @@ Run with `GIT_ALLOW_PROTOCOL=file` so the fixtures can push to temporary local b
 
 An earlier full run on this branch had 5 failing tests. Three used bare `approve` and now go through the required proof chain (`attest` in `tests/test_flow_evidence.py`). One relied on a Jipdam context root and now configures it through `tooling/baton-project.json`; both are the intended FLOW-001 changes. The fifth was a Windows `PermissionError` on the skill stage rename, seen once and not reproduced in 8 repeats, so its cause is unconfirmed. `_publish_stage` now retries a bounded number of times.
 
-Each fix from review was checked by reverting it in a private copy: all 19 reverts failed their regression test. One revert first survived, which exposed an untested reset, and the test was strengthened until it failed.
+Each fix from review was checked by reverting it in a private copy: all 25 reverts failed their regression test. One revert first survived, which exposed an untested reset, and the test was strengthened until it failed.
 
 ## Independent review
 
-Six read-only rounds by separate reviewer agents, not the author. Same model family, so this is worker independence, not model diversity. Round 1 covered the whole change; later rounds narrowed to each round of fixes. The sixth, on the last change only, reported `no_findings`.
+Eight read-only rounds by separate reviewer agents, not the author. Same model family, so this is worker independence, not model diversity. Round 1 covered the whole change; later rounds narrowed to each round of fixes. The last, on the final change only, reported `no_findings`.
 
 Defects found and fixed:
 
@@ -39,7 +39,9 @@ Defects found and fixed:
 ## Known limits
 
 - After a deleted workspace, a fresh workspace that fails before start keeps the stale `changed_files`, so retries block with `changes_since_handoff_checkpoint` until cancelled. This fails closed and starts no worker.
-- `previous_dispatch_id` holds only the latest dispatch. Adopting an older one requires an operator mistake, and Orca must still report it as owned.
+- A lost `worktree create` reply leaves an orphan worktree, because the retry creates `<name>-2`. No second worker starts.
+- The `worker_done` body is the worker's claim. Orca checks the sender, and the controller reruns the checks itself.
+- `review_report` reads the newest 100 inbox messages. A report older than that fails closed.
 - `confirmed_not_started` is an operator attestation, not a read-back.
 - If `_reserve_slot` release hits `worker_busy` after settlement, redelivering the same receipt releases it.
 - On Windows a lock-free reader can briefly make a writer's replace fail. Expected to be recoverable; not reproduced.
@@ -47,10 +49,24 @@ Defects found and fixed:
 
 ## Live qualification
 
-NOT_RUN: real Orca coordinator and provider behavior. Fake receipts do not establish live support. To check against real Orca:
+PARTIAL. Measured against a running Orca 1.4.248 with no model call and no new worker. Real coordinator and worker behavior is still NOT_RUN, so live support is not established.
 
-- whether `ownership_state` stays `owned` at `released` (if not, `ingest` blocks every settled worker);
-- whether real transcripts fit the 128 KB response limit (if not, reviews fail closed);
-- whether `worktree create` with the same name succeeds after a lost reply or a deleted workspace.
+Measured from the 21 existing dispatches, read through `OrcaCLI`:
+
+| Question | Result | Consequence |
+| --- | --- | --- |
+| Does `baton runtime doctor` reach Orca? | Yes, with `ORCA_CLI_COMMAND` set. Without it the CLI is not on PATH here and it reports `not_installed`. | Set `ORCA_CLI_COMMAND` outside Orca terminals. |
+| Does `inspect` parse real records? | Yes, 21 of 21, no errors. | None. |
+| Does ownership stay `owned`? | No. All 3 terminal-released workers report `released`, with the owner still equal to the dispatch. | Defect fixed: a finished worker would have been BLOCKED. |
+| Do transcripts fit 128 KB? | Yes, 58 KB at most, but 16 of 21 had `session_not_reported` and all 5 readable ones were clipped (`transcript_payload`), which paging does not clear. | Defect fixed: reviews could never pass. They now read the `worker_done` body. |
+| Is `worktree create` idempotent by name? | No. A repeat succeeds and silently creates a separate `<name>-2`. After removal the name is reusable. | Known limit below. Measured in the `orca-smoke` repo; probe worktrees removed, no residue. |
+
+`review_report` against all 21 real dispatches gave 14 `invalid_review_report` and 7 `review_report_missing`, and no false pass. Those workers did not report in BATON's format, so this proves parsing and fail-closed behavior, not a passing review.
+
+Still NOT_RUN, and needing a real worker (a model call):
+
+- `worker-start` with the adapter's exact arguments, including `--run`. Outside an Orca terminal it also needs `--from`, which the adapter does not pass, so it must run from the coordinator terminal.
+- a reviewer actually sending a `worker_done` body that is only the JSON report;
+- a worker's real terminal transition from `owned` to `released` during `ingest`.
 
 The external Claude design review was not used: one call timed out, and sending source to it was refused by the approval check. GMS, OS registration and remote publication remain excluded. No CI has run because nothing was pushed.

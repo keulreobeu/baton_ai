@@ -95,7 +95,8 @@ def assert_workspace_root(store, path):
         raise HarnessError("invalid_orca_workspace")
 
 
-def register_workspace(store, binding, expected_base):
+def register_workspace(store, binding, expected_base, *, finished=False):
+    # A finished worker's terminal is released, and Orca then reports ownership as released.
     path = workspace_path(binding["workspace_id"])
     if repository_key(path) != repository_key(store.root):
         raise HarnessError("foreign_orca_repository")
@@ -103,7 +104,8 @@ def register_workspace(store, binding, expected_base):
     if git(path, "rev-parse", "HEAD").strip() != expected_base:
         raise HarnessError("orca_workspace_base_changed")
     owner = binding.get("owner_dispatch_id")
-    if not owner or owner != binding.get("dispatch_id") or binding.get("ownership_state") != "owned":
+    allowed = {"owned", "released"} if finished else {"owned"}
+    if not owner or owner != binding.get("dispatch_id") or binding.get("ownership_state") not in allowed:
         raise HarnessError("orca_workspace_ownership_unproven")
     return path
 
@@ -188,29 +190,38 @@ class OrcaCLI:
         return self.call("orchestration", "worker-stop", "--dispatch", dispatch, "--json")
 
     def review_report(self, dispatch):
-        value = self.call("orchestration", "worker-read", "--dispatch", dispatch, "--source", "transcript", "--json")
-        transcript = value.get("transcript") or {}
-        if not isinstance(transcript, dict): raise HarnessError("unsupported_orca_receipt")
-        if (value.get("dispatchId") != dispatch or value.get("source") != "transcript"
-                or value.get("sourceExact") is not True or value.get("contentComplete") is not True
-                or transcript.get("limited") is not False or value.get("clipping")):
-            raise HarnessError("review_transcript_incomplete")
-        messages = transcript.get("messages", [])
-        if not isinstance(messages, list) or any(not isinstance(m, dict) for m in messages):
-            raise HarnessError("unsupported_orca_receipt")
-        assistants = [m for m in messages if m.get("role") == "assistant"]
-        if not assistants: raise HarnessError("review_report_missing")
-        blocks = assistants[-1].get("blocks", [])
-        if not isinstance(blocks, list) or any(not isinstance(b, dict) or b.get("type") == "text" and not isinstance(b.get("text"), str) for b in blocks):
-            raise HarnessError("unsupported_orca_receipt")
-        text = "".join(b["text"] for b in blocks if b.get("type") == "text")
+        """Reads the worker_done body. Real transcripts are usually clipped or unreported, so
+        the coordinator's report channel is the only complete one. The body is the worker's
+        claim; the controller still reruns the checks itself."""
+        text = self.call("orchestration", "inbox", "--full", "--limit", "100", "--json", text=True)
         try:
-            result = json.loads(text)
+            value = json.loads(text)
+        except ValueError:
+            raise HarnessError("orca_response_unavailable") from None
+        result = value.get("result") if isinstance(value, dict) else None
+        messages = result.get("messages") if isinstance(result, dict) else None
+        if not isinstance(messages, list) or value.get("ok") is not True or any(not isinstance(m, dict) for m in messages):
+            raise HarnessError("unsupported_orca_receipt")
+        reports = []
+        for message in messages:
+            payload = message.get("payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except ValueError:
+                    continue
+            if message.get("type") == "worker_done" and isinstance(payload, dict) and payload.get("dispatchId") == dispatch:
+                reports.append(message)
+        if not reports: raise HarnessError("review_report_missing")
+        if len(reports) > 1: raise HarnessError("review_report_conflict")
+        # Only the exact report is checked: other workers' messages must not decide this one.
+        try:
+            report = json.loads(reports[0].get("body") or "")
         except ValueError:
             raise HarnessError("invalid_review_report") from None
-        safe(result)
-        if not isinstance(result, dict): raise HarnessError("invalid_review_report")
-        return result
+        safe(report)
+        if not isinstance(report, dict): raise HarnessError("invalid_review_report")
+        return report
 
 
 def _load_assignment(path):
@@ -413,8 +424,9 @@ def dispatch(store, task_id, client=None, *, review=False):
         binding = {"role": "reviewer" if review else "author", "phase": "intent", "attempt": row["attempt"],
                    "base_sha": base, "run_id": config["run_id"], "coordinator_id": config["coordinator_id"],
                    "dispatch_id": None, "sequence": 0, "events": {}, "settled": False,
-                   # Survives attempts that never started, so a stale dispatch stays unadoptable.
-                   "previous_dispatch_id": (old.get("dispatch_id") or old.get("previous_dispatch_id")) if old else None}
+                   # Every earlier dispatch: a finished one still reads as owned and must stay unadoptable.
+                   "previous_dispatch_ids": ((old or {}).get("previous_dispatch_ids", [])
+                                             + ([old["dispatch_id"]] if old and old.get("dispatch_id") else []))}
         if reusable:
             # Carry it from the start: a failure before reuse must not orphan a workspace holding edits.
             binding["workspace_id"] = old["workspace_id"]
@@ -444,7 +456,7 @@ def dispatch(store, task_id, client=None, *, review=False):
             check_scope(task, snapshot(context_tree, base=base))
             prompt += pack_context(task, context_tree)
             if review:
-                prompt += "\nThis is verification, not implementation. Do not edit or commit. End with ONLY a JSON object: " + encode({
+                prompt += "\nThis is verification, not implementation. Do not edit or commit. Send your worker_done report with a body that is ONLY this JSON object, with no other text: " + encode({
                     "candidate_sha": base, "base_sha": row["result"]["candidate"]["base_sha"],
                     "verdict": "PASS or FAIL", "findings": []})
             previous = dict(binding)
@@ -536,7 +548,7 @@ def ingest(store, task_id, receipt, client=None):
             raise HarnessError("orca_execution_not_settled")
         previous = json.loads(encode(binding))
         try:
-            path = register_workspace(store, observed, binding["base_sha"])
+            path = register_workspace(store, observed, binding["base_sha"], finished=True)
         except HarnessError as exc:
             failed = {**binding, **observed, "phase": "settled", "settled": True, "sequence": sequence,
                       "events": {**binding["events"], event_id: event_hash}, "verdict": "FAIL", "reason": str(exc)}
@@ -698,10 +710,11 @@ def reconcile(store, task_id, request, client=None):
         observed = client.inspect(request.get("dispatch_id"))
         if (observed.get("dispatch_id") != request.get("dispatch_id")
                 or binding.get("dispatch_id") and observed.get("dispatch_id") != binding["dispatch_id"]
-                or observed.get("dispatch_id") == binding.get("previous_dispatch_id")
+                or observed.get("dispatch_id") in binding.get("previous_dispatch_ids", [])
                 or any(observed.get(k) != binding.get(k) for k in ("workspace_id", "run_id"))):
             raise HarnessError("orca_dispatch_identity_mismatch")
-        path = register_workspace(store, observed, binding["base_sha"])
+        # A worker can finish before its lost start reply is reconciled.
+        path = register_workspace(store, observed, binding["base_sha"], finished=True)
         replacement = {**binding, **observed, "phase": "running", "adopted_by": binding["coordinator_id"]}
         _save_binding(store, task_id, key, replacement, binding)
         if key == "runtime":

@@ -486,6 +486,22 @@
             {
               "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_stale_dispatch_stays_unadoptable_across_an_attempt_that_never_started"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_finished_worker_with_released_terminal_settles_normally"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_lost_start_reply_can_adopt_an_already_released_worker"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_every_earlier_dispatch_stays_unadoptable_once_released"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_released_worker_can_be_revalidated"
             }
           ]
         },
@@ -507,6 +523,10 @@
             {
               "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_reviewer_edits_or_incomplete_transcript_cannot_be_evidence"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_review_report_comes_from_the_exact_worker_done_message"
             }
           ]
         },

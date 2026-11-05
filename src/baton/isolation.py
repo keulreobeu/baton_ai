@@ -84,7 +84,8 @@ def prepare_worktree(store, task):
         target = Path(task["worktree"]).resolve()
         if task.get("task", {}).get("execution", {}).get("runtime") == "orca":
             from .runtime import register_workspace
-            return register_workspace(store, task["result"]["runtime"], task["result"]["base_commit"])
+            binding = task["result"]["runtime"]
+            return register_workspace(store, binding, task["result"]["base_commit"], finished=binding.get("settled") is True)
         if not target.is_relative_to(store.directory / "worktrees") or not target.is_dir():
             raise HarnessError("worktree_unavailable")
         git(target, "rev-parse", "--is-inside-work-tree")

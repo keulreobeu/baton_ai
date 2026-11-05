@@ -12,13 +12,13 @@ After validation and a Git-owner-produced local candidate, register the clean ca
 
 BATON derives the source base, manifest, author and validation identity from its current validated result. It refuses a dirty/foreign candidate, a mismatching manifest or an advanced base. Candidate registration clears earlier review and integration evidence.
 
-For Orca, `baton runtime review --task <id>` creates an isolated review dispatch at that candidate. The reviewer must end with **only** this JSON object in its final assistant message, without a code fence or surrounding prose:
+For Orca, `baton runtime review --task <id>` creates an isolated review dispatch at that candidate. The reviewer must send its `worker_done` report with a body that is **only** this JSON object, without a code fence or surrounding prose:
 
 ```json
 {"candidate_sha":"<fixed SHA>","base_sha":"<candidate base SHA>","verdict":"PASS","findings":[]}
 ```
 
-Use `FAIL` with a findings array for a failed review. BATON reads the exact dispatch's complete transcript (`sourceExact=true`, `contentComplete=true`, `limited=false`, no clipping) and checks the clean reviewer worktree. A pasted notification or separate claim cannot replace that read-back. After reviewer ingestion succeeds, register:
+Use `FAIL` with a findings array for a failed review. BATON reads the single `worker_done` message bound to the exact dispatch and checks the clean reviewer worktree. The body is the reviewer's claim, so BATON still reruns the checks itself. A pasted notification or separate claim cannot replace that read-back. After reviewer ingestion succeeds, register:
 
 ```json
 {"kind":"review","candidate_sha":"<fixed SHA>","base_sha":"<candidate base SHA>","reviewer_worker":"orca:<review dispatch ID>","verdict":"PASS","findings":[]}

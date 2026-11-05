@@ -216,10 +216,8 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         self.assertEqual(self.store.approve("ORCA", "operator")["state"], "COMPLETED")
 
     def test_reviewer_edits_or_incomplete_transcript_cannot_be_evidence(self):
-        client = OrcaCLI(binary="orca-fixture", runner=lambda *a, **k: SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True, "result": {
-            "dispatchId": "d", "source": "transcript", "sourceExact": True, "contentComplete": False,
-            "transcript": {"limited": True, "messages": []}}})))
-        with self.assertRaisesRegex(HarnessError, "review_transcript_incomplete"): client.review_report("d")
+        client = OrcaCLI(binary="orca-fixture", runner=lambda *a, **k: SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True, "result": {"messages": []}})))
+        with self.assertRaisesRegex(HarnessError, "review_report_missing"): client.review_report("d")
         self.orca(); fake = FakeOrca(self.root)
         row = dispatch(self.store, "ORCA", fake)
         (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
@@ -642,9 +640,72 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         (tree / "src/value.py").write_text("value = 3\n", encoding="utf-8")
         self.store.ready("ORCA")
         row = dispatch(self.store, "ORCA", client)  # Fails before any start.
-        self.assertEqual(row["result"]["runtime"]["previous_dispatch_id"], "dispatch-1")
+        self.assertEqual(row["result"]["runtime"]["previous_dispatch_ids"], ["dispatch-1"])
         (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
         self.store.ready("ORCA"); client.lose_reply = True
         dispatch(self.store, "ORCA", client); client.lose_reply = False
         with self.assertRaisesRegex(HarnessError, "orca_dispatch_identity_mismatch"):
             reconcile(self.store, "ORCA", {"adopt_unknown": True, "dispatch_id": "dispatch-1"}, client)
+
+    def test_finished_worker_with_released_terminal_settles_normally(self):
+        self.orca(); client = FakeOrca(self.root)
+        row = dispatch(self.store, "ORCA", client)
+        (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        client.workers["dispatch-1"]["ownership_state"] = "released"  # Measured on Orca 1.4.248.
+        self.assertEqual(ingest(self.store, "ORCA", self.receipt(), client)["state"], "REVIEW_REQUIRED")
+        with self.assertRaisesRegex(HarnessError, "orca_workspace_ownership_unproven"):
+            register_workspace(self.store, client.inspect("dispatch-1"), self.base)  # A new start stays strict.
+
+    def test_lost_start_reply_can_adopt_an_already_released_worker(self):
+        self.orca(); client = FakeOrca(self.root); client.lose_reply = True
+        dispatch(self.store, "ORCA", client); client.lose_reply = False
+        client.settle("dispatch-1"); client.workers["dispatch-1"]["ownership_state"] = "released"
+        adopted = reconcile(self.store, "ORCA", {"adopt_unknown": True, "dispatch_id": "dispatch-1"}, client)
+        self.assertEqual(adopted["result"]["runtime"]["phase"], "running")
+
+    def inbox(self, *messages):
+        """The inbox --full --json shape measured on Orca 1.4.248, where payload is a JSON string."""
+        rows = [{"id": "m" + str(i), "sequence": i, "run_id": "run-one", "from_handle": "term_x", "to_handle": "term_y",
+                 "read": False, "subject": "done", **m} for i, m in enumerate(messages)]
+        stdout = json.dumps({"ok": True, "result": {"count": len(rows), "messages": rows}})
+        return OrcaCLI(binary="orca-fixture", runner=lambda *a, **k: SimpleNamespace(returncode=0, stdout=stdout))
+
+    def test_review_report_comes_from_the_exact_worker_done_message(self):
+        report = {"candidate_sha": "a", "base_sha": "b", "verdict": "PASS", "findings": []}
+        done = {"type": "worker_done", "payload": json.dumps({"dispatchId": "d", "taskId": "t"}), "body": json.dumps(report)}
+        other = {"type": "worker_done", "payload": json.dumps({"dispatchId": "other", "taskId": "t2"}), "body": "password=hunter2-unrelated"}
+        status = {"type": "status", "payload": None, "body": "Bearer unrelated-token-value"}
+        self.assertEqual(self.inbox(other, status, done).review_report("d"), report)
+        with self.assertRaisesRegex(HarnessError, "review_report_missing"):
+            self.inbox(other, status).review_report("d")
+        with self.assertRaisesRegex(HarnessError, "review_report_conflict"):
+            self.inbox(done, done).review_report("d")
+        with self.assertRaisesRegex(HarnessError, "invalid_review_report"):
+            self.inbox({**done, "body": "Finished the review. PASS."}).review_report("d")
+        with self.assertRaisesRegex(HarnessError, "unsafe_payload"):
+            self.inbox({**done, "body": json.dumps({"note": "password=hunter2-exact"})}).review_report("d")
+
+    def test_every_earlier_dispatch_stays_unadoptable_once_released(self):
+        self.orca(max_attempts=3); client = FakeOrca(self.root)
+        for number in (1, 2):
+            did = "dispatch-" + str(number)
+            dispatch(self.store, "ORCA", client); client.settle(did, "failed")
+            client.workers[did]["ownership_state"] = "released"
+            ingest(self.store, "ORCA", self.receipt(did), client)
+            self.store.ready("ORCA")
+        client.lose_reply = True
+        dispatch(self.store, "ORCA", client); client.lose_reply = False
+        for stale in ("dispatch-1", "dispatch-2"):
+            with self.assertRaisesRegex(HarnessError, "orca_dispatch_identity_mismatch"):
+                reconcile(self.store, "ORCA", {"adopt_unknown": True, "dispatch_id": stale}, client)
+        adopted = reconcile(self.store, "ORCA", {"adopt_unknown": True, "dispatch_id": "dispatch-3"}, client)
+        self.assertEqual(adopted["result"]["runtime"]["phase"], "running")
+
+    def test_released_worker_can_be_revalidated(self):
+        self.orca(); client = FakeOrca(self.root)
+        row = dispatch(self.store, "ORCA", client)
+        (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1"); client.workers["dispatch-1"]["ownership_state"] = "released"
+        ingest(self.store, "ORCA", self.receipt(), client)
+        self.assertEqual(Orchestrator(self.store).verify("ORCA")["state"], "REVIEW_REQUIRED")
