@@ -49,7 +49,7 @@ Defects found and fixed:
 
 ## Live qualification
 
-PARTIAL. The author path ran end to end on real Orca 1.4.248 with one real Claude worker. The separate reviewer dispatch and live cancellation did not run, so full live support is not established.
+PARTIAL. The full author, candidate, independent review, evidence and approval path ran on real Orca 1.4.248 with real Claude workers. Live cancellation and other providers did not run, and CI has not run.
 
 ### Read-only measurement
 
@@ -77,8 +77,6 @@ Run from a coordinator Orca terminal through BATON's own CLI, with user approval
 | Transition to `released` | Passed. Orca released the terminal about 2 minutes after finishing. On that real record `finished=True` was accepted and a new start was refused. |
 | Duplicate receipt | Passed. No state change. |
 
-The worker was still `owned` when `ingest` ran, so `ingest` itself has not run on a `released` record; only `register_workspace` has. Later revalidation also passed, but it used the stored `owned` binding.
-
 Permission gate: `check_orca_permission.py` reports BLOCKED from a Claude desktop session because packaged-app virtualization hides the real value. It must run from an Orca terminal, where it reported `auto` for both agents.
 
 Findings for operators:
@@ -86,11 +84,34 @@ Findings for operators:
 - BATON commands that start workers must run from an Orca terminal. The adapter does not pass `--from`.
 - `model` came back `None`, so `model_diversity` will be `unknown` for this agent unless Orca reports a model.
 
+### Full gate with author and reviewer workers (2026-11-05)
+
+Two more real Claude workers on `baton_ai` at `9a8c5f1`, with user approval. Author `ctx_0dda144db9be`, reviewer `ctx_9778f0cee296`, run `run_cbc3b20b5d4d`. Both workers ran in Orca worktrees; the reviewer's was separate and based on the candidate.
+
+| Step | Result |
+| --- | --- |
+| First receipt after `released` | Passed. `ingest` ran on ownership `released`, ran 8 tests and reached `REVIEW_REQUIRED`. |
+| Local candidate from an Orca workspace | Passed. `d76eeef`, with no remote contact. |
+| Approve with no review | Refused: `independent_review_required`. |
+| Reviewer dispatch | Passed. The reviewer reported the real candidate and base SHAs with `PASS` in a JSON-only `worker_done`, and left its worktree clean. |
+| Author recorded as its own reviewer | Refused: `author_cannot_review_own_work`. |
+| Approve with no integration proof | Refused: `integration_evidence_required`. |
+| Approval by the author's dispatch ID | Refused: `author_cannot_approve_own_work`. |
+| Approval by the operator | Passed. `COMPLETED`, with `identity_authority` `orca_dispatch_readback`. |
+
+Limits of this run:
+
+- Author and reviewer were both Claude, and Orca reported no model, so `model_diversity` is `unknown`. Separation here is by worker, not by model.
+- The task was trivial and the reviewer returned `PASS`. A live `FAIL` verdict was not exercised.
+- Integration used a single candidate. Multiple candidates remain covered only by offline tests.
+
+`orca worktree rm --delete-branch` keeps a branch holding unmerged commits, so the reviewer branch had to be deleted by hand. All worktrees, branches and terminals from these runs are removed. The Orca Runs stay listed.
+
 Still NOT_RUN:
 
-- `baton runtime review`: a separate reviewer dispatch in its own worktree, then evidence and approval on a real candidate;
-- `ingest` for a first receipt arriving after `released`;
+- a live `FAIL` review and multi-candidate integration;
 - live cancellation and an unknown stop;
-- Codex and Antigravity workers.
+- Codex and Antigravity workers;
+- CI, because nothing has been pushed.
 
 The external Claude design review was not used: one call timed out, and sending source to it was refused by the approval check. GMS, OS registration and remote publication remain excluded. No CI has run because nothing was pushed.

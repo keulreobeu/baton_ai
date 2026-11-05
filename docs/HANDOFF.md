@@ -8,10 +8,10 @@ handoff: Codex → Claude → 다음 담당; 2026-11-05 Codex 한도로 중단�
 task/status: TASK-FLOW-001 / KAN-48, 오프라인검증 완료(in_progress); KAN-45/47 CI대기 유지
 goal/order: Orca 실연결 검증→push/CI 승인 시 게시, POWER는P0마지막
 done: Orca 실행연결·작업/worktree소유권·검증증거·로컬후보·통합게이트·baton-flow 스킬, 독립리뷰 no_findings
-next: 실제 리뷰어 dispatch(baton runtime review, 모델호출 승인필요)와 승인까지 확인; Orca 터미널 안에서 실행; docs/validation/multi-agent-flow.md
+next: push·CI 승인 판단; 이후 실제 취소·FAIL 리뷰·Codex worker 검증은 모델호출 승인필요; docs/validation/multi-agent-flow.md
 scope: docs/tasks/TASK-FLOW-001.md의 scope
-checks: 전체297/skip6 PASS·패키지 PASS·SDD PASS(모델호출0); 실제 Orca 1.4.248 측정과 Claude worker 1회 author 경로 PASS; 테스트에 GIT_ALLOW_PROTOCOL=file 필요
-pending: 실제 리뷰어 dispatch·취소·Codex worker·CI 미검증; Orca CLI는 PATH에 없어 ORCA_CLI_COMMAND 필요; 권한 게이트는 Orca 터미널에서만 신뢰
+checks: 전체297/skip6 PASS·패키지 PASS·SDD PASS(모델호출0); 실제 Orca 1.4.248 Claude worker 3회로 author·review·approve 전체 게이트 PASS; 테스트에 GIT_ALLOW_PROTOCOL=file 필요
+pending: 실제 취소·FAIL 리뷰·다중후보·Codex worker·CI 미검증; Orca CLI는 PATH에 없어 ORCA_CLI_COMMAND 필요; 권한 게이트는 Orca 터미널에서만 신뢰
 inputs: docs/specs/FLOW-001.md; docs/validation/multi-agent-flow.md
 rules: AGENTS.md; GMS·실모델·등록·종료보류; 완료단위자동commit/push전전체점검; jipdam읽기전용
 ```
