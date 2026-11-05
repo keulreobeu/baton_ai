@@ -137,6 +137,6 @@ CI-equivalent runs on clean clones with a simulated first-push event and no `GIT
 | Windows, Python 3.12 | PASS, 298 tests, skip 6, 410 s |
 | Ubuntu 24.04 (WSL), Python 3.12 | PASS, 298 tests, skip 6, 119 s |
 
-One test added in `50783d6` sat under the `__main__` guard and never ran. It was moved into its class and now fails when `.gitattributes` is emptied, giving 299 tests on Windows Python 3.12. Ubuntu with Python 3.11 was not reproduced. Real CI has not run yet.
+One test added in `50783d6` sat under the `__main__` guard and never ran. It was moved into its class and now fails when `.gitattributes` is emptied, giving 299 tests on Windows Python 3.12. The first real CI run on `92a67ca` passed both Ubuntu jobs and failed both Windows jobs on two tests: the runner's TEMP is an 8.3 short path, which the tests compared unresolved. The tests were fixed; installer behavior did not change.
 
 The external Claude design review was not used: one call timed out, and sending source to it was refused by the approval check. GMS, OS registration and remote publication remain excluded. No CI has run because nothing was pushed.

@@ -38,7 +38,7 @@ class FlowSkillTests(unittest.TestCase):
     def test_all_host_targets_install_identical_bytes_and_repeat_is_noop(self):
         original = installer.verify_source(SOURCE)
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()  # TEMP can be an 8.3 short path on Windows.
             for host, path in installer.HOST_PATHS.items():
                 destination = root / host
                 result = installer.install(SOURCE, destination, host)
@@ -72,7 +72,7 @@ class FlowSkillTests(unittest.TestCase):
     def test_source_and_destination_symlink_components_are_rejected(self):
         actual = Path.is_symlink
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()  # TEMP can be an 8.3 short path on Windows.
             (root / ".agents").mkdir()
             # Exercise the filesystem result on Windows without requiring symlink privileges.
             with patch.object(Path, "is_symlink", lambda path: path == root / ".agents" or actual(path)):
