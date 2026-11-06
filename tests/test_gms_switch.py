@@ -143,6 +143,15 @@ class WorkTests(unittest.TestCase):
     def test_lost_connection_during_execute_is_uncertain(self):
         self.assertEqual(self.work(GMSServerUnreachable("gone"))["result"]["status"], "uncertain")
 
+    def test_server_error_during_execute_is_unreachable(self):
+        runner = LocalGMSWork(8786)
+        with patch("baton.gms_work.http.client.HTTPConnection") as connection:
+            response = connection.return_value.getresponse.return_value
+            response.status = 500
+            response.read.return_value = b'{"error": "failed"}'
+            with self.assertRaises(GMSServerUnreachable):
+                runner._request("POST", "/api/gms/execute", {})
+
     def test_explicit_server_rejection_stays_blocked(self):
         with self.assertRaises(GMSBudgetError):
             self.work(GMSBudgetError("rejected"))

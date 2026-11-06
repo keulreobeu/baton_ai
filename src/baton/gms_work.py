@@ -94,6 +94,8 @@ class LocalGMSWork:
                     raise GMSBudgetError("BATON 관리 서버를 확인할 수 없습니다.")
                 self.token = raw.split(marker, 1)[1].split(b'"', 1)[0].decode("ascii")
                 return None
+            if response.status >= 500:
+                raise GMSServerUnreachable("BATON 관리 서버 오류로 결과를 확인하지 못했습니다.")
             result = json.loads(raw)
             if response.status != 200:
                 raise GMSBudgetError(result.get("error", "GMS 작업 요청에 실패했습니다."))

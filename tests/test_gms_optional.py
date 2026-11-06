@@ -60,14 +60,15 @@ class GMSOptionalTests(unittest.TestCase):
 
 
 class Uncertain:
-    def __init__(self, before=None):
+    def __init__(self, before=None, result=None):
         self.calls, self.before = 0, before
+        self.result = result or ExecutionResult("error", "uncertain", summary="Reconcile the ledger.")
 
     def execute(self, task, context, cwd, stop):
         self.calls += 1
         if self.before:
             self.before()
-        return ExecutionResult("error", "uncertain", summary="Reconcile the ledger.")
+        return self.result
 
 
 class UncertainDispatchTests(unittest.TestCase):
@@ -101,6 +102,23 @@ class UncertainDispatchTests(unittest.TestCase):
         recovered = self.store.ready("TASK-ONE", recover=True)
         self.assertEqual(recovered["state"], "READY")
         self.assertNotIn("uncertain_dispatch", recovered["result"])
+
+    def test_interrupt_during_dispatch_keeps_the_marker(self):
+        def interrupt():
+            raise KeyboardInterrupt
+        with self.assertRaises(KeyboardInterrupt):
+            Orchestrator(self.store, {"gms": Uncertain(interrupt)}).run("TASK-ONE")
+        row = self.store.get("TASK-ONE")
+        self.assertEqual(row["state"], "INTERRUPTED")
+        self.assertTrue(row["result"]["uncertain_dispatch"])
+        with self.assertRaisesRegex(HarnessError, "uncertain_dispatch_requires_review"):
+            self.store.ready("TASK-ONE")
+
+    def test_definite_failure_clears_the_marker(self):
+        result = ExecutionResult("error", "unavailable", summary="Nothing was sent.")
+        finished = Orchestrator(self.store, {"gms": Uncertain(result=result)}).run("TASK-ONE")
+        self.assertFalse(finished["result"]["uncertain_dispatch"])
+        self.assertEqual(self.store.ready("TASK-ONE")["state"], "READY")
 
     def test_pause_keeps_the_uncertain_marker(self):
         provider = Uncertain(lambda: self.store.control("TASK-ONE", "pause"))
