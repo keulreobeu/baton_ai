@@ -24,4 +24,4 @@ skipped = 1
 expected_failures = 0
 ```
 
-The credential and GMS code in f586625 predates this contract and is brought under it here. The Task stays in_progress until real CI passes and independent review findings are closed. Real GMS calls did not run. See docs/validation/gms-credentials.md.
+The credential and GMS code in f586625 predates this contract and is brought under it here. PR #2 CI passed on 5ee3169 and merged as e3275b6. The Task stays in_progress because the final draft fix has no independent re-review. Real GMS calls did not run. See docs/validation/gms-credentials.md.
