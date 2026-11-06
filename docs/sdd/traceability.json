@@ -777,6 +777,14 @@
               "symbol": "UncertainDispatchTests.test_definite_failure_clears_the_marker"
             },
             {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_pause_after_a_draft_keeps_the_paid_result"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_delivered_draft_clears_the_marker"
+            },
+            {
               "file": "tests/test_gms_switch.py",
               "symbol": "WorkTests.test_lost_connection_during_execute_is_uncertain"
             },

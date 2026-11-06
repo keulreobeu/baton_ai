@@ -124,7 +124,7 @@ class Orchestrator:
                 if git(tree, "rev-parse", "HEAD").strip() != base: raise HarnessError("worktree_head_changed")
                 after = snapshot(tree); check_scope(task, after)
                 # A definite outcome clears the marker; an uncertain one outlives pause, timeout and cancel.
-                uncertain = {"uncertain_dispatch": outcome.error == "uncertain"} if provider_name == "gms" else {}
+                uncertain = {"uncertain_dispatch": outcome.error == "uncertain" or outcome.status == "draft"} if provider_name == "gms" else {}
                 if uncertain.get("uncertain_dispatch"):
                     uncertain["summary"] = persisted_text(outcome.summary)[:12000]
                 reason = stop()
@@ -136,7 +136,8 @@ class Orchestrator:
                                   "usage": outcome.usage, "summary": summary, "changed_files": after,
                                   "provider_events": outcome.events[-100:], **uncertain})
                 if outcome.status == "draft":
-                    return self.finish(task_id, lease, "WAITING_FOR_APPROVAL", reason="draft_requires_manual_apply_and_validation", validation_passed=False)
+                    return self.finish(task_id, lease, "WAITING_FOR_APPROVAL", reason="draft_requires_manual_apply_and_validation", validation_passed=False,
+                                       **({"uncertain_dispatch": False} if uncertain else {}))
                 if outcome.status != "success":
                     error = outcome.error or "unknown"
                     if error in {"quota", "quota_exhausted"}:

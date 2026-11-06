@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-06 GMS
 
-- [TASK-GMS-001](TASK-GMS-001.md): 키 관리와 선택형 GMS를 계약으로 편입. 사용자 재승인으로 DEFERRED_GMS 해제. 실제 GMS 호출은 미실행.
+- [TASK-GMS-001](TASK-GMS-001.md): 키 관리와 선택형 GMS를 계약으로 편입. 사용자 재승인으로 DEFERRED_GMS 해제. 실제 GMS 호출은 미실행. [검증 기록](../validation/gms-credentials.md).
 - 아래 항목의 GMS 보류 문구는 당시 기록이며 이 항목이 우선한다.
 
 ## 현재 작업 — 2026-11-05 KAN-48

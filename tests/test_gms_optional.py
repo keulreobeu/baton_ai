@@ -120,6 +120,20 @@ class UncertainDispatchTests(unittest.TestCase):
         self.assertFalse(finished["result"]["uncertain_dispatch"])
         self.assertEqual(self.store.ready("TASK-ONE")["state"], "READY")
 
+    def test_pause_after_a_draft_keeps_the_paid_result(self):
+        draft = ExecutionResult("draft", summary="Paid draft.")
+        provider = Uncertain(lambda: self.store.control("TASK-ONE", "pause"), draft)
+        result = Orchestrator(self.store, {"gms": provider}).run("TASK-ONE")
+        self.assertEqual(result["state"], "PAUSED")
+        self.assertTrue(result["result"]["uncertain_dispatch"])
+        self.assertEqual(result["result"]["summary"], "Paid draft.")
+
+    def test_delivered_draft_clears_the_marker(self):
+        draft = ExecutionResult("draft", summary="Paid draft.")
+        result = Orchestrator(self.store, {"gms": Uncertain(result=draft)}).run("TASK-ONE")
+        self.assertEqual(result["state"], "WAITING_FOR_APPROVAL")
+        self.assertFalse(result["result"]["uncertain_dispatch"])
+
     def test_pause_keeps_the_uncertain_marker(self):
         provider = Uncertain(lambda: self.store.control("TASK-ONE", "pause"))
         result = Orchestrator(self.store, {"gms": provider}).run("TASK-ONE")
