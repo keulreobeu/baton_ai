@@ -8,12 +8,12 @@ import re
 import subprocess
 import tempfile
 
-from .contracts import HarnessError, digest, identifier, safe
+from .contracts import HarnessError, SECRET, SENSITIVE_FIELDS, digest, identifier, safe
 from .isolation import check_scope, git, snapshot
 
 
 def eligible_paths(paths):
-    forbidden = {".git", ".aws", ".local_runtime", "data", "raw", "logs", "credentials", "node_modules", ".venv", "__pycache__"}
+    forbidden = {".git", ".aws", ".ssh", ".local_runtime", "data", "raw", "logs", "credentials", "keys", "secrets", "vault", "node_modules", ".venv", "__pycache__"}
     extensions = {".sqlite", ".sqlite3", ".db", ".zip", ".xlsx", ".xls", ".pem", ".key", ".log", ".pyc"}
     for name in paths:
         p = Path(name)
@@ -25,22 +25,30 @@ def eligible_paths(paths):
 def scan_content(content, name=""):
     if len(content) > 5_000_000: raise HarnessError("commit_file_too_large")
     text = content.decode("utf-8", errors="replace")
-    if Path(name).suffix == ".py":
+    if re.search(r"(?:[?&]|&amp;|%3f|%26)(?:(?:(?:access|refresh|id)[_-]?)?token|api[_-]?key|password|authorization|secret)(?:=|%3d)[^&#\s\"']+", text, re.I):
+        raise HarnessError("secret_in_commit")
+    if Path(name).suffix.lower() == ".py":
         import ast
         try: tree = ast.parse(text)
-        except SyntaxError: safe(text)
+        except SyntaxError:
+            if SECRET.search(text): raise HarnessError("secret_in_commit")
         else:
-            fields = {"api_key", "apikey", "password", "secret", "access_token", "authorization"}
             for node in ast.walk(tree):
                 pairs = []
-                if isinstance(node, ast.Assign): pairs = [(getattr(t, "id", ""), node.value) for t in node.targets]
+                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    for target in targets:
+                        field = (target.id if isinstance(target, ast.Name) else target.attr if isinstance(target, ast.Attribute)
+                                 else target.slice.value if isinstance(target, ast.Subscript) and isinstance(target.slice, ast.Constant) else None)
+                        pairs.append((field, node.value))
                 elif isinstance(node, ast.keyword): pairs = [(node.arg, node.value)]
                 elif isinstance(node, ast.Dict): pairs = [(getattr(k, "value", None), v) for k, v in zip(node.keys, node.values)]
-                if any(isinstance(k, str) and k.lower() in fields and isinstance(v, ast.Constant) and isinstance(v.value, str) and v.value for k, v in pairs):
+                if any(isinstance(k, str) and k.casefold() in SENSITIVE_FIELDS and isinstance(v, ast.Constant) and isinstance(v.value, str) and v.value for k, v in pairs):
                     raise HarnessError("secret_in_commit")
     else:
-        try: safe(text)
-        except HarnessError: raise HarnessError("secret_in_commit") from None
+        # File scanning has its own 5MB limit above. LLM safe(payload)'s 128KB
+        # serialized-request cap must not reject ordinary large registry files.
+        if SECRET.search(text): raise HarnessError("secret_in_commit")
     if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", text):
         raise HarnessError("secret_in_commit")
     tokens = re.findall(r"\b(?:sk-[A-Za-z0-9_-]{24,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[A-Z0-9]{16})", text)

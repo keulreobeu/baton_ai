@@ -47,6 +47,10 @@ def main(argv=None, *, workspace=None):
     sub = p.add_subparsers(dest="command", required=True)
     from .wiki_cli import parser as wiki_parser
     wiki_parser(sub)
+    from .handoff_cli import parser as handoff_parser
+    handoff_parser(sub)
+    from .input_check_cli import parser as input_check_parser
+    input_check_parser(sub)
     from .metrics_cli import parser as metrics_parser
     metrics_parser(sub)
     from .quota_window_cli import parser as quota_parser
@@ -98,12 +102,22 @@ def main(argv=None, *, workspace=None):
             result = wiki_run(args, root)
             print(encode(result))
             return 3 if isinstance(result, dict) and result.get("blocking") else 0
+        if args.command == "input-check":
+            from .input_check_cli import run as input_check_run
+            result = input_check_run(args, root)
+            print(encode(result))
+            return 0 if result["status"] == "PASS" else 3
+        if args.command == "handoff":
+            from .handoff_cli import run as handoff_run
+            result = handoff_run(args, root)
+            print(encode(result))
+            return 3 if result["status"] in {"blocked", "restore_incomplete"} else 0
         directory = (root / args.state_dir).resolve()
         if not directory.is_relative_to(root / ".local_runtime"):
             raise HarnessError("state_directory_must_be_local_runtime")
         if args.command == "metrics":
             from .metrics_cli import run as metrics_run
-            print(encode(metrics_run(args, directory)))
+            print(encode(metrics_run(args, directory, root=root)))
             return 0
         store = ManagedStore(directory, root)
         from .execution import CodexCLIProvider, GMSProvider, MockProvider

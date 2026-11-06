@@ -1,0 +1,36 @@
+# TASK-PORT-001 — KAN-41/42 이식
+
+```toml
+kind = "task"
+id = "TASK-PORT-001"
+status = "in_progress"
+owner = "Claude"
+level = 3
+specs = ["docs/specs/HANDOFF-001.md", "docs/specs/LEAN-CORE-001.md"]
+plan = "docs/plans/handoff-lean-port.md"
+adr = "docs/adr/ADR-PORT-001.md"
+scope = ["README.md", "docs/HANDOFF.md", "docs/adr/ADR-PORT-001.md", "docs/harness/HANDOFF.md", "docs/harness/INPUT_CHECK.md", "docs/plans/handoff-lean-port.md", "docs/sdd/traceability.json", "docs/specs/HANDOFF-001.md", "docs/specs/LEAN-CORE-001.md", "docs/tasks/TASK-PORT-001.md", "docs/tasks/current.md", "docs/workspace-recovery-20261106.md", "src/baton/autocommit.py", "src/baton/handoff.py", "src/baton/handoff_cli.py", "src/baton/input_check.py", "src/baton/input_check_cli.py", "src/baton/managed_cli.py", "src/baton/metrics_cli.py", "src/baton/observability.py", "src/baton/orchestrator.py", "tests/test_handoff.py", "tests/test_input_check.py", "tests/test_lean_metrics.py"]
+acs = ["HANDOFF-001-AC-02", "HANDOFF-001-AC-03", "HANDOFF-001-AC-04", "LEAN-CORE-001-AC-01", "LEAN-CORE-001-AC-02", "LEAN-CORE-001-AC-03", "LEAN-CORE-001-AC-04", "LEAN-CORE-001-AC-05", "LEAN-CORE-001-AC-06", "LEAN-CORE-001-AC-07", "LEAN-CORE-001-AC-08", "LEAN-CORE-001-AC-09", "LEAN-CORE-001-AC-10", "LEAN-CORE-001-AC-11", "LEAN-CORE-001-AC-12"]
+
+[[verification]]
+command = "python -X utf8 scripts/run_tests_fast.py"
+result = "passed"
+evidence = "docs/tasks/TASK-PORT-001.md"
+acs = ["HANDOFF-001-AC-02", "HANDOFF-001-AC-03", "HANDOFF-001-AC-04", "LEAN-CORE-001-AC-01", "LEAN-CORE-001-AC-02", "LEAN-CORE-001-AC-03", "LEAN-CORE-001-AC-04", "LEAN-CORE-001-AC-05", "LEAN-CORE-001-AC-06", "LEAN-CORE-001-AC-07", "LEAN-CORE-001-AC-08", "LEAN-CORE-001-AC-09", "LEAN-CORE-001-AC-10", "LEAN-CORE-001-AC-11", "LEAN-CORE-001-AC-12"]
+tests_run = 484
+failures = 0
+errors = 0
+skipped = 1
+expected_failures = 0
+```
+
+집담 `codex/lean-p0-kan42-20261103`의 하네스 기능을 BATON으로 옮긴다. 범위와 제외 사유는 [ADR](../adr/ADR-PORT-001.md)을 따른다.
+
+집담의 브랜치와 원본은 바꾸지 않는다. 실제 PC 간 복원, 실제 모델, GMS는 실행하지 않는다.
+
+## 검증과 push 점검 — 2026-11-06
+
+- 로컬 병렬 실행 484개, 실패 0개, skip 1개. skip은 집담 저장소 설정 검사다. 이 결과는 검증 증거 자격이 없고 공식 순차 검증은 PR CI로 확인한다.
+- 이식한 테스트는 handoff 24개, input-check 21개, 계측 10개다. 임시 저장소와 임시 bare 원격만 쓴다.
+- 대상은 `origin/codex/port-handoff-input-check-20261106`이고, 사용자 요청 '이식 진행'으로 진행했다. 변경 파일은 scope 안에 있다.
+- 독립 리뷰 전이라 in_progress로 둔다.

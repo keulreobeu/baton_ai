@@ -125,6 +125,11 @@ Windows에서 전체 테스트는 15분 안팎 걸린다. 작업 중 빠르게 �
 python -X utf8 scripts/run_tests_fast.py
 ```
 
+## WIP 백업과 입력 검사
+
+미완성 작업은 `baton handoff backup --task TASK-ID`로 보존한다. [사용법](docs/harness/HANDOFF.md)
+모델 호출 없는 결정적 검사는 `baton input-check --request PATH`로 실행한다. [사용법](docs/harness/INPUT_CHECK.md)
+
 ## API 키와 GMS 관리
 
 ```powershell

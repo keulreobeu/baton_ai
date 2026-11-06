@@ -20,7 +20,12 @@
     "docs/tasks/TASK-GMS-001.md",
     "docs/plans/gms-credentials.md",
     "docs/adr/ADR-GMS-001.md",
-    "docs/tasks/TASK-TEST-SPEED-001.md"
+    "docs/tasks/TASK-TEST-SPEED-001.md",
+    "docs/specs/HANDOFF-001.md",
+    "docs/specs/LEAN-CORE-001.md",
+    "docs/plans/handoff-lean-port.md",
+    "docs/adr/ADR-PORT-001.md",
+    "docs/tasks/TASK-PORT-001.md"
   ],
   "features": [
     {
@@ -836,6 +841,303 @@
             {
               "file": "tests/test_gms_optional.py",
               "symbol": "GMSOptionalTests.test_execute_without_the_extra_sends_nothing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HANDOFF-001",
+      "spec": "docs/specs/HANDOFF-001.md",
+      "requirements": [
+        {
+          "id": "HANDOFF-001-REQ-02",
+          "acs": [
+            "HANDOFF-001-AC-02"
+          ]
+        },
+        {
+          "id": "HANDOFF-001-REQ-03",
+          "acs": [
+            "HANDOFF-001-AC-03"
+          ]
+        },
+        {
+          "id": "HANDOFF-001-REQ-04",
+          "acs": [
+            "HANDOFF-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "HANDOFF-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_running_process_is_stopped_before_snapshot"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_sensitive_files_secret_bytes_and_size_are_blocked"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_python_annotated_and_attribute_secrets_are_rejected_before_capture"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_fingerprint_detects_mode_changes_and_old_receipts_require_review"
+            }
+          ]
+        },
+        {
+          "id": "HANDOFF-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_remote_independent_restore_new_task_and_manual_edit_protection"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_tampered_blob_manifest_and_remote_sha_rejected"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_verified_restored_task_can_be_backed_up_without_models"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_directory_file_replacements_restore_in_both_directions"
+            }
+          ]
+        },
+        {
+          "id": "HANDOFF-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_wip_inventory_idempotency_index_and_no_models"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LEAN-CORE-001",
+      "spec": "docs/specs/LEAN-CORE-001.md",
+      "requirements": [
+        {
+          "id": "LEAN-CORE-001-REQ-01",
+          "acs": [
+            "LEAN-CORE-001-AC-01"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-02",
+          "acs": [
+            "LEAN-CORE-001-AC-02"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-03",
+          "acs": [
+            "LEAN-CORE-001-AC-03"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-04",
+          "acs": [
+            "LEAN-CORE-001-AC-04"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-05",
+          "acs": [
+            "LEAN-CORE-001-AC-05"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-06",
+          "acs": [
+            "LEAN-CORE-001-AC-06"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-07",
+          "acs": [
+            "LEAN-CORE-001-AC-07"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-08",
+          "acs": [
+            "LEAN-CORE-001-AC-08"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-09",
+          "acs": [
+            "LEAN-CORE-001-AC-09"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-10",
+          "acs": [
+            "LEAN-CORE-001-AC-10"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-11",
+          "acs": [
+            "LEAN-CORE-001-AC-11"
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-REQ-12",
+          "acs": [
+            "LEAN-CORE-001-AC-12"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "LEAN-CORE-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_results_order_hash_and_error_codes_are_deterministic"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_json_depth_integer_duplicate_nonfinite_and_encoding_limits"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_jsonl_reports_only_bounded_line_and_csv_real_boundaries"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_unexecuted_and_zero_test_runs_never_pass"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_only_skipped_tests_are_unknown_and_runtime_output_does_not_change_identity"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_paths_scope_keys_and_symlink_escape_are_blocked"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_real_directory_link_is_blocked_before_external_file_read"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_annotated_secret_and_command_output_never_escape"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_cli_malformed_request_has_no_traceback_or_models"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_unsafe_test_options_are_blocked_before_any_execution"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_prior_five_failure_shapes_have_explicit_offline_counterexamples"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_invocations_turns_attempts_and_verification_are_distinct"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-08",
+          "tests": [
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_cache_reasoning_are_subsets_without_rewriting_normalization"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-09",
+          "tests": [
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_unknown_versions_missing_purpose_and_unknown_usage_remain_unknown"
+            },
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_legacy_error_without_category_does_not_become_no_quota"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-10",
+          "tests": [
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_failure_buckets_and_user_quota_are_separate"
+            },
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_review_is_bounded_observation_not_approval_or_chat_cost_zero"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-11",
+          "tests": [
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_repair_fallback_costs_and_zero_verified_success_are_preserved"
+            },
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanOrchestrationTests.test_actual_validation_repair_is_labeled_once_and_manual_resume_is_unknown"
+            }
+          ]
+        },
+        {
+          "id": "LEAN-CORE-001-AC-12",
+          "tests": [
+            {
+              "file": "tests/test_lean_metrics.py",
+              "symbol": "LeanMetricsTests.test_prior_four_failed_fixture_rows_and_tokens_are_immutable"
             }
           ]
         }
