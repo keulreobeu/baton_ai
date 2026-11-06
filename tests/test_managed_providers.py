@@ -40,6 +40,12 @@ class ManagedProviderTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    def require_gms(self):
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("the gms extra is not installed")
+
     def gms_on(self):
         patcher = patch.object(GMSProvider, "availability", return_value={"provider": "gms", "available": True})
         patcher.start(); self.addCleanup(patcher.stop)
@@ -161,6 +167,7 @@ else:
         self.assertEqual(provider.execute({**task, "_fallback": True}, "", self.root, lambda: None).status, "success")
 
     def test_gms_delegates_existing_runner_once_and_returns_draft(self):
+        self.require_gms()
         self.gms_on()
         (self.root / "src").mkdir()
         (self.root / "src/example.py").write_text("print('safe')", encoding="utf-8")
@@ -184,6 +191,7 @@ else:
             self.assertIn("print('safe')", supplied["context"])
 
     def test_gms_failure_is_uncertain_and_does_not_retry(self):
+        self.require_gms()
         self.gms_on()
         task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"], "context_files": []}
         with patch("baton.gms_work.LocalGMSWork") as runner, patch("baton.execution.run_process") as child:
@@ -195,6 +203,7 @@ else:
             runner.return_value.work.assert_called_once()
 
     def test_gms_stopped_dispatch_is_uncertain(self):
+        self.require_gms()
         self.gms_on()
         task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"], "context_files": []}
         with patch("baton.execution.run_process", return_value=(-1, "", "", "paused")) as child:
@@ -203,6 +212,7 @@ else:
             child.assert_called_once()
 
     def test_gms_forbidden_context_prevents_dispatch(self):
+        self.require_gms()
         self.gms_on()
         (self.root / "data").mkdir()
         (self.root / "data/secret.json").write_text("{}", encoding="utf-8")
@@ -213,6 +223,7 @@ else:
             runner.assert_not_called()
 
     def test_gms_off_blocks_direct_and_fallback_use_without_sending(self):
+        self.require_gms()
         task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"], "context_files": []}
         off = {"provider": "gms", "available": False, "reason": "gms_disabled"}
         with patch.object(GMSProvider, "availability", return_value=off), \
@@ -245,6 +256,7 @@ else:
             self.assertNotIn("private-id", json.dumps(state))
 
     def test_gms_real_child_utf8_local_http_roundtrip(self):
+        self.require_gms()
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         import threading
         seen = []

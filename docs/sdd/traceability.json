@@ -720,6 +720,10 @@
             },
             {
               "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_on_rejects_a_key_without_limits"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
               "symbol": "SwitchTests.test_on_then_off_keeps_saved_limits"
             },
             {
@@ -734,6 +738,10 @@
             {
               "file": "tests/test_gms_optional.py",
               "symbol": "GMSOptionalTests.test_gms_provider_is_registered_only_with_the_flag"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_server_down_sends_nothing"
             },
             {
               "file": "tests/test_managed_providers.py",
@@ -751,6 +759,18 @@
             {
               "file": "tests/test_gms_budget.py",
               "symbol": "GMSBudgetTests.test_uncertain_reservation_survives_restart"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_uncertain_failure_requires_operator_review"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_pause_keeps_the_uncertain_marker"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "WorkTests.test_lost_connection_during_execute_is_uncertain"
             },
             {
               "file": "tests/test_managed_providers.py",

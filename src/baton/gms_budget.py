@@ -271,10 +271,13 @@ class GMSBudgetManager:
         identifier = str(uuid.uuid4())
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            revision = connection.execute("SELECT revision FROM policy WHERE id=1").fetchone()[0]
+            revision, body = connection.execute("SELECT revision,body FROM policy WHERE id=1").fetchone()
             count = connection.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
             if revision != state["revision"] or count != state["call_count"]:
                 raise GMSBudgetError("카운트 예약 전에 원장/정책이 바뀌었습니다. 새 견적을 요청하세요.")
+            # The first balance call happens before this read, and the switch may change during it.
+            if json.loads(body).get("enabled") is not True:
+                raise GMSBudgetError("GMS가 꺼져 있어 요청하지 않았습니다.")
             connection.execute("INSERT INTO calls VALUES(?,?,?,?,?,?,?,?,?)", (identifier, task_id, datetime.now(KST).isoformat(),
                 "reserved", fee, 0, 0, 0, "count:" + hashlib.sha256(payload["input"].encode()).hexdigest()))
             self._record_model(connection, identifier, payload["model"])

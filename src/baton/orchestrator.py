@@ -122,9 +122,11 @@ class Orchestrator:
                     self.store.observe(task_id, "end_invocation", metrics, invocation, outcome, time.monotonic() - invocation_started)
                 if git(tree, "rev-parse", "HEAD").strip() != base: raise HarnessError("worktree_head_changed")
                 after = snapshot(tree); check_scope(task, after)
+                # A dispatch that may have been accepted must outlive pause, timeout and cancel.
+                uncertain = {"uncertain_dispatch": True, "summary": persisted_text(outcome.summary)[:12000]} if outcome.error == "uncertain" else {}
                 reason = stop()
                 if reason:
-                    return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", changed_files=after, reason=reason)
+                    return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", changed_files=after, reason=reason, **uncertain)
                 # Provider output is sanitized a second time at the persistence boundary.
                 summary = persisted_text(outcome.summary)[:12000]
                 self.store.update(task_id, lease, "RUNNING", result={"session_id": outcome.session_id,
@@ -153,7 +155,7 @@ class Orchestrator:
                             close_metrics()
                             self.store.ready(task_id, automatic=True)
                             return self._run(task_id)
-                    return self.finish(task_id, lease, "WAITING_FOR_PROVIDER" if provider_name == "gms" else "BLOCKED" if error in {"auth", "permission", "unknown"} else "FAILED", reason=error)
+                    return self.finish(task_id, lease, "WAITING_FOR_PROVIDER" if provider_name == "gms" else "BLOCKED" if error in {"auth", "permission", "unknown"} else "FAILED", reason=error, **uncertain)
                 self.store.update(task_id, lease, "VALIDATING")
                 validation_started = time.monotonic()
                 validation = self.validate(task, tree, stop)

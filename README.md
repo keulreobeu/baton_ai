@@ -129,6 +129,8 @@ baton credentials
 
 GMS는 선택 기능이며 기본값은 꺼짐이다. 꺼져 있으면 작업에서 직접 지정했든 fallback이든 BATON이 GMS로 아무것도 보내지 않는다. 켜려면 GMS 키와 사용 한도를 먼저 저장해야 한다. BATON 작업이 GMS를 쓰려면 `/gms`에서 켜고, `baton credentials` 서버를 띄운 채 `--enable-gms`로 실행해야 한다. 키 관리와 GMS에는 `python -m pip install -e ".[gms]"`로 설치하는 `cryptography`가 필요하다.
 
+GMS 호출 결과가 불확실한 작업은 이중 과금을 막기 위해 일반 `resume`·`retry`가 거부된다. `/gms`에서 원장을 확인한 뒤 `baton resume --task <id> --recover-running`으로 재개한다.
+
 기존 Jipdam 보관함은 한 번만 복사해 온다. 원본은 지우지 않고, 키 ID를 유지하며, GMS는 꺼진 상태로 들어온다. BATON 보관함에 이미 데이터가 있으면 중단한다.
 
 ```powershell

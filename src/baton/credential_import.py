@@ -35,8 +35,11 @@ def _rows(path: Path, query: str) -> int:
     connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         return connection.execute(query).fetchone()[0]
-    except sqlite3.OperationalError:
-        return 0
+    except sqlite3.OperationalError as exc:
+        # Only an absent table is empty. A locked or unreadable vault must stop the import.
+        if "no such table" in str(exc):
+            return 0
+        raise
     finally:
         connection.close()
 

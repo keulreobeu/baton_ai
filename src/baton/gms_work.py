@@ -12,6 +12,10 @@ from .gms_models import select_model
 APP_ROOT = Path(__file__).resolve().parents[2]
 
 
+class GMSServerUnreachable(GMSBudgetError):
+    """The local server gave no usable answer, so an accepted request cannot be ruled out."""
+
+
 def prepare_work(path: Path, *, app_root: Path = APP_ROOT) -> dict:
     try:
         if path.stat().st_size > 32 * 1024:
@@ -97,7 +101,7 @@ class LocalGMSWork:
         except GMSBudgetError:
             raise
         except Exception:
-            raise GMSBudgetError("BATON 관리 서버에 연결할 수 없습니다. baton credentials를 먼저 실행하세요.") from None
+            raise GMSServerUnreachable("BATON 관리 서버에 연결할 수 없습니다. baton credentials를 먼저 실행하세요.") from None
         finally:
             connection.close()
 
@@ -106,7 +110,11 @@ class LocalGMSWork:
         quote = self._request("POST", "/api/gms/quote", values)
         if not execute:
             return {"mode": "quote_only", "quote": quote}
-        result = self._request("POST", "/api/gms/execute", {"quote_id": quote["quote_id"], "confirm": True})
+        try:
+            result = self._request("POST", "/api/gms/execute", {"quote_id": quote["quote_id"], "confirm": True})
+        except GMSServerUnreachable:
+            # The server may already have sent the paid request: never report this as blocked.
+            result = {"status": "uncertain"}
         return {"mode": "executed", "quote": quote, "result": result}
 
 

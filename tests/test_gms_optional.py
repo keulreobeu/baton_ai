@@ -11,7 +11,11 @@ import unittest
 from unittest.mock import patch
 
 from baton import managed_cli
-from baton.execution import CodexCLIProvider, GMSProvider
+from baton.contracts import HarnessError
+from baton.execution import CodexCLIProvider, ExecutionResult, GMSProvider
+from baton.isolation import git
+from baton.managed import ManagedStore
+from baton.orchestrator import Orchestrator
 
 
 class GMSOptionalTests(unittest.TestCase):
@@ -33,6 +37,15 @@ class GMSOptionalTests(unittest.TestCase):
         self.assertEqual((result.status, result.error), ("error", "unavailable"))
         process.assert_not_called()
 
+    def test_server_down_sends_nothing(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch("baton.execution.http.client.HTTPConnection") as connection, \
+                patch("baton.execution.run_process") as process:
+            connection.return_value.request.side_effect = OSError
+            result = GMSProvider().execute({"task_id": "T"}, "context", Path(folder), lambda: None)
+        self.assertEqual((result.status, result.error), ("error", "unavailable"))
+        process.assert_not_called()
+
     def test_gms_provider_is_registered_only_with_the_flag(self):
         def providers(*flags):
             output = io.StringIO()
@@ -44,6 +57,59 @@ class GMSOptionalTests(unittest.TestCase):
             return json.loads(output.getvalue())
         self.assertNotIn("gms", providers())
         self.assertIn("gms", providers("--enable-gms"))
+
+
+class Uncertain:
+    def __init__(self, before=None):
+        self.calls, self.before = 0, before
+
+    def execute(self, task, context, cwd, stop):
+        self.calls += 1
+        if self.before:
+            self.before()
+        return ExecutionResult("error", "uncertain", summary="Reconcile the ledger.")
+
+
+class UncertainDispatchTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        git(self.root, "init")
+        git(self.root, "config", "user.email", "offline@example.invalid")
+        git(self.root, "config", "user.name", "Offline test")
+        (self.root / "tests").mkdir()
+        (self.root / "tests/test_value.py").write_text("", encoding="utf-8")
+        (self.root / ".gitignore").write_text(".local_runtime/\n", encoding="utf-8")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "offline fixture")
+        self.store = ManagedStore(self.root / ".local_runtime/harness-managed", self.root)
+        self.store.create({"task_id": "TASK-ONE", "objective": "Offline fixture", "acceptance_criteria": ["AC1"],
+                           "scope": {"allowed_paths": ["tests"], "forbidden_paths": []},
+                           "validation": [{"argv": ["python", "-m", "unittest", "discover", "-s", "tests"], "acs": ["AC1"]}],
+                           "execution": {"preferred_provider": "gms", "fallback_provider": "mock",
+                                         "timeout_seconds": 30, "total_timeout_seconds": 120}})
+
+    def test_uncertain_failure_requires_operator_review(self):
+        provider = Uncertain()
+        result = Orchestrator(self.store, {"gms": provider}).run("TASK-ONE")
+        self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
+        self.assertTrue(result["result"]["uncertain_dispatch"])
+        self.assertEqual(provider.calls, 1)
+        with self.assertRaisesRegex(HarnessError, "uncertain_dispatch_requires_review"):
+            self.store.ready("TASK-ONE")
+        recovered = self.store.ready("TASK-ONE", recover=True)
+        self.assertEqual(recovered["state"], "READY")
+        self.assertNotIn("uncertain_dispatch", recovered["result"])
+
+    def test_pause_keeps_the_uncertain_marker(self):
+        provider = Uncertain(lambda: self.store.control("TASK-ONE", "pause"))
+        result = Orchestrator(self.store, {"gms": provider}).run("TASK-ONE")
+        self.assertEqual(result["state"], "PAUSED")
+        self.assertTrue(result["result"]["uncertain_dispatch"])
+        self.assertEqual(result["result"]["summary"], "Reconcile the ledger.")
+        with self.assertRaisesRegex(HarnessError, "uncertain_dispatch_requires_review"):
+            self.store.ready("TASK-ONE")
 
 
 if __name__ == "__main__":
