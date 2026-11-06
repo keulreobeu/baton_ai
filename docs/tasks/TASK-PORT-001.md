@@ -49,7 +49,7 @@ Claude가 `37b6d6f` 기준으로 PR #7 전체를 다시 리뷰해 10건을 지�
 | 복원 검증 실패에도 RESTORE 작업이 남음 | index·파일 재확인과 fingerprint 뒤에 작업 등록 |
 | POSIX 실행 비트가 Windows 복원에서 실패 | 작업폴더 mode 재확인을 POSIX에서만 수행 |
 | `git diff`의 stat 갱신을 소스 변경으로 판단 | `_index_hash`를 staged 항목 해시로 변경 |
-| URL 비밀값 정규식이 코드와 템플릿을 오탐 | `.py` 제외, `{`·`$`·`<`·`%`로 시작하는 값 제외 |
+| URL 비밀값 정규식이 코드와 템플릿을 오탐 | `.py` 제외, `{`·`$`·`<`와 `%s`·`%d`·`%(name)s` 자리표시자 제외. 다른 퍼센트 인코딩 값은 계속 검사(Codex 리뷰 P1 반영) |
 | scope 밖 ignored 파일이 파일 수 제한을 소모 | scope 밖 ignored 파일을 인벤토리에서 제외 |
 | 중단된 checkpoint가 재시도를 막음 | 임시 폴더에 다 쓴 뒤 이름 변경, 복원은 검증 뒤 저장 |
 

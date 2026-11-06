@@ -13,8 +13,9 @@ from .isolation import check_scope, git, snapshot
 
 
 # Python is judged by the AST below: URL text in code is usually a template or fixture.
-# Template values such as {token}, ${TOKEN} and <token> are placeholders, not secrets.
-URL_SECRET = re.compile(r"(?:[?&]|&amp;|%3f|%26)(?:(?:(?:access|refresh|id)[_-]?)?token|api[_-]?key|password|authorization|secret)(?:=|%3d)(?![{$<%])[^&#\s\"']+", re.I)
+# Template values such as {token}, ${TOKEN}, <token> and %s are placeholders, not secrets.
+# Other percent values stay scanned: %61bc is an encoded credential.
+URL_SECRET = re.compile(r"(?:[?&]|&amp;|%3f|%26)(?:(?:(?:access|refresh|id)[_-]?)?token|api[_-]?key|password|authorization|secret)(?:=|%3d)(?![{$<]|%\(|%[sd](?![0-9A-Za-z]))[^&#\s\"']+", re.I)
 
 
 def eligible_paths(paths):

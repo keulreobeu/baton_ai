@@ -60,7 +60,9 @@ class AutoCommitTests(unittest.TestCase):
         scan_content(b'request("GET", "/api/state?api_key=should-never-be-in-url")\n', "tests/test_server.py")
         scan_content(b'url = f"{base}?token={value}"\n', "src/client.py")
         scan_content(b"GET /callback?token={value}&id_token=<token>\n", "docs/api.md")
-        for text in (b"https://host/path?token=abc123\n", b"https://host/path%3Ftoken%3Dabc123\n"):
+        scan_content(b"GET /callback?token=%s&id_token=%(value)s\n", "docs/api.md")
+        for text in (b"https://host/path?token=abc123\n", b"https://host/path%3Ftoken%3Dabc123\n",
+                     b"https://host/path?token=%61bc123\n", b"https://host/path?token=%d1bc123\n"):
             with self.subTest(text=text), self.assertRaisesRegex(HarnessError, "secret_in_commit"):
                 scan_content(text, "docs/api.md")
 
