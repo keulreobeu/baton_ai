@@ -17,7 +17,8 @@
     "docs/specs/GMS-001.md",
     "docs/tasks/TASK-GMS-001.md",
     "docs/plans/gms-credentials.md",
-    "docs/adr/ADR-GMS-001.md"
+    "docs/adr/ADR-GMS-001.md",
+    "docs/tasks/TASK-TEST-SPEED-001.md"
   ],
   "features": [
     {
@@ -215,6 +216,10 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_no_external_commands_or_policy_modification"
+            },
+            {
+              "file": "tests/test_run_tests_fast.py",
+              "symbol": "FastRunnerTests.test_result_is_never_verified_evidence"
             },
             {
               "file": "tests/test_sdd.py",

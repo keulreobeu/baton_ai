@@ -114,6 +114,12 @@ GMS는 확장 기능이다. 신규 Task 기본 `fallback_provider`는 `none`이�
 python -X utf8 -m unittest discover -s tests -t .
 ```
 
+Windows에서 전체 테스트는 15분 안팎 걸린다. 작업 중 빠르게 확인할 때는 병렬 실행기를 쓴다. 16코어 기준 약 3분이다. SDD 검사를 하지 않고 검증 증거로도 쓸 수 없으니, 마무리 검증은 `scripts/verify_environment.py`로 한다.
+
+```powershell
+python -X utf8 scripts/run_tests_fast.py
+```
+
 ## API 키와 GMS 관리
 
 ```powershell
