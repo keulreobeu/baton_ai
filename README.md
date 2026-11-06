@@ -15,12 +15,12 @@ Provider-independent AI agent harness. 현재는 Jipdam `outputs/budongi_mvp_tem
 
 ## 실행
 
-BATON 저장소 루트에서 한 번 설치한다. `[gms]`는 GMS 테스트에 필요한 `cryptography`를 함께 설치한다.
+BATON 저장소 루트에서 한 번 설치한다.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[gms]"
+python -m pip install -e .
 ```
 
 그다음 대상 저장소 루트(작업 공간 = 현재 폴더)에서 실행한다.
@@ -114,12 +114,33 @@ GMS는 확장 기능이다. 신규 Task 기본 `fallback_provider`는 `none`이�
 python -X utf8 -m unittest discover -s tests -t .
 ```
 
-GMS 테스트는 `budongi`를 불러올 수 있어야 돌아가고, 불러오지 못하면 실패 없이 skip된다. 기본 위치는 BATON 저장소와 같은 폴더의 `jipdam/outputs/budongi_mvp_temp/src`이며, 다른 위치면 `BATON_GMS_SRC`로 지정한다.
+## API 키와 GMS 관리
+
+```powershell
+baton credentials
+```
+
+브라우저에서 로컬 관리 페이지(`http://127.0.0.1:8786`)가 열린다. 키는 이 컴퓨터의 암호화된 보관함에 저장되며, 암호화 키는 운영체제 자격 증명 저장소가 보관한다.
+
+| 페이지 | 경로 | 내용 |
+|---|---|---|
+| 기본 API 관리 | `/` | 폴더와 API 키 등록·수정·삭제 |
+| GMS 관리 | `/gms` | GMS on/off, 키 선택, 사용 한도, 잔액·연결 확인 |
+
+GMS는 선택 기능이며 기본값은 꺼짐이다. 꺼져 있으면 작업에서 직접 지정했든 fallback이든 BATON이 GMS로 아무것도 보내지 않는다. 켜려면 GMS 키와 사용 한도를 먼저 저장해야 한다. BATON 작업이 GMS를 쓰려면 `/gms`에서 켜고, `baton credentials` 서버를 띄운 채 `--enable-gms`로 실행해야 한다. 키 관리와 GMS에는 `python -m pip install -e ".[gms]"`로 설치하는 `cryptography`가 필요하다.
+
+GMS 호출 결과가 불확실한 작업은 이중 과금을 막기 위해 일반 `resume`·`retry`가 거부된다. `/gms`에서 원장을 확인한 뒤 `baton resume --task <id> --recover-running`으로 재개한다.
+
+기존 Jipdam 보관함은 한 번만 복사해 온다. 원본은 지우지 않고, 키 ID를 유지하며, GMS는 꺼진 상태로 들어온다. BATON 보관함에 이미 데이터가 있으면 중단한다.
+
+```powershell
+baton credentials-import
+```
 
 ## 아직 Jipdam에 묶인 부분
 
 - wiki 경로·일부 기존 관측 메타데이터는 아직 집담 레이아웃을 사용한다. 실행 context/import 경로는 FLOW-001에서 설정으로 분리했다.
-- GMS provider는 대상 저장소의 `budongi.gms_work`를 지연 import한다. 없으면 호출 없이 `unavailable`. 기본 비활성(`--enable-gms`).
+- Jipdam 앱의 데이터 수집과 자체 키 관리 화면은 아직 Jipdam 보관함을 쓴다. BATON 보관함으로의 전환은 후속 작업이다.
 
 ## BATON 개발 SDD
 

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="__BATON_CSRF_TOKEN__">
+  <meta name="color-scheme" content="light">
+  <title>GMS 관리</title>
+  <link rel="stylesheet" href="/static/credentials.css">
+  <script src="/static/common.js" defer></script>
+  <script src="/static/gms.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <nav class="site-nav" aria-label="관리 페이지">
+      <span class="brand">BATON</span>
+      <a class="nav-link" href="/">기본 API 관리</a>
+      <a class="nav-link" href="/gms" aria-current="page">GMS 관리</a>
+    </nav>
+    <header class="page-head">
+      <div>
+        <p class="eyebrow">BATON · GMS</p>
+        <h1>GMS 관리</h1>
+        <p class="lead">BATON의 GMS 사용 여부와 키, 사용 한도를 관리합니다. GMS는 선택 기능이며 기본값은 꺼짐입니다.</p>
+      </div>
+      <span id="secure-badge" class="badge" role="status">저장소 확인 중</span>
+    </header>
+
+    <section id="storage-notice" class="notice" hidden aria-live="polite"></section>
+    <p id="message" class="message" role="status" aria-live="polite"></p>
+
+    <section class="panel switch-panel" aria-labelledby="switch-heading">
+      <div>
+        <h2 id="switch-heading">BATON에서 GMS 사용</h2>
+        <p id="gms-switch-state" role="status" aria-live="polite">상태 확인 중</p>
+      </div>
+      <label class="switch">
+        <span class="sr-only">BATON에서 GMS 사용</span>
+        <input id="gms-switch" type="checkbox" role="switch" disabled>
+        <span class="switch-track"></span>
+      </label>
+    </section>
+
+    <section class="panel gms-panel" aria-labelledby="gms-heading">
+      <p class="eyebrow">GMS · GPT-6.1-SOL</p>
+      <h2 id="gms-heading">GMS 연결 확인</h2>
+      <p>기본 API 관리 페이지에서 등록한 키 중 GMS에 쓸 키를 선택하세요. 키가 바뀌면 그 페이지의 ‘수정’에서 교체하고 다시 확인하세요.</p>
+      <form id="gms-form" class="form-grid">
+        <label for="gms-credential">GMS에 사용할 키</label>
+        <select id="gms-credential" required></select>
+        <button id="gms-balance" class="button button-secondary full-width" type="button">잔여 크레딧 조회</button>
+        <p class="field-hint">잔액은 GMS key-info에서 조회합니다. 연결 시험도 아래에 저장한 토큰·비용 한도를 적용합니다.</p>
+        <button id="gms-check" class="button button-primary full-width" type="submit">한도 안에서 연결 시험 · 유료</button>
+      </form>
+      <p id="gms-balance-result" class="message" role="status" aria-live="polite">잔액을 조회하지 않았습니다.</p>
+      <p id="gms-result" class="message" role="status" aria-live="polite">아직 확인하지 않았습니다.</p>
+      <p class="field-hint">확인 결과는 호출 시점의 상태입니다. 실제 잔액·만료일은 GMS에서 확인하세요. 오류나 타임아웃에도 비용이 발생했을 수 있습니다.</p>
+    </section>
+
+    <section class="panel gms-panel" aria-labelledby="budget-heading">
+      <h2 id="budget-heading">보존 크레딧과 사용 한도</h2>
+      <p>SOL 입력/출력 0.02/0.1 · LUNA 입력/출력 0.001/0.005크레딧/토큰</p>
+      <form id="gms-policy-form" class="form-grid">
+        <label for="gms-budget-mode">실행 예산 기준</label>
+        <select id="gms-budget-mode"><option value="reserve_only">최소 1,000 잔액 보존 · 누적은 기록</option><option value="cumulative">이전 누적/호출 한도도 적용</option></select>
+        <label for="gms-reserve">나중에 남겨둘 최소 크레딧</label>
+        <input id="gms-reserve" type="number" min="1000" max="1000000000" step="0.01" required>
+        <label for="gms-total-credits">이 앱의 전체 사용 크레딧 상한</label>
+        <input id="gms-total-credits" type="number" min="0" max="1000000000" step="0.01" required>
+        <label for="gms-total-tokens">이 앱의 전체 사용 토큰 상한</label>
+        <input id="gms-total-tokens" type="number" min="0" max="1000000000" step="1" required>
+        <label for="gms-max-input">호출당 최대 입력 토큰</label>
+        <input id="gms-max-input" type="number" min="0" max="1050000" step="1" required>
+        <label for="gms-max-output">호출당 최대 출력 토큰 (추론 포함)</label>
+        <input id="gms-max-output" type="number" min="16" max="128000" step="1" required>
+        <label for="gms-expected-output">호출당 예상 출력 토큰</label>
+        <input id="gms-expected-output" type="number" min="0" max="128000" step="1" required>
+        <label for="gms-call-credits">호출당 최대 비용 (크레딧)</label>
+        <input id="gms-call-credits" type="number" min="0" max="1000000000" step="0.01" required>
+        <label for="gms-count-credits">입력 카운트 조회 비용 상한</label>
+        <input id="gms-count-credits" type="number" min="0" max="1000000000" step="0.01" required>
+        <p class="field-hint">선택한 키에 저장합니다. 꺼짐·만료·입력 카운트 실패·입출력 상한 초과는 실행하지 않습니다. 잔액 보존 모드는 보류·최대 예약 차감 후 설정한 최소 잔액(1,000크레딧 이상)을 유지하며, 이전 모드는 누적·호출 한도도 적용합니다.</p>
+        <button class="button button-secondary full-width" type="submit">선택한 키의 한도 저장 · 생성 없음</button>
+      </form>
+      <p id="gms-policy-result" class="message" role="status" aria-live="polite"></p>
+      <p id="gms-ledger" class="field-hint"></p>
+      <p class="field-hint">잔액은 팀의 다른 사용에도 변합니다. 이 앱은 자체 호출만 제한하며 매 실행 전 실제 잔액을 다시 조회합니다. 사용량 없는 실패는 최대 비용·토큰을 보류합니다.</p>
+    </section>
+
+    <section class="panel gms-panel" aria-labelledby="work-heading">
+      <h2 id="work-heading">명확한 코드 작업 · 사전 견적</h2>
+      <form id="gms-work-form" class="form-grid">
+        <label for="gms-task-id">Task ID</label>
+        <input id="gms-task-id" value="TASK-GMS-BUDGET-001" maxlength="80" pattern="[A-Z0-9-]+" required>
+        <label for="gms-difficulty">작업 난이도</label>
+        <select id="gms-difficulty"><option value="complex">복잡한 구현 · 6.1 SOL</option><option value="simple">좁은 코드·테스트 초안 · 6.0 LUNA</option></select>
+        <label for="gms-work-limit">이번 작업 출력 상한 · 저장 한도 이내</label>
+        <input id="gms-work-limit" type="number" min="16" max="128000" value="256" required>
+        <label for="gms-objective">작업 목표와 완료 기준</label>
+        <textarea id="gms-objective" rows="4" maxlength="8000" required placeholder="예: 비용 계산 함수의 경계값 테스트 초안 작성. 정수/음수/초과/동시 예약을 검사할 것."></textarea>
+        <label for="gms-context">필요한 코드 문맥</label>
+        <textarea id="gms-context" rows="6" maxlength="5000" placeholder="코드 일부만 입력하세요. 키·인증 헤더·DB·원본 데이터는 넣지 마세요."></textarea>
+        <button class="button button-secondary full-width" type="submit">입력 토큰 계산·예상 비용 확인 · 조회도 유료</button>
+      </form>
+      <p id="gms-quote-result" class="message" role="status" aria-live="polite"></p>
+      <button id="gms-execute" class="button button-primary" type="button" disabled>견적의 최대 비용 안에서 실행 · 유료</button>
+      <pre id="gms-work-result" class="code-result" aria-live="polite"></pre>
+      <p class="field-hint">GMS 입력 카운트 조회도 크레딧을 사용할 수 있습니다. 조회 비용을 먼저 예약하고 계정 사용량 차이로 대사합니다. 출력 예상량은 보장이 아니므로 최대 출력 비용을 예약해 usage로 정산합니다. 팀의 다른 차감이 섞이면 보수적으로 계산합니다. 코드 초안은 자동 적용하지 않습니다.</p>
+    </section>
+
+
+    <footer>
+      <span>이 앱은 127.0.0.1에서만 실행됩니다.</span>
+      <span>저장·수정·삭제는 API 쿼터를 사용하지 않습니다.</span>
+    </footer>
+  </main>
+</body>
+</html>

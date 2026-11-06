@@ -2,18 +2,19 @@
 # BATON 다음 작업 인계
 
 ```text
-repo: C:/Users/SSAFY/Desktop/baton_ai
-ref: codex/baton-flow-20261105; 재개시HEAD확인, 브랜치 push 승인됨, main 병합은 사용자 나중 확인
-handoff: Codex → Claude → 다음 담당; 2026-11-05 Codex 한도로 중단분을 Claude가 이어서 마침
-task/status: TASK-FLOW-001 / KAN-48, 오프라인검증 완료(in_progress); KAN-45/47 CI대기 유지
-goal/order: Orca 실연결 검증→push/CI 승인 시 게시, POWER는P0마지막
-done: Orca 실행연결·작업/worktree소유권·검증증거·로컬후보·통합게이트·baton-flow 스킬, 독립리뷰 no_findings
-next: 실제 CI 결과 확인 뒤 main 병합 판단(사용자); 실제 취소·FAIL 리뷰·Codex worker 검증은 모델호출 승인필요; docs/validation/multi-agent-flow.md
-scope: docs/tasks/TASK-FLOW-001.md의 scope
-checks: 전체299/skip6 PASS·깨끗한 clone CI재현(Win3.11·3.12, Ubuntu) PASS·패키지 PASS·SDD PASS(모델호출0); 실제 Orca 1.4.248 Claude worker 3회로 author·review·approve 전체 게이트 PASS; 테스트에 GIT_ALLOW_PROTOCOL=file 필요
-pending: 실제 취소·FAIL 리뷰·다중후보·Codex worker·CI 미검증; Orca CLI는 PATH에 없어 ORCA_CLI_COMMAND 필요; 권한 게이트는 Orca 터미널에서만 신뢰
-inputs: docs/specs/FLOW-001.md; docs/validation/multi-agent-flow.md
-rules: AGENTS.md; GMS·실모델·등록·종료보류; 완료단위자동commit/push전전체점검; jipdam읽기전용
+repo: D:/baton_ai
+ref: codex/gms-credentials-20261106 (PR 대상); main은 48d4426에 baton-flow 병합 완료. 재개시 HEAD 확인
+handoff: Claude → 다음 담당; 2026-11-06 같은 대화에서 병합 진행 후 인계
+task/status: TASK-GMS-001 in_progress; TASK-FLOW-001/KAN-48 in_progress, PR #1 CI 8개 PASS 후 병합
+goal/order: GMS PR 병합 → TASK-PROFILE 또는 사용자 지정 작업, POWER는 P0 마지막
+done: baton-flow main 병합, GMS 재승인 기록(AGENTS.md), GMS-001 Spec/Plan/ADR/Task, cryptography gms extra 복원, 이중 게이트, 불확실 전송 보호, 독립 리뷰 지적 수정
+next: GMS PR CI 확인 → 사용자가 GMS-001 Spec 내용과 병합을 확인
+scope: docs/tasks/TASK-GMS-001.md의 scope; 공유 폴더 D:/baton_ai는 feat/api-key-gms-management에 그대로 있음
+checks: fb42429 전체 418개 PASS/skip1, cryptography 없이 315개 PASS/skip13, 모델·GMS 호출 0; 최종 드래프트 수정은 영향 범위+CI로 확인; docs/validation/gms-credentials.md
+pending: GMS PR CI 미확인; 드래프트 수정 재리뷰 없음; 실제 GMS·macOS 키체인·관리 화면 JS 미검증; Orca 실제 취소·Codex worker 미검증
+inputs: docs/specs/GMS-001.md; docs/validation/gms-credentials.md; docs/specs/FLOW-001.md
+usage: unknown
+rules: AGENTS.md; DEFERRED_GMS 해제(사용자 직접 실행만, 에이전트의 실호출·키/잔액 조회 금지); GMS-001 Spec은 Claude가 작성해 사용자가 본문 미확인; 등록·종료 보류; jipdam 읽기 전용
 ```
 <!-- BATON_RESUME_END -->
 

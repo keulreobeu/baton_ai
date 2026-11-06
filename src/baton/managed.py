@@ -318,6 +318,13 @@ class ManagedStore:
                 raise HarnessError("task_cannot_resume")
             if automatic and (r["state"] != "RETRYING" or r["control"]):
                 raise HarnessError("automatic_retry_interrupted")
+            values = json.loads(r["result"])
+            if values.get("uncertain_dispatch"):
+                # Resending could pay twice. The operator confirms the ledger with --recover-running.
+                if not recover:
+                    raise HarnessError("uncertain_dispatch_requires_review")
+                values.pop("uncertain_dispatch")
+                c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), task))
             if r["lease"]:
                 if json.loads(r["body"])["execution"].get("runtime") == "orca":
                     raise HarnessError("orca_settlement_required")

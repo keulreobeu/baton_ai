@@ -13,7 +13,11 @@
     "docs/specs/FLOW-001.md",
     "docs/tasks/TASK-FLOW-001.md",
     "docs/plans/multi-agent-flow.md",
-    "docs/adr/ADR-FLOW-001.md"
+    "docs/adr/ADR-FLOW-001.md",
+    "docs/specs/GMS-001.md",
+    "docs/tasks/TASK-GMS-001.md",
+    "docs/plans/gms-credentials.md",
+    "docs/adr/ADR-GMS-001.md"
   ],
   "features": [
     {
@@ -631,6 +635,200 @@
             {
               "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_settled_scope_violation_blocks_and_releases_external_lease"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GMS-001",
+      "spec": "docs/specs/GMS-001.md",
+      "requirements": [
+        {
+          "id": "GMS-001-REQ-01",
+          "acs": [
+            "GMS-001-AC-01",
+            "GMS-001-AC-02"
+          ]
+        },
+        {
+          "id": "GMS-001-REQ-02",
+          "acs": [
+            "GMS-001-AC-03",
+            "GMS-001-AC-04"
+          ]
+        },
+        {
+          "id": "GMS-001-REQ-03",
+          "acs": [
+            "GMS-001-AC-05"
+          ]
+        },
+        {
+          "id": "GMS-001-REQ-04",
+          "acs": [
+            "GMS-001-AC-06",
+            "GMS-001-AC-07"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "GMS-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_credentials.py",
+              "symbol": "CredentialVaultTests.test_database_contains_ciphertext_not_plaintext_and_provider_is_bound"
+            },
+            {
+              "file": "tests/test_credentials.py",
+              "symbol": "CredentialVaultTests.test_ciphertext_tampering_fails_closed"
+            },
+            {
+              "file": "tests/test_credentials.py",
+              "symbol": "CredentialVaultTests.test_unavailable_or_failing_os_store_never_writes_plaintext_or_rows"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "PageTests.test_switch_requires_csrf"
+            },
+            {
+              "file": "tests/test_credential_regressions.py",
+              "symbol": "CredentialRegressionTests.test_non_ascii_csrf_is_rejected_without_disconnect"
+            },
+            {
+              "file": "tests/test_credential_regressions.py",
+              "symbol": "CredentialRegressionTests.test_unsupported_method_does_not_echo_input_and_has_security_headers"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_default_is_off"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_on_requires_a_key_and_limits"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_on_rejects_a_key_without_limits"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_on_then_off_keeps_saved_limits"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_off_blocks_quotes_and_rejects_non_boolean"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_gms_provider_is_registered_only_with_the_flag"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_server_down_sends_nothing"
+            },
+            {
+              "file": "tests/test_managed_providers.py",
+              "symbol": "ManagedProviderTests.test_gms_off_blocks_direct_and_fallback_use_without_sending"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_gms_budget.py",
+              "symbol": "GMSBudgetTests.test_reserve_cost_and_token_caps_block_generation"
+            },
+            {
+              "file": "tests/test_gms_budget.py",
+              "symbol": "GMSBudgetTests.test_uncertain_reservation_survives_restart"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_uncertain_failure_requires_operator_review"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_pause_keeps_the_uncertain_marker"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_interrupt_during_dispatch_keeps_the_marker"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_definite_failure_clears_the_marker"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_pause_after_a_draft_keeps_the_paid_result"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "UncertainDispatchTests.test_delivered_draft_clears_the_marker"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "WorkTests.test_lost_connection_during_execute_is_uncertain"
+            },
+            {
+              "file": "tests/test_managed_providers.py",
+              "symbol": "ManagedProviderTests.test_gms_failure_is_uncertain_and_does_not_retry"
+            },
+            {
+              "file": "tests/test_managed_providers.py",
+              "symbol": "ManagedProviderTests.test_gms_delegates_existing_runner_once_and_returns_draft"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_keys_keep_their_ids_and_decrypt_in_baton"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_result_holds_no_secret_and_gms_arrives_off"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_original_is_left_unchanged"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_refuses_to_overwrite_existing_baton_data"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_credentials_commands_report_the_missing_extra"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_execute_without_the_extra_sends_nothing"
             }
           ]
         }

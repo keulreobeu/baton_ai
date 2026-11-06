@@ -8,7 +8,7 @@ Pass the task. Keep the progress. 재개 시 [docs/HANDOFF.md](docs/HANDOFF.md)�
 
 ## 경계 (반드시 지킨다)
 
-- **구독 로그인만 사용.** API 키·Bedrock/Vertex/Foundry·base URL·Codex 비-openai provider 경로로 모델을 부르지 않는다. GMS는 확장 기능이며 `--enable-gms` 없이는 꺼져 있다.
+- **구독 로그인만 사용.** API 키·Bedrock/Vertex/Foundry·base URL·Codex 비-openai provider 경로로 모델을 부르지 않는다. 유일한 예외는 GMS이며, `--enable-gms`와 `/gms` 스위치가 모두 켜져 있어야 한다.
 - **실제 모델 호출 금지(사용자 승인 전).** `baton quota-window run --apply` 실핑, `codex exec`, `claude -p`를 테스트·검증 목적으로 실행하지 않는다. 테스트는 fake runner/clock으로 모델 호출 0.
 - **Windows 작업 스케줄러 등록 금지.** `install-task`는 출력만 한다. 실제 등록·PC 종료는 사용자 몫.
 - **jipdam 원본 불변.** `C:\Users\SSAFY\Desktop\jipdam`은 읽기만 한다. 물리 분리(jipdam이 baton을 쓰도록 바꾸기)는 사용자 확인 후.
@@ -24,9 +24,8 @@ python -m baton --help
 python -m baton quota-window status                   # BATON_HOME을 임시 폴더로 두고 실행 권장
 ```
 
-- 표준 라이브러리만 사용(Python ≥ 3.11). KST는 고정 UTC+9(`zoneinfo` 금지: Windows Python에 tzdata 없음).
-- GMS 통합 테스트는 jipdam `.venv`(cryptography 포함)에서만 실행되고 그 외에는 skip된다:
-  `C:\Users\SSAFY\Desktop\jipdam\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -t .`
+- 기본 설치는 표준 라이브러리만 사용(Python ≥ 3.11). `cryptography`는 선택 의존성 `gms`로만 둔다. KST는 고정 UTC+9(`zoneinfo` 금지: Windows Python에 tzdata 없음).
+- GMS·자격 증명 테스트는 `python -m pip install -e ".[gms]"` 환경에서 실행되고, `cryptography`가 없으면 skip된다.
 - 설계 결정은 `docs/designs/`, 수락 기준·증거는 `docs/tasks/`에 기록한다. 결정이 바뀌면 설계 문서의 "Eng Review Amendments"와 Task 표를 같이 고친다.
 
 ## BATON 자체 SDD — 2026-11-03
@@ -37,8 +36,8 @@ L0는 비계약 README 설명만 명시 면제할 수 있다. AGENTS/SDD/Skill �
 L3는 Spec/Plan/ADR/Task·독립 검토와 필요한 사용자 승인을 유지한다.
 `python -X utf8 scripts/verify_environment.py`는 로컬 SDD와 오프라인 회귀만 검사한다.
 연결 프로젝트에는 그 프로젝트의 규칙을 적용하며 이 SDD를 자동 복제하지 않는다.
-현재 GMS는 사용자 최신 요청에 따라 DEFERRED_GMS이며 `--enable-gms` 실행·키/잔액 조회도
-재승인 전 금지다. 기존 코드·원장을 보존한다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.
+GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위는 [GMS-001](docs/specs/GMS-001.md)의 로컬 키 관리와 사용자가 직접 켠 GMS 실행이다.
+에이전트는 테스트·검증 목적으로 실제 GMS를 호출하거나 키·잔액을 조회하지 않는다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.
 
 
 ## Git 작업 완료와 push — 2026-11-04 사용자 승인
