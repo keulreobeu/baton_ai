@@ -13,7 +13,8 @@
     "docs/specs/FLOW-001.md",
     "docs/tasks/TASK-FLOW-001.md",
     "docs/plans/multi-agent-flow.md",
-    "docs/adr/ADR-FLOW-001.md"
+    "docs/adr/ADR-FLOW-001.md",
+    "docs/tasks/TASK-RECOVERY-20261106.md"
   ],
   "features": [
     {

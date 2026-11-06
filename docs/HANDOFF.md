@@ -1,20 +1,13 @@
 <!-- BATON_RESUME_START -->
-# BATON 다음 작업 인계
+# BATON 재개 — 2026-11-06
 
-```text
-repo: C:/Users/SSAFY/Desktop/baton_ai
-ref: codex/baton-flow-20261105; 재개시HEAD확인, 브랜치 push 승인됨, main 병합은 사용자 나중 확인
-handoff: Codex → Claude → 다음 담당; 2026-11-05 Codex 한도로 중단분을 Claude가 이어서 마침
-task/status: TASK-FLOW-001 / KAN-48, 오프라인검증 완료(in_progress); KAN-45/47 CI대기 유지
-goal/order: Orca 실연결 검증→push/CI 승인 시 게시, POWER는P0마지막
-done: Orca 실행연결·작업/worktree소유권·검증증거·로컬후보·통합게이트·baton-flow 스킬, 독립리뷰 no_findings
-next: 실제 CI 결과 확인 뒤 main 병합 판단(사용자); 실제 취소·FAIL 리뷰·Codex worker 검증은 모델호출 승인필요; docs/validation/multi-agent-flow.md
-scope: docs/tasks/TASK-FLOW-001.md의 scope
-checks: 전체299/skip6 PASS·깨끗한 clone CI재현(Win3.11·3.12, Ubuntu) PASS·패키지 PASS·SDD PASS(모델호출0); 실제 Orca 1.4.248 Claude worker 3회로 author·review·approve 전체 게이트 PASS; 테스트에 GIT_ALLOW_PROTOCOL=file 필요
-pending: 실제 취소·FAIL 리뷰·다중후보·Codex worker·CI 미검증; Orca CLI는 PATH에 없어 ORCA_CLI_COMMAND 필요; 권한 게이트는 Orca 터미널에서만 신뢰
-inputs: docs/specs/FLOW-001.md; docs/validation/multi-agent-flow.md
-rules: AGENTS.md; GMS·실모델·등록·종료보류; 완료단위자동commit/push전전체점검; jipdam읽기전용
-```
+- 기록·스킬 정리: `codex/workspace-recovery-20261106`, `D:/baton_ai/.local_runtime/workspace-recovery`.
+- 실제 제품 checkout: `D:/baton_ai`, Claude의 `feat/api-key-gms-management`; 같은 폴더에서 브랜치를 전환하지 않는다.
+- flow/SDD/Orca 기록은 f009aa9 기반에 있고 API/GMS 변경과 미통합이다.
+- 먼저 [브랜치별 작업 위치](workspace-recovery-20261106.md)와 [스킬 목록](development-skills.md)을 읽는다.
+- Task: TASK-RECOVERY-20261106. 기존 KAN-45/47/48 CI·실행 게이트는 소급 완료하지 않는다.
+- 다음: Claude 최종 SHA 확인 → 별도 통합 Task → 저장소 프로파일 → 집담 호출 전환·회귀.
+- 아래는 당시 기록이다. `C:/Users/SSAFY/Desktop/*`는 이전 PC 경로다. 현재 경로는 `D:/baton_ai`, `D:/jipdam`.
 <!-- BATON_RESUME_END -->
 
 ---
