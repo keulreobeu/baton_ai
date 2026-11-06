@@ -60,3 +60,10 @@ Claude가 `37b6d6f` 기준으로 PR #7 전체를 다시 리뷰해 10건을 지�
 남은 지적 4건은 고치지 않았다: `GIT~1` 경로, `_locks` 단순화, 파일별 집합 합산, `scan_content` 중복. 리뷰 카드 밖의 `downloads`·publisher 잔여물과 publisher 파일 쓰기도 남아 있다.
 
 리뷰와 수정을 모두 Claude가 했으므로 독립 검토가 아니다. 이 수정의 다른 리뷰어 재검토와 PR CI가 남아 in_progress로 둔다.
+
+## push 점검 — 2026-11-06
+
+- 대상은 `origin/claude/port-review-fixes-20261106`이고, 사용자 요청 'push하고 PR 생성'으로 진행했다. main 병합은 포함하지 않는다.
+- 원격 `main`은 `a061d39`다. 원격 refs로 도달할 수 없는 커밋은 `ab4ca9c`와 이 기록 커밋뿐이다. 다른 로컬 branch의 미게시 커밋은 없다.
+- 변경 10개 파일은 scope 안에 있다. 키·토큰·계정 이메일·DB·로그·raw·runtime 파일은 없다. 패턴 검사의 `sk-` 일치는 `TASK-PORT` 문자열의 오탐이다.
+- 실제 CI 결과는 이 기록에 포함하지 않으며, 확인 전에는 Task를 완료로 올리지 않는다.
