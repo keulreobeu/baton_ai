@@ -3,18 +3,18 @@
 
 ```text
 repo: D:/baton_ai
-ref: codex/gms-credentials-20261106 (PR 대상); main은 48d4426에 baton-flow 병합 완료. 재개시 HEAD 확인
-handoff: Claude → 다음 담당; 2026-11-06 같은 대화에서 병합 진행 후 인계
-task/status: TASK-GMS-001 in_progress; TASK-FLOW-001/KAN-48 in_progress, PR #1 CI 8개 PASS 후 병합
-goal/order: GMS PR 병합 → TASK-PROFILE 또는 사용자 지정 작업, POWER는 P0 마지막
-done: baton-flow main 병합, GMS 재승인 기록(AGENTS.md), GMS-001 Spec/Plan/ADR/Task, cryptography gms extra 복원, 이중 게이트, 불확실 전송 보호, 독립 리뷰 지적 수정
-next: GMS PR CI 확인 → 사용자가 GMS-001 Spec 내용과 병합을 확인
-scope: docs/tasks/TASK-GMS-001.md의 scope; 공유 폴더 D:/baton_ai는 feat/api-key-gms-management에 그대로 있음
-checks: fb42429 전체 418개 PASS/skip1, cryptography 없이 315개 PASS/skip13, 모델·GMS 호출 0; 최종 드래프트 수정은 영향 범위+CI로 확인; docs/validation/gms-credentials.md
-pending: GMS PR CI 미확인; 드래프트 수정 재리뷰 없음; 실제 GMS·macOS 키체인·관리 화면 JS 미검증; Orca 실제 취소·Codex worker 미검증
+ref: main e3275b6 기준 작성(PR #1·#2 병합 완료); 재개시 main HEAD와 공유 폴더 branch 확인
+handoff: Claude → 다음 담당; 2026-11-06 병합 후 인계
+task/status: TASK-GMS-001 in_progress; TASK-FLOW-001/KAN-48 in_progress; 둘 다 verified 아님
+goal/order: 병행 브랜치 정리 → TASK-PROFILE 또는 사용자 지정 작업, POWER는 P0 마지막
+done: baton-flow·GMS main 병합, GMS 재승인 기록, GMS-001 Spec/Plan/ADR/Task, cryptography gms extra, 이중 게이트, 불확실 전송 보호, 독립 리뷰 지적 수정
+next: 공유 폴더를 main으로 옮기고 최신화; 이어서 codex/workspace-recovery-20261106과 codex/test-speed-20261106을 최신 main과 충돌 확인
+scope: 다음 작업의 Task scope를 먼저 확인; 위 두 브랜치는 다른 작업자 소유일 수 있으니 임의 수정 금지
+checks: PR #2 CI 8개 PASS(5ee3169, Windows 최대 12분); fb42429 로컬 418개 PASS/skip1, cryptography 없이 315개 PASS/skip13; 모델·GMS 호출 0; docs/validation/gms-credentials.md
+pending: main e3275b6 push CI는 작성 시 진행 중; 드래프트 수정 재리뷰 없음; 실제 GMS·macOS 키체인·관리 화면 JS 미검증; Orca 실제 취소·Codex worker 미검증
 inputs: docs/specs/GMS-001.md; docs/validation/gms-credentials.md; docs/specs/FLOW-001.md
 usage: unknown
-rules: AGENTS.md; DEFERRED_GMS 해제(사용자 직접 실행만, 에이전트의 실호출·키/잔액 조회 금지); GMS-001 Spec은 Claude가 작성해 사용자가 본문 미확인; 등록·종료 보류; jipdam 읽기 전용
+rules: AGENTS.md; DEFERRED_GMS 해제(사용자 직접 실행만, 에이전트의 실호출·키/잔액 조회 금지); GMS-001 Spec은 Claude 작성, 사용자가 본문 확인 여부 미확인; 등록·종료 보류; jipdam 읽기 전용
 ```
 <!-- BATON_RESUME_END -->
 

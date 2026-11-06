@@ -8,8 +8,8 @@ TASK-GMS-001 / GMS-001. 범위는 로컬 키 관리, 선택형 GMS, 불확실 �
 |---|---|---|
 | fb42429, cryptography 있음 | `python -X utf8 -m unittest discover -s tests -t .` | 418개 통과, skip 1 |
 | fb42429, cryptography 없음 | 같은 명령, 별도 venv | 315개 통과, skip 13 |
-| 최종 후보, 드래프트 보호 수정 후 | 영향 범위 테스트와 `check_sdd.py` | 아래 PR 기록과 CI로 확인 |
-| 실제 CI | GitHub Actions | PR 생성 후 확인, 이 문서 작성 시점에는 미실행 |
+| 5ee3169, 드래프트 보호 수정 후 | 영향 범위 테스트와 `check_sdd.py` | 96개 통과, cryptography 없이 30개 통과·skip 6, SDD PASS |
+| 5ee3169 실제 CI | GitHub Actions, PR #2 | Ubuntu·Windows, Python 3.11·3.12, push·PR 8개 통과. Windows 최대 12분 |
 
 `baton credentials-import`는 cryptography 없는 환경에서 `gms_extra_required`, exit 2를 반환했고, `baton providers`는 `--enable-gms` 없이는 gms를 표시하지 않았다.
 
