@@ -104,7 +104,8 @@ class Orchestrator:
                     if provider_name == "gms":
                         return self.finish(task_id, lease, "BLOCKED", reason="provider_disabled")
                     return self.finish(task_id, lease, "WAITING_FOR_PROVIDER", reason="provider_unavailable")
-                self.store.update(task_id, lease, "RUNNING", result={"provider": provider_name})
+                # Set before dispatch so a crash, Ctrl+C or late error still blocks a plain resume.
+                self.store.update(task_id, lease, "RUNNING", result={"provider": provider_name, **({"uncertain_dispatch": True} if provider_name == "gms" else {})})
                 request = json.loads(json.dumps(task))
                 request["_attempt"] = row["attempt"]
                 request["_fallback"] = provider_name != task["execution"]["preferred_provider"]
@@ -122,16 +123,21 @@ class Orchestrator:
                     self.store.observe(task_id, "end_invocation", metrics, invocation, outcome, time.monotonic() - invocation_started)
                 if git(tree, "rev-parse", "HEAD").strip() != base: raise HarnessError("worktree_head_changed")
                 after = snapshot(tree); check_scope(task, after)
+                # A definite outcome clears the marker; an uncertain one outlives pause, timeout and cancel.
+                uncertain = {"uncertain_dispatch": outcome.error == "uncertain" or outcome.status == "draft"} if provider_name == "gms" else {}
+                if uncertain.get("uncertain_dispatch"):
+                    uncertain["summary"] = persisted_text(outcome.summary)[:12000]
                 reason = stop()
                 if reason:
-                    return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", changed_files=after, reason=reason)
+                    return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", changed_files=after, reason=reason, **uncertain)
                 # Provider output is sanitized a second time at the persistence boundary.
                 summary = persisted_text(outcome.summary)[:12000]
                 self.store.update(task_id, lease, "RUNNING", result={"session_id": outcome.session_id,
                                   "usage": outcome.usage, "summary": summary, "changed_files": after,
-                                  "provider_events": outcome.events[-100:]})
+                                  "provider_events": outcome.events[-100:], **uncertain})
                 if outcome.status == "draft":
-                    return self.finish(task_id, lease, "WAITING_FOR_APPROVAL", reason="draft_requires_manual_apply_and_validation", validation_passed=False)
+                    return self.finish(task_id, lease, "WAITING_FOR_APPROVAL", reason="draft_requires_manual_apply_and_validation", validation_passed=False,
+                                       **({"uncertain_dispatch": False} if uncertain else {}))
                 if outcome.status != "success":
                     error = outcome.error or "unknown"
                     if error in {"quota", "quota_exhausted"}:
@@ -153,7 +159,7 @@ class Orchestrator:
                             close_metrics()
                             self.store.ready(task_id, automatic=True)
                             return self._run(task_id)
-                    return self.finish(task_id, lease, "WAITING_FOR_PROVIDER" if provider_name == "gms" else "BLOCKED" if error in {"auth", "permission", "unknown"} else "FAILED", reason=error)
+                    return self.finish(task_id, lease, "WAITING_FOR_PROVIDER" if provider_name == "gms" else "BLOCKED" if error in {"auth", "permission", "unknown"} else "FAILED", reason=error, **uncertain)
                 self.store.update(task_id, lease, "VALIDATING")
                 validation_started = time.monotonic()
                 validation = self.validate(task, tree, stop)

@@ -1,5 +1,16 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-06 테스트 시간
+
+- [TASK-TEST-SPEED-001](TASK-TEST-SPEED-001.md): 로컬 병렬 실행기 추가. 공식 검증과 CI는 변경 없음. 실제 CI 미실행.
+
+## 현재 작업 — 2026-11-06 GMS
+
+- [TASK-GMS-001](TASK-GMS-001.md): 키 관리와 선택형 GMS를 계약으로 편입. 사용자 재승인으로 DEFERRED_GMS 해제. 실제 GMS 호출은 미실행. [검증 기록](../validation/gms-credentials.md).
+- 아래 항목의 GMS 보류 문구는 당시 기록이며 이 항목이 우선한다.
+
+## 현재 작업 — 2026-11-06 환경 복구
+
 2026-11-06 [TASK-ENV-20261106](TASK-ENV-20261106.md): 이동 후 의존성·하네스 전용 venv·브라우저·Orca 실행 환경 보완. [설치 상태/명령](../environment-20261106.md).
 
 2026-11-06 [TASK-RECOVERY-20261106](TASK-RECOVERY-20261106.md): 작업 위치·스킬 등록 정리. [브랜치 점검](../workspace-recovery-20261106.md), [스킬 목록](../development-skills.md). GMS 분리는 Claude 담당이며 미통합.

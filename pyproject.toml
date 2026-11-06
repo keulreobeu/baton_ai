@@ -18,6 +18,9 @@ baton = "baton.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+baton = ["static/*"]
+
 [tool.setuptools.data-files]
 "share/baton/scripts" = ["scripts/install_flow_skill.py"]
 "share/baton/skills/baton-flow" = ["skills/baton-flow/SKILL.md", "skills/baton-flow/LICENSE.pstack"]
