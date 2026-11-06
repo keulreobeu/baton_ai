@@ -11,7 +11,7 @@ Pass the task. Keep the progress. 재개 시 [docs/HANDOFF.md](docs/HANDOFF.md)�
 - **구독 로그인만 사용.** API 키·Bedrock/Vertex/Foundry·base URL·Codex 비-openai provider 경로로 모델을 부르지 않는다. GMS는 확장 기능이며 `--enable-gms` 없이는 꺼져 있다.
 - **실제 모델 호출 금지(사용자 승인 전).** `baton quota-window run --apply` 실핑, `codex exec`, `claude -p`를 테스트·검증 목적으로 실행하지 않는다. 테스트는 fake runner/clock으로 모델 호출 0.
 - **Windows 작업 스케줄러 등록 금지.** `install-task`는 출력만 한다. 실제 등록·PC 종료는 사용자 몫.
-- **jipdam 원본 불변.** `C:\Users\SSAFY\Desktop\jipdam`은 읽기만 한다. 물리 분리(jipdam이 baton을 쓰도록 바꾸기)는 사용자 확인 후.
+- **jipdam 원본 불변.** 연결 대상 집담의 제품 코드·원본 데이터는 읽기만 한다. 물리 분리(jipdam이 baton을 쓰도록 바꾸기)는 사용자 확인 후.
 - **Git:** 커밋 작성자는 이 저장소 설정(`lwwde07`). 완료한 작업 단위는 관련 검증과 Task/증거 갱신 후 자동 로컬 커밋한다. push는 아래 전체 커밋 점검을 통과한 현재 승인 대상에만 한다. force·amend·reset은 별도 사용자 요청 없이는 하지 않는다.
 - 비밀값·토큰·계정 이메일·원장 DB를 커밋하거나 출력하지 않는다.
 
@@ -25,8 +25,8 @@ python -m baton quota-window status                   # BATON_HOME을 임시 폴
 ```
 
 - 표준 라이브러리만 사용(Python ≥ 3.11). KST는 고정 UTC+9(`zoneinfo` 금지: Windows Python에 tzdata 없음).
-- GMS 통합 테스트는 jipdam `.venv`(cryptography 포함)에서만 실행되고 그 외에는 skip된다:
-  `C:\Users\SSAFY\Desktop\jipdam\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -t .`
+- 이 checkout의 개발 환경은 `scripts/setup-environment.ps1`로 설치하고 `. ./scripts/enter-environment.ps1`로 선택한다. [현재 환경](docs/environment-20261106.md)을 따른다. 다른 작업자가 사용하는 checkout의 editable venv 연결을 바꾸지 않는다.
+- 테스트는 이 checkout의 `.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .`로 실행한다. 선택 의존성은 `.[gms]`로 설치할 수 있으며, 연결 제품이 필요한 과거 GMS 통합의 skip은 실제 결과에 구분해 기록한다. 이전 PC의 Desktop 경로와 집담 venv를 현재 실행 경로로 사용하지 않는다.
 - 설계 결정은 `docs/designs/`, 수락 기준·증거는 `docs/tasks/`에 기록한다. 결정이 바뀌면 설계 문서의 "Eng Review Amendments"와 Task 표를 같이 고친다.
 
 ## BATON 자체 SDD — 2026-11-03

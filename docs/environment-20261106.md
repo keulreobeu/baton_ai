@@ -64,7 +64,10 @@ baton runtime doctor
 - BATON/집담 브라우저 smoke: PASS. about:blank → 합성 버튼 클릭 → DOM 값 확인 → screenshot → server stop. 실제 사이트/데이터/모델 없음.
 - `scripts/qualify_flow_package.py`: PASS. wheel build/install, 외부 repo 경로 없는 isolated import, Orca unavailable 상태 local CLI, 설치 패키지 포함 flow skill 무결성 확인.
 - 집담 `D:/jipdam/.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py`: exit 0. 제품 355개 수집/실행과 팀 40개 통과, 합성 DB·doctor·detail CLI smoke 통과. 제품 코드 변경 없이 Windows 환경 branch가 dual-host 8339053으로 전진했으며 팀 테스트 40개는 현재 dual-host 구현을 검사했다.
-- BATON 전체 오프라인 회귀: 실행 중. 마지막 결과를 이 문서에 추가한다.
+- 최종 관련 검사: 전용 venv의 `python -B -X utf8 -m unittest tests.test_flow_skill tests.test_sdd -q` PASS, 36 tests / failures 0 / errors 0 / skip 0.
+- BATON 전용 venv 전체 `scripts/verify_environment.py`: PASS, exit 0. 299개 실행 중 293개 통과 / 6개 skip / failures 0 / errors 0, 1313.424초. 시작 후 src/tests/SDD 검사기·검증 진입점 변경이 없음을 Git diff로 확인했다. 전체 실행은 `verified_evidence_eligible=false`다.
+- skip 6개: 집담 전용 `.codex/`·수동 하네스 설정 확인 1개, 아직 `budongi`를 가져오는 과거 GMS 통합 5개. 이 두 범위는 독립 BATON 환경 설치로 소급 검증하지 않는다. Claude의 GMS 분리 branch 통합 후 별도로 검사한다.
+- 환경 Task는 직접 관련된 36개 무스킵 결과와 실제 설치/연결 smoke에 한정해 완료한다. 기존 FLOW/SDD/QW Task의 CI·실모델 미검증 게이트는 완료 처리하지 않는다.
 
 브라우저 첫 검사의 screenshot 경로 오류는 smoke runner가 집담 cwd를 유지한 것이 원인이었다. 각 repo cwd에서 재실행해 두 환경 모두 통과했다. 테스트 runtime과 사용자 실제 DB/키/원장은 구분한다.
 
