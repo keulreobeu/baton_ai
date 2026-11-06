@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-06 테스트 시간
+
+- [TASK-TEST-SPEED-001](TASK-TEST-SPEED-001.md): 로컬 병렬 실행기 추가. 공식 검증과 CI는 변경 없음. 실제 CI 미실행.
+
 ## 현재 작업 — 2026-11-06 GMS
 
 - [TASK-GMS-001](TASK-GMS-001.md): 키 관리와 선택형 GMS를 계약으로 편입. 사용자 재승인으로 DEFERRED_GMS 해제. 실제 GMS 호출은 미실행. [검증 기록](../validation/gms-credentials.md).
