@@ -42,4 +42,8 @@ python -X utf8 scripts/install_flow_skill.py --host claude --destination D:/bato
 
 기술 근거: [OpenAI 스킬 문서](https://developers.openai.com/api/reference/cli), [Claude Code 스킬 문서](https://code.claude.com/docs/en/skills).
 
-이번 컴퓨터의 BATON 로컬 재등록 도우미: `D:/baton_ai/.local_runtime/prepare_development_skills.py`. 기존 집담 고정 런타임에서 두 native render를 등록하고 BATON marker에 맞춰 preamble을 조정한다. 등록 검사는 `D:/baton_ai/.local_runtime/verify_registered_skills.py`다. 보호된 스킬 경로 쓰기에는 host의 권한이 필요하다. 이 로컬 복구 도우미는 패키지의 새 공식 installer나 다른 PC용 배포물로 간주하지 않는다.
+이번 컴퓨터의 BATON 로컬 재등록 도우미: `D:/baton_ai/.local_runtime/prepare_development_skills.py`. 최초 복사 후 BATON 내부에 보존한 고정 런타임·adapter·두 native render만으로 재등록하고 BATON marker에 맞춰 preamble을 조정한다. 현재 재등록은 집담 파일을 읽지 않는다. 등록 검사는 `D:/baton_ai/.local_runtime/verify_registered_skills.py`다. 보호된 스킬 경로 쓰기에는 host의 권한이 필요하다. 이 로컬 복구 도우미는 패키지의 새 공식 installer나 다른 PC용 배포물로 간주하지 않는다.
+
+## 환경 보완 후
+
+[현재 환경과 진입 명령](environment-20261106.md)을 따른다. BATON 전용 venv·독립 브라우저 캐시·Orca 1.4.248 및 `skill_prefix: true` 설정을 보완했다. 집담 원래 Windows branch에도 dual-host 8339053이 반영되어 이전 bootstrap 재실행 경고는 이 컴퓨터의 현재 checkout에는 해소됐다. 이전 절은 당시 복구 상태를 설명한다.
