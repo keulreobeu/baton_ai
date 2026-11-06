@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import time
 
 
 class HarnessError(ValueError):
@@ -27,6 +28,18 @@ SENSITIVE_FIELDS = {"api_key", "apikey", "api-key", "password", "secret", "acces
 
 def encode(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def replace_file(source, target) -> None:
+    """Atomic replace. Windows can briefly refuse it for a file that was just written."""
+    for delay in (0.05, 0.2, 0.5, 1.0, None):
+        try:
+            Path(source).replace(target)
+            return
+        except PermissionError:
+            if delay is None:
+                raise
+            time.sleep(delay)
 
 
 def digest(value) -> str:

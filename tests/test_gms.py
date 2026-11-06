@@ -10,6 +10,11 @@ from threading import Event, Thread
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    raise unittest.SkipTest("the gms extra is not installed") from None
+
 from baton.credential_server import create_credential_server
 from baton.credential_vault import CredentialValidationError, CredentialVault, SecureStorageUnavailable
 from baton.gms import ENDPOINT, MODEL, MAX_RESPONSE_BYTES, GMSProbe, _NoRedirect, estimate_usage

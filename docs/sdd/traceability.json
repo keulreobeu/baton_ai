@@ -1,0 +1,802 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "4e2f205a7e21064fa43617bd2cf73e571ed40195",
+  "documents": [
+    "docs/specs/SDD-001.md",
+    "docs/tasks/TASK-SDD-001.md",
+    "docs/plans/sdd-adoption.md",
+    "docs/adr/ADR-001-policy-ownership.md",
+    "docs/specs/QW-STATUS-001.md",
+    "docs/tasks/TASK-QW-STATUS-001.md",
+    "docs/plans/qw-status.md",
+    "docs/adr/ADR-QW-STATUS-001.md",
+    "docs/specs/FLOW-001.md",
+    "docs/tasks/TASK-FLOW-001.md",
+    "docs/plans/multi-agent-flow.md",
+    "docs/adr/ADR-FLOW-001.md",
+    "docs/specs/GMS-001.md",
+    "docs/tasks/TASK-GMS-001.md",
+    "docs/plans/gms-credentials.md",
+    "docs/adr/ADR-GMS-001.md"
+  ],
+  "features": [
+    {
+      "id": "SDD-001",
+      "spec": "docs/specs/SDD-001.md",
+      "requirements": [
+        {
+          "id": "SDD-001-REQ-01",
+          "acs": [
+            "SDD-001-AC-01"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-02",
+          "acs": [
+            "SDD-001-AC-02"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-03",
+          "acs": [
+            "SDD-001-AC-03"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-04",
+          "acs": [
+            "SDD-001-AC-04"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-05",
+          "acs": [
+            "SDD-001-AC-05"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-06",
+          "acs": [
+            "SDD-001-AC-06"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-07",
+          "acs": [
+            "SDD-001-AC-07"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-08",
+          "acs": [
+            "SDD-001-AC-08"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-09",
+          "acs": [
+            "SDD-001-AC-09"
+          ]
+        },
+        {
+          "id": "SDD-001-REQ-10",
+          "acs": [
+            "SDD-001-AC-10"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "SDD-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_policy_is_read_only"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_no_external_commands_or_policy_modification"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_l0_is_explicit_and_rules_are_not_exempt"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_l3_requires_plan_and_adr"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_templates_match_contract"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_bad_metadata_and_duplicates"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_paths_reject_escape_and_absolute"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_symlink_before_external_read"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_refs_are_real_tests"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_requirement_and_task_links"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_verified_latest_result_and_counts"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_skips_and_expected_failures_cannot_certify"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_draft_spec_cannot_start"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_unregistered_contract_headings_are_rejected"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_fenced_examples_do_not_define_contract_headings"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_scope_requires_updated_task"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_git_delta_and_adoption_baseline"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_ci_sha_fence_and_zero_before"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_baseline_cannot_advance"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_deleted_registry_cannot_create_a_new_adoption_boundary"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_policy_is_read_only"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_existing_legacy_docs_not_reapproved"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-08",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_no_external_commands_or_policy_modification"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_cli_failure_has_code"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-09",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_existing_legacy_docs_not_reapproved"
+            }
+          ]
+        },
+        {
+          "id": "SDD-001-AC-10",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_approval_and_missing_evidence_are_rejected"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_cli_failure_has_code"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "QW-STATUS-001",
+      "spec": "docs/specs/QW-STATUS-001.md",
+      "requirements": [
+        {
+          "id": "QW-STATUS-001-REQ-01",
+          "acs": [
+            "QW-STATUS-001-AC-01",
+            "QW-STATUS-001-AC-02"
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-REQ-02",
+          "acs": [
+            "QW-STATUS-001-AC-03",
+            "QW-STATUS-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "QW-STATUS-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_deadlines_and_custom_tolerance"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_disabled_and_excluded_providers"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_dry_run_is_expected_but_recorded_judgment_is_not_missing"
+            }
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_last_attempt_wins_without_a_slot"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_slot_wins_over_duplicate_or_new_config"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_intent_is_neither_recovered_nor_hidden"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_kst_midnight_ignores_yesterday_and_uses_one_clock_sample"
+            }
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_status_reads_during_writer_and_does_not_call_providers_or_write"
+            },
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_missing_database_is_error_not_fabricated_missing"
+            }
+          ]
+        },
+        {
+          "id": "QW-STATUS-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_quota_window_status.py",
+              "symbol": "QuotaStatusTests.test_cli_json_reports_missing_and_keeps_exit_zero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "FLOW-001",
+      "spec": "docs/specs/FLOW-001.md",
+      "requirements": [
+        {
+          "id": "FLOW-001-REQ-01",
+          "acs": [
+            "FLOW-001-AC-01",
+            "FLOW-001-AC-02"
+          ]
+        },
+        {
+          "id": "FLOW-001-REQ-02",
+          "acs": [
+            "FLOW-001-AC-03",
+            "FLOW-001-AC-04"
+          ]
+        },
+        {
+          "id": "FLOW-001-REQ-03",
+          "acs": [
+            "FLOW-001-AC-05",
+            "FLOW-001-AC-06"
+          ]
+        },
+        {
+          "id": "FLOW-001-REQ-04",
+          "acs": [
+            "FLOW-001-AC-07",
+            "FLOW-001-AC-08"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "FLOW-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_real_cli_adapter_parses_full_projection_and_never_uses_shell"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_doctor_is_read_only_and_missing_runtime_is_not_live_support"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_independent_local_worktrees_execute_concurrently"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_task_and_worktree_exclusion_across_state_directories"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_external_assignment_also_blocks_local_controller_in_other_store"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_external_cap_dependency_and_cross_directory_fence"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_workspace_must_be_an_isolated_worktree_root"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unlocked_assignment_readers_tolerate_concurrent_writers"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_orca_dispatch_notification_and_duplicate_are_idempotent"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unknown_start_retains_lease_then_reconciles_without_resubmit"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unknown_cancellation_is_not_exit_and_partial_work_is_preserved"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_manual_resume_reuses_changed_workspace_after_failed_attempt"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_review_cancellation_waits_for_exact_review_worker_stop"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_admission_does_not_reserve_external_task"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_start_without_dispatch_has_an_explicit_operator_exit"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unreadable_worker_output_settles_instead_of_holding_the_slot"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_output_written_by_validation_blocks_instead_of_raising"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_cancel_during_adoption_inspect_stops_the_adopted_worker"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_stop_requested_during_start_readback_is_kept_and_not_repeated"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_validation_cannot_start_under_an_unsettled_review"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unrecordable_manifest_still_settles_and_releases"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_retry_in_a_reused_workspace_survives_an_advanced_target"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_lost_readback_after_a_stop_keeps_it_and_does_not_repeat"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_oversized_stored_result_cannot_block_settlement"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_retry_base_follows_the_workspace_the_last_attempt_actually_used"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unreadable_target_head_takes_no_lease"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_reuse_keeps_the_workspace_holding_edits"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_deleted_workspace_starts_fresh_instead_of_blocking_every_retry"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_stale_dispatch_stays_unadoptable_across_an_attempt_that_never_started"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_finished_worker_with_released_terminal_settles_normally"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_lost_start_reply_can_adopt_an_already_released_worker"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_every_earlier_dispatch_stays_unadoptable_once_released"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_released_worker_can_be_revalidated"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_changed_source_candidate_and_contract_invalidate_proof"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_validator_that_changes_candidate_cannot_record_evidence"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_reviewer_edits_or_incomplete_transcript_cannot_be_evidence"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_review_report_comes_from_the_exact_worker_done_message"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_local_candidate_is_offline_idempotent_and_preserves_source_index"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_local_candidate_cli_and_verification_need_no_remote"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_local_candidate_parent_tampering_is_rejected"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_local_candidate_recovers_commit_without_saved_receipt"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_local_candidate_hook_rewrite_is_rejected"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_local_candidate_accepts_external_worktree_only_in_same_repository"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_failed_local_candidate_can_be_superseded_without_publishing"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "LocalCandidateTests.test_uncommitted_snapshot_still_blocks_a_second_snapshot"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_two_reviewed_candidates_integrate_and_complete_sequentially"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_semantic_conflict_passes_individually_but_fails_combined"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_text_conflict_requires_owner_resolution_without_real_index_change"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_group_requires_each_independent_review_and_rechecks_member_hashes"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_group_rejects_extra_unreviewed_content_with_correct_ancestry"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_explicit_new_base_adoption_revalidates_without_git_mutation"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_candidate_that_deletes_a_file_integrates_and_completes"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_flow_skill.py",
+              "symbol": "FlowSkillTests.test_immutable_upstream_and_adapted_source_integrity"
+            },
+            {
+              "file": "tests/test_flow_skill.py",
+              "symbol": "FlowSkillTests.test_all_host_targets_install_identical_bytes_and_repeat_is_noop"
+            },
+            {
+              "file": "tests/test_flow_skill.py",
+              "symbol": "FlowSkillTests.test_upstream_or_adaptation_tampering_blocks_install_before_destination_write"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-08",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_orca_author_independent_review_integration_and_completion"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_skip_zero_tests_and_profile_escape_are_not_accepted"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_settled_scope_violation_blocks_and_releases_external_lease"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GMS-001",
+      "spec": "docs/specs/GMS-001.md",
+      "requirements": [
+        {
+          "id": "GMS-001-REQ-01",
+          "acs": [
+            "GMS-001-AC-01",
+            "GMS-001-AC-02"
+          ]
+        },
+        {
+          "id": "GMS-001-REQ-02",
+          "acs": [
+            "GMS-001-AC-03",
+            "GMS-001-AC-04"
+          ]
+        },
+        {
+          "id": "GMS-001-REQ-03",
+          "acs": [
+            "GMS-001-AC-05"
+          ]
+        },
+        {
+          "id": "GMS-001-REQ-04",
+          "acs": [
+            "GMS-001-AC-06",
+            "GMS-001-AC-07"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "GMS-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_credentials.py",
+              "symbol": "CredentialVaultTests.test_database_contains_ciphertext_not_plaintext_and_provider_is_bound"
+            },
+            {
+              "file": "tests/test_credentials.py",
+              "symbol": "CredentialVaultTests.test_ciphertext_tampering_fails_closed"
+            },
+            {
+              "file": "tests/test_credentials.py",
+              "symbol": "CredentialVaultTests.test_unavailable_or_failing_os_store_never_writes_plaintext_or_rows"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "PageTests.test_switch_requires_csrf"
+            },
+            {
+              "file": "tests/test_credential_regressions.py",
+              "symbol": "CredentialRegressionTests.test_non_ascii_csrf_is_rejected_without_disconnect"
+            },
+            {
+              "file": "tests/test_credential_regressions.py",
+              "symbol": "CredentialRegressionTests.test_unsupported_method_does_not_echo_input_and_has_security_headers"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_default_is_off"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_on_requires_a_key_and_limits"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_on_then_off_keeps_saved_limits"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "SwitchTests.test_off_blocks_quotes_and_rejects_non_boolean"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_gms_provider_is_registered_only_with_the_flag"
+            },
+            {
+              "file": "tests/test_managed_providers.py",
+              "symbol": "ManagedProviderTests.test_gms_off_blocks_direct_and_fallback_use_without_sending"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_gms_budget.py",
+              "symbol": "GMSBudgetTests.test_reserve_cost_and_token_caps_block_generation"
+            },
+            {
+              "file": "tests/test_gms_budget.py",
+              "symbol": "GMSBudgetTests.test_uncertain_reservation_survives_restart"
+            },
+            {
+              "file": "tests/test_managed_providers.py",
+              "symbol": "ManagedProviderTests.test_gms_failure_is_uncertain_and_does_not_retry"
+            },
+            {
+              "file": "tests/test_managed_providers.py",
+              "symbol": "ManagedProviderTests.test_gms_delegates_existing_runner_once_and_returns_draft"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_keys_keep_their_ids_and_decrypt_in_baton"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_result_holds_no_secret_and_gms_arrives_off"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_original_is_left_unchanged"
+            },
+            {
+              "file": "tests/test_gms_switch.py",
+              "symbol": "ImportTests.test_refuses_to_overwrite_existing_baton_data"
+            }
+          ]
+        },
+        {
+          "id": "GMS-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_credentials_commands_report_the_missing_extra"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_execute_without_the_extra_sends_nothing"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -9,6 +9,11 @@ from pathlib import Path
 from threading import Event, Thread, current_thread
 from unittest.mock import patch
 
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    raise unittest.SkipTest("the gms extra is not installed") from None
+
 from baton.credential_server import _CredentialRequestHandler, create_credential_server
 from baton.credential_vault import CredentialValidationError, CredentialVault
 

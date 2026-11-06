@@ -8,6 +8,11 @@ from pathlib import Path
 from threading import Thread
 from urllib.request import Request, urlopen
 
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    raise unittest.SkipTest("the gms extra is not installed") from None
+
 from baton.credential_server import create_credential_server
 from baton.credential_vault import CredentialVault, SecureStorageUnavailable
 

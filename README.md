@@ -10,7 +10,7 @@ Provider-independent AI agent harness. 현재는 Jipdam `outputs/budongi_mvp_tem
 | BATON Core | `managed.py`, `managed_cli.py`, `orchestrator.py`, `contracts.py`, `state.py` |
 | BATON Relay (인계·복구) | `git_lifecycle.py`, `git_cli.py`, `isolation.py`, `autocommit.py` |
 | BATON Guardian (검증) | `orchestrator.verify`, `wiki*.py` |
-| BATON Scheduler | 미구현 (v6 P0 07:00 dry-run 예정) |
+| BATON Scheduler | `quota_window.py`, `quota_window_cli.py` — P0 quota 창 고정(07:00·12:05 KST) |
 | BATON Observer | `observability.py`, `metrics_cli.py` |
 
 ## 실행
@@ -31,6 +31,80 @@ python -m baton git --help
 ```
 
 설치 없이 실행하려면 `$env:PYTHONPATH`에 BATON 저장소의 `src` 절대 경로를 지정한다.
+
+## 멀티에이전트 흐름 (FLOW-001)
+
+BATON이 작업·의존성·완료를 판정하고 Orca 코디네이터가 실행과 알림을 맡는다.
+local 실행은 Orca 없이 동작한다. Orca 실제 연결·모델 동작은 별도 준비 게이트이며
+fake 테스트 통과나 doctor의 guide 탐지만으로 실제 지원을 선언하지 않는다.
+[계약](docs/specs/FLOW-001.md), [구현 계획](docs/plans/multi-agent-flow.md),
+[검증](docs/validation/multi-agent-flow.md), [스킬](skills/baton-flow/SKILL.md)을 참고한다.
+
+```powershell
+baton runtime doctor
+baton new-task --request task.json
+baton run --task TASK-ID
+# Orca 알림은 정확한 dispatch/event_id/sequence로 수용
+baton runtime ingest --task TASK-ID --request notification.json
+# Git 담당자가 검증된 source의 exact scope로 작성한 요청을 사용
+baton git start --local-only --request candidate-task.json
+baton git snapshot --task CANDIDATE-ID --stage verified-source
+baton git local-candidate --task CANDIDATE-ID
+baton evidence record --task TASK-ID --request candidate.json
+baton runtime review --task TASK-ID
+baton runtime ingest --task TASK-ID --request reviewer-notification.json
+baton evidence record --task TASK-ID --request review.json
+baton evidence record --task TASK-ID --request integration.json
+baton approve --task TASK-ID --reviewer operator
+```
+
+Orca Task는 `execution.runtime=orca`, `preferred_provider`와 `orca.run_id/repo_id/coordinator_id`를
+명시한다. 기본 동시 배정 상한은 2이며 `orca.max_active_tasks`로 조정한다. `review_provider`는
+확인된 다른 provider를 우선 사용할 때 명시한다. 모델 정체를 모르면 교차 모델 검증으로 표시하지 않는다.
+응답 유실은 `runtime reconcile --task TASK-ID --request adoption.json`의 명시적
+`adopt_unknown=true`와 정확한 dispatch read-back으로 대사한다. 재실행으로 우회하지 않는다.
+dispatch ID 없이 시작이 실패했고 Orca에서 작업자가 없음을 확인했다면 같은 명령에
+`{"confirmed_not_started":true,"operator":"ID"}`를 전달한다. 이는 운영자 확인이며 `BLOCKED`로 정산하고
+슬롯을 해제할 뿐 재실행하지 않는다.
+
+기존 CLI 형식은 유지하지만 미완료 작업의 승인 조건은 강화됐다. 로컬 검증자 ID는
+`operator_attested`로 명시하며 인증된 원격 신원이라고 주장하지 않는다. 여러 후보 통합은
+`integration.json`의 `members`에 작업 ID를 지정한다. 모든 후보의 독립 검증과 정확한 합성 tree,
+각 작업의 테스트가 필요하다. 충돌 해결로 바뀐 코드는 새 후보로 다시 검증한다.
+
+기준이 움직이면 Git 담당자가 소스 worktree를 새 기준에 준비한 뒤
+`baton validate --task TASK-ID --base FULL-SHA`로 명시적으로 채택·재검증한다.
+이 명령은 checkout/rebase/reset을 하지 않고 이전 증거를 이력으로 보존한다.
+새 검증 라운드에는 별도 후보 ID를 사용한다. 후보 commit·작업 완료·원격 게시·병합은 각각 별개다.
+
+기본 context 경로는 `src/tests/docs`, import 경로는 `src`다. 다른 레이아웃은
+`tooling/baton-project.json`의 `context_roots/source_roots`에 저장소 상대 경로로 명시한다.
+데이터·원본·비밀 경로는 설정으로 허용할 수 없다.
+
+스킬은 `python scripts/install_flow_skill.py --host codex --destination TARGET-ROOT`로
+명시적 대상에 설치한다. `claude/antigravity`도 선택할 수 있지만 실제 host 실행 검증은 별개다.
+wheel에는 `share/baton/scripts`, `share/baton/skills`의 같은 상대 배치로 포함된다.
+
+## P0 Quota Window Scheduler
+
+매일 07:00·12:05 KST에 Claude·Codex에 최소 요청을 1회씩 보내 5시간 사용량 창의 리셋 시각(약 12:00·17:05)을 고정한다.
+설계: [docs/designs/baton-p0-quota-window.md](docs/designs/baton-p0-quota-window.md), Task: [docs/tasks/p0-quota-window.md](docs/tasks/p0-quota-window.md).
+
+```powershell
+baton quota-window status                       # 원장·창 추정(신뢰도)·설정
+baton quota-window run --trigger 0700           # 판정만(기본 enabled=false, dry_run=true)
+baton quota-window config --enabled true --dry-run false   # 실핑 허용(사용자 결정)
+baton quota-window run --trigger 0700 --apply   # 실핑 경로
+baton quota-window retry --trigger 0700 --provider codex   # 확실히 미전송(FAILED)만 1회
+baton quota-window install-task                 # 작업 스케줄러 등록 PowerShell을 출력만 함
+```
+
+원장은 사용자 단위(`BATON_HOME` 또는 `%LOCALAPPDATA%\baton`)다. 구독 로그인만 허용하며 API 과금 경로(환경변수·설정 파일)가 보이면 핑하지 않는다.
+작업 스케줄러에서 실행하려면 `python -m pip install -e <baton_ai>`로 설치해 `python -m baton`이 어디서든 import되게 한다.
+
+## GMS
+
+GMS는 확장 기능이다. 신규 Task 기본 `fallback_provider`는 `none`이며, `--enable-gms`를 줄 때만 GMS provider가 등록된다.
 
 ## 테스트
 
@@ -53,7 +127,7 @@ baton credentials
 | 기본 API 관리 | `/` | 폴더와 API 키 등록·수정·삭제 |
 | GMS 관리 | `/gms` | GMS on/off, 키 선택, 사용 한도, 잔액·연결 확인 |
 
-GMS는 선택 기능이며 기본값은 꺼짐이다. 꺼져 있으면 작업에서 직접 지정했든 fallback이든 BATON이 GMS로 아무것도 보내지 않는다. 켜려면 GMS 키와 사용 한도를 먼저 저장해야 한다. BATON 작업이 GMS를 쓰는 동안에는 `baton credentials` 서버가 떠 있어야 한다.
+GMS는 선택 기능이며 기본값은 꺼짐이다. 꺼져 있으면 작업에서 직접 지정했든 fallback이든 BATON이 GMS로 아무것도 보내지 않는다. 켜려면 GMS 키와 사용 한도를 먼저 저장해야 한다. BATON 작업이 GMS를 쓰려면 `/gms`에서 켜고, `baton credentials` 서버를 띄운 채 `--enable-gms`로 실행해야 한다. 키 관리와 GMS에는 `python -m pip install -e ".[gms]"`로 설치하는 `cryptography`가 필요하다.
 
 기존 Jipdam 보관함은 한 번만 복사해 온다. 원본은 지우지 않고, 키 ID를 유지하며, GMS는 꺼진 상태로 들어온다. BATON 보관함에 이미 데이터가 있으면 중단한다.
 
@@ -63,5 +137,13 @@ baton credentials-import
 
 ## 아직 Jipdam에 묶인 부분
 
-- 대상 저장소 레이아웃 `outputs/budongi_mvp_temp/{src,tests,docs}` (managed scope, wiki, worktree PYTHONPATH, observability AGENTS.md).
+- wiki 경로·일부 기존 관측 메타데이터는 아직 집담 레이아웃을 사용한다. 실행 context/import 경로는 FLOW-001에서 설정으로 분리했다.
 - Jipdam 앱의 데이터 수집과 자체 키 관리 화면은 아직 Jipdam 보관함을 쓴다. BATON 보관함으로의 전환은 후속 작업이다.
+
+## BATON 개발 SDD
+
+[개발 계약](docs/sdd.md), [현재 Task](docs/tasks/current.md), [검증 기록](docs/sdd/validation.md).
+`python -X utf8 scripts/check_sdd.py`는 문서/참조/변경 범위만 확인한다.
+`python -X utf8 scripts/verify_environment.py`는 기존 오프라인 테스트까지 실행한다.
+테스트 skip과 실제 Provider/Windows 현장 미실행은 별도로 보고하며 실제 완료로 소급하지 않는다.
+연결 프로젝트의 AGENTS/SDD/Skill은 프로젝트가 소유한다.

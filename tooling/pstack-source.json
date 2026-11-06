@@ -1,0 +1,9 @@
+{
+  "license": "MIT",
+  "lock_file": "skills/baton-flow/references/source-lock.json",
+  "lock_sha256": "2a4c182fae4720b3aea2357e6bb7542cffbdcee69b0231a7cefb97c9319689e4",
+  "repository": "https://github.com/cursor/plugins",
+  "revision": "bb68f2365eceafa0cb2d253112f675acf5f144cc",
+  "schema_version": 1,
+  "version": "0.15.36"
+}

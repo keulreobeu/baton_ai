@@ -13,7 +13,11 @@ from .orchestrator import Orchestrator
 
 
 def _credentials(args):
-    from .credential_vault import CredentialVaultError
+    try:
+        from .credential_vault import CredentialVaultError
+    except ImportError:
+        print(encode({"error": "gms_extra_required"}), file=sys.stderr)
+        return 2
     try:
         if args.command == "credentials-import":
             from .credential_import import import_jipdam
@@ -39,11 +43,14 @@ def main(argv=None, *, workspace=None):
     p.add_argument("--state-dir", default=".local_runtime/harness-managed")
     p.add_argument("--codex-bin", default=None)
     p.add_argument("--gms-port", type=int, default=8786)
+    p.add_argument("--enable-gms", action="store_true", help="Register the GMS extension provider (off by default).")
     sub = p.add_subparsers(dest="command", required=True)
     from .wiki_cli import parser as wiki_parser
     wiki_parser(sub)
     from .metrics_cli import parser as metrics_parser
     metrics_parser(sub)
+    from .quota_window_cli import parser as quota_parser
+    quota_parser(sub)
     for name in ("status", "tasks"):
         s = sub.add_parser(name); s.add_argument("--task"); s.add_argument("--state")
     for name in ("new-task", "create"):
@@ -52,10 +59,18 @@ def main(argv=None, *, workspace=None):
     for name in ("run", "report", "pause", "cancel", "resume", "retry", "approve", "provider", "priority", "validate"):
         s = sub.add_parser(name); s.add_argument("--task", required=True)
         if name == "approve": s.add_argument("--reviewer", required=True)
-        if name == "provider": s.add_argument("--name", choices=("codex", "gms", "mock"), required=True)
+        if name == "provider": s.add_argument("--name", choices=("codex", "claude", "antigravity", "gms", "mock"), required=True)
         if name == "priority": s.add_argument("--value", choices=("high", "normal", "low"), required=True)
         if name == "resume": s.add_argument("--recover-running", action="store_true")
+        if name == "validate": s.add_argument("--base", help="Adopt the exact current target SHA after the Git owner prepares this source; no Git mutation.")
     sub.add_parser("providers")
+    runtime = sub.add_parser("runtime").add_subparsers(dest="runtime_command", required=True)
+    runtime.add_parser("doctor")
+    for name in ("ingest", "review", "reconcile"):
+        s = runtime.add_parser(name); s.add_argument("--task", required=True)
+        if name in {"ingest", "reconcile"}: s.add_argument("--request", required=True)
+    evidence = sub.add_parser("evidence").add_subparsers(dest="evidence_command", required=True)
+    s = evidence.add_parser("record"); s.add_argument("--task", required=True); s.add_argument("--request", required=True)
     sub.add_parser("codex-gms-check")
     s = sub.add_parser("credentials", help="Open the local API key and GMS management pages")
     s.add_argument("--port", type=int, default=8786); s.add_argument("--no-browser", action="store_true")
@@ -69,6 +84,15 @@ def main(argv=None, *, workspace=None):
     try:
         if args.command in {"credentials", "credentials-import"}:
             return _credentials(args)
+        if args.command == "quota-window":
+            # Per-user ledger (BATON_HOME): usage windows belong to the account, not the workspace.
+            from .quota_window_cli import run as quota_run
+            return quota_run(args)
+        if args.command == "runtime" and args.runtime_command == "doctor":
+            from .runtime import OrcaCLI
+            result = OrcaCLI().doctor()
+            print(encode(result))
+            return 0 if result["available"] else 3
         if args.command == "wiki":
             from .wiki_cli import run as wiki_run
             result = wiki_run(args, root)
@@ -83,10 +107,18 @@ def main(argv=None, *, workspace=None):
             return 0
         store = ManagedStore(directory, root)
         from .execution import CodexCLIProvider, GMSProvider, MockProvider
-        providers = {"codex": CodexCLIProvider(**({"binary": args.codex_bin} if args.codex_bin else {})),
-                     "gms": GMSProvider(port=args.gms_port, scratch=store.directory / "requests"), "mock": MockProvider()}
+        providers = {"codex": CodexCLIProvider(**({"binary": args.codex_bin} if args.codex_bin else {})), "mock": MockProvider()}
+        if args.enable_gms:
+            providers["gms"] = GMSProvider(port=args.gms_port, scratch=store.directory / "requests")
         runner = Orchestrator(store, providers)
-        if args.command in {"create", "new-task"}:
+        if args.command == "runtime":
+            from .runtime import ingest, dispatch, reconcile
+            if args.runtime_command == "review": result = dispatch(store, args.task, review=True)
+            else: result = (ingest if args.runtime_command == "ingest" else reconcile)(store, args.task, read_json(args.request))
+        elif args.command == "evidence":
+            from .evidence import record
+            result = record(store, args.task, read_json(args.request))
+        elif args.command in {"create", "new-task"}:
             result = store.create(read_json(args.request))
         elif args.command == "plan":
             from .managed import validate
@@ -110,7 +142,11 @@ def main(argv=None, *, workspace=None):
         elif args.command == "run": result = runner.run(args.task)
         elif args.command == "worker": result = runner.worker(once=args.once)
         elif args.command == "report": result = store.export(args.task)
-        elif args.command in {"pause", "cancel"}: result = store.control(args.task, args.command)
+        elif args.command in {"pause", "cancel"}:
+            if store.get(args.task)["task"]["execution"].get("runtime") == "orca":
+                from .runtime import request_control
+                result = request_control(store, args.task, args.command)
+            else: result = store.control(args.task, args.command)
         elif args.command in {"resume", "retry"}: result = store.ready(args.task, recover=getattr(args, "recover_running", False))
         elif args.command == "approve":
             from .autocommit import auto_commit_task
@@ -120,7 +156,7 @@ def main(argv=None, *, workspace=None):
                 result = auto_commit_task(store, args.task)
         elif args.command == "provider": result = store.configure(args.task, provider=args.name)
         elif args.command == "priority": result = store.configure(args.task, priority=args.value)
-        elif args.command == "validate": result = runner.verify(args.task)
+        elif args.command == "validate": result = runner.verify(args.task, base_sha=args.base)
         print(encode(result))
         if isinstance(result, dict) and result.get("state") in {"FAILED", "BLOCKED", "INTERRUPTED", "WAITING_FOR_PROVIDER"}: return 3
         return 0

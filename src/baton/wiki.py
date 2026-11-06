@@ -12,7 +12,7 @@ import re
 import sqlite3
 import uuid
 
-from .contracts import HarnessError, canonical_path, digest, encode, identifier
+from .contracts import HarnessError, canonical_path, digest, encode, identifier, replace_file
 from .wiki_contracts import (EVENTS, EXCLUSIONS, INTERVAL, REASONS, STATES, WIKI_DIR,
                              date, evidence_errors, knowledge_errors, link_errors, now,
                              render, scan, sha)
@@ -404,7 +404,7 @@ class Wiki:
             tmp.write_text(rendered, encoding="utf-8", newline="\n")
             if (sha(path) if path.exists() else None) != actual:
                 raise HarnessError("wiki_manual_edit_conflict")
-            tmp.replace(path)
+            replace_file(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)
         c.execute("UPDATE pages SET export_hash=? WHERE id=?", (target_hash, page["id"]))

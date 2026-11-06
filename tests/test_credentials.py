@@ -10,6 +10,11 @@ import types
 from pathlib import Path
 from unittest.mock import patch
 
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    raise unittest.SkipTest("the gms extra is not installed") from None
+
 from baton.credential_vault import (
     CredentialConfirmationRequired,
     CredentialNotFound,

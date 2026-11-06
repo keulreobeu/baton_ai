@@ -7,7 +7,10 @@ name = "baton-ai"
 version = "0.1.0"
 description = "BATON: provider-independent AI agent harness. Pass the task. Keep the progress."
 requires-python = ">=3.11"
-dependencies = ["cryptography>=42"]
+dependencies = []
+
+[project.optional-dependencies]
+gms = ["cryptography>=42"]
 
 [project.scripts]
 baton = "baton.__main__:main"
@@ -17,3 +20,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 baton = ["static/*"]
+
+[tool.setuptools.data-files]
+"share/baton/scripts" = ["scripts/install_flow_skill.py"]
+"share/baton/skills/baton-flow" = ["skills/baton-flow/SKILL.md", "skills/baton-flow/LICENSE.pstack"]
+"share/baton/skills/baton-flow/references" = ["skills/baton-flow/references/*.md", "skills/baton-flow/references/source-lock.json"]
+"share/baton/skills/baton-flow/references/upstream" = ["skills/baton-flow/references/upstream/*.txt"]
+"share/baton/tooling" = ["tooling/pstack-source.json"]

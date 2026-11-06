@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from contextlib import redirect_stdout
 
 from baton.contracts import HarnessError
@@ -57,7 +58,9 @@ class ManagedHarnessTests(unittest.TestCase):
         self.assertTrue(result["result"]["validation_passed"])
         self.assertEqual(git(self.root, "status", "--porcelain").strip(), "")
         reopened = ManagedStore(self.store.directory, self.root)
-        self.assertEqual(reopened.approve("TASK-ONE", "operator")["state"], "COMPLETED")
+        with self.assertRaisesRegex(HarnessError, "independent_review_required"):
+            reopened.approve("TASK-ONE", "operator")
+        self.assertEqual(reopened.get("TASK-ONE")["state"], "REVIEW_REQUIRED")
         self.assertTrue((self.store.directory / "reports/TASK-ONE.json").exists())
         self.assertTrue((self.store.directory / "events.jsonl").exists())
 
@@ -124,6 +127,47 @@ class ManagedHarnessTests(unittest.TestCase):
         result = Orchestrator(self.store, {"codex": Provider(dirty), "mock": MockProvider()}).run("TASK-DIRTY")
         self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
 
+    def test_gms_is_opt_in_and_default_fallback_is_none(self):
+        body = deepcopy(self.body); body["task_id"] = "TASK-DEFAULTS"; body["execution"] = {}
+        self.assertEqual(self.store.create(body)["task"]["execution"]["fallback_provider"], "none")
+        gms = Provider(lambda *args: ExecutionResult("success"))
+        # An existing task that still names gms keeps that value, but GMS is never called when disabled.
+        body = deepcopy(self.body); body["task_id"] = "TASK-GMS-FALLBACK"
+        body["execution"].update(preferred_provider="codex", fallback_provider="gms", allow_fallback=True)
+        self.store.create(body)
+        quota = Provider(lambda *args: ExecutionResult("error", "quota"))
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-GMS-FALLBACK")
+        self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
+        self.assertEqual(self.store.get("TASK-GMS-FALLBACK")["task"]["execution"]["fallback_provider"], "gms")
+        body["task_id"] = "TASK-NONE-FALLBACK"; body["execution"]["fallback_provider"] = "none"; self.store.create(body)
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-NONE-FALLBACK")
+        self.assertEqual(result["state"], "WAITING_FOR_PROVIDER")
+        body["task_id"] = "TASK-GMS-PREFERRED"; body["execution"].update(preferred_provider="gms", allow_fallback=False)
+        self.store.create(body)
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-GMS-PREFERRED")
+        self.assertEqual((result["state"], result["result"]["reason"]), ("BLOCKED", "provider_disabled"))
+        self.assertEqual(gms.calls, 0)
+        for bad in ({"preferred_provider": "none"}, {"fallback_provider": "bogus"}):
+            body = deepcopy(self.body); body["task_id"] = "TASK-BAD-PROVIDER"; body["execution"].update(bad)
+            with self.assertRaisesRegex(HarnessError, "unsupported_provider"):
+                self.store.create(body)
+
+    def test_enable_gms_flag_registers_the_extension(self):
+        state = ".local_runtime/harness-managed/gms-flag"
+        for argv, present in ((["--state-dir", state, "providers"], False), (["--state-dir", state, "--enable-gms", "providers"], True)):
+            with patch("baton.execution.GMSProvider.availability", return_value={"provider": "gms", "available": False}), \
+                    redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(main(argv, workspace=self.root), 0)
+            self.assertEqual("gms" in json.loads(out.getvalue()), present)
+
+    def test_skipped_disabled_fallback_has_its_own_reason(self):
+        body = deepcopy(self.body); body["task_id"] = "TASK-FALLBACK-OFF"
+        body["execution"].update(preferred_provider="codex", fallback_provider="gms", allow_fallback=True)
+        self.store.create(body)
+        quota = Provider(lambda *args: ExecutionResult("error", "quota"))
+        result = Orchestrator(self.store, {"codex": quota, "mock": MockProvider()}).run("TASK-FALLBACK-OFF")
+        self.assertEqual((result["state"], result["result"]["reason"]), ("WAITING_FOR_PROVIDER", "fallback_provider_disabled"))
+
     def test_draft_apply_revalidate_and_tamper_gate(self):
         provider = Provider(lambda *args: ExecutionResult("draft", summary="review this proposed change"))
         result = self.runner(provider).run("TASK-ONE")
@@ -178,7 +222,8 @@ class ManagedHarnessTests(unittest.TestCase):
         from baton.isolation import repository_lock
         other = ManagedStore(self.root / ".local_runtime/another-state", self.root)
         other.create(self.body)
-        with repository_lock(self.root):
+        from baton.runtime import execution_lock
+        with execution_lock(self.root, "task", "TASK-ONE"):
             with self.assertRaisesRegex(HarnessError, "worker_busy"): Orchestrator(other, {"mock": MockProvider()}).run("TASK-ONE")
         row = self.store.claim("TASK-ONE")
         self.store.update("TASK-ONE", row["lease"], "RETRYING", release=True)

@@ -9,6 +9,11 @@ from threading import Event, Thread
 from datetime import datetime
 from unittest.mock import patch
 
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    raise unittest.SkipTest("the gms extra is not installed") from None
+
 from baton.credential_vault import CredentialVault, CredentialValidationError
 from baton.gms_budget import GMSBudgetError, GMSBudgetManager, GMSClient, KEY_INFO_ENDPOINT, COUNT_ENDPOINT, _expiry, KST
 from baton.gms import ENDPOINT
