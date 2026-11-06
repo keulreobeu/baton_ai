@@ -17,7 +17,7 @@ command = "python -X utf8 scripts/run_tests_fast.py"
 result = "passed"
 evidence = "docs/tasks/TASK-PORT-001.md"
 acs = ["HANDOFF-001-AC-02", "HANDOFF-001-AC-03", "HANDOFF-001-AC-04", "LEAN-CORE-001-AC-01", "LEAN-CORE-001-AC-02", "LEAN-CORE-001-AC-03", "LEAN-CORE-001-AC-04", "LEAN-CORE-001-AC-05", "LEAN-CORE-001-AC-06", "LEAN-CORE-001-AC-07", "LEAN-CORE-001-AC-08", "LEAN-CORE-001-AC-09", "LEAN-CORE-001-AC-10", "LEAN-CORE-001-AC-11", "LEAN-CORE-001-AC-12"]
-tests_run = 484
+tests_run = 486
 failures = 0
 errors = 0
 skipped = 1
@@ -34,3 +34,8 @@ expected_failures = 0
 - 이식한 테스트는 handoff 24개, input-check 21개, 계측 10개다. 임시 저장소와 임시 bare 원격만 쓴다.
 - 대상은 `origin/codex/port-handoff-input-check-20261106`이고, 사용자 요청 '이식 진행'으로 진행했다. 변경 파일은 scope 안에 있다.
 - 독립 리뷰 전이라 in_progress로 둔다.
+
+## 독립 리뷰 — 2026-11-06
+
+Codex 리뷰(`b264a9c`) P2 2건을 고쳤다. linked worktree의 잠금 중복을 잠금 식별자 기준으로 없앴고, Orca 작업은 복원 시 local runtime으로 바꾼다. 수정 전 코드에서 새 테스트 2개가 실패하는 것을 확인했다. SHA가 바뀌어 이전 리뷰 결과는 무효이며 재검토가 필요하다.
+수정 후 `run_tests_fast.py`는 486개 실행, 실패 0개, skip 1개다.

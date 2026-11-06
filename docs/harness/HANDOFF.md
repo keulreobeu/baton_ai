@@ -57,7 +57,7 @@ baton run --task RESTORE-ID
 
 위 두 명령은 receipt의 **management_root**에서 같은 **state_dir**로 별도 명시 실행한다.
 코드 검토는 destination에서 한다. 기본 provider는 Codex이며 fallback과
-기존 session resume는 비활성이다. 새 attempt는 기존 WIP에서 시작하고 기존 base HEAD를 유지한다.
+기존 session resume는 비활성이다. Orca 작업도 복원 WIP를 쓰도록 local runtime으로 복원한다. 새 attempt는 기존 WIP에서 시작하고 기존 base HEAD를 유지한다.
 원격 누락/위변조는 blocked, 적용 중 실패는 `restore_incomplete`다. 실패한 목적지와 아티팩트는
 검토용으로 보존하며 자동 reset/delete하지 않는다. 재복원은 저장한 SHA/파일/index fingerprint가
 같을 때만 멱등이며 수동 변경은 거부한다. ignored 필수 파일은 실제 사용 전에 다시 확인한다.

@@ -98,6 +98,42 @@ class HandoffTests(unittest.TestCase):
         (self.root / "src/a.py").write_bytes(b"unfinished = (  \r\n")
         with self.assertRaises(HarnessError): _git(self.root, "diff", "--check")
 
+    def test_linked_worktree_backup_does_not_lock_against_itself(self):
+        linked = self.folder / "linked"
+        _git(self.root, "worktree", "add", "-b", "linked", str(linked))
+        handoff = Handoff(linked)
+        handoff.store.create(self.body)
+        (linked / "src/a.py").write_text("linked = 2\n", encoding="utf-8")
+        self.assertEqual(handoff.backup("TASK-WIP")["status"], "local_saved")
+        with repository_lock(self.root):
+            with self.assertRaisesRegex(HarnessError, "worker_busy"):
+                with handoff._locks(linked): pass
+
+    def test_orca_checkpoint_restores_as_a_local_task_on_the_restored_wip(self):
+        body = deepcopy(self.body)
+        body["task_id"] = "TASK-ORCA"
+        body["execution"] = {"preferred_provider": "codex", "runtime": "orca",
+                             "orca": {"run_id": "RUN-1", "repo_id": "REPO-1", "coordinator_id": "COORD-1"}}
+        self.handoff.store.create(body)
+        self.wip()
+        saved = self.handoff.backup("TASK-ORCA")
+        published = self.handoff.publish(saved["checkpoint"])
+        receiver = self.receiver()
+        result = receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
+        self.assertEqual(result["status"], "restore_verified", result)
+        store = receiver.store
+        execution = store.get(result["new_task_id"])["task"]["execution"]
+        self.assertEqual(execution["runtime"], "local")
+        self.assertNotIn("orca", execution)
+        store.ready(result["new_task_id"])
+        seen = []
+        class ResumedProvider:
+            def execute(inner, task, context, cwd, stop):
+                seen.append((cwd / "src/a.py").read_bytes())
+                return ExecutionResult()
+        Orchestrator(store, {"codex": ResumedProvider()}).run(result["new_task_id"])
+        self.assertEqual(seen, [b"unfinished = (\r\n"])
+
     def test_remote_independent_restore_new_task_and_manual_edit_protection(self):
         self.wip()
         initial = _index_hash(self.root)

@@ -179,7 +179,10 @@ class Handoff:
             # Managed writers use the controller/common-root locks. Do not create
             # harness runtime files inside their WIP tree: snapshot() treats
             # ignored out-of-scope writes there as contamination on the next run.
-            for root in dict.fromkeys((self.anchor, self.root)):
+            # A linked worktree shares its controller's lock file, so deduplicate by
+            # lock identity; a second acquisition would conflict with this operation.
+            from .runtime import repository_key
+            for root in {repository_key(root): root for root in (self.anchor, self.root)}.values():
                 stack.enter_context(repository_lock(root))
         except BaseException:
             stack.close()
@@ -584,7 +587,9 @@ class Handoff:
                 body = dict(manifest["task"])
                 body["task_id"] = new_task_id
                 body["depends_on"] = []
-                body["execution"] = {**body["execution"], "preferred_provider": "codex", "fallback_provider": "codex", "allow_fallback": False, "resume_session": False}
+                # Orca dispatch would start from the controller HEAD and ignore the restored WIP.
+                body["execution"] = {**{k: v for k, v in body["execution"].items() if k != "orca"}, "runtime": "local",
+                                     "preferred_provider": "codex", "fallback_provider": "codex", "allow_fallback": False, "resume_session": False}
                 store = self.store
                 store.create(body)
                 # New managed attempt must use restored WIP, not prepare a clean base worktree.
