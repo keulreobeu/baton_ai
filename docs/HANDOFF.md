@@ -17,7 +17,7 @@ usage: unknown
 rules: AGENTS.md; DEFERRED_GMS 해제(사용자 직접 실행만, 에이전트의 실호출·키/잔액 조회 금지); GMS-001 Spec은 Claude 작성, 사용자가 본문 확인 여부 미확인; 등록·종료 보류; jipdam 읽기 전용
 ```
 
-- 작업 위치와 스킬은 [브랜치별 작업 위치](workspace-recovery-20261106.md)와 [스킬 목록](development-skills.md)을 본다.
+- 작업 위치와 스킬: [브랜치별 작업 위치](workspace-recovery-20261106.md), [스킬 목록](development-skills.md), [현재 환경](environment-20261106.md).
 - 아래는 당시 기록이다. `C:/Users/SSAFY/Desktop/*`는 이전 PC 경로다. 현재 경로는 `D:/baton_ai`, `D:/jipdam`.
 <!-- BATON_RESUME_END -->
 

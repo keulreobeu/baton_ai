@@ -13,7 +13,7 @@
 
 2026-11-06 [TASK-ENV-20261106](TASK-ENV-20261106.md): 이동 후 의존성·하네스 전용 venv·브라우저·Orca 실행 환경 보완. [설치 상태/명령](../environment-20261106.md).
 
-2026-11-06 [TASK-RECOVERY-20261106](TASK-RECOVERY-20261106.md): 작업 위치·스킬 등록 정리. [브랜치 점검](../workspace-recovery-20261106.md), [스킬 목록](../development-skills.md). GMS 분리는 Claude 담당이며 미통합.
+2026-11-06 [TASK-RECOVERY-20261106](TASK-RECOVERY-20261106.md): 작업 위치·스킬 등록 정리. [브랜치 점검](../workspace-recovery-20261106.md), [스킬 목록](../development-skills.md).
 
 ## 현재 작업 — 2026-11-05 KAN-48
 
