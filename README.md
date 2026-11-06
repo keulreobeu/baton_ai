@@ -1,5 +1,10 @@
 # BATON
 
+이 컴퓨터의 개발 환경: [설치·활성화·검증 상태](docs/environment-20261106.md). 하네스 전용 checkout에서 `scripts/setup-environment.ps1` → `. ./scripts/enter-environment.ps1`을 사용한다.
+
+2026-11-06 작업 재개: [브랜치·분리 현황](docs/workspace-recovery-20261106.md) · [Codex/Claude 스킬](docs/development-skills.md).
+
+
 **Pass the task. Keep the progress.** AI가 바뀌어도 작업은 이어진다.
 
 Provider-independent AI agent harness. 현재는 Jipdam `outputs/budongi_mvp_temp/src/jipdam_harness`를
