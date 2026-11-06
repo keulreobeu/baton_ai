@@ -1,5 +1,38 @@
 # 집담 / BATON 분리 전 작업 위치 점검 — 2026-11-06
 
+## 현재 상태 — 2026-11-06 PR #5 병합 후
+
+`main` 9c9d81a와 실제 코드·환경을 대조한 결과다. 이 절이 우선이고, 아래 절은 당시 스냅샷이다.
+
+### 완료
+
+| 항목 | 근거 |
+|---|---|
+| flow·SDD·Orca와 API/GMS 통합 | PR #1, #2 병합. 이전 "미통합" 기록은 해소 |
+| 복구 기록과 환경 스크립트 | PR #3, #5 병합 |
+| 로컬 병렬 테스트 실행기 | PR #4 병합 |
+| 하네스 코드 복사 | `src/baton` 존재, `jipdam_harness` 참조 0개 |
+| KAN-29 Git 작업 흐름 | `git_lifecycle.py`, `git_cli.py`가 BATON에 있음 |
+| 개발 환경 | `pip check` 통과, Orca·Playwright·gstack 런타임 존재, `baton runtime doctor`의 `available=true` |
+| 스킬 등록 | BATON Codex 57 / Claude 57, 집담 Codex 59 / Claude 59 |
+| skip 6개 중 GMS 5개 | GMS 통합으로 해소. 남은 1개는 집담 저장소 설정 검사로, 집담에 남기기로 한 테스트 |
+
+### 미완료
+
+| 항목 | 상태 |
+|---|---|
+| TASK-PROFILE | 미착수. `outputs/budongi_mvp_temp` 하드코딩이 `execution.py`, `git_lifecycle.py`, `observability.py`, `wiki.py`, `wiki_contracts.py`에 남음 |
+| KAN-41 handoff | 미이식. `handoff.py`, `handoff_cli.py`, `provider_policy.py`가 BATON에 없음 |
+| KAN-42 input-check | 미이식. `input_check.py`, `input_check_cli.py`가 BATON에 없음 |
+| 집담의 BATON 전환 | 사용자 지시로 보류. 집담은 `jipdam_harness` 15개 파일을 계속 쓰고 BATON을 참조하지 않음 |
+| 집담 dual-host 설치 | 사용자 결정으로 `codex/gstack-both-hosts-recovery-20261106` 브랜치에 보관. 집담 `main`에는 없음 |
+| 실제 실행 검증 | Orca worker `live_qualified=false`. 실제 GMS, macOS 키체인, 관리 화면 JS 미검증 |
+| Task | ENV만 verified. FLOW, GMS, QW-STATUS, SDD, RECOVERY, TEST-SPEED는 in_progress |
+
+KAN-28 pipeline은 하네스 파일 변경이 없는 제품 작업이라 분리 범위가 아니다. 집담 PR #21은 충돌 상태로 열려 있다.
+
+다음 순서: KAN-41/42 이식 여부 결정 → TASK-PROFILE → 사용자 지시 후 집담 전환 → 두 저장소 회귀.
+
 현재 사용자 요청은 작업기록과 기존 스킬 등록 정리다. Claude가 이전 작업 확인과 GMS 분리를 진행 중이므로 제품·GMS·하네스 코드는 이번 작업에서 통합하지 않는다.
 
 ## 확인 결과
