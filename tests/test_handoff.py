@@ -472,6 +472,79 @@ class HandoffTests(unittest.TestCase):
                 if direction == "directory_to_file": self.assertEqual(target.read_text(), "new_file = 1\n")
                 else: self.assertEqual((target / "new.py").read_text(), "nested = 2\n")
 
+    def test_failed_restore_verification_registers_no_resumable_task(self):
+        self.wip()
+        published = self.published()
+        receiver = self.receiver()
+        with patch("baton.handoff._index", return_value={}):
+            result = receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
+        self.assertEqual(result["status"], "restore_incomplete", result)
+        with self.assertRaises(HarnessError):
+            receiver.store.get("RESTORE-" + published["checkpoint"][:24])
+
+    def test_executable_wip_from_posix_restores_on_every_platform(self):
+        self.wip()
+        with patch("baton.handoff._worktree_mode", return_value="100755"):
+            saved = self.saved()
+        published = self.handoff.publish(saved["checkpoint"])
+        result = self.receiver().restore(published["checkpoint"], expected_sha=published["commit_sha"])
+        self.assertEqual(result["status"], "restore_verified", result)
+
+    def test_restored_mode_is_only_checked_where_the_filesystem_keeps_it(self):
+        from baton.handoff import _restored_mode_matches
+        ordinary = os.stat_result((0o100644,) + (0,) * 9)
+        self.assertTrue(_restored_mode_matches(ordinary, "100755", windows=True))
+        self.assertFalse(_restored_mode_matches(ordinary, "100755", windows=False))
+        self.assertTrue(_restored_mode_matches(ordinary, "100644", windows=False))
+
+    def test_touched_tracked_file_is_not_a_source_change(self):
+        later = time.time() + 3600
+        os.utime(self.root / "src/a.py", (later, later))
+        saved = self.saved()
+        manifest, _ = self.handoff._load(saved["checkpoint"])
+        self.assertEqual(next(i for i in manifest["inventory"] if i["path"] == "src/a.py")["reason"], "base_commit")
+
+    def test_out_of_scope_ignored_tree_does_not_spend_the_file_limit(self):
+        tooling = self.root / ".local_runtime/tooling"
+        tooling.mkdir(parents=True)
+        for number in range(10): (tooling / f"cache{number}.txt").write_text("x", encoding="utf-8")
+        first = self.saved()
+        (tooling / "another.txt").write_text("x", encoding="utf-8")
+        with patch("baton.handoff.MAX_FILES", 6):
+            second = self.saved()
+        self.assertEqual(second["checkpoint"], first["checkpoint"])
+        manifest, _ = self.handoff._load(first["checkpoint"])
+        self.assertFalse([i["path"] for i in manifest["inventory"] if "tooling" in i["path"]])
+
+    def test_interrupted_backup_leaves_no_partial_checkpoint(self):
+        self.wip()
+        real, calls = Path.write_bytes, 0
+        def failing(path, data):
+            nonlocal calls
+            calls += 1
+            if calls == 2: raise OSError("disk full")
+            return real(path, data)
+        with patch.object(Path, "write_bytes", failing):
+            with self.assertRaises(OSError): self.saved()
+        self.assertEqual(self.saved()["status"], "local_saved")
+
+    def test_interrupted_restore_download_can_be_retried(self):
+        self.wip()
+        published = self.published()
+        receiver = self.receiver()
+        from baton import handoff as module
+        real, calls = module._object, 0
+        def failing(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 3: raise HarnessError("handoff_blob_mismatch")
+            return real(*args)
+        with patch("baton.handoff._object", failing):
+            with self.assertRaisesRegex(HarnessError, "blob_mismatch"):
+                receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
+        result = receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
+        self.assertEqual(result["status"], "restore_verified", result)
+
     def test_fingerprint_detects_mode_changes_and_old_receipts_require_review(self):
         self.wip()
         before = self.handoff._fingerprint(self.root)

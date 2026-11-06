@@ -12,6 +12,11 @@ from .contracts import HarnessError, SECRET, SENSITIVE_FIELDS, digest, identifie
 from .isolation import check_scope, git, snapshot
 
 
+# Python is judged by the AST below: URL text in code is usually a template or fixture.
+# Template values such as {token}, ${TOKEN} and <token> are placeholders, not secrets.
+URL_SECRET = re.compile(r"(?:[?&]|&amp;|%3f|%26)(?:(?:(?:access|refresh|id)[_-]?)?token|api[_-]?key|password|authorization|secret)(?:=|%3d)(?![{$<%])[^&#\s\"']+", re.I)
+
+
 def eligible_paths(paths):
     forbidden = {".git", ".aws", ".ssh", ".local_runtime", "data", "raw", "logs", "credentials", "keys", "secrets", "vault", "node_modules", ".venv", "__pycache__"}
     extensions = {".sqlite", ".sqlite3", ".db", ".zip", ".xlsx", ".xls", ".pem", ".key", ".log", ".pyc"}
@@ -25,8 +30,6 @@ def eligible_paths(paths):
 def scan_content(content, name=""):
     if len(content) > 5_000_000: raise HarnessError("commit_file_too_large")
     text = content.decode("utf-8", errors="replace")
-    if re.search(r"(?:[?&]|&amp;|%3f|%26)(?:(?:(?:access|refresh|id)[_-]?)?token|api[_-]?key|password|authorization|secret)(?:=|%3d)[^&#\s\"']+", text, re.I):
-        raise HarnessError("secret_in_commit")
     if Path(name).suffix.lower() == ".py":
         import ast
         try: tree = ast.parse(text)
@@ -48,7 +51,7 @@ def scan_content(content, name=""):
     else:
         # File scanning has its own 5MB limit above. LLM safe(payload)'s 128KB
         # serialized-request cap must not reject ordinary large registry files.
-        if SECRET.search(text): raise HarnessError("secret_in_commit")
+        if SECRET.search(text) or URL_SECRET.search(text): raise HarnessError("secret_in_commit")
     if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", text):
         raise HarnessError("secret_in_commit")
     tokens = re.findall(r"\b(?:sk-[A-Za-z0-9_-]{24,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[A-Z0-9]{16})", text)

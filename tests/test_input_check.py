@@ -255,6 +255,11 @@ class InputCheckTests(unittest.TestCase):
         with patch("baton.input_check._index_hash", side_effect=["before", "after"]):
             self.assertEqual(self.run_check("git", None)["results"][0]["error_code"], "GIT_HEAD_OR_INDEX_CHANGED")
 
+    def test_touched_tracked_file_does_not_trip_the_index_fence(self):
+        later = os.stat(self.root / "src/module.py").st_mtime + 3600
+        os.utime(self.root / "src/module.py", (later, later))
+        self.assertEqual(self.run_check("git", None)["status"], "PASS")
+
     def test_cli_malformed_request_has_no_traceback_or_models(self):
         path = self.root / ".local_runtime/input.json"
         path.parent.mkdir(); path.write_text("{" * 5000, encoding="utf-8")
