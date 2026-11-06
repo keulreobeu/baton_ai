@@ -105,7 +105,7 @@ class Orchestrator:
                         return self.finish(task_id, lease, "BLOCKED", reason="provider_disabled")
                     return self.finish(task_id, lease, "WAITING_FOR_PROVIDER", reason="provider_unavailable")
                 # Set before dispatch so a crash, Ctrl+C or late error still blocks a plain resume.
-                self.store.update(task_id, lease, "RUNNING", result={"provider": provider_name, **({"uncertain_dispatch": True} if provider_name == "gms" else {})})
+                self.store.update(task_id, lease, "RUNNING", result={"provider": provider_name, "retry_cause": None, **({"uncertain_dispatch": True} if provider_name == "gms" else {})})
                 request = json.loads(json.dumps(task))
                 request["_attempt"] = row["attempt"]
                 request["_fallback"] = provider_name != task["execution"]["preferred_provider"]
@@ -114,7 +114,11 @@ class Orchestrator:
                     request["execution"]["session_id"] = row["result"]["session_id"]
                 remaining = int(task["execution"]["total_timeout_seconds"] - row["elapsed"] - (time.monotonic() - started))
                 request["execution"]["timeout_seconds"] = min(task["execution"]["timeout_seconds"], max(1, remaining))
-                invocation = self.store.observe(task_id, "invocation", metrics, provider_name) if metrics else None
+                cause = row["result"].get("retry_cause")
+                purpose = ("fallback" if request["_fallback"] else "initial" if row["attempt"] == 1
+                           else "repair" if cause == "validation_failed" else "retry" if cause in {"network", "rate_limit"} else "unknown")
+                invocation = self.store.observe(task_id, "invocation", metrics, provider_name, purpose) if metrics else None
+                row["result"]["retry_cause"] = None  # Consumed; immutable prior events retain the cause.
                 if invocation:
                     request["_usage_sink"] = lambda observation: self.store.observe(task_id, "usage", metrics, invocation, observation)
                 invocation_started = time.monotonic()
@@ -155,7 +159,7 @@ class Orchestrator:
                         return self.finish(task_id, lease, "WAITING_FOR_PROVIDER", reason="quota_or_changes_require_review")
                     if error in {"rate_limit", "network"} and provider_name != "gms" and after == before:
                         if row["attempt"] < task["execution"]["max_attempts"]:
-                            self.store.update(task_id, lease, "RETRYING", result={"reason": error}, release=True)
+                            self.store.update(task_id, lease, "RETRYING", result={"reason": error, "retry_cause": error}, release=True)
                             close_metrics()
                             self.store.ready(task_id, automatic=True)
                             return self._run(task_id)
@@ -175,7 +179,7 @@ class Orchestrator:
                     state = "REVIEW_REQUIRED"  # Completion always requires independent evidence.
                     return self.finish(task_id, lease, state, validation=validation, validation_passed=True, changed_files=final_changes)
                 if row["attempt"] < task["execution"]["max_attempts"]:
-                    self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False}, release=True)
+                    self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False, "retry_cause": "validation_failed"}, release=True)
                     close_metrics()
                     self.store.ready(task_id, automatic=True)
                     return self._run(task_id)

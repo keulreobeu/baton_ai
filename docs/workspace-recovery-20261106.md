@@ -22,8 +22,7 @@
 | 항목 | 상태 |
 |---|---|
 | TASK-PROFILE | 미착수. `outputs/budongi_mvp_temp` 하드코딩이 `execution.py`, `git_lifecycle.py`, `observability.py`, `wiki.py`, `wiki_contracts.py`에 남음 |
-| KAN-41 handoff | 미이식. `handoff.py`, `handoff_cli.py`, `provider_policy.py`가 BATON에 없음 |
-| KAN-42 input-check | 미이식. `input_check.py`, `input_check_cli.py`가 BATON에 없음 |
+| KAN-41/42 이식 | [TASK-PORT-001](tasks/TASK-PORT-001.md) 진행 중. `provider_policy.py`는 GMS 보류 코드라 제외 |
 | 집담의 BATON 전환 | 사용자 지시로 보류. 집담은 `jipdam_harness` 15개 파일을 계속 쓰고 BATON을 참조하지 않음 |
 | 집담 dual-host 설치 | 사용자 결정으로 `codex/gstack-both-hosts-recovery-20261106` 브랜치에 보관. 집담 `main`에는 없음 |
 | 실제 실행 검증 | Orca worker `live_qualified=false`. 실제 GMS, macOS 키체인, 관리 화면 JS 미검증 |
@@ -31,7 +30,7 @@
 
 KAN-28 pipeline은 하네스 파일 변경이 없는 제품 작업이라 분리 범위가 아니다. 집담 PR #21은 충돌 상태로 열려 있다.
 
-다음 순서: KAN-41/42 이식 여부 결정 → TASK-PROFILE → 사용자 지시 후 집담 전환 → 두 저장소 회귀.
+다음 순서: TASK-PORT-001 완료 → TASK-PROFILE → 사용자 지시 후 집담 전환 → 두 저장소 회귀.
 
 현재 사용자 요청은 작업기록과 기존 스킬 등록 정리다. Claude가 이전 작업 확인과 GMS 분리를 진행 중이므로 제품·GMS·하네스 코드는 이번 작업에서 통합하지 않는다.
 

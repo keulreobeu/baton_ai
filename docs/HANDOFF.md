@@ -6,9 +6,9 @@ repo: D:/baton_ai
 ref: main 9c9d81a 기준 작성(PR #1~#5 병합 완료); 재개시 main HEAD 확인
 handoff: Claude → 다음 담당; 2026-11-06 병합 후 인계
 task/status: TASK-GMS-001 in_progress; TASK-FLOW-001/KAN-48 in_progress; 둘 다 verified 아님
-goal/order: KAN-41/42 이식 여부 결정 → TASK-PROFILE → 사용자 지시 후 집담 전환, POWER는 P0 마지막
+goal/order: TASK-PORT-001 완료 → TASK-PROFILE → 사용자 지시 후 집담 전환, POWER는 P0 마지막
 done: baton-flow·GMS main 병합, GMS 재승인 기록, GMS-001 Spec/Plan/ADR/Task, cryptography gms extra, 이중 게이트, 불확실 전송 보호, 독립 리뷰 지적 수정
-next: [분리 현재 상태](workspace-recovery-20261106.md)의 미완료 표 확인; handoff·input_check·provider_policy 미이식
+next: [분리 현재 상태](workspace-recovery-20261106.md)의 미완료 표 확인; TASK-PORT-001의 독립 리뷰와 CI 확인
 scope: 다음 작업의 Task scope를 먼저 확인
 checks: PR #2 CI 8개 PASS(5ee3169, Windows 최대 12분); fb42429 로컬 418개 PASS/skip1, cryptography 없이 315개 PASS/skip13; 모델·GMS 호출 0; docs/validation/gms-credentials.md
 pending: main e3275b6 push CI는 작성 시 진행 중; 드래프트 수정 재리뷰 없음; 실제 GMS·macOS 키체인·관리 화면 JS 미검증; Orca 실제 취소·Codex worker 미검증

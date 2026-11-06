@@ -24,6 +24,9 @@ USAGE_FIELDS = {"input_tokens", "cached_input_tokens", "cache_write_input_tokens
                 "output_tokens", "reasoning_output_tokens", "total_tokens",
                 "cache_read_input_tokens", "cache_creation_input_tokens"}
 GATES = ("ac", "regression", "security", "scope", "review", "approval")
+PURPOSES = {"initial", "repair", "retry", "fallback", "unknown"}
+FAILURES = {"quota", "quota_exhausted", "rate_limit", "timeout", "auth", "network", "permission",
+            "pause", "cancel", "interrupted", "uncertain", "budget", "DEFERRED_GMS", "unknown"}
 
 
 def encoded(value):
@@ -255,11 +258,12 @@ class MetricsStore:
                      "execution_snapshot_hash": profile_hash, "repo_dirty": profile["repo_dirty"]}, attempt_id=ids["attempt_id"])
         return ids
 
-    def invocation(self, ids, provider):
+    def invocation(self, ids, provider, purpose="unknown"):
+        if purpose not in PURPOSES: raise ValueError("invalid_invocation_purpose")
         invocation_id = uuid.uuid4().hex
         surface = {"codex": "codex_cli_local", "mock": "mock", "gms": "gms"}.get(provider, "not_integrated")
         self._append(ids["run_id"], "invocation.started", {"provider": identity(provider), "execution_surface": surface,
-                     "orchestration_owner": "jipdam", "primary_phase_id": "implementation"},
+                     "orchestration_owner": "jipdam", "primary_phase_id": "implementation", "purpose": purpose},
                      attempt_id=ids["attempt_id"], invocation_id=invocation_id)
         return invocation_id
 
@@ -295,7 +299,9 @@ class MetricsStore:
     def end_invocation(self, ids, invocation_id, outcome, duration):
         health = outcome.measurement or {}
         flags = [f for f in health.get("flags", []) if f in {"malformed_json", "line_overflow", "collector_failed", "incomplete_turn", "unsupported_version"}]
+        error = outcome.error if isinstance(outcome.error, str) and outcome.error in FAILURES else "unknown"
         self._append(ids["run_id"], "invocation.finished", {"status": outcome.status if outcome.status in {"success", "error", "draft"} else "error",
+                     "failure_type": error if outcome.status == "error" else None,
                      "duration_seconds": max(0, duration), "flags": flags,
                      "coverage_state": health.get("coverage_state") if health.get("coverage_state") in {"complete", "partial", "unavailable", "invalid", "conflict"} else "unavailable"},
                      attempt_id=ids["attempt_id"], invocation_id=invocation_id)
@@ -311,6 +317,44 @@ class MetricsStore:
         if phase not in {"validation", "planning", "git", "jira", "approval", "recovery"}:
             raise ValueError("invalid_phase")
         return self._append(ids["run_id"], "phase.finished", {"phase": phase, "duration_seconds": max(0, duration)}, attempt_id=ids["attempt_id"])
+
+    def _manual(self, request, kind):
+        from .contracts import relative_path, safe
+        if not isinstance(request, dict): raise ValueError("invalid_manual_observation")
+        allowed = {"run_id", "event_id", "evidence_sha256"}
+        allowed |= {"channel", "risk", "status", "head_sha", "scope", "reason"} if kind == "review.recorded" else {"reason"}
+        if set(request) - allowed: raise ValueError("unexpected_manual_field")
+        run_id, event_id = identity(request["run_id"]), identity(request["event_id"])
+        body = {"source": "user_reported", "evidence_sha256": sha(request["evidence_sha256"])}
+        if kind == "review.recorded":
+            if request.get("channel") not in {"chat_manual", "native_in_host", "human_manual"}: raise ValueError("invalid_review_channel")
+            if request.get("risk") not in {"LIGHT", "STANDARD", "STRICT"}: raise ValueError("invalid_review_risk")
+            if request.get("status") not in {"requested", "invoked", "skipped", "incomplete", "findings", "no_findings"}: raise ValueError("invalid_review_status")
+            head = request.get("head_sha")
+            if not isinstance(head, str) or not re.fullmatch(r"[a-f0-9]{40}", head): raise ValueError("invalid_review_sha")
+            scope = request.get("scope")
+            if not isinstance(scope, list) or not 1 <= len(scope) <= 30: raise ValueError("invalid_review_scope")
+            scope = sorted({relative_path(path) for path in scope})
+            if any(len(path) > 400 for path in scope): raise ValueError("invalid_review_scope")
+            reason = request.get("reason")
+            if reason not in {None, "light", "not_useful", "unavailable", "precheck_failed", "not_requested"}: raise ValueError("invalid_review_reason")
+            body.update(channel=request["channel"], risk=request["risk"], status=request["status"],
+                        head_sha=head, scope=scope, reason=reason, chat_tokens=None, approval_granted=False)
+            body["gate"] = "independent_review_pending" if request["risk"] == "STRICT" and request["status"] in {"skipped", "incomplete", "requested"} else "observation_only"
+        else:
+            if request.get("reason") not in {"quota_ui", "user_limit_observed"}: raise ValueError("invalid_quota_reason")
+            body["reason"] = request["reason"]
+        safe(body)
+        with self.tx() as c:
+            if not c.execute("SELECT 1 FROM runs WHERE run_id=?", (run_id,)).fetchone(): raise ValueError("unknown_metrics_run")
+        self._append(run_id, kind, body, event_id=event_id)
+        return {"event_id": event_id, "run_id": run_id, "kind": kind, "source": "user_reported", "approval_granted": False}
+
+    def record_review(self, request):
+        return self._manual(request, "review.recorded")
+
+    def record_quota(self, request):
+        return self._manual(request, "quota.user_reported")
 
     def report(self, run_id):
         with self.tx() as c:
@@ -340,6 +384,7 @@ class MetricsStore:
                 conflict = True
                 conflicting_events.add(b["event_id"])
         totals, states, failed_tokens = [], [], []
+        known_turns = 0
         for inv in invocations.values():
             selected = {}
             ambiguous = set()
@@ -366,6 +411,11 @@ class MetricsStore:
             if not selected and inv["coverage_state"] == "complete":
                 inv["coverage_state"] = "unavailable"
             inv["usage_observations"] = list(selected.values())
+            inv["known_completed_turns"] = sum(o["accounting_semantics"] == "incremental_turn"
+                                                  and o["source_version"] in CODEX_VERSIONS
+                                                  and o["request_local_id"] not in ambiguous
+                                                  and o["event_id"] not in conflicting_events for o in selected.values())
+            known_turns += inv["known_completed_turns"]
             inv["known_observed_tokens"] = sum(inv_totals) if inv_totals else None
             totals.extend(inv_totals)
             states.append(inv["coverage_state"])
@@ -386,7 +436,27 @@ class MetricsStore:
                     collector_health = "collector_unavailable"
                     if coverage not in {"conflict", "invalid"}: coverage = "partial"
         known = sum(totals) if totals else None
+        failures = {}
+        for inv in invocations.values():
+            if inv.get("status") == "error":
+                key = inv.get("failure_type") or "unknown"
+                failures[key] = failures.get(key, 0) + 1
+        purposes_known = bool(invocations) and all(i.get("purpose", "unknown") != "unknown" for i in invocations.values())
+        reviews = [e["body"] for e in events if e["kind"] == "review.recorded"]
+        quota_reports = [e["body"] for e in events if e["kind"] == "quota.user_reported"]
         return {"schema_version": VERSION, "run_id": run_id, "task_id": run["task_id"], "profile": json.loads(run["profile"]),
+                "accounting_version": "lean-p0-v1", "provider_invocations_observed": len(invocations),
+                "provider_invocations": len(invocations) if collector_health == "ok" else None,
+                "known_completed_turn_events": known_turns,
+                "model_turns_observed": known_turns if coverage == "complete" else None,
+                "verification_phases_observed": sum(e["kind"] == "phase.finished" and e["body"]["phase"] == "validation" for e in events),
+                "repair_invocations": sum(i.get("purpose") == "repair" for i in invocations.values()) if purposes_known else None,
+                "known_repair_invocations": sum(i.get("purpose") == "repair" for i in invocations.values()),
+                "failure_buckets": failures,
+                "quota_block_events": {"provider_result": failures.get("quota", 0) + failures.get("quota_exhausted", 0),
+                                       "user_reported": len(quota_reports), "account_ui_coverage": "not_integrated",
+                                       "failure_coverage": "partial" if failures.get("unknown") else "observed"},
+                "review_observations": reviews, "chat_tokens": None, "quality_approval_granted_by_observer": False,
                 "profile_hash": run["profile_hash"], "run_revision": hashed([(e["event_id"], e["body"]) for e in events]),
                 "state": lifecycle_state if lifecycle_state is not None else state, "coverage_state": coverage, "known_observed_tokens": known,
                 "collector_health": collector_health,
