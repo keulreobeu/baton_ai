@@ -32,25 +32,17 @@ class ObjectiveModeTests(unittest.TestCase):
             codex_prompt(task, "ordinary context")
 
 
-# GMS dispatch tests exercise the target product's budget runner (Jipdam budongi).
-GMS_SRC = Path(os.environ.get("BATON_GMS_SRC") or Path(__file__).resolve().parents[2] / "jipdam/outputs/budongi_mvp_temp/src")
-try:
-    sys.path.insert(0, str(GMS_SRC))
-    import budongi.gms_work  # noqa: F401
-    GMS_REASON = None
-except ImportError as exc:
-    GMS_REASON = f"target product GMS runner not importable: {exc}"
-
-
 class ManagedProviderTests(unittest.TestCase):
     def setUp(self):
-        patcher = patch.dict(os.environ, {"BATON_GMS_SRC": str(GMS_SRC)})
-        patcher.start(); self.addCleanup(patcher.stop)
         scratch = Path(__file__).resolve().parents[1] / ".local_runtime/harness-managed/test-tmp"
         scratch.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=scratch)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def gms_on(self):
+        patcher = patch.object(GMSProvider, "availability", return_value={"provider": "gms", "available": True})
+        patcher.start(); self.addCleanup(patcher.stop)
 
     def fake(self, source):
         script = self.root / "fake_codex.py"
@@ -157,19 +149,19 @@ else:
         self.assertEqual(provider.execute({**task, "_attempt": 2}, "", self.root, lambda: None).status, "success")
         self.assertEqual(provider.execute({**task, "_fallback": True}, "", self.root, lambda: None).status, "success")
 
-    @unittest.skipIf(GMS_REASON, GMS_REASON or "")
     def test_gms_delegates_existing_runner_once_and_returns_draft(self):
+        self.gms_on()
         (self.root / "src").mkdir()
         (self.root / "src/example.py").write_text("print('safe')", encoding="utf-8")
         provider = GMSProvider()
         task = {"id": "TASK-CLI-HARNESS-001", "objective": "Write a bounded draft",
                 "acceptance_criteria": ["Keep public API"], "context_files": ["src/example.py"],
                 "execution": {"difficulty": "simple"}}
-        with patch("budongi.gms_work.LocalGMSWork") as runner, patch("baton.execution.run_process") as child:
+        with patch("baton.gms_work.LocalGMSWork") as runner, patch("baton.execution.run_process") as child:
             runner.return_value.work.return_value = {"result": {"status": "available", "text": "draft diff",
                                                        "usage": {"input_tokens": 12, "output_tokens": 9}}}
             def fake_child(argv, cwd, payload, timeout, stop):
-                return 0, json.dumps(_gms_delegate(json.loads(payload), int(argv[-2]), argv[-1])), "", None
+                return 0, json.dumps(_gms_delegate(json.loads(payload), int(argv[-1]))), "", None
             child.side_effect = fake_child
             result = provider.execute(task, "unselected context must not be sent", self.root, lambda: None)
             self.assertEqual(result.status, "draft")
@@ -180,34 +172,54 @@ else:
             self.assertNotIn("unselected", supplied["context"])
             self.assertIn("print('safe')", supplied["context"])
 
-    @unittest.skipIf(GMS_REASON, GMS_REASON or "")
     def test_gms_failure_is_uncertain_and_does_not_retry(self):
+        self.gms_on()
         task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"], "context_files": []}
-        with patch("budongi.gms_work.LocalGMSWork") as runner, patch("baton.execution.run_process") as child:
+        with patch("baton.gms_work.LocalGMSWork") as runner, patch("baton.execution.run_process") as child:
             runner.return_value.work.side_effect = RuntimeError("Bearer SECRETVALUE")
-            child.side_effect = lambda argv, cwd, payload, timeout, stop: (0, json.dumps(_gms_delegate(json.loads(payload), int(argv[-2]), argv[-1])), "", None)
+            child.side_effect = lambda argv, cwd, payload, timeout, stop: (0, json.dumps(_gms_delegate(json.loads(payload), int(argv[-1]))), "", None)
             result = GMSProvider().execute(task, "", self.root, lambda: None)
             self.assertEqual(result.error, "uncertain")
             self.assertNotIn("SECRETVALUE", result.summary)
             runner.return_value.work.assert_called_once()
 
-    @unittest.skipIf(GMS_REASON, GMS_REASON or "")
     def test_gms_stopped_dispatch_is_uncertain(self):
+        self.gms_on()
         task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"], "context_files": []}
         with patch("baton.execution.run_process", return_value=(-1, "", "", "paused")) as child:
             result = GMSProvider().execute(task, "", self.root, lambda: None)
             self.assertEqual(result.error, "uncertain")
             child.assert_called_once()
 
-    @unittest.skipIf(GMS_REASON, GMS_REASON or "")
     def test_gms_forbidden_context_prevents_dispatch(self):
+        self.gms_on()
         (self.root / "data").mkdir()
         (self.root / "data/secret.json").write_text("{}", encoding="utf-8")
         task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"],
                 "context_files": ["data/secret.json"]}
-        with patch("budongi.gms_work.LocalGMSWork") as runner:
+        with patch("baton.gms_work.LocalGMSWork") as runner:
             self.assertEqual(GMSProvider().execute(task, "", self.root, lambda: None).status, "error")
             runner.assert_not_called()
+
+    def test_gms_off_blocks_direct_and_fallback_use_without_sending(self):
+        task = {"id": "TASK-CLI-001", "objective": "Draft", "acceptance_criteria": ["Valid"], "context_files": []}
+        off = {"provider": "gms", "available": False, "reason": "gms_disabled"}
+        with patch.object(GMSProvider, "availability", return_value=off), \
+                patch("baton.gms_work.LocalGMSWork") as runner, patch("baton.execution.run_process") as child:
+            for request in (task, {**task, "_fallback": True}):
+                result = GMSProvider().execute(request, "", self.root, lambda: None)
+                self.assertEqual((result.status, result.error), ("error", "unavailable"))
+            runner.assert_not_called()
+            child.assert_not_called()
+
+    def test_gms_availability_reports_the_off_switch(self):
+        with patch("baton.execution.http.client.HTTPConnection") as connection:
+            response = connection.return_value.getresponse.return_value
+            response.status = 200
+            response.read.return_value = json.dumps({"policy": {"enabled": False}}).encode()
+            state = GMSProvider().availability()
+            self.assertFalse(state["available"])
+            self.assertEqual(state["reason"], "gms_disabled")
 
     def test_gms_availability_only_reads_local_state_and_omits_credentials(self):
         with patch("baton.execution.http.client.HTTPConnection") as connection:
@@ -221,7 +233,6 @@ else:
                 headers={"Origin": "http://127.0.0.1:8786"})
             self.assertNotIn("private-id", json.dumps(state))
 
-    @unittest.skipIf(GMS_REASON, GMS_REASON or "")
     def test_gms_real_child_utf8_local_http_roundtrip(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         import threading
@@ -231,7 +242,8 @@ else:
             def send(self, body):
                 data = body if isinstance(body, bytes) else json.dumps(body).encode()
                 self.send_response(200); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
-            def do_GET(self): self.send(b'<meta name="csrf-token" content="synthetic-csrf">')
+            def do_GET(self):
+                self.send({"policy": {"enabled": True}} if self.path == "/api/gms/state" else b'<meta name="csrf-token" content="synthetic-csrf">')
             def do_POST(self):
                 data = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
                 seen.append((self.path, data))

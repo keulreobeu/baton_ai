@@ -374,17 +374,9 @@ class MockProvider:
         return ExecutionResult("error", error, summary="Offline mock outcome: " + error)
 
 
-def _product_src(root: Path) -> Path:
-    """The GMS budget runner lives in the target product, not in BATON (override: BATON_GMS_SRC)."""
-    configured = os.environ.get("BATON_GMS_SRC")
-    return Path(configured) if configured else root / "src"
-
-
-def _load_gms(src: Path):
-    if str(src) not in sys.path:
-        sys.path.insert(0, str(src))
-    from budongi.gms_work import LocalGMSWork, prepare_work
-    from budongi.gms_budget import GMSBudgetError
+def _load_gms():
+    from .gms_work import LocalGMSWork, prepare_work
+    from .gms_budget import GMSBudgetError
     return LocalGMSWork, prepare_work, GMSBudgetError
 
 
@@ -399,9 +391,10 @@ class GMSProvider:
             response = connection.getresponse()
             state = json.loads(response.read(MAX_OUTPUT))
             policy = state.get("policy", {})
-            return {"provider": "gms", "available": response.status == 200 and policy.get("enabled") is True,
-                    "budget_mode": policy.get("budget_mode"), "draft_only": True,
-                    "balance": "not_queried"}
+            enabled = response.status == 200 and policy.get("enabled") is True
+            result = {"provider": "gms", "available": enabled, "budget_mode": policy.get("budget_mode"),
+                      "draft_only": True, "balance": "not_queried"}
+            return result if enabled else {**result, "reason": "gms_disabled"}
         except (OSError, ValueError, AttributeError):
             return {"provider": "gms", "available": False, "reason": "local_server_unavailable"}
         finally:
@@ -410,14 +403,15 @@ class GMSProvider:
     def execute(self, task: dict, context: str, cwd: Path, should_stop: StopCheck) -> ExecutionResult:
         if reason := should_stop():
             return ExecutionResult("error", reason, summary="GMS did not start.")
+        # The switch applies to preferred and fallback use alike: nothing is sent while off.
+        state = self.availability()
+        if not state.get("available"):
+            return ExecutionResult("error", "unavailable", summary="GMS is off or its local server is not running; nothing was sent.")
         # Worktrees retain the repository layout; standalone product roots are also supported.
         root = cwd / "outputs/budongi_mvp_temp"
         if not root.is_dir():
             root = cwd
-        try:
-            _, prepare_work, _ = _load_gms(_product_src(root))
-        except ImportError:
-            return ExecutionResult("error", "unavailable", summary="GMS product runner is not importable; nothing was sent.")
+        _, prepare_work, _ = _load_gms()
         try:
             files = []
             for name in task.get("context_files", []):
@@ -449,8 +443,8 @@ class GMSProvider:
             # exits: never convert a stopped dispatch into a safe retry.
             bootstrap = ("import sys;sys.path.insert(0," + repr(str(Path(__file__).resolve().parents[1])) +
                          ");from baton.execution import _gms_delegate;"
-                         "import json;print(json.dumps(_gms_delegate(json.loads(sys.stdin.buffer.read().decode('utf-8')),int(sys.argv[1]),sys.argv[2])))")
-            rc, stdout, _, stop = run_process([sys.executable, "-c", bootstrap, str(self.port), str(_product_src(root))], cwd,
+                         "import json;print(json.dumps(_gms_delegate(json.loads(sys.stdin.buffer.read().decode('utf-8')),int(sys.argv[1]))))")
+            rc, stdout, _, stop = run_process([sys.executable, "-c", bootstrap, str(self.port)], cwd,
                 json.dumps(prepared, ensure_ascii=False), execution.get("timeout_seconds", 600), should_stop)
             if stop or rc != 0:
                 return ExecutionResult("error", "uncertain", summary="GMS dispatch stopped or failed; reconcile the shared ledger before retrying.")
@@ -467,9 +461,9 @@ class GMSProvider:
             return ExecutionResult("error", "uncertain", summary="GMS request could not be confirmed. Inspect the shared ledger; do not retry automatically.")
 
 
-def _gms_delegate(prepared: dict, port: int, product_src: str) -> dict:
+def _gms_delegate(prepared: dict, port: int) -> dict:
     """Child-process entry point: exactly one existing-budget-runner delegation."""
-    LocalGMSWork, _, GMSBudgetError = _load_gms(Path(product_src))
+    LocalGMSWork, _, GMSBudgetError = _load_gms()
     try:
         answer = LocalGMSWork(port).work(prepared, execute=True)
         result = answer.get("result", {})

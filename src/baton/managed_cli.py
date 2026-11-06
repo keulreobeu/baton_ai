@@ -12,6 +12,27 @@ from .managed import ManagedStore
 from .orchestrator import Orchestrator
 
 
+def _credentials(args):
+    from .credential_vault import CredentialVaultError
+    try:
+        if args.command == "credentials-import":
+            from .credential_import import import_jipdam
+            print(encode(import_jipdam()))
+            return 0
+        if not 1024 <= args.port <= 65535:
+            print(encode({"error": "invalid_port"}), file=sys.stderr)
+            return 2
+        from .credential_server import serve_credentials
+        serve_credentials(port=args.port, open_browser=not args.no_browser)
+        return 0
+    except CredentialVaultError as exc:
+        print(encode({"error": str(exc)}), file=sys.stderr)
+        return 2
+    except OSError:
+        print(encode({"error": "local_server_unavailable"}), file=sys.stderr)
+        return 2
+
+
 def main(argv=None, *, workspace=None):
     root = Path(workspace or Path.cwd()).resolve()
     p = argparse.ArgumentParser(description=__doc__)
@@ -36,6 +57,9 @@ def main(argv=None, *, workspace=None):
         if name == "resume": s.add_argument("--recover-running", action="store_true")
     sub.add_parser("providers")
     sub.add_parser("codex-gms-check")
+    s = sub.add_parser("credentials", help="Open the local API key and GMS management pages")
+    s.add_argument("--port", type=int, default=8786); s.add_argument("--no-browser", action="store_true")
+    sub.add_parser("credentials-import", help="Copy the existing Jipdam vault into BATON once; the original is kept")
     s = sub.add_parser("autocommit")
     options = s.add_mutually_exclusive_group()
     options.add_argument("--enable", action="store_true"); options.add_argument("--disable", action="store_true")
@@ -43,6 +67,8 @@ def main(argv=None, *, workspace=None):
     s = sub.add_parser("worker"); s.add_argument("--once", action="store_true")
     args = p.parse_args(argv)
     try:
+        if args.command in {"credentials", "credentials-import"}:
+            return _credentials(args)
         if args.command == "wiki":
             from .wiki_cli import run as wiki_run
             result = wiki_run(args, root)

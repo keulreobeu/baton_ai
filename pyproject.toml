@@ -7,13 +7,13 @@ name = "baton-ai"
 version = "0.1.0"
 description = "BATON: provider-independent AI agent harness. Pass the task. Keep the progress."
 requires-python = ">=3.11"
-dependencies = []
-
-[project.optional-dependencies]
-gms = ["cryptography>=42"]
+dependencies = ["cryptography>=42"]
 
 [project.scripts]
 baton = "baton.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+baton = ["static/*"]
