@@ -9,7 +9,7 @@ import sqlite3
 import time
 import uuid
 
-from .contracts import HarnessError, canonical_path, digest, encode, identifier, overlaps, safe
+from .contracts import HarnessError, canonical_path, digest, encode, identifier, overlaps, replace_file, safe
 
 ACTIVE = {"PLANNING", "RUNNING", "VALIDATING", "RETRYING"}
 TERMINAL = {"COMPLETED", "CANCELLED"}
@@ -42,14 +42,40 @@ def validate(body, root):
         if priority not in PRIORITIES:
             raise HarnessError("invalid_priority")
         execution = dict(body.get("execution", {}))
-        defaults = {"preferred_provider": "codex", "fallback_provider": "gms", "max_attempts": 2,
+        defaults = {"preferred_provider": "codex", "fallback_provider": "none", "max_attempts": 2,
                     "timeout_seconds": 1800, "total_timeout_seconds": 3600, "sandbox": "workspace-write",
-                    "allow_fallback": False}
+                    "allow_fallback": False, "runtime": "local"}
         for k, v in defaults.items():
             execution.setdefault(k, v)
-        for key in ("preferred_provider", "fallback_provider"):
-            if execution[key] not in {"codex", "gms", "mock"}:
-                raise HarnessError("unsupported_provider")
+        if execution["runtime"] not in {"local", "orca"}:
+            raise HarnessError("unsupported_runtime")
+        providers = {"codex", "gms", "mock"} if execution["runtime"] == "local" else {"codex", "claude", "antigravity"}
+        if execution["preferred_provider"] not in providers:
+            raise HarnessError("unsupported_provider")
+        if execution["runtime"] == "orca":
+            config = execution.get("orca", {})
+            if not isinstance(config, dict): raise HarnessError("invalid_orca_configuration")
+            if set(config) - {"run_id", "repo_id", "coordinator_id", "max_active_tasks", "review_provider", "review_model", "review_effort"}:
+                raise HarnessError("invalid_orca_configuration")
+            for key in ("run_id", "repo_id", "coordinator_id"):
+                identifier(config.get(key))
+            cap = config.get("max_active_tasks", 2)
+            if type(cap) is not int or not 1 <= cap <= 16:
+                raise HarnessError("invalid_orca_concurrency")
+            execution["orca"] = {**config, "max_active_tasks": cap}
+            if config.get("review_provider", execution["preferred_provider"]) not in providers:
+                raise HarnessError("unsupported_review_provider")
+            import re
+            for model in (execution.get("model"), config.get("review_model")):
+                if model is not None and (not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}", model)):
+                    raise HarnessError("invalid_orca_model")
+            for effort in (execution.get("effort"), config.get("review_effort")):
+                if effort is not None and effort not in {"low", "medium", "high", "xhigh", "max"}:
+                    raise HarnessError("invalid_orca_effort")
+            if execution["allow_fallback"]: raise HarnessError("orca_implicit_fallback_forbidden")
+        # "none" disables quota fallback; existing "gms" values are kept but GMS is opt-in at runtime.
+        if execution["fallback_provider"] not in {"codex", "gms", "mock", "none"}:
+            raise HarnessError("unsupported_provider")
         for key, cap in (("max_attempts", 5), ("timeout_seconds", 7200), ("total_timeout_seconds", 14400)):
             if type(execution[key]) is not int or not 1 <= execution[key] <= cap:
                 raise HarnessError("invalid_execution_limit")
@@ -70,8 +96,10 @@ def validate(body, root):
             raise HarnessError("invalid_context")
         files = [canonical_path(root, p) for p in files]
         # Context is explicitly limited to product source, tests and documentation.
+        from .runtime import project_paths
+        roots = project_paths(root)["context_roots"]
         for p in files:
-            if not any(p.startswith("outputs/budongi_mvp_temp/" + d + "/") for d in ("src", "tests", "docs")):
+            if not any(p.startswith(d + "/") for d in roots):
                 raise HarnessError("context_not_code")
         checks = body.get("validation", [])
         if not isinstance(checks, list) or len(checks) > 20:
@@ -185,8 +213,8 @@ class ManagedStore:
     def create(self, body):
         body = validate(body, self.root)
         with self.tx() as c:
-            old = c.execute("SELECT hash FROM managed_tasks WHERE id=?", (body["task_id"],)).fetchone()
-            if old and old[0] != digest(body):
+            old = c.execute("SELECT hash,body FROM managed_tasks WHERE id=?", (body["task_id"],)).fetchone()
+            if old and old[0] != digest(body) and validate(json.loads(old[1]), self.root) != body:
                 raise HarnessError("task_id_conflict")
             if not old:
                 from .planning import build_plan
@@ -215,9 +243,16 @@ class ManagedStore:
             r = self.row(c, task)
             if r["state"] != "READY":
                 raise HarnessError("task_not_ready")
-            if c.execute("SELECT 1 FROM managed_tasks WHERE lease IS NOT NULL").fetchone():
-                raise HarnessError("worker_busy")
             body = json.loads(r["body"])
+            if r["lease"]:
+                raise HarnessError("worker_busy")
+            active = c.execute("SELECT id,worktree,body FROM managed_tasks WHERE lease IS NOT NULL").fetchall()
+            if r["worktree"] and any(x["worktree"] and Path(x["worktree"]).resolve() == Path(r["worktree"]).resolve() for x in active):
+                raise HarnessError("worker_busy")
+            if body["execution"].get("runtime") == "orca":
+                cap = body["execution"]["orca"].get("max_active_tasks", 2)
+                if sum(json.loads(x["body"])["execution"].get("runtime") == "orca" for x in active) >= cap:
+                    raise HarnessError("orca_concurrency_limit")
             for dep in body["depends_on"]:
                 if self.row(c, dep)["state"] != "COMPLETED":
                     raise HarnessError("dependency_not_completed")
@@ -228,16 +263,32 @@ class ManagedStore:
             self.event(c, task, "PLANNING", {"lease": lease, "pid": os.getpid()})
         return self.get(task)
 
-    def update(self, task, lease, state, *, result=None, worktree=None, release=False):
+    def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False):
         if state not in STATES:
             raise HarnessError("invalid_state")
         with self.tx() as c:
             r = self.row(c, task)
             if not lease or r["lease"] != lease:
                 raise HarnessError("stale_lease")
+            if settled_external:
+                if (json.loads(r["body"])["execution"].get("runtime") != "orca"
+                        or not result or result.get("runtime", {}).get("settled") is not True):
+                    raise HarnessError("orca_settlement_required")
+                if r["control"]:
+                    state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
             if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}:
                 raise HarnessError("control_requested")
             values = json.loads(r["result"])
+            if settled_external:
+                incoming = dict(result["runtime"])
+                actual = values.get("runtime", {})
+                if actual.get("dispatch_id") and incoming.get("dispatch_id") != actual["dispatch_id"]:
+                    raise HarnessError("runtime_binding_changed")
+                for field in ("stop_requested", "stop_status"):
+                    if field in actual: incoming[field] = actual[field]
+                if actual and incoming.get("attempt") != actual.get("attempt"):
+                    self.event(c, task, "runtime_checkpoint", {"role": "author", "binding": actual})
+                result = {**result, "runtime": incoming}
             values.update(result or {})
             safe(values)
             elapsed = r["elapsed"] + (max(0, time.time() - r["started"]) if release else 0)
@@ -252,7 +303,8 @@ class ManagedStore:
             r = self.row(c, task)
             if r["state"] in TERMINAL:
                 raise HarnessError("terminal_task")
-            if r["lease"]:
+            review = json.loads(r["result"]).get("review_runtime", {})
+            if r["lease"] or review and not review.get("settled"):
                 c.execute("UPDATE managed_tasks SET control=? WHERE id=?", (action, task))
             else:
                 c.execute("UPDATE managed_tasks SET state=?,control=? WHERE id=?", ("PAUSED" if action == "pause" else "CANCELLED", action, task))
@@ -267,6 +319,8 @@ class ManagedStore:
             if automatic and (r["state"] != "RETRYING" or r["control"]):
                 raise HarnessError("automatic_retry_interrupted")
             if r["lease"]:
+                if json.loads(r["body"])["execution"].get("runtime") == "orca":
+                    raise HarnessError("orca_settlement_required")
                 if not recover:
                     raise HarnessError("recovery_confirmation_required")
                 # Never fence a live worker; PID reuse conservatively blocks recovery.
@@ -290,7 +344,8 @@ class ManagedStore:
                 if priority not in PRIORITIES: raise HarnessError("invalid_priority")
                 body["priority"] = priority
             if provider is not None:
-                if provider not in {"codex", "gms", "mock"}: raise HarnessError("unsupported_provider")
+                choices = {"codex", "claude", "antigravity"} if body["execution"].get("runtime") == "orca" else {"codex", "gms", "mock"}
+                if provider not in choices: raise HarnessError("unsupported_provider")
                 body["execution"]["preferred_provider"] = provider
             c.execute("UPDATE managed_tasks SET body=?,hash=?,priority=? WHERE id=?", (encode(body), digest(body), PRIORITIES[body["priority"]], task))
             self.event(c, task, "configured", {"priority": body["priority"], "provider": body["execution"]["preferred_provider"]})
@@ -298,30 +353,39 @@ class ManagedStore:
 
     def approve(self, task, reviewer):
         identifier(reviewer)
+        from .runtime import execution_lock
+        from .evidence import approval_proof
+        with execution_lock(self.root, "task", task):
+            row = self.get(task)
+            if not row["worktree"]:
+                raise HarnessError("approval_requires_validated_result")
+            with execution_lock(self.root, "worktree", Path(row["worktree"]).resolve()):
+                proof = approval_proof(self, row, reviewer)
+                return self._approve(task, reviewer, row, proof)
+
+    def _approve(self, task, reviewer, checked, proof):
+        # Filesystem, candidate/test and wiki I/O have completed before BEGIN IMMEDIATE.
         with self.tx() as c:
             r = self.row(c, task); result = json.loads(r["result"])
             if r["state"] != "REVIEW_REQUIRED" or r["lease"] or result.get("validation_passed") is not True:
                 raise HarnessError("approval_requires_validated_result")
-            from .isolation import git, snapshot
-            if not r["worktree"] or snapshot(Path(r["worktree"])) != result.get("changed_files"):
+            if digest(result) != digest(checked["result"]) or r["hash"] != checked["hash"] or r["control"]:
                 raise HarnessError("changes_since_validation")
-            if git(Path(r["worktree"]), "rev-parse", "HEAD").strip() != result.get("base_commit"):
-                raise HarnessError("worktree_head_changed")
-            documentation = result.get("wiki")
-            if documentation and documentation.get("blocking"):
-                from .wiki import Wiki
-                decision = Wiki(self.root).decision(documentation["event_id"])
-                if decision.get("blocking"):
-                    raise HarnessError("wiki_review_required_before_completion")
+            from .evidence import validate_member_records
+            validate_member_records(c, result["integration_evidence"]["members"])
             c.execute("UPDATE managed_tasks SET state='COMPLETED' WHERE id=?", (task,))
-            self.event(c, task, "COMPLETED", {"reviewer": reviewer, "result_hash": digest(result)})
+            self.event(c, task, "COMPLETED", {"reviewer": reviewer, "result_hash": digest(result), "proof": proof})
         return self.observe_idle_state(task)
 
     def prepare_validation(self, task):
         with self.tx() as c:
             r = self.row(c, task)
-            if r["lease"] or r["state"] not in {"WAITING_FOR_APPROVAL", "REVIEW_REQUIRED", "FAILED"} or not r["worktree"]:
+            if r["lease"] or r["control"] or r["state"] not in {"WAITING_FOR_APPROVAL", "REVIEW_REQUIRED", "FAILED", "BLOCKED"} or not r["worktree"]:
                 raise HarnessError("validation_not_ready")
+            review = json.loads(r["result"]).get("review_runtime", {})
+            if review and not review.get("settled"):
+                # claim() clears control, so READY here would lose a later cancel.
+                raise HarnessError("orca_settlement_required")
             c.execute("UPDATE managed_tasks SET state='READY',control=NULL WHERE id=?", (task,))
             self.event(c, task, "READY", {"reason": "operator_requested_validation"})
         return self.get(task)
@@ -347,10 +411,10 @@ class ManagedStore:
         # Unique temporary file + replace; snapshots are derivative, DB remains authoritative.
         target = directory / (identifier(task) + ".json")
         tmp = target.with_suffix("." + uuid.uuid4().hex + ".tmp")
-        tmp.write_text(encode(report), encoding="utf-8"); tmp.replace(target)
+        tmp.write_text(encode(report), encoding="utf-8"); replace_file(tmp, target)
         lines = self.directory / "events.jsonl"
         tmp = lines.with_suffix("." + uuid.uuid4().hex + ".tmp")
-        tmp.write_text("".join(encode(e) + "\n" for e in self.events()), encoding="utf-8"); tmp.replace(lines)
+        tmp.write_text("".join(encode(e) + "\n" for e in self.events()), encoding="utf-8"); replace_file(tmp, lines)
         return report
 
     def auto_commit_setting(self, enabled=None):

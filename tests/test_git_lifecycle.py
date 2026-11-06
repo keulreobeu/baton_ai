@@ -113,6 +113,41 @@ class GitLifecycleTests(unittest.TestCase):
         self.assertEqual(row["head"], sha)
         self.assertEqual(_text(row["worktree"], "rev-list", "--count", self.base + "..HEAD"), "1")
 
+    def test_local_candidate_can_publish_same_commit_once(self):
+        self.lifecycle.start(self.request, local_only=True)
+        self.write("src/value.py", "value = 2\n")
+        frozen = self.lifecycle.snapshot(self.request["task_id"], "local")
+        candidate = self.lifecycle.local_candidate(self.request["task_id"])
+        self.assertEqual(candidate["state"], "LOCAL_CANDIDATE")
+        self.assertEqual(self.lifecycle._remote_head({**candidate, "origin_url": str(self.remote)}), None)
+        original, pushes = _git, []
+        def observed(root, *argv, **kwargs):
+            if argv[0] == "push": pushes.append(argv)
+            return original(root, *argv, **kwargs)
+        with patch("baton.git_lifecycle._git", side_effect=observed):
+            published = self.lifecycle.checkpoint(self.request["task_id"], frozen["pending_snapshot"])
+            repeated = self.lifecycle.checkpoint(self.request["task_id"], frozen["pending_snapshot"])
+        self.assertEqual(published["state"], "PUBLISHED")
+        self.assertEqual(repeated["head"], candidate["head"])
+        self.assertEqual(len(pushes), 1)
+        self.assertIsNone(published["pending_snapshot"])
+        self.assertEqual(_text(candidate["worktree"], "rev-list", "--count", self.base + "..HEAD"), "1")
+
+    def test_local_candidate_refuses_unreviewed_prebase_publication(self):
+        self.write("outside.txt", "pre-existing local change\n")
+        _git(self.root, "add", "outside.txt")
+        _git(self.root, "commit", "-m", "unpublished outside scope")
+        self.lifecycle.start(self.request, local_only=True)
+        self.write("src/value.py", "value = 2\n")
+        self.lifecycle.snapshot(self.request["task_id"], "local")
+        candidate = self.lifecycle.local_candidate(self.request["task_id"])
+        published = self.lifecycle.checkpoint(self.request["task_id"])
+        self.assertEqual(published["state"], "PUSH_PENDING")
+        self.assertEqual(published["error"], "local_candidate_base_not_remote_main")
+        self.assertEqual(_text(self.remote, "rev-parse", "main"), self.base)
+        self.assertEqual(self.lifecycle._remote_head(published), None)
+        self.assertEqual(_text(candidate["worktree"], "rev-parse", "HEAD"), candidate["head"])
+
     def test_common_repository_lock_blocks_second_worktree_controller(self):
         row = self.start()
         second = GitLifecycle(row["worktree"])
@@ -309,3 +344,148 @@ class GitLifecycleTests(unittest.TestCase):
         self.assertEqual(row["state"], "PUBLISHED")
         self.assertEqual(row["head"], merge_sha)
         self.assertEqual(len(row["integrations"]), 1)
+
+
+class LocalCandidateTests(unittest.TestCase):
+    """No remote is configured; even remote configuration lookup is forbidden."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        _git(self.root, "init", "-b", "main")
+        _git(self.root, "config", "user.name", "Offline Fixture")
+        _git(self.root, "config", "user.email", "offline@example.invalid")
+        _git(self.root, "config", "commit.gpgsign", "false")
+        _git(self.root, "config", "core.autocrlf", "false")
+        (self.root / "src").mkdir()
+        (self.root / "tests").mkdir()
+        (self.root / "src/value.py").write_text("value = 1\n", encoding="utf-8", newline="\n")
+        (self.root / "outside.txt").write_text("original\n", encoding="utf-8", newline="\n")
+        (self.root / ".gitignore").write_text(".local_runtime/\n__pycache__/\n", encoding="utf-8", newline="\n")
+        (self.root / "tests/test_value.py").write_text(
+            "import unittest\nfrom value import value\nclass TestValue(unittest.TestCase):\n def test_value(self): self.assertEqual(value, 2)\n",
+            encoding="utf-8", newline="\n")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-m", "fixture")
+        self.base = _text(self.root, "rev-parse", "HEAD")
+        self.lifecycle = GitLifecycle(self.root)
+        self.request = {"task_id": "TASK-LOCAL", "scope": ["src/value.py"],
+                        "validation": [["python", "-m", "unittest", "discover", "-s", "tests", "-v"]]}
+
+    def no_remote(self, root, *argv, **kwargs):
+        if argv[0] in {"fetch", "push", "ls-remote", "remote"}:
+            self.fail("Local candidate attempted remote operation: " + argv[0])
+        return _git(root, *argv, **kwargs)
+
+    def freeze(self):
+        self.lifecycle.start(self.request, local_only=True)
+        (self.root / "src/value.py").write_text("value = 2\n", encoding="utf-8", newline="\n")
+        return self.lifecycle.snapshot(self.request["task_id"], "candidate")
+
+    def test_local_candidate_is_offline_idempotent_and_preserves_source_index(self):
+        (self.root / "outside.txt").write_text("staged\n", encoding="utf-8", newline="\n")
+        _git(self.root, "add", "outside.txt")
+        (self.root / "outside.txt").write_text("unstaged\n", encoding="utf-8", newline="\n")
+        original_index = _git(self.root, "diff", "--cached", "--binary")
+        with patch("baton.git_lifecycle._git", side_effect=self.no_remote):
+            frozen = self.freeze()
+            candidate = self.lifecycle.local_candidate(self.request["task_id"], frozen["pending_snapshot"])
+            repeated = self.lifecycle.local_candidate(self.request["task_id"])
+            self.assertEqual(self.lifecycle.start(self.request, local_only=True)["head"], candidate["head"])
+        self.assertEqual(candidate["state"], "LOCAL_CANDIDATE")
+        self.assertIsNone(candidate["origin_url"])
+        self.assertEqual(candidate["head"], repeated["head"])
+        self.assertEqual(candidate["pending_snapshot"], frozen["pending_snapshot"])
+        self.assertEqual(candidate["snapshots"][-1]["state"], "COMMITTED")
+        self.assertEqual(_text(candidate["worktree"], "rev-list", "--count", self.base + "..HEAD"), "1")
+        self.assertEqual(_git(self.root, "diff", "--cached", "--binary"), original_index)
+        self.assertEqual(_text(self.root, "rev-parse", "HEAD"), self.base)
+        self.assertEqual((self.root / "outside.txt").read_text(), "unstaged\n")
+
+    def test_local_candidate_cli_and_verification_need_no_remote(self):
+        request_path = self.root / ".local_runtime/request.json"
+        request_path.parent.mkdir()
+        request_path.write_text(json.dumps(self.request), encoding="utf-8", newline="\n")
+        commands = (["start", "--request", str(request_path), "--local-only"],
+                    ["snapshot", "--task", "TASK-LOCAL", "--stage", "cli"],
+                    ["local-candidate", "--task", "TASK-LOCAL"],
+                    ["verify", "--task", "TASK-LOCAL"])
+        with patch("baton.git_lifecycle._git", side_effect=self.no_remote):
+            for index, command in enumerate(commands):
+                if index == 1:
+                    (self.root / "src/value.py").write_text("value = 2\n", encoding="utf-8", newline="\n")
+                output = io.StringIO()
+                with redirect_stdout(output): code = main(command, workspace=self.root)
+                self.assertEqual(code, 0, output.getvalue())
+            verified = json.loads(output.getvalue())
+            repeated = self.lifecycle.local_candidate("TASK-LOCAL")
+        self.assertEqual(verified["state"], "VERIFIED")
+        self.assertEqual(repeated["verification"], verified["verification"])
+
+    def test_failed_local_candidate_can_be_superseded_without_publishing(self):
+        frozen = self.freeze()
+        first = self.lifecycle.local_candidate("TASK-LOCAL", frozen["pending_snapshot"])
+        (self.root / "src/value.py").write_text("value = 3\n", encoding="utf-8", newline="\n")
+        with patch("baton.git_lifecycle._git", side_effect=self.no_remote):
+            second = self.lifecycle.snapshot("TASK-LOCAL", "after-review")
+            final = self.lifecycle.local_candidate("TASK-LOCAL", second["pending_snapshot"])
+        self.assertNotEqual(final["head"], first["head"])
+        self.assertEqual(_text(final["worktree"], "rev-parse", "HEAD^"), first["head"])
+        self.assertEqual(_text(final["worktree"], "show", "HEAD:src/value.py"), "value = 3")
+
+    def test_uncommitted_snapshot_still_blocks_a_second_snapshot(self):
+        self.freeze()
+        with self.assertRaisesRegex(HarnessError, "checkpoint_pending"):
+            self.lifecycle.snapshot("TASK-LOCAL", "again")
+
+    def test_local_candidate_parent_tampering_is_rejected(self):
+        frozen = self.freeze()
+        self.lifecycle.local_candidate("TASK-LOCAL")
+        snapshot_path = self.lifecycle.directory / "snapshots/TASK-LOCAL" / (frozen["pending_snapshot"] + ".json")
+        value = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        value["parent"] = "0" * 40
+        snapshot_path.write_text(json.dumps(value), encoding="utf-8", newline="\n")
+        with self.assertRaisesRegex(HarnessError, "scope_or_parent_changed"):
+            self.lifecycle.local_candidate("TASK-LOCAL")
+
+    def test_local_candidate_recovers_commit_without_saved_receipt(self):
+        self.freeze()
+        original = self.lifecycle._save
+        def interrupted(row):
+            if row["snapshots"][-1].get("commit_sha") and row["state"] == "SNAPSHOT_READY":
+                raise OSError("simulated crash after commit")
+            return original(row)
+        with patch.object(self.lifecycle, "_save", side_effect=interrupted):
+            with self.assertRaises(OSError): self.lifecycle.local_candidate("TASK-LOCAL")
+        with patch("baton.git_lifecycle._git", side_effect=self.no_remote):
+            recovered = self.lifecycle.local_candidate("TASK-LOCAL")
+        self.assertEqual(recovered["state"], "LOCAL_CANDIDATE")
+        self.assertEqual(_text(recovered["worktree"], "rev-list", "--count", self.base + "..HEAD"), "1")
+
+    def test_local_candidate_accepts_external_worktree_only_in_same_repository(self):
+        other = tempfile.TemporaryDirectory()
+        self.addCleanup(other.cleanup)
+        source = Path(other.name) / "author"
+        _git(self.root, "worktree", "add", "--detach", str(source), "HEAD")
+        (source / "src/value.py").write_text("value = 2\n", encoding="utf-8", newline="\n")
+        with patch("baton.git_lifecycle._git", side_effect=self.no_remote):
+            self.lifecycle.start({**self.request, "source_root": str(source)}, local_only=True)
+            self.lifecycle.snapshot("TASK-LOCAL", "external")
+            candidate = self.lifecycle.local_candidate("TASK-LOCAL")
+        self.assertEqual(_text(candidate["worktree"], "show", "HEAD:src/value.py"), "value = 2")
+        self.assertEqual((self.root / "src/value.py").read_text(), "value = 1\n")
+        foreign = Path(other.name) / "foreign"
+        foreign.mkdir()
+        _git(foreign, "init")
+        with self.assertRaisesRegex(HarnessError, "git_source_outside_repository"):
+            self.lifecycle.start({**self.request, "task_id": "TASK-FOREIGN", "source_root": str(foreign)}, local_only=True)
+
+    def test_local_candidate_hook_rewrite_is_rejected(self):
+        self.freeze()
+        hook = self.root / ".git/hooks/pre-commit"
+        hook.write_bytes(b'#!/bin/sh\nprintf "value = 99\\n" > src/value.py\ngit add src/value.py\n')
+        hook.chmod(0o755)
+        with patch("baton.git_lifecycle._git", side_effect=self.no_remote):
+            with self.assertRaisesRegex(HarnessError, "git_hook_changed_snapshot"):
+                self.lifecycle.local_candidate("TASK-LOCAL")

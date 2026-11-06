@@ -1,0 +1,82 @@
+{
+  "adapted_files": {
+    "SKILL.md": "b2521925b4f999cbb10a269f252adeb54d9e687269865742deb170f5a1f3ed74",
+    "references/comparison.md": "0cc2e69a18ade76c63b2313089584f19cc5aee9f2c00a8e0d4ca4d9ef95e1953",
+    "references/evidence.md": "d4e54c18d905fde249819c6af8564067c61d376f66a62ed65fb86a58a417a24f",
+    "references/provenance.md": "a673acb4fe583c15d7f13111e5aa74ff1d09a27ffe2ea80bfadf6b02f78f2d72",
+    "references/recovery.md": "53e2033fe7a33946017f3c804c68d12af588fa8e103cc89b57064c16a9436f06"
+  },
+  "files": [
+    {
+      "archive": "LICENSE.pstack",
+      "git_blob_sha": "6b5400237fdf6545be0b8fae370d6f2fcff8fb25",
+      "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
+      "upstream_path": "pstack/LICENSE"
+    },
+    {
+      "archive": "references/upstream/skills--swarm--SKILL_md.txt",
+      "git_blob_sha": "9cd32247b4f381bb020cbbf0fc546ba71407d558",
+      "sha256": "fea6bfbbf21e067a4e2d2ebab034bc3af508118e9df1abc9d2ba040d58a6df3a",
+      "upstream_path": "pstack/skills/swarm/SKILL.md"
+    },
+    {
+      "archive": "references/upstream/skills--interrogate--SKILL_md.txt",
+      "git_blob_sha": "169f5b478f4cb53a4c5ab6046576034b4b07cfe8",
+      "sha256": "3f3c2e9b8cf6b180dba9f32a4aff85e5691b09805232468e37a0ba45437a9984",
+      "upstream_path": "pstack/skills/interrogate/SKILL.md"
+    },
+    {
+      "archive": "references/upstream/skills--arena--SKILL_md.txt",
+      "git_blob_sha": "7580c3c9a7770d81b9dd7a537d9caa7362c04279",
+      "sha256": "d0adeca6c9b19d43d90ed8f0484f0ddd362f05006d628b8f4cc6c9b55fa4d2b3",
+      "upstream_path": "pstack/skills/arena/SKILL.md"
+    },
+    {
+      "archive": "references/upstream/skills--poteto-mode--playbooks--shipping_md.txt",
+      "git_blob_sha": "0a0c3cfde8948e3aa8ee80c6f3f9ce7e3e64fcba",
+      "sha256": "bf56339bdf7e0223bcff5abf4e8599e3f5b547b3fcc3b4ce9475e6e7dda14a9f",
+      "upstream_path": "pstack/skills/poteto-mode/playbooks/shipping.md"
+    },
+    {
+      "archive": "references/upstream/skills--poteto-mode--playbooks--babysit_md.txt",
+      "git_blob_sha": "14d5783d447ba3530d038c9dffa514f2492a54e0",
+      "sha256": "d546a937ed800abe1d29aae8a689fb57212280fdde62fae1fc1dc7f2efd9d904",
+      "upstream_path": "pstack/skills/poteto-mode/playbooks/babysit.md"
+    },
+    {
+      "archive": "references/upstream/skills--poteto-mode--playbooks--session-pickup_md.txt",
+      "git_blob_sha": "876b1433828ccc7c874123cdf300240abb285dd9",
+      "sha256": "d194f2a7ef392c1598ef3f0e3b561370ca25c2c7a78308007af4aa46ada8ee12",
+      "upstream_path": "pstack/skills/poteto-mode/playbooks/session-pickup.md"
+    },
+    {
+      "archive": "references/upstream/skills--poteto-mode--playbooks--pause-safely_md.txt",
+      "git_blob_sha": "9d1c5f8303976fff40de099f7f28185909430c11",
+      "sha256": "77968cfe5f4a71a8cd33e0ae8ffcdbd88dd693a212c240457773e6c40c96c21d",
+      "upstream_path": "pstack/skills/poteto-mode/playbooks/pause-safely.md"
+    },
+    {
+      "archive": "references/upstream/skills--principle-separate-before-serializing-shared-state--SKILL_md.txt",
+      "git_blob_sha": "ff93b4a2032c08e2232992a9a24f2891ee14e58f",
+      "sha256": "05294b40448e927c5da1c7b6f5c6b9fed3744637e3833d2d948b9154a9dd00bb",
+      "upstream_path": "pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md"
+    },
+    {
+      "archive": "references/upstream/skills--poteto-mode--playbooks--autopilot-stack_md.txt",
+      "git_blob_sha": "819862c8fe7b756c8571eed410a30a09625673d9",
+      "sha256": "34de4bb101dd56524d8067c73bba5988ead6f93d3ab8f96ac13a6adcb43696cb",
+      "upstream_path": "pstack/skills/poteto-mode/playbooks/autopilot-stack.md"
+    },
+    {
+      "archive": "references/upstream/_cursor-plugin--plugin_json.txt",
+      "git_blob_sha": "1295f46878218d568a037344877f0b603a887696",
+      "sha256": "d9e56eed06fc8f8920ff532873a403355d35f2905d2c86d1968ec4da0d1a5191",
+      "upstream_path": "pstack/.cursor-plugin/plugin.json"
+    }
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/cursor/plugins",
+  "revision": "bb68f2365eceafa0cb2d253112f675acf5f144cc",
+  "schema_version": 1,
+  "version": "0.15.36"
+}

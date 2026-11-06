@@ -78,14 +78,18 @@ class AutoCommitTests(unittest.TestCase):
         from baton.orchestrator import Orchestrator
         store = ManagedStore(self.root / ".local_runtime/harness-managed", self.root)
         body = {"task_id": "TASK-AUTO", "objective": "Offline auto-commit acceptance", "scope": {"allowed_paths": ["src"], "forbidden_paths": []},
-                "acceptance_criteria": ["diff check"], "validation": [{"argv": ["git", "diff", "--check"], "acs": ["diff check"]}], "execution": {"preferred_provider": "mock"}}
+                "acceptance_criteria": ["unit test"], "validation": [{"argv": ["python", "-m", "unittest", "discover", "-s", "src"], "acs": ["unit test"]}], "execution": {"preferred_provider": "mock"}}
         store.create(body); store.auto_commit_setting(True)
         class Edit:
             def execute(self, task, context, cwd, stop):
-                (cwd / "src/a.py").write_text("value = 3\n"); return ExecutionResult()
+                (cwd / "src/a.py").write_text("value = 3\n", newline="\n")
+                (cwd / "src/test_a.py").write_text("import unittest\nclass A(unittest.TestCase):\n def test_a(self): pass\n", newline="\n")
+                return ExecutionResult()
         row = Orchestrator(store, {"mock": Edit()}).run("TASK-AUTO")
         self.assertEqual(row["state"], "REVIEW_REQUIRED")
         self.assertEqual(git(Path(row["worktree"]), "rev-parse", "HEAD").strip(), self.base)
+        from tests.test_flow_evidence import attest
+        attest(store, self.root, "TASK-AUTO")
         output = io.StringIO()
         with redirect_stdout(output): code = main(["approve", "--task", "TASK-AUTO", "--reviewer", "operator"], workspace=self.root)
         self.assertEqual(code, 0)

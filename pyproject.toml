@@ -17,3 +17,10 @@ baton = "baton.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/baton/scripts" = ["scripts/install_flow_skill.py"]
+"share/baton/skills/baton-flow" = ["skills/baton-flow/SKILL.md", "skills/baton-flow/LICENSE.pstack"]
+"share/baton/skills/baton-flow/references" = ["skills/baton-flow/references/*.md", "skills/baton-flow/references/source-lock.json"]
+"share/baton/skills/baton-flow/references/upstream" = ["skills/baton-flow/references/upstream/*.txt"]
+"share/baton/tooling" = ["tooling/pstack-source.json"]

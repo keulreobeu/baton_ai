@@ -18,7 +18,7 @@ import time
 import uuid
 
 from .autocommit import eligible_paths, scan_content
-from .contracts import HarnessError, digest, identifier
+from .contracts import HarnessError, digest, identifier, replace_file
 from .isolation import repository_lock
 
 
@@ -41,7 +41,7 @@ def _write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    replace_file(temporary, path)
 
 
 def _path(name):
@@ -180,6 +180,19 @@ class GitLifecycle:
             scan_content(_git(tree, "cat-file", "blob", oid), name)
 
     def _push(self, row, head):
+        if row.get("local_only"):
+            # A local candidate is based on the local source, not a fetched
+            # main. Bind publication only on this explicit publishing path,
+            # and never leak pre-existing unpublished history before its base.
+            if row["origin_url"] is None:
+                origin = _text(row["worktree"], "remote", "get-url", "origin")
+                if re.search(r"https?://[^/]*@", origin):
+                    raise HarnessError("credentials_in_git_origin")
+                row["origin_url"] = origin
+                self._save(row)
+            remote_main = _text(row["worktree"], "ls-remote", "--heads", self._origin(row), "refs/heads/main")
+            if not remote_main or remote_main.split()[0] != row["base_commit"]:
+                raise HarnessError("local_candidate_base_not_remote_main")
         self._scan_range(row, head)
         remote = self._remote_head(row)
         if remote != head:
@@ -195,7 +208,9 @@ class GitLifecycle:
             raise HarnessError("push_readback_mismatch")
         row["remote_head"] = head
 
-    def start(self, request):
+    def start(self, request, *, local_only=False):
+        if type(local_only) is not bool:
+            raise HarnessError("invalid_local_candidate_mode")
         policy_roots = {self.anchor, Path(_text(self.root, "rev-parse", "--show-toplevel"))}
         for policy_root in policy_roots:
             policy_path = policy_root / "tooling/git-lifecycle.json"
@@ -221,11 +236,13 @@ class GitLifecycle:
             raise HarnessError("invalid_git_task_branch")
         _text(self.root, "check-ref-format", "--branch", branch)
         source = Path(request.get("source_root", self.root)).resolve()
-        if (not source.is_relative_to(self.anchor)
+        if ((not local_only and not source.is_relative_to(self.anchor))
                 or Path(_text(source, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve() != self.common):
             raise HarnessError("git_source_outside_repository")
         normalized = {"task_id": task, "scope": scope, "validation": checks, "branch": branch,
                       "source_root": str(source), "completion_mode": request.get("completion_mode", "reviewed_merge")}
+        if local_only:
+            normalized["local_only"] = True
         if normalized["completion_mode"] not in {"branch_only", "reviewed_merge"}:
             raise HarnessError("invalid_git_finish_mode")
         with repository_lock(self.anchor):
@@ -234,18 +251,23 @@ class GitLifecycle:
                 if row["request_hash"] != digest(normalized):
                     raise HarnessError("git_task_request_conflict")
                 current_head = self._head(row)
-                self._origin(row)
+                if not local_only:
+                    self._origin(row)
                 if row["snapshots"]:
                     # A committed pending checkpoint owns its retry; never repush an old base.
                     return self._public(row)
                 if current_head != row["head"]:
                     raise HarnessError("publisher_head_changed")
             else:
-                origin = _text(self.root, "remote", "get-url", "origin")
-                if re.search(r"https?://[^/]*@", origin):
-                    raise HarnessError("credentials_in_git_origin")
-                _git(self.root, "fetch", origin, "main")
-                base = _text(self.root, "rev-parse", "FETCH_HEAD")
+                origin = None
+                if local_only:
+                    base = _text(source, "rev-parse", "HEAD")
+                else:
+                    origin = _text(self.root, "remote", "get-url", "origin")
+                    if re.search(r"https?://[^/]*@", origin):
+                        raise HarnessError("credentials_in_git_origin")
+                    _git(self.root, "fetch", origin, "main")
+                    base = _text(self.root, "rev-parse", "FETCH_HEAD")
                 target = self.directory / "worktrees" / task
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():
@@ -255,6 +277,8 @@ class GitLifecycle:
                        "base_commit": base, "head": base, "remote_head": None, "state": "STARTED",
                        "snapshots": [], "pending_snapshot": None, "verification": None}
                 self._save(row)
+            if local_only:
+                return self._save(row)
             try:
                 self._push(row, row["head"])
                 row["state"] = "STARTED" if not row["snapshots"] else row["state"]
@@ -309,7 +333,12 @@ class GitLifecycle:
             raise HarnessError("invalid_git_stage")
         with repository_lock(self.anchor):
             row = self._load(task)
-            if row["pending_snapshot"]:
+            pending = next((s for s in row["snapshots"] if s["id"] == row["pending_snapshot"]), None)
+            # A committed local candidate may be superseded after a failed review;
+            # it stays in the history, so no publish is needed to continue.
+            superseded = (pending and pending["state"] == "COMMITTED" and pending.get("commit_sha") == row["head"]
+                          and row["state"] in {"LOCAL_CANDIDATE", "VERIFIED", "VALIDATION_FAILED"})
+            if row["pending_snapshot"] and not superseded:
                 raise HarnessError("checkpoint_pending")
             if row["state"] == "MERGED":
                 raise HarnessError("git_task_not_writable")
@@ -323,7 +352,7 @@ class GitLifecycle:
             sid = f"{len(row['snapshots']) + 1:04d}-" + digest(files)[:12]
             frozen = {"id": sid, "stage": stage, "parent": row["head"], "files": files}
             _write(self.directory / "snapshots" / task / (sid + ".json"), frozen)
-            row["snapshots"].append({"id": sid, "stage": stage, "state": "FROZEN"})
+            row["snapshots"].append({"id": sid, "stage": stage, "state": "FROZEN", "parent_sha": row["head"]})
             row.update(pending_snapshot=sid, state="SNAPSHOT_READY", verification=None)
             row["source_sync_required"] = False
             row.pop("finish_request", None)
@@ -348,6 +377,13 @@ class GitLifecycle:
             raise HarnessError("git_snapshot_corrupt") from None
 
     def checkpoint(self, task, snapshot_id=None):
+        return self._checkpoint(task, snapshot_id, publish=True)
+
+    def local_candidate(self, task, snapshot_id=None):
+        """Commit a frozen snapshot locally; never discover or contact a remote."""
+        return self._checkpoint(task, snapshot_id, publish=False)
+
+    def _checkpoint(self, task, snapshot_id, *, publish):
         with repository_lock(self.anchor):
             row = self._load(task)
             sid = snapshot_id or row["pending_snapshot"]
@@ -361,8 +397,11 @@ class GitLifecycle:
             if sid != row["pending_snapshot"]:
                 raise HarnessError("git_snapshot_out_of_order")
             frozen = self._frozen(task, sid)
-            if set(frozen["files"]) != set(row["scope"]) or frozen["parent"] != row["head"]:
+            parent = receipt.get("parent_sha", row["head"])
+            if set(frozen["files"]) != set(row["scope"]) or frozen["parent"] != parent:
                 raise HarnessError("git_snapshot_scope_or_parent_changed")
+            if row["head"] not in {parent, receipt.get("commit_sha")}:
+                raise HarnessError("publisher_head_changed")
             tree = Path(row["worktree"])
             head = self._head(row)
             marker = "Git-Checkpoint: " + task + "/" + sid
@@ -424,6 +463,15 @@ class GitLifecycle:
                 receipt["commit_sha"] = head
                 receipt["state"] = "COMMITTED"
                 self._save(row)
+            if not publish:
+                self._scan_range(row, head)
+                receipt.update(state="COMMITTED", commit_sha=head)
+                proof = row.get("verification")
+                verified = proof and proof.get("head") == head and proof.get("passed") is True
+                row.update(head=head, state="VERIFIED" if verified else "LOCAL_CANDIDATE",
+                           verification=proof if verified else None)
+                row.pop("error", None)
+                return self._save(row)
             try:
                 self._push(row, head)
             except HarnessError as exc:
@@ -515,7 +563,12 @@ class GitLifecycle:
     def verify(self, task):
         with repository_lock(self.anchor):
             row = self._load(task)
-            if row["pending_snapshot"] or row.get("refresh_intent") or row.get("refresh_push_pending") or not row["snapshots"]:
+            pending = next((s for s in row["snapshots"] if s["id"] == row["pending_snapshot"]), None)
+            local_candidate = (pending and pending["state"] == "COMMITTED"
+                               and pending.get("commit_sha") == row["head"]
+                               and row["state"] in {"LOCAL_CANDIDATE", "VERIFIED", "VALIDATION_FAILED"})
+            if ((row["pending_snapshot"] and not local_candidate) or row.get("refresh_intent")
+                    or row.get("refresh_push_pending") or not row["snapshots"]):
                 raise HarnessError("publish_before_git_verification")
             head = self._head(row)
             if head != row["head"]:

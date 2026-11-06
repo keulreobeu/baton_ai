@@ -39,7 +39,7 @@ def classify_error(value: str) -> str:
     """A generic HTTP 429 is transient rate limiting, never quota exhaustion."""
     text = value.lower()
     if any(marker in text for marker in ("insufficient_quota", "quota_exceeded", "quota exhausted",
-            "quota has been exceeded", "exceeded your current quota", "usage limit reached",
+            "quota has been exceeded", "exceeded your current quota", "usage limit reached", "hit your usage limit",
             "usage_limit_reached", "credit balance is too low", "out of credits", "quota exceeded")):
         return "quota"
     if any(marker in text for marker in ("401", "unauthorized", "authentication", "not logged in",
@@ -124,7 +124,7 @@ def _kill_tree(process: subprocess.Popen, job=None) -> None:
 
 
 def run_process(argv, cwd: Path, input_text: str | None, timeout: float,
-                should_stop: StopCheck, *, env_overrides=None, on_stdout_line=None,
+                should_stop: StopCheck, *, env_overrides=None, env_remove=(), on_stdout_line=None,
                 on_stream_error=None) -> tuple[int, str, str, str | None]:
     """Drain capped streams concurrently and terminate the entire subprocess group."""
     timeout = min(MAX_TIMEOUT, max(0.05, float(timeout)))
@@ -134,6 +134,8 @@ def run_process(argv, cwd: Path, input_text: str | None, timeout: float,
     options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
     environment = dict(os.environ, PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1", PYTEST_ADDOPTS="", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
     environment.update(env_overrides or {})
+    for name in env_remove:  # absent, not empty: an empty value can still select a billing path
+        environment.pop(name, None)
     process = subprocess.Popen(list(argv), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, shell=False, env=environment, **options)
     job = _WindowsJob(process)

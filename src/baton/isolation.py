@@ -5,31 +5,36 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import time
 from contextlib import contextmanager
 
 from .contracts import HarnessError, canonical_path, overlaps, safe
 
 
 @contextmanager
-def repository_lock(root):
+def repository_lock(root, *, wait_seconds=0):
     """OS-owned repository mutex shared even by distinct state directory settings."""
-    path = root / ".local_runtime/harness-managed/repository.lock"
+    from .runtime import repository_key
+    path = repository_key(root).parent / ".local_runtime/harness-managed/repository.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     stream = path.open("a+b")
     acquired = False
     try:
         if path.stat().st_size == 0: stream.write(b"0"); stream.flush()
         stream.seek(0)
-        try:
-            if os.name == "nt":
-                import msvcrt
-                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            acquired = True
-        except OSError:
-            raise HarnessError("worker_busy") from None
+        deadline = time.monotonic() + wait_seconds
+        while not acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError:
+                if time.monotonic() >= deadline: raise HarnessError("worker_busy") from None
+                time.sleep(0.02)
         yield
     finally:
         if acquired:
@@ -77,6 +82,10 @@ def git(root, *args):
 def prepare_worktree(store, task):
     if task["worktree"]:
         target = Path(task["worktree"]).resolve()
+        if task.get("task", {}).get("execution", {}).get("runtime") == "orca":
+            from .runtime import register_workspace
+            binding = task["result"]["runtime"]
+            return register_workspace(store, binding, task["result"]["base_commit"], finished=binding.get("settled") is True)
         if not target.is_relative_to(store.directory / "worktrees") or not target.is_dir():
             raise HarnessError("worktree_unavailable")
         git(target, "rev-parse", "--is-inside-work-tree")
@@ -86,7 +95,8 @@ def prepare_worktree(store, task):
     if target.exists():
         raise HarnessError("unclaimed_worktree_requires_review")
     # Detached HEAD avoids changing any user's branch; review then explicitly cherry-pick/merge later.
-    git(store.root, "worktree", "add", "--detach", str(target), "HEAD")
+    with repository_lock(store.root, wait_seconds=10):
+        git(store.root, "worktree", "add", "--detach", str(target), "HEAD")
     return target
 
 
