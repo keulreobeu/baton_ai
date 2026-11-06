@@ -6,9 +6,9 @@
 
 | 용도 | 경로 | 현재 상태 |
 |---|---|---|
-| Claude API/GMS 원래 checkout | `D:/baton_ai` | `feat/api-key-gms-management`, 기존 editable venv 연결 유지 |
+| 기본 checkout | `D:/baton_ai` | PR #5 병합 후 `main`. 전용 `.venv` 유지 |
 | BATON 하네스·환경 복구 | `D:/baton_ai/.local_runtime/workspace-recovery` | 전용 `.venv`에 이 checkout을 editable 설치 |
-| 집담 제품 | `D:/jipdam` | 기존 제품 editable 설치 유지, Windows branch에 dual-host 환경 수정 8339053 반영 |
+| 집담 제품 | `D:/jipdam` | 기존 제품 editable 설치 유지, `claude/windows-bootstrap-tools`에 dual-host 8339053 반영. 집담 `main`에는 없음 |
 | 집담 복구 기록 | `D:/jipdam/.local_runtime/workspace-recovery` | 복구 문서/기존 dual-host 원본 보존 |
 
 BATON 패키지 버전은 양쪽 모두 0.1.0이므로 버전 문자열만으로 어느 branch의 CLI인지 알 수 없다. `python -c "import baton; print(baton.__file__)"`로 실제 소스 경로를 확인한다. 다른 checkout의 venv를 재지정하지 않는다.
@@ -66,7 +66,7 @@ baton runtime doctor
 - 집담 `D:/jipdam/.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py`: exit 0. 제품 355개 수집/실행과 팀 40개 통과, 합성 DB·doctor·detail CLI smoke 통과. 제품 코드 변경 없이 Windows 환경 branch가 dual-host 8339053으로 전진했으며 팀 테스트 40개는 현재 dual-host 구현을 검사했다.
 - 최종 관련 검사: 전용 venv의 `python -B -X utf8 -m unittest tests.test_flow_skill tests.test_sdd -q` PASS, 36 tests / failures 0 / errors 0 / skip 0.
 - BATON 전용 venv 전체 `scripts/verify_environment.py`: PASS, exit 0. 299개 실행 중 293개 통과 / 6개 skip / failures 0 / errors 0, 1313.424초. 시작 후 src/tests/SDD 검사기·검증 진입점 변경이 없음을 Git diff로 확인했다. 전체 실행은 `verified_evidence_eligible=false`다.
-- skip 6개: 집담 전용 `.codex/`·수동 하네스 설정 확인 1개, 아직 `budongi`를 가져오는 과거 GMS 통합 5개. 이 두 범위는 독립 BATON 환경 설치로 소급 검증하지 않는다. Claude의 GMS 분리 branch 통합 후 별도로 검사한다.
+- skip 6개: 집담 전용 `.codex/`·수동 하네스 설정 확인 1개, 아직 `budongi`를 가져오는 과거 GMS 통합 5개. 이 두 범위는 독립 BATON 환경 설치로 소급 검증하지 않는다. 이후 GMS 통합으로 전체는 429개 실행, skip 1개가 됐다. 남은 skip은 집담 저장소 설정 검사다.
 - 환경 Task는 직접 관련된 36개 무스킵 결과와 실제 설치/연결 smoke에 한정해 완료한다. 기존 FLOW/SDD/QW Task의 CI·실모델 미검증 게이트는 완료 처리하지 않는다.
 
 브라우저 첫 검사의 screenshot 경로 오류는 smoke runner가 집담 cwd를 유지한 것이 원인이었다. 각 repo cwd에서 재실행해 두 환경 모두 통과했다. 테스트 runtime과 사용자 실제 DB/키/원장은 구분한다.
