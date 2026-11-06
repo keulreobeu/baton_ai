@@ -15,15 +15,22 @@ Provider-independent AI agent harness. 현재는 Jipdam `outputs/budongi_mvp_tem
 
 ## 실행
 
-대상 저장소 루트(작업 공간 = 현재 폴더)에서 실행한다.
+BATON 저장소 루트에서 한 번 설치한다. `[gms]`는 GMS 테스트에 필요한 `cryptography`를 함께 설치한다.
 
 ```powershell
-$env:PYTHONPATH = "C:\Users\SSAFY\Desktop\baton_ai\src"
-python -m baton --help
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[gms]"
+```
+
+그다음 대상 저장소 루트(작업 공간 = 현재 폴더)에서 실행한다.
+
+```powershell
+baton --help
 python -m baton git --help
 ```
 
-또는 `python -m pip install -e .` 후 `baton --help`.
+설치 없이 실행하려면 `$env:PYTHONPATH`에 BATON 저장소의 `src` 절대 경로를 지정한다.
 
 ## 멀티에이전트 흐름 (FLOW-001)
 
@@ -101,9 +108,13 @@ GMS는 확장 기능이다. 신규 Task 기본 `fallback_provider`는 `none`이�
 
 ## 테스트
 
+가상환경을 활성화한 상태에서 BATON 저장소 루트에서 실행한다.
+
 ```powershell
-$env:PYTHONPATH = "src"; python -X utf8 -m unittest discover -s tests -t .
+python -X utf8 -m unittest discover -s tests -t .
 ```
+
+GMS 테스트는 `budongi`를 불러올 수 있어야 돌아가고, 불러오지 못하면 실패 없이 skip된다. 기본 위치는 BATON 저장소와 같은 폴더의 `jipdam/outputs/budongi_mvp_temp/src`이며, 다른 위치면 `BATON_GMS_SRC`로 지정한다.
 
 ## 아직 Jipdam에 묶인 부분
 

@@ -9,6 +9,9 @@ description = "BATON: provider-independent AI agent harness. Pass the task. Keep
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+gms = ["cryptography>=42"]
+
 [project.scripts]
 baton = "baton.__main__:main"
 
