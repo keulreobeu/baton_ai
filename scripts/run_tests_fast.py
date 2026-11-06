@@ -67,13 +67,14 @@ def run_shard(root, index, count, report):
     return 0 if result.wasSuccessful() else 1
 
 
-def summarize(reports, expected):
-    """A missing report or a lost test fails the run even if every process exited 0."""
+def summarize(reports, expected, codes):
+    """A nonzero exit, a missing report, or a lost test each fail the run on their own."""
     totals = {key: sum(report.get(key, 0) for report in reports if report) for key in
               ("tests_run", "failures", "errors", "skipped", "expected_failures", "unexpected_successes")}
+    failed_shards = sum(1 for code in codes if code)
     passed = (all(reports) and expected > 0 and totals["tests_run"] == expected and not totals["failures"]
-              and not totals["errors"] and not totals["unexpected_successes"])
-    return {"status": "PASS" if passed else "FAIL", "tests_expected": expected, **totals,
+              and not totals["errors"] and not totals["unexpected_successes"] and not failed_shards)
+    return {"status": "PASS" if passed else "FAIL", "tests_expected": expected, "failed_shards": failed_shards, **totals,
             "scope": "local_fast_feedback", "verified_evidence_eligible": False, "live_provider_validation": "NOT_RUN"}
 
 
@@ -91,16 +92,17 @@ def run_all(root, workers):
                        "--shard", f"{index}/{count}", "--report", str(report)]
             jobs.append((subprocess.Popen(command, cwd=root, env=child_env(root), stdin=subprocess.DEVNULL, stdout=log,
                                           stderr=subprocess.STDOUT), log, report))
-        reports = []
+        reports, codes = [], []
         for process, log, report in jobs:
             code = process.wait()
+            codes.append(code)
             reports.append(json.loads(report.read_text(encoding="utf-8")) if report.exists() else None)
             log.seek(0)
             output = log.read()
             log.close()
             if code:
                 print(output)
-    summary = summarize(reports, expected)
+    summary = summarize(reports, expected, codes)
     summary.update(workers=count, seconds=round(time.perf_counter() - started, 1))
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary["status"] == "PASS" else 1

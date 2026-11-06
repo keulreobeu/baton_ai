@@ -38,13 +38,17 @@ class FastRunnerTests(unittest.TestCase):
         self.assertEqual(sorted(sum(parts, [])), items)
 
     def test_missing_report_or_lost_test_fails(self):
-        self.assertEqual(fast.summarize([REPORT, REPORT], 4)["status"], "PASS")
-        self.assertEqual(fast.summarize([REPORT, None], 4)["status"], "FAIL")
-        self.assertEqual(fast.summarize([REPORT, REPORT], 5)["status"], "FAIL")
-        self.assertEqual(fast.summarize([], 0)["status"], "FAIL")
+        self.assertEqual(fast.summarize([REPORT, REPORT], 4, [0, 0])["status"], "PASS")
+        self.assertEqual(fast.summarize([REPORT, None], 4, [0, 0])["status"], "FAIL")
+        self.assertEqual(fast.summarize([REPORT, REPORT], 5, [0, 0])["status"], "FAIL")
+        self.assertEqual(fast.summarize([], 0, [])["status"], "FAIL")
+
+    def test_nonzero_exit_fails_even_with_a_clean_report(self):
+        summary = fast.summarize([REPORT, REPORT], 4, [0, 7])
+        self.assertEqual((summary["status"], summary["failed_shards"]), ("FAIL", 1))
 
     def test_result_is_never_verified_evidence(self):
-        self.assertIs(fast.summarize([REPORT], 2)["verified_evidence_eligible"], False)
+        self.assertIs(fast.summarize([REPORT], 2, [0])["verified_evidence_eligible"], False)
 
     def test_git_launcher_is_bypassed_only_when_direct_git_exists(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -65,6 +69,11 @@ class FastRunnerTests(unittest.TestCase):
         code, summary, output = self.run_script(self.project(PASSING + " def test_d(self): self.fail('boom')\n"))
         self.assertEqual((code, summary["status"], summary["failures"]), (1, "FAIL", 1))
         self.assertIn("boom", output)
+
+    def test_crash_after_the_report_is_written_fails_the_run(self):
+        crash = "import atexit, os, sys\nif '--shard' in sys.argv: atexit.register(lambda: os._exit(7))\n"
+        code, summary, _ = self.run_script(self.project(crash + PASSING))
+        self.assertEqual((code, summary["status"], summary["tests_run"], summary["failures"]), (1, "FAIL", 3, 0))
 
     def test_import_error_fails_the_run(self):
         code, summary, _ = self.run_script(self.project("import module_that_does_not_exist\n"))
