@@ -1,15 +1,30 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from baton.contracts import HarnessError
 from baton.gateway import Gateway, MockProvider, Policy, Request, DisabledGMSProvider
 from baton.state import Store
+
+
+class SlowCommitStore(Store):
+    """Stands in for a slow Windows runner: every write holds the ledger lock a little longer."""
+
+    hold_seconds = 0.05
+
+    @contextmanager
+    def transaction(self):
+        with super().transaction() as c:
+            yield c
+            time.sleep(self.hold_seconds)
 
 
 class HarnessGatewayTests(unittest.TestCase):
@@ -89,6 +104,39 @@ class HarnessGatewayTests(unittest.TestCase):
         self.assertEqual(g.budget()["available_tokens"], 0)
         self.assertEqual(p.calls, 9)
         self.assertEqual(sum(r.get("reason") == "budget_exhausted" for r in results), 1)
+
+    def test_thread_queue_wait_does_not_spend_the_storage_busy_timeout(self):
+        # Regression for CI run 42777183109: ten threads spent one 5 s busy timeout waiting for
+        # all other writers. Here 21 slow writes (~1 s serialized) exceed a 0.3 s busy timeout,
+        # which failed with storage_unavailable_or_busy before the in-process writer queue.
+        policy = Policy(max_calls=20, max_input_tokens=4000, max_output_tokens=3000,
+                        category_limits=(("development", 27000),), circuit_failures=100)
+        p = MockProvider("missing_usage")
+        g = Gateway(SlowCommitStore(self.root / "slow.db", self.root, busy_timeout=0.3), p, policy)
+        requests = [replace(self.req, request_id=f"SLOW-{i}", text="x" * 4000, max_output_tokens=2000) for i in range(10)]
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            results = list(pool.map(g.complete, requests))
+        self.assertEqual(g.budget()["held_tokens"], 27000)
+        self.assertEqual(p.calls, 9)
+        self.assertEqual(sum(r.get("reason") == "budget_exhausted" for r in results), 1)
+
+    def test_storage_held_by_another_connection_fails_closed_before_call(self):
+        store = Store(self.root / "held.db", self.root, busy_timeout=0.2)
+        p = MockProvider()
+        g = Gateway(store, p)
+        other = sqlite3.connect(store.path, isolation_level=None)  # e.g. another process
+        self.addCleanup(other.close)
+        other.execute("BEGIN IMMEDIATE")
+        started = time.monotonic()
+        with self.assertRaises(HarnessError) as caught:
+            g.complete(self.req)
+        self.assertEqual(str(caught.exception), "storage_unavailable_or_busy")
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(p.calls, 0)
+        other.execute("ROLLBACK")
+        self.assertEqual(g.complete(self.req)["status"], "ok")
+        with self.assertRaises(HarnessError):
+            Store(self.root / "bad.db", self.root, busy_timeout=0)
 
     def test_category_call_cap_cache_invalidation_and_policy_persistence(self):
         p = Policy(max_calls=1, category_limits=(("development", 100),))

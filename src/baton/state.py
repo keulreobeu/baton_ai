@@ -4,8 +4,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
+import threading
 import uuid
 
 from .contracts import (HarnessError, HOSTS, ROUTES, STATES, canonical_path, digest, encode,
@@ -16,10 +18,31 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_WRITER_LOCKS: dict[str, threading.RLock] = {}
+_WRITER_LOCKS_GUARD = threading.Lock()
+
+
+def _writer_lock(path: Path) -> threading.RLock:
+    """One in-process queue per ledger file.
+
+    SQLite's busy handler polls with back-off and is not fair, so N threads in one process
+    each spend their busy timeout waiting for all N-1 other writers. Queuing them here first
+    leaves the SQLite timeout to cover only the current holder and other processes.
+    RLock keeps nested use failing as storage busy instead of deadlocking.
+    """
+    key = os.path.normcase(str(path.resolve()))
+    with _WRITER_LOCKS_GUARD:
+        return _WRITER_LOCKS.setdefault(key, threading.RLock())
+
+
 class Store:
-    def __init__(self, path: Path, workspace: Path):
+    def __init__(self, path: Path, workspace: Path, *, busy_timeout: float = 5.0):
         self.path, self.workspace = Path(path), Path(workspace).resolve()
+        self.busy_timeout = float(busy_timeout)
+        if not self.busy_timeout > 0:
+            raise HarnessError("invalid_busy_timeout")
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = _writer_lock(self.path)
         with self.transaction() as c:
             version = c.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
@@ -37,21 +60,24 @@ class Store:
 
     @contextmanager
     def transaction(self):
-        c = sqlite3.connect(self.path, timeout=5, isolation_level=None)
-        c.row_factory = sqlite3.Row
-        try:
-            c.execute("PRAGMA foreign_keys=ON")
-            c.execute("BEGIN IMMEDIATE")
-            yield c
-            c.commit()
-        except sqlite3.OperationalError:
-            c.rollback()
-            raise HarnessError("storage_unavailable_or_busy") from None
-        except BaseException:
-            c.rollback()
-            raise
-        finally:
-            c.close()
+        # Every holder is bounded by its own SQLite busy timeout and short body, so the
+        # in-process wait is bounded too. Cross-process contention still fails closed below.
+        with self._lock:
+            c = sqlite3.connect(self.path, timeout=self.busy_timeout, isolation_level=None)
+            c.row_factory = sqlite3.Row
+            try:
+                c.execute("PRAGMA foreign_keys=ON")
+                c.execute("BEGIN IMMEDIATE")
+                yield c
+                c.commit()
+            except sqlite3.OperationalError:
+                c.rollback()
+                raise HarnessError("storage_unavailable_or_busy") from None
+            except BaseException:
+                c.rollback()
+                raise
+            finally:
+                c.close()
 
     def _event(self, c, task, kind, body=None, run=None):
         c.execute("INSERT INTO events(task_id,run_id,kind,body,created_at) VALUES(?,?,?,?,?)",

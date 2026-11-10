@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-10 저장소 busy
+
+- [TASK-STORE-BUSY-001](TASK-STORE-BUSY-001.md) in_progress: 스레드 10개가 SQLite 쓰기를 기다리다 Windows CI에서 `storage_unavailable_or_busy`로 실패하던 문제. 프로세스 내 대기열로 수정. 실제 CI 미실행.
+
 ## 현재 작업 — 2026-11-10 공유 메모리
 
 - [TASK-MEMORY-001](TASK-MEMORY-001.md) in_progress: Codex·Claude가 같은 프로젝트 기억을 읽고 쓰는 로컬 공유 메모리. [MEMORY-001](../specs/MEMORY-001.md) 2026-11-10 사용자 승인.

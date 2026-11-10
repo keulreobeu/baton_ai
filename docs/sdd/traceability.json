@@ -21,6 +21,7 @@
     "docs/plans/gms-credentials.md",
     "docs/adr/ADR-GMS-001.md",
     "docs/tasks/TASK-TEST-SPEED-001.md",
+    "docs/tasks/TASK-STORE-BUSY-001.md",
     "docs/specs/HANDOFF-001.md",
     "docs/specs/LEAN-CORE-001.md",
     "docs/plans/handoff-lean-port.md",
@@ -235,6 +236,14 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_cli_failure_has_code"
+            },
+            {
+              "file": "tests/test_harness_gateway.py",
+              "symbol": "HarnessGatewayTests.test_thread_queue_wait_does_not_spend_the_storage_busy_timeout"
+            },
+            {
+              "file": "tests/test_harness_gateway.py",
+              "symbol": "HarnessGatewayTests.test_storage_held_by_another_connection_fails_closed_before_call"
             }
           ]
         },
