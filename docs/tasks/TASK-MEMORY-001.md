@@ -253,3 +253,15 @@ evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_
   로컬 메모리·MCP 테스트의 skip은 0이다.
 - 상태는 in_progress로 둔다. SDD verified는 마지막 기록에 skip이 없어야 하는데 CI 전체 회귀에 기존 skip이 있고,
   독립 검토는 모두 같은 모델 계열이며, 실제 호스트 MCP 등록 사용은 사용자 몫으로 미검증이다. main 병합은 별도 승인 대상이다.
+
+## main 병합 — 2026-11-10
+
+- 사용자 지시("지금 병합")로 PR #9를 `--match-head-commit 084fcaf`로 고정해 merge commit 방식으로 병합했다. main=`4ddd438`
+  (부모 a061d39·084fcaf), 원격 read-back 일치. 포함 커밋 15개(MEMORY-001 13개, PORT-001 7a91282·890f0f6). 강제 갱신 없음.
+- 병합 전 상태: head 084fcaf CI 8개 통과(push·pull_request), mergeStateStatus CLEAN, 7차 독립 검토 passed.
+- main push CI 실행 42775921334 success, job 4개(ubuntu·windows × Python 3.11·3.12) 통과.
+- 상태는 사용자 결정("in_progress 유지")으로 in_progress다. 남은 skip 2개는 Windows 전용 자격 증명 테스트
+  (`tests/test_credentials.py`의 `skipUnless(win32)`)와 집담 설정 테스트(`tests/test_harness.py`의 `@unittest.skip`)이며
+  메모리 기능과 무관하다. 해소는 GMS·TASK-PROFILE 후속 범위다.
+- 미실행: Codex 교차 모델 최종 확인(실모델 호출이라 사용자 승인 필요), 실제 호스트 MCP 등록 사용(사용자 몫).
+  원격 branch `claude/shared-memory-spec-20261110`은 삭제하지 않았다.
