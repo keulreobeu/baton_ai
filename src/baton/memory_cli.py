@@ -1,6 +1,7 @@
 """`baton memory`: shared project memory (MEMORY-001). JSON output; no model or network calls."""
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 import sqlite3
 import sys
@@ -11,14 +12,31 @@ from .memory import AUTHORS, KINDS, RETRYABLE, MemoryRefused, MemoryStore
 EXIT_OK, EXIT_ERROR, EXIT_RETRY = 0, 2, 3
 
 
+class JsonArgumentParser(argparse.ArgumentParser):
+    """Usage errors become a fixed JSON error code instead of argparse's plain-text exit."""
+
+    def error(self, message):
+        raise HarnessError("memory_invalid_arguments")
+
+
 def parser(sub):
-    p = sub.add_parser("memory", help="Shared project memory for Codex/Claude (local, untrusted data)")
-    commands = p.add_subparsers(dest="memory_command", required=True)
+    """Registered under `baton` for --help; real dispatch goes through main() and JSON errors."""
+    _populate(sub.add_parser("memory", help="Shared project memory for Codex/Claude (local, untrusted data)"))
+
+
+def build_parser():
+    p = JsonArgumentParser(prog="baton memory", description=__doc__)
+    _populate(p)
+    return p
+
+
+def _populate(p):
+    commands = p.add_subparsers(dest="memory_command", required=True, parser_class=JsonArgumentParser)
 
     def writer(name):
         s = commands.add_parser(name)
         s.add_argument("--author", choices=AUTHORS, required=True)
-        s.add_argument("--session", help="Holder session id for claims (default: 'default')")
+        s.add_argument("--session", help="Claim holder session id; required for claim/renew/release")
         return s
 
     s = writer("add"); s.add_argument("--topic", required=True); s.add_argument("--kind", choices=KINDS, required=True)
@@ -96,21 +114,39 @@ def execute(store, args):
     raise HarnessError("memory_unknown_command")
 
 
-def run(args, root, *, home=None, env=None, clock=None, stdin=None, stdout=None):
+def _emit_error(out, error):
+    payload = error_payload(error)
+    out.write(encode(payload) + "\n")
+    return EXIT_RETRY if payload["retryable"] else EXIT_ERROR
+
+
+def main(argv, root, *, home=None, env=None, clock=None, stdin=None, stdout=None):
     out = stdout or sys.stdout
+    try:
+        args = build_parser().parse_args(argv)
+    except HarnessError as error:
+        return _emit_error(out, error)
+    return run(args, root, home=home, env=env, clock=clock, stdin=stdin, stdout=stdout)
+
+
+def run(args, root, *, home=None, env=None, clock=None, stdin=None, stdout=None, stderr=None):
+    out = stdout or sys.stdout
+    mcp = args.memory_command == "mcp" and not args.print_config
+    # On the MCP stream stdout carries JSON-RPC only; startup failures go to stderr.
+    report = (stderr or sys.stderr) if mcp else out
     try:
         if args.memory_command == "mcp" and args.print_config:
             from .memory_mcp import print_config
             out.write(encode(print_config(args.print_config)) + "\n")
             return EXIT_OK
         store = MemoryStore(root, home=home, env=env, clock=clock)
-        if args.memory_command == "mcp":
+        if mcp:
             from .memory_mcp import serve
             if stdin is None:
-                for stream in (sys.stdin, sys.stdout):
-                    if hasattr(stream, "reconfigure"):
-                        stream.reconfigure(encoding="utf-8")
-            serve(store, author=args.author, session=args.session, stdin=stdin or sys.stdin, stdout=out)
+                if hasattr(sys.stdout, "reconfigure"):
+                    sys.stdout.reconfigure(encoding="utf-8")
+                stdin = getattr(sys.stdin, "buffer", sys.stdin)
+            serve(store, author=args.author, session=args.session, stdin=stdin, stdout=out)
             return EXIT_OK
         if args.memory_command == "export":
             out.write(store.export(topic=args.topic))
@@ -119,10 +155,8 @@ def run(args, root, *, home=None, env=None, clock=None, stdin=None, stdout=None)
         out.write(encode(result) + "\n")
         return EXIT_OK
     except HarnessError as error:
-        payload = error_payload(error)
-        out.write(encode(payload) + "\n")
-        return EXIT_RETRY if payload["retryable"] else EXIT_ERROR
+        return _emit_error(report, error)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, sqlite3.Error):
-        out.write(encode({"status": "error", "error": "memory_invalid_input_or_storage", "retryable": False,
-                          "model_calls": 0}) + "\n")
+        report.write(encode({"status": "error", "error": "memory_invalid_input_or_storage", "retryable": False,
+                             "model_calls": 0}) + "\n")
         return EXIT_ERROR

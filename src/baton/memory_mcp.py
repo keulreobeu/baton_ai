@@ -111,15 +111,34 @@ def call_tool(store, name, arguments, *, author, session):
     return {"markdown": store.export(topic=a.get("topic"))}
 
 
+INVALID_REQUEST = {"code": -32600, "message": "Invalid Request"}
+INVALID_PARAMS = {"code": -32602, "message": "Invalid params"}
+MAX_FRAME = 256_000
+
+
+def _error(request_id, error):
+    return {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def _valid_id(value):
+    return isinstance(value, str) and len(value) <= 200 or type(value) is int
+
+
 def handle(store, message, *, author, session):
     """Return the JSON-RPC response for one message, or None for notifications."""
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
-        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
-    method, request_id, params = message["method"], message.get("id"), message.get("params") or {}
+        return _error(None, INVALID_REQUEST)
     if "id" not in message:
-        return None
+        return None  # notification: never answered
+    request_id = message["id"]
+    if not _valid_id(request_id):
+        return _error(None, INVALID_REQUEST)  # never reflect object/array/bool/null ids
+    method = message["method"]
+    params = message.get("params", {})
+    if not isinstance(params, dict):
+        return _error(request_id, INVALID_PARAMS)
     if method == "initialize":
-        asked = params.get("protocolVersion") if isinstance(params, dict) else None
+        asked = params.get("protocolVersion")
         version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
         return {"jsonrpc": "2.0", "id": request_id, "result": {
             "protocolVersion": version, "capabilities": {"tools": {"listChanged": False}},
@@ -129,11 +148,11 @@ def handle(store, message, *, author, session):
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
     if method == "tools/call":
-        if not isinstance(params, dict):
-            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
+        if not isinstance(params.get("name"), str) or not isinstance(params.get("arguments", {}), dict):
+            return _error(request_id, INVALID_PARAMS)
         try:
             payload, failed = {"status": "ok", "trust": TRUST, "model_calls": 0,
-                               **call_tool(store, params.get("name"), params.get("arguments", {}),
+                               **call_tool(store, params["name"], params.get("arguments", {}),
                                            author=author, session=session)}, False
         except HarnessError as error:
             payload, failed = error_payload(error), True
@@ -142,24 +161,33 @@ def handle(store, message, *, author, session):
                                "model_calls": 0}, True
         return {"jsonrpc": "2.0", "id": request_id, "result": {
             "content": [{"type": "text", "text": encode(payload)}], "isError": failed}}
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
+    return _error(request_id, {"code": -32601, "message": "Method not found"})
 
 
 def serve(store, *, author=None, session=None, stdin, stdout):
+    """Serve newline-delimited frames. Bytes are decoded per line, so a bad frame is answered
+    with a JSON-RPC error and the session continues."""
     if author is not None and author not in AUTHORS:
         raise HarnessError("memory_invalid_author")
     session = session or "mcp-" + uuid.uuid4().hex[:8]
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
-        if len(line) > 256_000:
-            response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Request too large"}}
+    for raw in stdin:
+        if len(raw) > MAX_FRAME:
+            response = _error(None, {"code": -32600, "message": "Request too large"})
         else:
+            if isinstance(raw, bytes):
+                try:
+                    raw = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    raw = None
+            line = raw.strip() if raw is not None else None
+            if line == "":
+                continue
             try:
-                message = json.loads(line)
+                message = json.loads(line) if line is not None else None
             except ValueError:
-                response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+                message = None
+            if line is None or message is None and line != "null":
+                response = _error(None, {"code": -32700, "message": "Parse error"})
             else:
                 response = handle(store, message, author=author, session=session)
         if response is not None:

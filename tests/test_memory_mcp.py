@@ -92,6 +92,47 @@ class MemoryMcpTests(Base):
         self.assertTrue(all(p.is_relative_to(self.home) for p in new), new)
         self.assertFalse((self.repo / ".mcp.json").exists())
 
+    def test_bad_ids_and_params_are_rejected_without_reflection(self):
+        responses = self.run_server(
+            {"jsonrpc": "2.0", "id": {"x": 1}, "method": "ping"},
+            {"jsonrpc": "2.0", "id": [1], "method": "ping"},
+            {"jsonrpc": "2.0", "id": True, "method": "ping"},
+            {"jsonrpc": "2.0", "id": None, "method": "ping"},
+            {"jsonrpc": "2.0", "id": 5, "method": "tools/list", "params": []},
+            {"jsonrpc": "2.0", "id": 6, "method": "initialize", "params": False},
+            {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "memory_list", "arguments": []}},
+            {"jsonrpc": "2.0", "id": "ok", "method": "ping"},
+        )
+        self.assertEqual([r["id"] for r in responses], [None, None, None, None, 5, 6, 7, "ok"])
+        self.assertEqual([r["error"]["code"] for r in responses[:4]], [-32600] * 4)
+        self.assertEqual([r["error"]["code"] for r in responses[4:7]], [-32602] * 3)
+        self.assertEqual(responses[7]["result"], {})
+
+    def test_real_pipe_recovers_from_invalid_utf8_and_startup_errors_use_stderr(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+        src = str(Path(__file__).resolve().parents[1] / "src")
+        env = dict(os.environ, PYTHONPATH=src, BATON_HOME=str(self.home))
+        frames_in = (b"\xff\xfe not utf-8\n" + b"{broken\n"
+                     + json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+                         "name": "memory_add", "arguments": {"topic": "pipe", "kind": "note", "body": "한글 파이프"}}}).encode("utf-8")
+                     + b"\n")
+        done = subprocess.run([sys.executable, "-m", "baton", "memory", "mcp", "--author", "codex"], input=frames_in,
+                              capture_output=True, cwd=self.repo, env=env, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        lines = [json.loads(line) for line in done.stdout.decode("ascii").splitlines()]
+        self.assertEqual([l.get("error", {}).get("code") for l in lines[:2]], [-32700, -32700])
+        self.assertEqual(self.payload(lines[2])["entry"]["body"], "한글 파이프")
+        self.assertEqual(self.store().list(topic="pipe")[0]["body"], "한글 파이프")
+        plain = self.base / "plain"; plain.mkdir()
+        done = subprocess.run([sys.executable, "-m", "baton", "memory", "mcp", "--author", "codex"], input=b"",
+                              capture_output=True, cwd=plain, env=dict(env, GIT_CEILING_DIRECTORIES=str(self.base)), timeout=60)
+        self.assertEqual(done.returncode, 2)
+        self.assertEqual(done.stdout, b"")
+        self.assertEqual(json.loads(done.stderr)["error"], "memory_not_git_repository")
+
 
 if __name__ == "__main__":
     unittest.main()

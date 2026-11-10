@@ -17,6 +17,7 @@ import subprocess
 import uuid
 
 from .contracts import SECRET, HarnessError
+from .handoff import scan_content
 
 KINDS = ("decision", "fact", "rule", "progress", "note")
 AUTHORS = ("codex", "claude", "antigravity", "user")
@@ -29,17 +30,20 @@ LIST_LIMIT = 200
 CLAIM_DEFAULT = 1800
 CLAIM_MAX = 4 * 3600
 RETRYABLE = {"memory_busy", "memory_conflict", "memory_claimed_by_other"}
+SIDE_FILES = ("-wal", "-shm", "-journal")
+TABLES = {"entries", "revisions", "claims", "claim_events"}
 TOPIC = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,79}")
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,64}")
 OPERATOR = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 ENTRY_ID = re.compile(r"mem_[0-9a-f]{16}")
+# Additions to the shared handoff/autocommit scanner for free text: e-mail addresses, JWTs and
+# opaque values assigned to token/password-like names. Plain prose such as "token: refresh" passes.
 SENSITIVE = re.compile(
-    r"(?:ghp_|gho_|ghs_|github_pat_)[A-Za-z0-9_]{20,}"
-    r"|AKIA[0-9A-Z]{16}"
+    r"(?:gho_|ghs_)[A-Za-z0-9_]{20,}"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
     r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
-    r"|(?:token|passwd|pwd|credential)[\"'\s]*[=:][\"'\s]*\S+", re.I)
+    r"|(?:token|passwd|pwd|credential)s?[\"'\s]*[=:][\"'\s]*[A-Za-z0-9_\-./+=]{16,}", re.I)
 
 
 class MemoryRefused(HarnessError):
@@ -62,28 +66,53 @@ def baton_home(env=None) -> Path:
     return Path(base) / "baton" if base else Path.home() / ".baton"
 
 
-def project_key(root) -> str:
+def _git_out(root, *args):
     try:
-        done = subprocess.run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                              capture_output=True, text=True, timeout=30)
+        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         raise HarnessError("memory_not_git_repository") from None
     if done.returncode != 0 or not done.stdout.strip():
         raise HarnessError("memory_not_git_repository")
-    common = str(Path(done.stdout.strip()).resolve())
-    if os.name == "nt":
-        common = common.casefold()
-    return hashlib.sha256(common.encode("utf-8")).hexdigest()[:32]
+    return done.stdout
+
+
+def _norm(path) -> str:
+    text = str(Path(path).resolve())
+    return text.casefold() if os.name == "nt" else text
+
+
+def project_info(root):
+    """(key, protected paths): the git common dir and every worktree of the repository."""
+    common = Path(_git_out(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()).resolve()
+    protected = [common, Path(_git_out(root, "rev-parse", "--show-toplevel").strip()).resolve()]
+    for line in _git_out(root, "worktree", "list", "--porcelain").splitlines():
+        if line.startswith("worktree "):
+            protected.append(Path(line[len("worktree "):]).resolve())
+    return hashlib.sha256(_norm(common).encode("utf-8")).hexdigest()[:32], protected
+
+
+def project_key(root) -> str:
+    return project_info(root)[0]
+
+
+def _linked(path) -> bool:
+    return path.is_symlink() or bool(getattr(path, "is_junction", lambda: False)())
+
+
+def _scan(value):
+    if SECRET.search(value) or SENSITIVE.search(value):
+        raise HarnessError("memory_sensitive_content")
+    try:
+        scan_content(value.encode("utf-8"), "memory.txt")
+    except HarnessError:
+        raise HarnessError("memory_sensitive_content") from None
+    return value
 
 
 def _check_text(value, code, limit):
-    if not isinstance(value, str) or not value.strip() or len(value.encode("utf-8")) > limit:
+    if not isinstance(value, str) or not value.strip() or len(value.encode("utf-8")) > limit or "\x00" in value:
         raise HarnessError(code)
-    if "\x00" in value:
-        raise HarnessError(code)
-    if SECRET.search(value) or SENSITIVE.search(value):
-        raise HarnessError("memory_sensitive_content")
-    return value
+    return _scan(value)
 
 
 def _choice(value, allowed, code):
@@ -95,45 +124,77 @@ def _choice(value, allowed, code):
 def _pattern(value, pattern, code):
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise HarnessError(code)
-    return value
+    return _scan(value)
+
+
+def _busy(error) -> bool:
+    text = str(error).lower()
+    return "locked" in text or "busy" in text
 
 
 class MemoryStore:
     def __init__(self, root, *, home=None, env=None, clock=None, busy_timeout=5.0):
         self.clock = clock or utc_now
         self.busy_timeout = float(busy_timeout)
+        key, protected = project_info(root)  # before anything is created on disk
         base = Path(home) if home is not None else baton_home(env)
+        self.directory = base / "memory"
+        self.path = self.directory / (key + ".sqlite3")
+        expected = base.resolve() / "memory"
+        for guarded in protected:
+            if expected == guarded or expected.is_relative_to(guarded):
+                raise HarnessError("memory_storage_inside_repository")
+        self._expected_directory = expected
         base.mkdir(parents=True, exist_ok=True)
-        directory = base / "memory"
-        if directory.is_symlink():
+        if _linked(self.directory):
             raise HarnessError("memory_storage_escape")
-        directory.mkdir(exist_ok=True)
-        self.path = directory / (project_key(root) + ".sqlite3")
-        for item in (self.path, Path(str(self.path) + "-wal"), Path(str(self.path) + "-shm")):
-            if item.is_symlink():
-                raise HarnessError("memory_storage_escape")
-        if not self.path.resolve().is_relative_to(base.resolve() / "memory"):
-            raise HarnessError("memory_storage_escape")
-        with self._write() as c:
-            c.execute("CREATE TABLE IF NOT EXISTS entries(id TEXT PRIMARY KEY, topic TEXT NOT NULL, kind TEXT NOT NULL,"
-                      " body TEXT NOT NULL, author TEXT NOT NULL, status TEXT NOT NULL, revision INTEGER NOT NULL,"
-                      " created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archive_reason TEXT)")
-            c.execute("CREATE TABLE IF NOT EXISTS revisions(entry_id TEXT NOT NULL, revision INTEGER NOT NULL,"
-                      " topic TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, author TEXT NOT NULL,"
-                      " status TEXT NOT NULL, reason TEXT, at TEXT NOT NULL, PRIMARY KEY(entry_id, revision))")
-            c.execute("CREATE TABLE IF NOT EXISTS claims(topic TEXT PRIMARY KEY, holder TEXT NOT NULL,"
-                      " claimed_at TEXT NOT NULL, expires_at TEXT NOT NULL)")
-            c.execute("CREATE TABLE IF NOT EXISTS claim_events(seq INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL,"
-                      " holder TEXT NOT NULL, action TEXT NOT NULL, operator TEXT, at TEXT NOT NULL)")
-            c.execute("CREATE INDEX IF NOT EXISTS entries_topic ON entries(topic, status)")
+        self.directory.mkdir(exist_ok=True)
+        self._verify_storage()
+        if not self._initialised():
+            with self._write() as c:
+                c.execute("CREATE TABLE IF NOT EXISTS entries(id TEXT PRIMARY KEY, topic TEXT NOT NULL, kind TEXT NOT NULL,"
+                          " body TEXT NOT NULL, author TEXT NOT NULL, status TEXT NOT NULL, revision INTEGER NOT NULL,"
+                          " created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archive_reason TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS revisions(entry_id TEXT NOT NULL, revision INTEGER NOT NULL,"
+                          " topic TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, author TEXT NOT NULL,"
+                          " status TEXT NOT NULL, reason TEXT, at TEXT NOT NULL, PRIMARY KEY(entry_id, revision))")
+                c.execute("CREATE TABLE IF NOT EXISTS claims(topic TEXT PRIMARY KEY, holder TEXT NOT NULL,"
+                          " claimed_at TEXT NOT NULL, expires_at TEXT NOT NULL)")
+                c.execute("CREATE TABLE IF NOT EXISTS claim_events(seq INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL,"
+                          " holder TEXT NOT NULL, action TEXT NOT NULL, operator TEXT, at TEXT NOT NULL)")
+                c.execute("CREATE INDEX IF NOT EXISTS entries_topic ON entries(topic, status)")
 
     # -- connections -------------------------------------------------------------------------
 
+    def _verify_storage(self):
+        """Run at every connection: the directory, database and SQLite side files must be plain
+        entries inside BATON_HOME/memory, even if something was swapped after construction."""
+        if _linked(self.directory) or self.directory.resolve() != self._expected_directory:
+            raise HarnessError("memory_storage_escape")
+        for item in (self.path, *(Path(str(self.path) + suffix) for suffix in SIDE_FILES)):
+            if _linked(item) or item.resolve().parent != self._expected_directory:
+                raise HarnessError("memory_storage_escape")
+
     def _connect(self):
+        self._verify_storage()
         connection = sqlite3.connect(self.path, timeout=self.busy_timeout, isolation_level=None)
         connection.row_factory = sqlite3.Row
         connection.execute(f"PRAGMA busy_timeout = {int(self.busy_timeout * 1000)}")
         return connection
+
+    def _initialised(self):
+        if not self.path.exists():
+            return False
+        c = self._connect()
+        try:
+            names = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            return TABLES <= names and c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        except sqlite3.OperationalError as error:
+            if _busy(error):
+                return False
+            raise
+        finally:
+            c.close()
 
     class _Tx:
         def __init__(self, store):
@@ -147,10 +208,17 @@ class MemoryStore:
                 self.c.execute("BEGIN IMMEDIATE")
             except sqlite3.OperationalError as error:
                 self.c.close()
-                if "locked" in str(error).lower() or "busy" in str(error).lower():
+                if _busy(error):
                     raise MemoryRefused("memory_busy") from None
                 raise
             return self.c
+
+        def _rollback(self):
+            if self.c.in_transaction:
+                try:
+                    self.c.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass  # keep the original error
 
         def __exit__(self, kind, value, traceback):
             try:
@@ -158,12 +226,12 @@ class MemoryStore:
                     try:
                         self.c.execute("COMMIT")
                     except sqlite3.OperationalError as error:
-                        self.c.execute("ROLLBACK")
-                        if "locked" in str(error).lower() or "busy" in str(error).lower():
+                        self._rollback()
+                        if _busy(error):
                             raise MemoryRefused("memory_busy") from None
                         raise
                 else:
-                    self.c.execute("ROLLBACK")
+                    self._rollback()
             finally:
                 self.c.close()
             return False
@@ -172,8 +240,7 @@ class MemoryStore:
         return self._Tx(self)
 
     def _read(self):
-        connection = self._connect()
-        return connection
+        return self._connect()
 
     # -- helpers -----------------------------------------------------------------------------
 
@@ -184,10 +251,15 @@ class MemoryStore:
         return moment.astimezone(timezone.utc)
 
     @staticmethod
-    def _holder(author, session):
+    def _holder(author, session, *, required=False):
+        """Claim identity. Without an explicit session a writer never counts as a claim holder."""
         _choice(author, AUTHORS, "memory_invalid_author")
-        _pattern(session or "default", SESSION, "memory_invalid_session")
-        return f"{author}:{session or 'default'}"
+        if session is None:
+            if required:
+                raise HarnessError("memory_session_required")
+            return None
+        _pattern(session, SESSION, "memory_invalid_session")
+        return f"{author}:{session}"
 
     @staticmethod
     def _entry(row):
@@ -204,7 +276,7 @@ class MemoryStore:
 
     def _guard_topic(self, c, topic, holder, now):
         claim = self._active_claim(c, topic, now)
-        if claim is not None and claim["holder"] != holder:
+        if claim is not None and (holder is None or claim["holder"] != holder):
             raise MemoryRefused("memory_claimed_by_other", holder=claim["holder"], expires_at=claim["expires_at"])
 
     def _record(self, c, row, reason, at):
@@ -228,6 +300,8 @@ class MemoryStore:
             raise HarnessError("memory_expected_revision_required")
         if row["revision"] != expected_revision:
             raise MemoryRefused("memory_conflict", current_revision=row["revision"])
+        if row["status"] != "active":
+            raise HarnessError("memory_archived")
 
     # -- writes ------------------------------------------------------------------------------
 
@@ -259,8 +333,6 @@ class MemoryStore:
         holder = self._holder(author, session)
         with self._write() as c:
             row = self._load(c, entry_id)
-            if row["status"] != "active":
-                raise HarnessError("memory_archived")
             self._expected(row, expected_revision)
             now = self._now()
             self._guard_topic(c, row["topic"], holder, now)
@@ -276,8 +348,6 @@ class MemoryStore:
         holder = self._holder(author, session)
         with self._write() as c:
             row = self._load(c, entry_id)
-            if row["status"] != "active":
-                raise HarnessError("memory_archived")
             self._expected(row, expected_revision)
             now = self._now()
             self._guard_topic(c, row["topic"], holder, now)
@@ -304,7 +374,7 @@ class MemoryStore:
 
     def claim(self, topic, *, author, session=None, ttl_seconds=None):
         _pattern(topic, TOPIC, "memory_invalid_topic")
-        holder, ttl = self._holder(author, session), self._ttl(ttl_seconds)
+        holder, ttl = self._holder(author, session, required=True), self._ttl(ttl_seconds)
         with self._write() as c:
             now = self._now()
             self._guard_topic(c, topic, holder, now)
@@ -317,7 +387,7 @@ class MemoryStore:
 
     def renew(self, topic, *, author, session=None, ttl_seconds=None):
         _pattern(topic, TOPIC, "memory_invalid_topic")
-        holder, ttl = self._holder(author, session), self._ttl(ttl_seconds)
+        holder, ttl = self._holder(author, session, required=True), self._ttl(ttl_seconds)
         with self._write() as c:
             now = self._now()
             claim = self._active_claim(c, topic, now)
@@ -333,9 +403,11 @@ class MemoryStore:
 
     def release(self, topic, *, author, session=None, force=False, operator=None):
         _pattern(topic, TOPIC, "memory_invalid_topic")
-        holder = self._holder(author, session)
         if force:
             _pattern(operator, OPERATOR, "memory_operator_required")
+            holder = self._holder(author, session)
+        else:
+            holder = self._holder(author, session, required=True)
         with self._write() as c:
             now = self._now()
             row = c.execute("SELECT * FROM claims WHERE topic=?", (topic,)).fetchone()
@@ -351,7 +423,7 @@ class MemoryStore:
             return {"topic": topic, "released": True, "previous_holder": row["holder"], "action": action,
                     "operator": operator if force else None}
 
-    # -- reads -------------------------------------------------------------------------------
+    # -- reads (no write lock: WAL readers see the last committed state) --------------------
 
     def show(self, entry_id):
         c = self._read()

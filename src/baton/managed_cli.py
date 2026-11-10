@@ -39,6 +39,11 @@ def _credentials(args):
 
 def main(argv=None, *, workspace=None):
     root = Path(workspace or Path.cwd()).resolve()
+    raw = sys.argv[1:] if argv is None else list(argv)
+    if raw[:1] == ["memory"]:
+        # Per-user store (BATON_HOME) keyed by the repository; usage errors are JSON too.
+        from .memory_cli import main as memory_main
+        return memory_main(raw[1:], root)
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--state-dir", default=".local_runtime/harness-managed")
     p.add_argument("--codex-bin", default=None)
@@ -90,10 +95,6 @@ def main(argv=None, *, workspace=None):
     try:
         if args.command in {"credentials", "credentials-import"}:
             return _credentials(args)
-        if args.command == "memory":
-            # Per-user store (BATON_HOME) keyed by the repository, shared by every worktree.
-            from .memory_cli import run as memory_run
-            return memory_run(args, root)
         if args.command == "quota-window":
             # Per-user ledger (BATON_HOME): usage windows belong to the account, not the workspace.
             from .quota_window_cli import run as quota_run

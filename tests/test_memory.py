@@ -1,7 +1,6 @@
 """MEMORY-001 shared memory store and CLI. Local SQLite and git only; model calls 0."""
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
-import argparse
 import io
 import json
 import os
@@ -17,7 +16,7 @@ from unittest import mock
 from baton import memory as memory_module
 from baton.contracts import HarnessError
 from baton.memory import MemoryRefused, MemoryStore
-from baton.memory_cli import parser as memory_parser, run as memory_run
+from baton.memory_cli import main as memory_main
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 
@@ -58,11 +57,8 @@ class Base(unittest.TestCase):
         return MemoryStore(root or self.repo, home=self.home, clock=self.clock, **kw)
 
     def cli(self, *argv, root=None):
-        p = argparse.ArgumentParser(); sub = p.add_subparsers(dest="command", required=True)
-        memory_parser(sub)
-        args = p.parse_args(["memory", *argv])
         out = io.StringIO()
-        code = memory_run(args, root or self.repo, home=self.home, clock=self.clock, stdout=out)
+        code = memory_main(list(argv), root or self.repo, home=self.home, clock=self.clock, stdout=out)
         text = out.getvalue()
         return code, (json.loads(text) if text.startswith("{") else text)
 
@@ -194,7 +190,7 @@ class MemoryStoreTests(Base):
         self.assertEqual(str(caught.exception), "memory_claimed_by_other")
         self.assertEqual(caught.exception.details["holder"], "claude:s1")
         with self.assertRaises(MemoryRefused):
-            s.claim("flow", author="codex")
+            s.claim("flow", author="codex", session="c1")
         s.add(topic="flow", kind="note", body="holder write", author="claude", session="s1")
         s.add(topic="other", kind="note", body="other topic is free", author="codex")
         self.assertEqual(len(s.list(topic="flow")), 1)
@@ -203,6 +199,9 @@ class MemoryStoreTests(Base):
         self.assertEqual(str(caught.exception), "memory_invalid_ttl")
         s.release("flow", author="claude", session="s1")
         s.add(topic="flow", kind="note", body="after release", author="codex")
+        with self.assertRaises(HarnessError) as caught:
+            s.claim("flow", author="claude")
+        self.assertEqual(str(caught.exception), "memory_session_required")
         s.claim("flow", author="claude", session="s1", ttl_seconds=60)
         self.clock.advance(61)
         s.add(topic="flow", kind="note", body="after expiry", author="codex")
@@ -211,14 +210,14 @@ class MemoryStoreTests(Base):
             s.release("flow", author="codex", force=True)
         self.assertEqual(str(caught.exception), "memory_operator_required")
         with self.assertRaises(MemoryRefused):
-            s.release("flow", author="codex")
+            s.release("flow", author="codex", session="c1")
         released = s.release("flow", author="codex", force=True, operator="lwwde07")
         self.assertEqual((released["action"], released["operator"]), ("force_release", "lwwde07"))
         events = s.claim_events("flow")
         self.assertEqual(events[-1]["action"], "force_release")
         self.assertEqual(events[-1]["operator"], "lwwde07")
         with self.assertRaises(HarnessError) as caught:
-            s.renew("flow", author="codex")
+            s.renew("flow", author="codex", session="c1")
         self.assertEqual(str(caught.exception), "memory_claim_not_held")
 
     def test_secret_token_and_email_bodies_are_rejected_without_echo(self):
@@ -258,10 +257,19 @@ class MemoryStoreTests(Base):
         self.assertEqual((code, out["error"]), (2, "memory_not_found"))
         code, out = self.cli("show", "--id", "../etc")
         self.assertEqual((code, out["error"]), (2, "memory_invalid_id"))
-        self.assertEqual(self.cli("claim", "--author", "claude", "--topic", "gms")[0], 0)
+        self.assertEqual(self.cli("claim", "--author", "claude", "--session", "s1", "--topic", "gms")[0], 0)
         code, out = self.cli("add", "--author", "codex", "--topic", "gms", "--kind", "note", "--body", "x")
-        self.assertEqual((code, out["error"], out["holder"]), (3, "memory_claimed_by_other", "claude:default"))
-        self.assertEqual(self.cli("claims")[1]["claims"][0]["holder"], "claude:default")
+        self.assertEqual((code, out["error"], out["holder"]), (3, "memory_claimed_by_other", "claude:s1"))
+        self.assertEqual(self.cli("claims")[1]["claims"][0]["holder"], "claude:s1")
+        code, out = self.cli("renew", "--author", "claude", "--session", "s1", "--topic", "gms", "--ttl-seconds", "120")
+        self.assertEqual((code, out["claim"]["holder"]), (0, "claude:s1"))
+        code, out = self.cli("renew", "--author", "claude", "--session", "s2", "--topic", "gms")
+        self.assertEqual((code, out["error"]), (3, "memory_claimed_by_other"))
+        code, out = self.cli("release", "--author", "claude", "--topic", "gms")
+        self.assertEqual((code, out["error"]), (2, "memory_session_required"))
+        code, out = self.cli("release", "--author", "claude", "--session", "s1", "--topic", "gms")
+        self.assertEqual((code, out["release"]["released"]), (0, True))
+        self.assertEqual(self.cli("claim", "--author", "claude", "--session", "s1", "--topic", "gms")[0], 0)
         code, out = self.cli("search", "--query", "꺼짐")
         self.assertEqual(len(out["entries"]), 1)
         self.assertEqual(len(self.cli("history", "--id", entry_id)[1]["revisions"]), 1)
@@ -284,6 +292,166 @@ class MemoryStoreTests(Base):
         self.assertEqual(json.loads(out.getvalue())["entry"]["body"], "via baton")
         self.assertEqual(self.store().list()[0]["body"], "via baton")
 
+
+    def test_handoff_scanner_secrets_in_every_field_and_plain_prose_passes(self):
+        s = self.store()
+        e = s.add(topic="notes", kind="note", body="token: refresh happens hourly; password policy is in docs", author="codex")
+        encoded = ["https://x.invalid/cb?access" + "_token=" + "abcdef123456", "callback%3Ftoken%3D" + "q1w2e3r4t5",
+                   "ghp_" + "B" * 36]
+        for value in encoded:
+            for attempt in (lambda v: s.add(topic="notes", kind="note", body=v, author="codex"),
+                            lambda v: s.update(e["id"], expected_revision=1, body=v, author="codex"),
+                            lambda v: s.archive(e["id"], expected_revision=1, reason=v, author="codex")):
+                with self.assertRaises(HarnessError) as caught:
+                    attempt(value)
+                self.assertEqual(str(caught.exception), "memory_sensitive_content")
+        key = "ghp_" + "C" * 36
+        for attempt in (lambda: s.claim("notes", author="codex", session=key),
+                        lambda: s.add(topic="notes", kind="note", body="x", author="codex", session=key),
+                        lambda: s.release("notes", author="codex", force=True, operator=key)):
+            with self.assertRaises(HarnessError) as caught:
+                attempt()
+            self.assertEqual(str(caught.exception), "memory_sensitive_content")
+        code, out = self.cli("claim", "--author", "codex", "--session", key, "--topic", "notes")
+        self.assertEqual(out["error"], "memory_sensitive_content")
+        self.assertNotIn(key, json.dumps(out))
+        self.assertEqual([h["revision"] for h in s.history(e["id"])], [1])
+        data = b"".join(p.read_bytes() for p in (self.home / "memory").iterdir())
+        for value in [*encoded, key]:
+            self.assertNotIn(value.encode(), data)
+
+    def test_storage_inside_repository_or_git_dir_is_refused_before_creation(self):
+        worktree = self.base / "wt"
+        git(self.repo, "worktree", "add", "-q", str(worktree), "-b", "side")
+        for home in (self.repo / "mem-home", self.repo / ".git" / "baton", worktree / "nested" / "home", self.repo):
+            with self.assertRaises(HarnessError) as caught:
+                MemoryStore(self.repo, home=home, clock=self.clock)
+            self.assertEqual(str(caught.exception), "memory_storage_inside_repository")
+            self.assertFalse((home / "memory").exists())
+        plain = self.base / "plain"; plain.mkdir()
+        fresh = self.base / "fresh-home"
+        with mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(self.base)}):
+            with self.assertRaises(HarnessError):
+                MemoryStore(plain, home=fresh, clock=self.clock)
+        self.assertFalse(fresh.exists())
+
+    def link(self, link, target):
+        if os.name == "nt":
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+        else:
+            os.symlink(target, link, target_is_directory=True)
+
+    def test_real_link_and_post_init_swap_are_refused(self):
+        outside = self.base / "outside"; outside.mkdir()
+        linked_home = self.base / "linked-home"; linked_home.mkdir()
+        self.link(linked_home / "memory", outside)
+        with self.assertRaises(HarnessError) as caught:
+            MemoryStore(self.repo, home=linked_home, clock=self.clock)
+        self.assertEqual(str(caught.exception), "memory_storage_escape")
+        self.assertEqual(list(outside.iterdir()), [])
+        s = self.store()
+        s.add(topic="t", kind="note", body="before swap", author="codex")
+        moved = self.home / "memory-old"
+        (self.home / "memory").rename(moved)
+        self.link(self.home / "memory", moved)
+        for attempt in (lambda: s.list(), lambda: s.add(topic="t", kind="note", body="after swap", author="codex")):
+            with self.assertRaises(HarnessError) as caught:
+                attempt()
+            self.assertEqual(str(caught.exception), "memory_storage_escape")
+        real = Path.is_symlink
+        with mock.patch.object(Path, "is_symlink", lambda p: p.name.endswith(".sqlite3-journal") or real(p)):
+            with self.assertRaises(HarnessError) as caught:
+                MemoryStore(self.repo, home=self.base / "home2", clock=self.clock)
+        self.assertEqual(str(caught.exception), "memory_storage_escape")
+
+    def test_new_reader_is_not_blocked_by_an_open_writer(self):
+        s = self.store()
+        s.add(topic="t", kind="note", body="committed", author="codex")
+        blocker = sqlite3.connect(s.path, isolation_level=None)
+        blocker.execute("BEGIN IMMEDIATE")
+        blocker.execute("UPDATE entries SET body='uncommitted'")
+        try:
+            for argv in (("list",), ("search", "--query", "committed"), ("claims",)):
+                code, out = self.cli(*argv)
+                self.assertEqual((code, out["status"]), (0, "ok"), argv)
+            self.assertEqual(self.cli("list")[1]["entries"][0]["body"], "committed")
+        finally:
+            blocker.execute("ROLLBACK"); blocker.close()
+
+    def test_commit_failure_rolls_back_entry_and_history_and_keeps_error(self):
+        s = self.store()
+        original = s._connect
+
+        class Proxy:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, *args):
+                if sql == "COMMIT":
+                    raise sqlite3.OperationalError("disk I/O error")
+                return self.connection.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        with mock.patch.object(s, "_connect", lambda: Proxy(original())):
+            with self.assertRaises(sqlite3.OperationalError) as caught:
+                s.add(topic="t", kind="note", body="lost", author="codex")
+        self.assertIn("disk I/O", str(caught.exception))
+        self.assertEqual(s.list(include_archived=True), [])
+        c = sqlite3.connect(s.path)
+        try:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM revisions").fetchone()[0], 0)
+        finally:
+            c.close()
+
+    def test_stale_request_after_archive_gets_conflict_with_current_revision(self):
+        s = self.store()
+        e = s.add(topic="t", kind="fact", body="v1", author="codex")
+        s.archive(e["id"], expected_revision=1, reason="old", author="claude")
+        for attempt in (lambda: s.update(e["id"], expected_revision=1, body="v2", author="codex"),
+                        lambda: s.archive(e["id"], expected_revision=1, reason="again", author="codex")):
+            with self.assertRaises(MemoryRefused) as caught:
+                attempt()
+            self.assertEqual((str(caught.exception), caught.exception.details), ("memory_conflict", {"current_revision": 2}))
+        with self.assertRaises(HarnessError) as caught:
+            s.update(e["id"], expected_revision=2, body="v2", author="codex")
+        self.assertEqual(str(caught.exception), "memory_archived")
+
+    def test_same_author_other_session_and_sessionless_writers_are_blocked(self):
+        s = self.store()
+        e = s.add(topic="flow", kind="note", body="v1", author="claude")
+        s.claim("flow", author="claude", session="window1", ttl_seconds=60)
+        for session in ("window2", None):
+            for attempt in (lambda: s.add(topic="flow", kind="note", body="x", author="claude", session=session),
+                            lambda: s.update(e["id"], expected_revision=1, body="x", author="claude", session=session),
+                            lambda: s.archive(e["id"], expected_revision=1, reason="x", author="claude", session=session)):
+                with self.assertRaises(MemoryRefused) as caught:
+                    attempt()
+                self.assertEqual(str(caught.exception), "memory_claimed_by_other")
+        for attempt in (lambda: s.renew("flow", author="claude", session="window2"),
+                        lambda: s.release("flow", author="claude", session="window2")):
+            with self.assertRaises(MemoryRefused):
+                attempt()
+        self.assertTrue(s.claims()[0]["active"])
+        self.clock.advance(60)  # exactly at expires_at: the claim no longer blocks
+        self.assertFalse(s.claims()[0]["active"])
+        s.update(e["id"], expected_revision=1, body="at expiry", author="claude", session="window2")
+
+    def test_usage_errors_are_json_through_the_real_entry_point(self):
+        from baton.managed_cli import main
+        cases = (["memory", "add", "--author", "codex"],
+                 ["memory", "add", "--author", "codex", "--topic", "t", "--kind", "order", "--body", "x"],
+                 ["memory", "update", "--author", "codex", "--id", "x", "--expected-revision", "one"],
+                 ["memory", "nope"], ["memory"])
+        for argv in cases:
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, {"BATON_HOME": str(self.home)}), redirect_stdout(out), \
+                 mock.patch("sys.stderr", err):
+                code = main(argv, workspace=self.repo)
+            self.assertEqual(code, 2, argv)
+            self.assertEqual(json.loads(out.getvalue())["error"], "memory_invalid_arguments", argv)
+            self.assertEqual(err.getvalue(), "", argv)
 
 if __name__ == "__main__":
     unittest.main()

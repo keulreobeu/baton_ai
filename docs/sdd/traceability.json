@@ -1191,6 +1191,14 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_history_keeps_every_revision_and_limits_are_enforced"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_storage_inside_repository_or_git_dir_is_refused_before_creation"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_real_link_and_post_init_swap_are_refused"
             }
           ]
         },
@@ -1212,6 +1220,22 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_claims_block_other_holders_until_release_or_expiry"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_new_reader_is_not_blocked_by_an_open_writer"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_commit_failure_rolls_back_entry_and_history_and_keeps_error"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_stale_request_after_archive_gets_conflict_with_current_revision"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_same_author_other_session_and_sessionless_writers_are_blocked"
             }
           ]
         },
@@ -1229,6 +1253,10 @@
             {
               "file": "tests/test_memory_mcp.py",
               "symbol": "MemoryMcpTests.test_tool_errors_are_results_and_force_release_is_not_exposed"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_handoff_scanner_secrets_in_every_field_and_plain_prose_passes"
             }
           ]
         },
@@ -1250,6 +1278,18 @@
             {
               "file": "tests/test_memory_mcp.py",
               "symbol": "MemoryMcpTests.test_no_sockets_network_or_config_writes"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_usage_errors_are_json_through_the_real_entry_point"
+            },
+            {
+              "file": "tests/test_memory_mcp.py",
+              "symbol": "MemoryMcpTests.test_bad_ids_and_params_are_rejected_without_reflection"
+            },
+            {
+              "file": "tests/test_memory_mcp.py",
+              "symbol": "MemoryMcpTests.test_real_pipe_recovers_from_invalid_utf8_and_startup_errors_use_stderr"
             }
           ]
         }
