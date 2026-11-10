@@ -92,10 +92,25 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "Independent fifth review of the fixed candidate SHA (L3)"
+command = "Claude separate-session review of a342a7a (read-only)"
+result = "passed"
+evidence = "docs/validation/memory.md#review"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 31
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions, approved remote publication required"
 result = "not_run"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+
+[independent_review]
+result = "passed"
+evidence = "docs/validation/memory.md#review"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.
