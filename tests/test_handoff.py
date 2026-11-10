@@ -506,6 +506,28 @@ class HandoffTests(unittest.TestCase):
         manifest, _ = self.handoff._load(saved["checkpoint"])
         self.assertEqual(next(i for i in manifest["inventory"] if i["path"] == "src/a.py")["reason"], "base_commit")
 
+    def test_racily_clean_same_size_edit_is_still_captured(self):
+        # The entry is only re-read because it is racy (not older than the index file). The private
+        # index copy must keep that timestamp, or the edit is missing from the backup.
+        _git(self.root, "config", "core.trustctime", "false")
+        index = Path(_text(self.root, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+        module = self.root / "src/a.py"
+        cached = index.stat().st_mtime_ns - 10_000_000_000
+        os.utime(module, ns=(cached, cached))
+        _git(self.root, "update-index", "--refresh")
+        original = module.read_bytes()
+        edited = original.replace(b"base = 1", b"base = 2", 1)
+        self.assertEqual(len(edited), len(original))
+        module.write_bytes(edited)
+        os.utime(module, ns=(cached, cached))
+        os.utime(index, ns=(cached, cached))
+        before = _index_hash(self.root)
+        manifest, _ = self.handoff._load(self.saved()["checkpoint"])
+        item = next(i for i in manifest["inventory"] if i["path"] == "src/a.py")
+        self.assertTrue(item["unstaged"], item)
+        self.assertEqual(item["reason"], "task_wip")
+        self.assertEqual(_index_hash(self.root), before)
+
     def test_out_of_scope_ignored_tree_does_not_spend_the_file_limit(self):
         tooling = self.root / ".local_runtime/tooling"
         tooling.mkdir(parents=True)

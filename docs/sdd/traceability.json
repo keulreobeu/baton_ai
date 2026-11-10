@@ -1032,6 +1032,10 @@
             {
               "file": "tests/test_input_check.py",
               "symbol": "InputCheckTests.test_touched_but_unchanged_files_outside_scope_do_not_block_the_git_check"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_racily_clean_entries_are_still_content_checked_on_the_private_index"
             }
           ]
         },

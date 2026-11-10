@@ -168,7 +168,12 @@ def _private_index(root):
             yield None
             return
         private = Path(scratch) / "index"
-        shutil.copyfile(real, private)
+        # copy2 keeps the index mtime. Entries not older than the index are racy and git re-reads
+        # their content; a fresh mtime would let a same-size edit with a kept mtime look clean and
+        # drop it from the WIP (same fix as input_check, ADR-PORT-001).
+        shutil.copy2(real, private)
+        if os.stat(private).st_mtime_ns != os.stat(real).st_mtime_ns:
+            raise HarnessError("handoff_index_copy_timestamp_mismatch")
         yield {**os.environ, "GIT_INDEX_FILE": str(private)}
 
 

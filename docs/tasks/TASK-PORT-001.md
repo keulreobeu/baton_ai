@@ -17,7 +17,7 @@ command = "python -X utf8 scripts/run_tests_fast.py"
 result = "passed"
 evidence = "docs/tasks/TASK-PORT-001.md"
 acs = ["HANDOFF-001-AC-02", "HANDOFF-001-AC-03", "HANDOFF-001-AC-04", "LEAN-CORE-001-AC-01", "LEAN-CORE-001-AC-02", "LEAN-CORE-001-AC-03", "LEAN-CORE-001-AC-04", "LEAN-CORE-001-AC-05", "LEAN-CORE-001-AC-06", "LEAN-CORE-001-AC-07", "LEAN-CORE-001-AC-08", "LEAN-CORE-001-AC-09", "LEAN-CORE-001-AC-10", "LEAN-CORE-001-AC-11", "LEAN-CORE-001-AC-12"]
-tests_run = 533
+tests_run = 535
 failures = 0
 errors = 0
 skipped = 1
@@ -80,7 +80,15 @@ Task 상태는 바꾸지 않는다(독립 재검토 대기).
 index 복사본에서 porcelain 명령을 실행하도록 고치고 회귀 테스트를 추가했다([ADR 개정](../adr/ADR-PORT-001.md)).
 `tests.test_input_check` 5회 연속 PASS. Task 상태는 바꾸지 않는다.
 
+Codex 교차 검토(main 4ddd438)가 index 복사본의 새 mtime 때문에 racy 항목 검사가 빠지는 회귀(medium)를 지적했다. 크기가 같은
+수정이 PASS로 판정될 수 있었다. mtime을 보존하도록 고치고 회귀 테스트를 추가했다([ADR 개정](../adr/ADR-PORT-001.md)).
+`tests.test_input_check` 5회 연속 PASS. Task 상태는 바꾸지 않는다.
+
 ## main 병합 — 2026-11-10
 
 PR #8 브랜치에 main `4ddd438`(PR #9)을 병합했다. 충돌은 이 Task 문서뿐이었고 두 기록을 날짜순으로 보존했다.
 PR #9은 input-check의 `git diff`를 index 복사본에서 돌려 실제 index를 바이트 단위로 보존하고, 그 보장을 바이트 비교 `_index_hash`로 검사한다. PR #8은 `_index_hash`를 staged 항목 해시로 바꿨는데, 그대로 두면 그 검사가 약해진다. 그래서 `_index_hash`는 바이트 비교로 되돌리고, handoff의 `git diff`도 같은 방식(index 복사본)으로 실행했다. touch만 한 파일을 변경으로 보지 않는 PR #8의 의도와 index를 쓰지 않는 PR #9의 의도가 함께 유지된다. handoff 테스트에 실제 index 바이트 불변 단언을 추가했다. 병합 후 `run_tests_fast.py` 533개 실행, 실패 0개, skip 1개, `check_sdd.py` PASS다.
+
+## main 재병합 — 2026-11-10
+
+PR #8 브랜치에 main `19d8a11`(PR #10)을 다시 병합했다. 충돌은 이 Task 문서뿐이었다. PR #10의 `a1b91db`는 input-check index 복사본의 mtime을 보존해 racy 항목 재검사를 지킨다. PR #8의 handoff `_private_index`도 같은 `copyfile` 결함이 있어 크기가 같은 수정이 WIP에서 빠질 수 있었으므로, 같은 방식(`copy2`, mtime 불일치 시 `handoff_index_copy_timestamp_mismatch`로 차단)으로 고치고 회귀 `test_racily_clean_same_size_edit_is_still_captured`를 추가했다. 이 테스트는 copyfile 버전에서 3회 모두 실패하고 수정 후 3회 통과한다. 병합 후 `run_tests_fast.py` 535개 실행, 실패 0개, skip 1개, `check_sdd.py` PASS다.

@@ -264,6 +264,29 @@ class InputCheckTests(unittest.TestCase):
                 self.assertEqual(result["status"], "PASS", result)
                 self.assertEqual(_index_hash(self.root), before)
 
+    def test_racily_clean_entries_are_still_content_checked_on_the_private_index(self):
+        # A same-size edit that keeps the cached mtime is only caught because the entry is racy:
+        # its mtime is not older than the index file. The private index copy must keep the real
+        # index timestamp, or git would trust the stale stat data and miss the change.
+        _git(self.root, "config", "core.trustctime", "false")
+        index = Path(_git(self.root, "rev-parse", "--path-format=absolute", "--git-path", "index").decode().strip())
+        module = self.root / "src/module.py"
+        cached = index.stat().st_mtime_ns - 10_000_000_000
+        os.utime(module, ns=(cached, cached))
+        # Re-record a clean (not smudged) stat entry: the file is now older than the index.
+        _git(self.root, "update-index", "--refresh")
+        original = module.read_bytes()  # platform line ending; the edit must keep the exact size
+        edited = original.replace(b"value = 1", b"value =1 ", 1)  # trailing whitespace, same length
+        self.assertEqual(len(edited), len(original))
+        module.write_bytes(edited)
+        os.utime(module, ns=(cached, cached))
+        os.utime(index, ns=(cached, cached))
+        before = _index_hash(self.root)
+        result = self.run_check("git", None)
+        self.assertEqual(result["status"], "FAIL", result)
+        self.assertEqual(result["results"][0]["error_code"], "GIT_DIFF_CHECK_FAILED")
+        self.assertEqual(_index_hash(self.root), before)
+
     def test_timeout_and_nonzero_exit_are_structured_failures(self):
         check = {"check_id": "T", "kind": "tests", "argv": ["python", "-m", "unittest", "discover", "-s", "tests"]}
         with patch("baton.execution.run_process", return_value=(None, "PRIVATE", "PRIVATE", "timeout")):
