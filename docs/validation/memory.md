@@ -17,7 +17,7 @@
 
 ## 전체 오프라인 회귀
 
-`.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .` → 1차 500개, 1차 반영 후 510개, 2차 반영 후 517개 실행, 모두 OK, skip 1(기존 플랫폼/선택 의존성 skip, 이번 변경과 무관).
+`.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .` → 1차 500개, 1차 반영 후 510개, 2차·3차 반영 후 각각 517개 실행, 모두 OK, skip 1(기존 플랫폼/선택 의존성 skip, 이번 변경과 무관).
 skip이 있어 verified 근거로는 쓰지 않는다(verified_evidence_eligible=false).
 SDD 검사: 변경 파일 14개로 `check_sdd.validate` PASS. 기본 `check_sdd.py`는 추적 안 된 기존 `.claude/worktrees/`
 경로 때문에 INVALID_PATH가 나며 이번 변경과 무관하다.
@@ -60,6 +60,21 @@ junction은 권한 없이 만들 수 있는 `_winapi.CreateJunction`을 먼저 �
 검사는 실제 junction·하드링크·디렉터리로 바꿨다. 추가 테스트 7개(할당·문장 구분과 topic 비밀, 인용 worktree와 git 실패 코드,
 파일시스템 식별 키, 부속 파일 일반 파일 검사, 스키마 busy, 전역 옵션과 MCP 시작 오류, 깊은·큰 프레임과 인자 타입).
 관련 테스트 31개 PASS, skip 0. 수정 후보는 3차 검토가 필요하다.
+
+### 3차 — Claude 별도 세션, reviewed_sha=59b6f3d: findings 4건
+
+사용자 지시로 이 대화에서 시작한 읽기 전용 Claude 세션이 검토했다. 다른 모델 검토가 아니므로 교차 모델 근거로는 약하다.
+검토자는 저장소 파일을 바꾸지 않았고(`git status`는 기존 `.claude/`만), 관련 테스트 31개 PASS를 보고했다.
+2차 지적 2·4·5·6번은 해결, 7번은 대부분 해결, 1·3번은 미해결로 판정했다. 새 findings: high 2건(`_TOKEN` 접미 이름 미탐,
+BATON_HOME junction이 저장소 안을 가리키는 경우 통과), low 2건(모르는 전역 옵션 뒤 평문 오류와 ADR 문구 불일치, 링크 수 0 예외).
+결과: **passed 아님**.
+
+### 3차 반영
+
+high 2건은 코드와 테스트로 고쳤다. low 1건은 ADR 문구를 실제 동작에 맞게 고쳤고, low 2건은 남은 한계로 기록했다.
+[ADR 3차 Amendments](../adr/ADR-MEMORY-001.md#eng-review-amendments--2026-11-10-3차-검토59b6f3d-claude-별도-세션).
+테스트 보강: `_TOKEN`·`db_pwd`·긴 글자 값 거부와 15자 경계, BATON_HOME 자체·하위·상위 링크가 저장소를 가리키는 경우.
+관련 테스트 31개 PASS, skip 0. 수정 후보는 4차 검토가 필요하다.
 
 ## 미실행
 

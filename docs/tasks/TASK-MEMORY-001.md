@@ -58,7 +58,24 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "Independent third review of the fixed candidate SHA (L3)"
+command = "Claude separate-session review of 59b6f3d (read-only)"
+result = "failed"
+evidence = "docs/validation/memory.md#review"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+
+[[verification]]
+command = "python -X utf8 -m unittest tests.test_memory tests.test_memory_mcp"
+result = "passed"
+evidence = "docs/validation/memory.md#review"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 31
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "Independent fourth review of the fixed candidate SHA (L3)"
 result = "not_run"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]

@@ -44,11 +44,13 @@ SENSITIVE = re.compile(
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
     r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", re.I)
-# A secret-like name followed by "=" or ":" and a value. "=" or a quoted value is always an
-# assignment. After ":" only a single plain word (letters only, e.g. "token: refresh") is prose;
-# digits or symbols in the value (short or long) are treated as a secret.
+# A secret-like name (also as the last part of NAME_TOKEN, db_pwd, ...) followed by "=" or ":"
+# and a value. "=" or a quoted value is always an assignment. After ":" only one short plain word
+# (letters only, at most PROSE_WORD letters, e.g. "token: refresh") is prose; digits, symbols or a
+# long run of letters are treated as a secret.
+PROSE_WORD = 15
 ASSIGNMENT = re.compile(
-    r"(?<![A-Za-z0-9_])(?:(?:access|refresh|id|auth)[_-]?)?(?:token|passwd|password|pwd|credential|secret|api[_-]?key)s?"
+    r"(?<![A-Za-z0-9])(?:token|passwd|password|pwd|credential|secret|api[_-]?key)s?"
     r"[\"']?\s*(=|:)\s*(\"[^\"]*\"|'[^']*'|\S+)", re.I)
 
 
@@ -126,6 +128,14 @@ def project_key(root) -> str:
     return project_info(root)[0]
 
 
+def _existing_ancestors(path):
+    """Existing ancestors of the literal path and of the real path behind its nearest existing
+    ancestor, so a junction or symlink anywhere in BATON_HOME cannot hide a repository parent."""
+    literal = [item for item in (path, *path.parents) if item.exists()]
+    real = Path(os.path.realpath(literal[0])) if literal else None
+    return literal + ([real, *real.parents] if real is not None else [])
+
+
 def _lstat(path):
     try:
         return os.lstat(path)
@@ -144,7 +154,7 @@ def _assigned_secret(value) -> bool:
         if operator == "=" or given[0] in "\"'":
             return True
         word = given.rstrip(".,;!?)")
-        if not word.isalpha():
+        if not word.isalpha() or len(word) > PROSE_WORD:
             return True
     return False
 
@@ -190,9 +200,8 @@ class MemoryStore:
         base = Path(os.path.abspath(home if home is not None else baton_home(env)))
         self.directory = base / "memory"
         self.path = self.directory / (key + ".sqlite3")
-        for ancestor in (self.directory, *self.directory.parents):
-            if ancestor.exists() and _identity(ancestor) in protected:
-                raise HarnessError("memory_storage_inside_repository")
+        if any(_identity(item) in protected for item in _existing_ancestors(self.directory)):
+            raise HarnessError("memory_storage_inside_repository")
         base.mkdir(parents=True, exist_ok=True)
         info = _lstat(self.directory)
         if info is not None and (_is_link(info) or not stat.S_ISDIR(info.st_mode)):

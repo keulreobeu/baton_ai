@@ -476,9 +476,11 @@ class MemoryStoreTests(Base):
     def test_assignments_are_secrets_and_plain_prose_is_not(self):
         s = self.store()
         refused = ["token=abc", "pwd: p@ss!", "password: 'two words'", 'credential: "short"', "token: abc123",
-                   "refresh_token: x-y", "API_KEY = k"]
+                   "refresh_token: x-y", "API_KEY = k", "GITHUB_TOKEN=" + "abcd1234efgh5678ijkl",
+                   "NPM_TOKEN: " + "abcd1234", "HF_TOKEN=" + "hf_x", "SLACK_TOKEN=" + "xoxb-1", "db_pwd=" + "hunter2",
+                   "token: " + "AbCdEfGhIjKlMnOpQrStUvWx", "max_tokens=100"]
         allowed = ["token: refresh happens hourly", "credential: rotation is weekly", "the api key lives in the vault",
-                   "max_tokens=100 is a model setting", "token: refreshinghourlyeverywhere", "토큰: 새로고침"]
+                   "GITHUB_TOKEN: rotated weekly", "토큰: 새로고침", "token: refreshingnight"]  # 15 letters: the prose limit
         for body in refused:
             with self.assertRaises(HarnessError, msg=body) as caught:
                 s.add(topic="t", kind="note", body=body, author="codex")
@@ -526,6 +528,16 @@ class MemoryStoreTests(Base):
         with self.assertRaises(HarnessError) as caught:
             MemoryStore(self.repo, home=alias / "home", clock=self.clock)
         self.assertEqual(str(caught.exception), "memory_storage_inside_repository")
+        inner = self.repo / "inner"; inner.mkdir()
+        linked_home = self.base / "linked-baton-home"
+        self.link(linked_home, inner)  # BATON_HOME itself is a link into the repository
+        parent = self.base / "parent-link"
+        self.link(parent, self.repo)
+        for home in (linked_home, linked_home / "below", parent / "inner" / "deeper"):
+            with self.assertRaises(HarnessError, msg=str(home)) as caught:
+                MemoryStore(self.repo, home=home, clock=self.clock)
+            self.assertEqual(str(caught.exception), "memory_storage_inside_repository")
+        self.assertEqual(list(inner.iterdir()), [])
         if os.name == "nt":  # case-insensitive volume: a case variant is the same directory
             variant = Path(str(self.repo).upper())
             self.assertEqual(self.store(variant).path, self.store().path)
