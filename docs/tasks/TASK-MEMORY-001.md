@@ -131,14 +131,20 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
+command = "Claude separate-agent review of 5c97f9d (read-only)"
+result = "failed"
+evidence = "docs/validation/memory.md#6차--claude-별도-에이전트-reviewed_sha5c97f9d-findings-5건-passed-아님"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+
+[[verification]]
 command = "GitHub Actions PR #9 after the path-key integration"
 result = "not_run"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
 [independent_review]
-result = "passed"
-evidence = "docs/validation/memory.md#review"
+result = "failed"
+evidence = "docs/validation/memory.md#6차-반영"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.

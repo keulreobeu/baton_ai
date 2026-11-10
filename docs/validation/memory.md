@@ -112,6 +112,29 @@ high 2건은 코드와 테스트로 고쳤다. low 1건은 ADR 문구를 실제 
 [ADR](../adr/ADR-MEMORY-001.md#pr-9-ci리뷰-반영--2026-11-10)에 적었다. 로컬 Windows에서 세 프로세스 스트레스로 escape 오탐을
 재현하고 수정 후 재발하지 않음을 확인했다. 관련 테스트 33개를 세 번 연속 실행해 모두 PASS, skip 0이다.
 
+### 6차 — Claude 별도 에이전트, reviewed_sha=5c97f9d: findings 5건, **passed 아님**
+
+PR head(경로 키 복원 통합 후) 전체 후보 a061d39..5c97f9d를 읽기 전용으로 검토했다. 메모리·MCP·input_check 테스트 58개 OK,
+SDD 검사 PASS, traceability 테스트 참조 194개가 모두 실제 심볼로 해석됨을 확인했다. 검토자는 파일을 바꾸지 않았다.
+
+- M1(medium, PR에 함께 실린 PORT-001 7a91282): plumbing `diff-index --name-only HEAD`가 stat만 바뀐 파일도 변경으로 내서
+  범위 밖 추적 파일이 `OUTSIDE_SCOPE`로 BLOCKED가 된다. 검토자가 재현했다.
+- L1: 기존 파일 ID 키가 inode 재사용 파일시스템에서 다른 저장소의 기존 DB를 이어 쓸 수 있다.
+- L2: ADR의 e701d02 개정이 대체 표시 없이 파일 ID 키를 말하고, 키 충돌 해소 방법이 없다.
+- L3: Windows에서 링크 수 0(확인 불가)은 허용한다. 이미 ADR에 기록한 한계다.
+- L4: 서브모듈 안에서는 상위 저장소의 작업 트리가 보호 대상에 들어가지 않는다. REQ-01 문구 밖의 경우다.
+
+### 6차 반영
+
+- M1: 검토자가 제안한 `--no-optional-locks`는 로컬 재현에서 index 재기록을 막지 못했다(40/40). 그래서 git 검사가 index 복사본을
+  `GIT_INDEX_FILE`로 지정해 원래의 porcelain 명령을 실행하도록 고쳤다. 실제 index는 그대로다.
+  새 회귀(범위 밖 `.gitignore` stat만 변경)는 7a91282 코드에서 BLOCKED로 실패하고 수정 후 PASS다. `tests.test_input_check` 5회 연속 PASS.
+  [ADR-PORT-001 개정](../adr/ADR-PORT-001.md) 참조.
+- L1·L2: [ADR](../adr/ADR-MEMORY-001.md#eng-review-amendments--프로젝트-키-복원-2026-11-10)에 충돌 해소 절차와 inode 재사용 한계를 적고,
+  e701d02 개정의 키 문구에 대체 표시를 달았다. 기존 키 DB는 병합 전 개발 PC에만 있으므로 코드 동작은 바꾸지 않는다.
+- L3·L4: 기존 한계·범위 밖으로 수용한다.
+- 수정 후보는 7차 검토가 필요하다.
+
 ## 미실행
 
 - 교차 모델(Codex) 최종 확인: a342a7a에 대해서는 미실행. 사용자 판단 사항.
