@@ -88,6 +88,14 @@ SQLite busy handler는 back-off를 두고 다시 시도할 뿐 순서를 보장�
 - `scripts/setup-environment.ps1`은 Windows PowerShell 5.1에서 pip 안내 문구(stderr) 때문에 중단되어,
   같은 pip 명령을 직접 실행해 이 worktree 전용 `.venv`를 만들었다.
 
+## push 점검 — 2026-11-10
+
+- 대상: `origin/claude/beautiful-grothendieck-8bdfb2`, base `main`. 사용자가 PR 생성을 승인했다.
+- 원격 `main`은 `4ddd438`이고 이 branch의 기준과 같다. 원격에 이 branch는 아직 없다.
+- 원격에 없는 커밋은 `d98f56f`와 이 점검 기록뿐이다. 변경 파일은 Task scope 5개이고,
+  민감정보 패턴 검색 결과는 `TASK-STORE` 같은 오탐뿐이다.
+- 다른 local branch의 미게시 커밋은 포함하지 않는다.
+
 ## 남은 일
 
 - 실제 Windows CI는 아직 실행하지 않았다. CI 통과 전에는 verified로 올리지 않는다.
