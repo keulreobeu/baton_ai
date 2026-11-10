@@ -51,3 +51,7 @@ Task 상태는 바꾸지 않는다(독립 재검토 대기).
 독립 검토(PR #9 head 5c97f9d)가 위 plumbing 전환의 회귀(medium)를 지적했다. 범위 밖 파일의 stat만 바뀌어도 BLOCKED가 됐다.
 index 복사본에서 porcelain 명령을 실행하도록 고치고 회귀 테스트를 추가했다([ADR 개정](../adr/ADR-PORT-001.md)).
 `tests.test_input_check` 5회 연속 PASS. Task 상태는 바꾸지 않는다.
+
+Codex 교차 검토(main 4ddd438)가 index 복사본의 새 mtime 때문에 racy 항목 검사가 빠지는 회귀(medium)를 지적했다. 크기가 같은
+수정이 PASS로 판정될 수 있었다. mtime을 보존하도록 고치고 회귀 테스트를 추가했다([ADR 개정](../adr/ADR-PORT-001.md)).
+`tests.test_input_check` 5회 연속 PASS. Task 상태는 바꾸지 않는다.

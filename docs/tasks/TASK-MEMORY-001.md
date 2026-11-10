@@ -159,9 +159,26 @@ result = "passed"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
+[[verification]]
+command = "Codex cross-model review of 4ddd438 (codex exec, read-only, user-approved)"
+result = "failed"
+evidence = "docs/validation/memory.md#8차--codex-교차-모델사용자-승인-실행-reviewed_sha4ddd438-findings-1건-passed-아님"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+
+[[verification]]
+command = "Claude separate-agent review of a1b91db (read-only)"
+result = "passed"
+evidence = "docs/validation/memory.md#9차--claude-별도-에이전트-reviewed_shaa1b91db-passed"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 60
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
 result = "passed"
-evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_shab187af6-passed"
+evidence = "docs/validation/memory.md#9차--claude-별도-에이전트-reviewed_shaa1b91db-passed"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.
@@ -253,3 +270,21 @@ evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_
   로컬 메모리·MCP 테스트의 skip은 0이다.
 - 상태는 in_progress로 둔다. SDD verified는 마지막 기록에 skip이 없어야 하는데 CI 전체 회귀에 기존 skip이 있고,
   독립 검토는 모두 같은 모델 계열이며, 실제 호스트 MCP 등록 사용은 사용자 몫으로 미검증이다. main 병합은 별도 승인 대상이다.
+
+## main 병합 — 2026-11-10
+
+- 사용자 지시("지금 병합")로 PR #9를 `--match-head-commit 084fcaf`로 고정해 merge commit 방식으로 병합했다. main=`4ddd438`
+  (부모 a061d39·084fcaf), 원격 read-back 일치. 포함 커밋 15개(MEMORY-001 13개, PORT-001 7a91282·890f0f6). 강제 갱신 없음.
+- 병합 전 상태: head 084fcaf CI 8개 통과(push·pull_request), mergeStateStatus CLEAN, 7차 독립 검토 passed.
+- main push CI 실행 42775921334 success, job 4개(ubuntu·windows × Python 3.11·3.12) 통과.
+- 상태는 사용자 결정("in_progress 유지")으로 in_progress다. 남은 skip 2개는 Windows 전용 자격 증명 테스트
+  (`tests/test_credentials.py`의 `skipUnless(win32)`)와 집담 설정 테스트(`tests/test_harness.py`의 `@unittest.skip`)이며
+  메모리 기능과 무관하다. 해소는 GMS·TASK-PROFILE 후속 범위다.
+- 미실행: Codex 교차 모델 최종 확인(실모델 호출이라 사용자 승인 필요), 실제 호스트 MCP 등록 사용(사용자 몫).
+  원격 branch `claude/shared-memory-spec-20261110`은 삭제하지 않았다.
+- Push 점검 5(기록 branch): 원격 main=4ddd438, `claude/memory-merge-record-20261110`은 원격에 없다. 원격 ref로 도달할 수 없는
+  커밋은 a7dc68c(이 Task·current.md, scope 안)와 이 점검 기록 커밋뿐이고 작성자는 `lwwde07`이다. 민감 경로·1MB 초과·
+  `scan_content` 결과 없음. 사용자 지시("push하고 PR")로 이 branch 하나를 push하고 main 대상 PR을 연다. 병합은 하지 않는다.
+- Push 점검 6(Codex 반영): 원격 기록 branch=7ab0b47, main=4ddd438. 원격에서 도달할 수 없는 커밋은 a1b91db(PORT-001 input_check
+  mtime 보존 수정·회귀·기록, scope 안)와 이 기록 커밋뿐이고 작성자는 `lwwde07`이다. 9차 독립 검토 passed, 전체 회귀
+  `run_tests_fast.py --workers 4` 525개 실패·오류 0·skip 1(기존), SDD 검사 PASS. 민감 경로·1MB 초과 없음. PR #10에 fast-forward로 push한다.

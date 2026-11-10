@@ -244,7 +244,12 @@ class InputChecker:
             real_index = Path(_git(self.root, "rev-parse", "--path-format=absolute", "--git-path", "index").decode().strip())
             if real_index.exists():
                 private = Path(scratch) / "index"
-                shutil.copyfile(real_index, private)
+                # copy2 keeps the index mtime: git treats entries not older than the index file as
+                # racily clean and re-reads their content. A fresh mtime would make a same-size edit
+                # that kept the cached mtime look clean on the copy while the real index would catch it.
+                shutil.copy2(real_index, private)
+                if os.stat(private).st_mtime_ns != os.stat(real_index).st_mtime_ns:
+                    raise CheckError("GIT_INDEX_COPY_TIMESTAMP_MISMATCH", blocked=True)
                 env = {**os.environ, "GIT_INDEX_FILE": str(private)}
             return self._git_check_with(scope, before, index_before, env)
 
