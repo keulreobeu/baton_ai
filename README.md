@@ -90,6 +90,21 @@ dispatch ID 없이 시작이 실패했고 Orca에서 작업자가 없음을 확�
 명시적 대상에 설치한다. `claude/antigravity`도 선택할 수 있지만 실제 host 실행 검증은 별개다.
 wheel에는 `share/baton/scripts`, `share/baton/skills`의 같은 상대 배치로 포함된다.
 
+## 공유 메모리 (MEMORY-001)
+
+Codex·Claude가 같은 프로젝트 기억을 읽고 쓴다. 사용자별 `BATON_HOME/memory/`에 저장소마다 SQLite 하나를 두며
+같은 저장소의 worktree는 모두 공유한다. 쓰기는 한 번에 하나, 동시 수정은 `--expected-revision`으로 거부한다.
+topic `claim`은 "작업 중" 표시이고 30분 뒤 만료된다. 내용은 참고 데이터이며 승인·실행 허가가 아니다.
+
+```powershell
+baton memory add --author claude --topic gms --kind decision --body "요청 없으면 GMS를 켜지 않는다"
+baton memory list
+baton memory claim --author codex --topic flow
+baton memory mcp --print-config claude   # 설정 예시만 출력, 등록은 사용자가 직접
+```
+
+[계약](docs/specs/MEMORY-001.md), [검증](docs/validation/memory.md).
+
 ## P0 Quota Window Scheduler
 
 매일 07:00·12:05 KST에 Claude·Codex에 최소 요청을 1회씩 보내 5시간 사용량 창의 리셋 시각(약 12:00·17:05)을 고정한다.
