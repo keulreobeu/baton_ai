@@ -37,13 +37,31 @@ def _credentials(args):
         return 2
 
 
+_VALUED_GLOBALS = ("--state-dir", "--codex-bin", "--gms-port")
+_FLAG_GLOBALS = ("--enable-gms",)
+
+
+def _memory_argv(raw):
+    """Arguments after `memory` when it is the command, skipping the global options (and their
+    unambiguous abbreviations) that may precede it. The memory store ignores those globals."""
+    index = 0
+    while index < len(raw) and raw[index].startswith("--"):
+        name = raw[index].split("=", 1)[0]
+        valued = [g for g in _VALUED_GLOBALS if g.startswith(name)]
+        flags = [g for g in _FLAG_GLOBALS if g.startswith(name)]
+        if len(valued) + len(flags) != 1:
+            return None
+        index += 2 if valued and "=" not in raw[index] else 1
+    return raw[index + 1:] if index < len(raw) and raw[index] == "memory" else None
+
+
 def main(argv=None, *, workspace=None):
     root = Path(workspace or Path.cwd()).resolve()
-    raw = sys.argv[1:] if argv is None else list(argv)
-    if raw[:1] == ["memory"]:
-        # Per-user store (BATON_HOME) keyed by the repository; usage errors are JSON too.
+    memory_argv = _memory_argv(sys.argv[1:] if argv is None else list(argv))
+    if memory_argv is not None:
+        # One path for `baton [globals] memory ...`: per-user store, JSON usage errors.
         from .memory_cli import main as memory_main
-        return memory_main(raw[1:], root)
+        return memory_main(memory_argv, root)
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--state-dir", default=".local_runtime/harness-managed")
     p.add_argument("--codex-bin", default=None)
@@ -93,6 +111,8 @@ def main(argv=None, *, workspace=None):
     s = sub.add_parser("worker"); s.add_argument("--once", action="store_true")
     args = p.parse_args(argv)
     try:
+        if args.command == "memory":  # reached only with globals _memory_argv could not skip
+            raise HarnessError("memory_invalid_arguments")
         if args.command in {"credentials", "credentials-import"}:
             return _credentials(args)
         if args.command == "quota-window":

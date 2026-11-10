@@ -120,13 +120,15 @@ def _emit_error(out, error):
     return EXIT_RETRY if payload["retryable"] else EXIT_ERROR
 
 
-def main(argv, root, *, home=None, env=None, clock=None, stdin=None, stdout=None):
+def main(argv, root, *, home=None, env=None, clock=None, stdin=None, stdout=None, stderr=None):
     out = stdout or sys.stdout
+    serving = argv[:1] == ["mcp"] and not any(a == "--print-config" or a.startswith("--print-config=") for a in argv)
     try:
         args = build_parser().parse_args(argv)
     except HarnessError as error:
-        return _emit_error(out, error)
-    return run(args, root, home=home, env=env, clock=clock, stdin=stdin, stdout=stdout)
+        # An MCP server's stdout carries JSON-RPC only, so its start-up errors go to stderr.
+        return _emit_error((stderr or sys.stderr) if serving else out, error)
+    return run(args, root, home=home, env=env, clock=clock, stdin=stdin, stdout=stdout, stderr=stderr)
 
 
 def run(args, root, *, home=None, env=None, clock=None, stdin=None, stdout=None, stderr=None):

@@ -133,6 +133,29 @@ class MemoryMcpTests(Base):
         self.assertEqual(done.stdout, b"")
         self.assertEqual(json.loads(done.stderr)["error"], "memory_not_git_repository")
 
+    def test_deep_and_oversized_frames_recover_and_argument_types_follow_the_schema(self):
+        from baton.memory_mcp import MAX_FRAME
+        self.store().add(topic="t", kind="note", body="archived one", author="codex")
+        entry = self.store().list()[0]
+        self.store().archive(entry["id"], expected_revision=1, reason="old", author="codex")
+        deep = "[" * 100_000 + "]" * 100_000
+        stream = io.StringIO(deep + "\n" + "x" * (MAX_FRAME * 2) + "\n"
+                             + json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}) + "\n")
+        out = io.StringIO()
+        serve(self.store(), author="claude", session="s", stdin=stream, stdout=out)
+        lines = [json.loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual([l.get("error", {}).get("code") for l in lines], [-32700, -32600, None])
+        self.assertEqual(lines[2]["result"], {})
+        bad = [("memory_list", {"include_archived": "false"}), ("memory_list", {"limit": "5"}),
+               ("memory_list", {"limit": 0}), ("memory_list", {"limit": True}),
+               ("memory_add", {"topic": "t", "kind": "order", "body": "x"}),
+               ("memory_add", {"topic": 1, "kind": "note", "body": "x"}),
+               ("memory_claim", {"topic": "t", "ttl_seconds": 59})]
+        responses = self.run_server(*(call(i, name, args) for i, (name, args) in enumerate(bad)))
+        self.assertEqual([self.payload(r)["error"] for r in responses], ["memory_invalid_arguments"] * len(bad))
+        ok = self.run_server(call(1, "memory_list", {"include_archived": True, "limit": 5}))
+        self.assertEqual(len(self.payload(ok[0])["entries"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

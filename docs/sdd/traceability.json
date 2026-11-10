@@ -1199,6 +1199,18 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_real_link_and_post_init_swap_are_refused"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_side_files_must_be_plain_single_link_files"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_quoted_worktree_paths_and_git_failures_are_handled"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_project_key_follows_filesystem_identity"
             }
           ]
         },
@@ -1236,6 +1248,10 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_same_author_other_session_and_sessionless_writers_are_blocked"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_busy_schema_probe_returns_memory_busy_without_a_write"
             }
           ]
         },
@@ -1257,6 +1273,10 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_handoff_scanner_secrets_in_every_field_and_plain_prose_passes"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_assignments_are_secrets_and_plain_prose_is_not"
             }
           ]
         },
@@ -1290,6 +1310,14 @@
             {
               "file": "tests/test_memory_mcp.py",
               "symbol": "MemoryMcpTests.test_real_pipe_recovers_from_invalid_utf8_and_startup_errors_use_stderr"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_global_options_still_route_memory_and_mcp_start_errors_use_stderr"
+            },
+            {
+              "file": "tests/test_memory_mcp.py",
+              "symbol": "MemoryMcpTests.test_deep_and_oversized_frames_recover_and_argument_types_follow_the_schema"
             }
           ]
         }

@@ -82,14 +82,10 @@ class MemoryStoreTests(Base):
             with self.assertRaises(HarnessError) as caught:
                 self.store(plain)
         self.assertEqual(str(caught.exception), "memory_not_git_repository")
-        real = Path.is_symlink
-        with mock.patch.object(Path, "is_symlink", lambda p: p.name == "memory" or real(p)):
-            with self.assertRaises(HarnessError) as caught:
-                self.store()
-        self.assertEqual(str(caught.exception), "memory_storage_escape")
-        with mock.patch.object(Path, "is_symlink", lambda p: p.name.endswith(".sqlite3-wal") or real(p)):
-            with self.assertRaises(HarnessError) as caught:
-                self.store()
+        (self.home).mkdir(parents=True)
+        (self.home / "memory").write_text("not a directory", encoding="utf-8")
+        with self.assertRaises(HarnessError) as caught:
+            self.store()
         self.assertEqual(str(caught.exception), "memory_storage_escape")
 
     def test_history_keeps_every_revision_and_limits_are_enforced(self):
@@ -336,8 +332,13 @@ class MemoryStoreTests(Base):
         self.assertFalse(fresh.exists())
 
     def link(self, link, target):
+        """A real directory link: an NTFS junction on Windows (no privilege needed), else a symlink."""
         if os.name == "nt":
-            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+            try:
+                import _winapi
+                _winapi.CreateJunction(str(target), str(link))
+            except (ImportError, AttributeError, OSError):
+                subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
         else:
             os.symlink(target, link, target_is_directory=True)
 
@@ -358,11 +359,30 @@ class MemoryStoreTests(Base):
             with self.assertRaises(HarnessError) as caught:
                 attempt()
             self.assertEqual(str(caught.exception), "memory_storage_escape")
-        real = Path.is_symlink
-        with mock.patch.object(Path, "is_symlink", lambda p: p.name.endswith(".sqlite3-journal") or real(p)):
-            with self.assertRaises(HarnessError) as caught:
-                MemoryStore(self.repo, home=self.base / "home2", clock=self.clock)
+
+    def test_side_files_must_be_plain_single_link_files(self):
+        s = self.store()
+        s.add(topic="t", kind="note", body="ok", author="codex")
+        journal = Path(str(s.path) + "-journal")
+        inner = self.home / "memory" / "inner"; inner.mkdir()
+        self.link(journal, inner)  # junction/symlink to a directory inside the same memory folder
+        with self.assertRaises(HarnessError) as caught:
+            s.list()
         self.assertEqual(str(caught.exception), "memory_storage_escape")
+        os.rmdir(journal) if os.name == "nt" else journal.unlink()
+        s.list()
+        outside = self.base / "outside.bin"; outside.write_bytes(b"x")
+        os.link(outside, journal)  # hard link to a file elsewhere
+        with self.assertRaises(HarnessError) as caught:
+            s.add(topic="t", kind="note", body="blocked", author="codex")
+        self.assertEqual(str(caught.exception), "memory_storage_escape")
+        journal.unlink()
+        journal.mkdir()  # a directory where a file is expected
+        with self.assertRaises(HarnessError) as caught:
+            self.store()
+        self.assertEqual(str(caught.exception), "memory_storage_escape")
+        journal.rmdir()
+        self.assertEqual(len(s.list()), 1)
 
     def test_new_reader_is_not_blocked_by_an_open_writer(self):
         s = self.store()
@@ -452,6 +472,107 @@ class MemoryStoreTests(Base):
             self.assertEqual(code, 2, argv)
             self.assertEqual(json.loads(out.getvalue())["error"], "memory_invalid_arguments", argv)
             self.assertEqual(err.getvalue(), "", argv)
+
+    def test_assignments_are_secrets_and_plain_prose_is_not(self):
+        s = self.store()
+        refused = ["token=abc", "pwd: p@ss!", "password: 'two words'", 'credential: "short"', "token: abc123",
+                   "refresh_token: x-y", "API_KEY = k"]
+        allowed = ["token: refresh happens hourly", "credential: rotation is weekly", "the api key lives in the vault",
+                   "max_tokens=100 is a model setting", "token: refreshinghourlyeverywhere", "토큰: 새로고침"]
+        for body in refused:
+            with self.assertRaises(HarnessError, msg=body) as caught:
+                s.add(topic="t", kind="note", body=body, author="codex")
+            self.assertEqual(str(caught.exception), "memory_sensitive_content")
+        for body in allowed:
+            s.add(topic="t", kind="note", body=body, author="codex")
+        topic = "ghp_" + "D" * 36
+        with self.assertRaises(HarnessError) as caught:
+            s.add(topic=topic, kind="note", body="x", author="codex")
+        self.assertEqual(str(caught.exception), "memory_sensitive_content")
+        self.assertEqual(len(s.list(topic="t")), len(allowed))
+
+    def test_quoted_worktree_paths_and_git_failures_are_handled(self):
+        quoted = self.base / "작업트리"
+        git(self.repo, "-c", "core.quotePath=true", "worktree", "add", "-q", str(quoted), "-b", "kor")
+        with self.assertRaises(HarnessError) as caught:
+            MemoryStore(self.repo, home=quoted / "home", clock=self.clock)
+        self.assertEqual(str(caught.exception), "memory_storage_inside_repository")
+        self.assertFalse((quoted / "home").exists())
+        self.assertEqual(self.store(quoted).path, self.store().path)
+        real = subprocess.run
+        calls = []
+        with mock.patch.object(memory_module.subprocess, "run", lambda *a, **k: calls.append(k.get("timeout")) or real(*a, **k)):
+            self.store()
+        self.assertEqual(calls, [15, 15])  # two git calls, at most 30 s in total
+        for effect, code in ((FileNotFoundError("git"), "memory_git_unavailable"),
+                             (subprocess.TimeoutExpired("git", 15), "memory_git_timeout")):
+            with mock.patch.object(memory_module.subprocess, "run", side_effect=effect):
+                with self.assertRaises(HarnessError) as caught:
+                    self.store()
+            self.assertEqual(str(caught.exception), code)
+        broken = subprocess.CompletedProcess([], 0, stdout=b"only-one-line\n", stderr=b"")
+        with mock.patch.object(memory_module.subprocess, "run", return_value=broken):
+            with self.assertRaises(HarnessError) as caught:
+                self.store()
+        self.assertEqual(str(caught.exception), "memory_git_output_invalid")
+
+    def test_project_key_follows_filesystem_identity(self):
+        a = make_repo(self.base / "Straße")
+        b = make_repo(self.base / "Strasse")
+        self.assertNotEqual(self.store(a).path, self.store(b).path)
+        alias = self.base / "alias"
+        self.link(alias, self.repo)
+        self.assertEqual(self.store(alias).path, self.store().path)
+        with self.assertRaises(HarnessError) as caught:
+            MemoryStore(self.repo, home=alias / "home", clock=self.clock)
+        self.assertEqual(str(caught.exception), "memory_storage_inside_repository")
+        if os.name == "nt":  # case-insensitive volume: a case variant is the same directory
+            variant = Path(str(self.repo).upper())
+            self.assertEqual(self.store(variant).path, self.store().path)
+            with self.assertRaises(HarnessError):
+                MemoryStore(self.repo, home=variant / "home", clock=self.clock)
+
+    def test_busy_schema_probe_returns_memory_busy_without_a_write(self):
+        self.store()
+        original = MemoryStore._connect
+        seen = []
+
+        class Proxy:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, *args):
+                seen.append(sql)
+                if sql.startswith("SELECT name FROM sqlite_master"):
+                    raise sqlite3.OperationalError("database is locked")
+                return self.connection.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        with mock.patch.object(MemoryStore, "_connect", lambda store: Proxy(original(store))):
+            with self.assertRaises(MemoryRefused) as caught:
+                self.store()
+        self.assertEqual(str(caught.exception), "memory_busy")
+        self.assertNotIn("BEGIN IMMEDIATE", seen)
+
+    def test_global_options_still_route_memory_and_mcp_start_errors_use_stderr(self):
+        from baton.managed_cli import main
+        for argv, code, key in ((["--state-dir", ".local_runtime/x", "memory", "list"], 0, "entries"),
+                                (["--state=.local_runtime/x", "--enable-gms", "memory", "list"], 0, "entries"),
+                                (["--enable-gms", "memory", "add", "--author", "codex"], 2, "error")):
+            out = io.StringIO()
+            with mock.patch.dict(os.environ, {"BATON_HOME": str(self.home)}), redirect_stdout(out):
+                self.assertEqual(main(argv, workspace=self.repo), code, argv)
+            self.assertIn(key, json.loads(out.getvalue()), argv)
+        out, err = io.StringIO(), io.StringIO()
+        code = memory_main(["mcp", "--author", "gpt"], self.repo, home=self.home, stdout=out, stderr=err)
+        self.assertEqual((code, out.getvalue()), (2, ""))
+        self.assertEqual(json.loads(err.getvalue())["error"], "memory_invalid_arguments")
+        out, err = io.StringIO(), io.StringIO()
+        code = memory_main(["mcp", "--print-config", "nope"], self.repo, home=self.home, stdout=out, stderr=err)
+        self.assertEqual((code, err.getvalue()), (2, ""))
+        self.assertEqual(json.loads(out.getvalue())["error"], "memory_invalid_arguments")
 
 if __name__ == "__main__":
     unittest.main()

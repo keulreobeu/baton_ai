@@ -17,7 +17,7 @@
 
 ## 전체 오프라인 회귀
 
-`.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .` → 1차 500개, 검토 반영 후 510개 실행, 둘 다 OK, skip 1(기존 플랫폼/선택 의존성 skip, 이번 변경과 무관).
+`.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .` → 1차 500개, 1차 반영 후 510개, 2차 반영 후 517개 실행, 모두 OK, skip 1(기존 플랫폼/선택 의존성 skip, 이번 변경과 무관).
 skip이 있어 verified 근거로는 쓰지 않는다(verified_evidence_eligible=false).
 SDD 검사: 변경 파일 14개로 `check_sdd.validate` PASS. 기본 `check_sdd.py`는 추적 안 된 기존 `.claude/worktrees/`
 경로 때문에 INVALID_PATH가 나며 이번 변경과 무관하다.
@@ -45,6 +45,21 @@ MCP id/params/UTF-8 프레임, argparse 평문 오류). 결과: **passed 아님*
 초기화 후 디렉터리 교체, 쓰기 잠금 중 새 CLI 읽기, COMMIT 실패 주입 시 항목·이력 롤백, archive 경쟁 시 현재 revision,
 같은 author 다른 세션·세션 없는 쓰기 차단과 만료 시각 경계, 실제 진입점 인자 오류 JSON, MCP id/params, 실제 파이프의 잘못된
 UTF-8 복구와 시작 오류 stderr. 관련 테스트 24개 PASS, skip 0. 수정 후보는 재검토가 필요하다.
+
+### 2차 — Codex, reviewed_sha=e701d02: findings 7건
+
+사용자가 실행한 Codex 세션의 결과다. 1차 지적 중 5·6번은 해결, 1·2·3·4·7·8번은 미해결로 판정했다. 새 findings는 high 2건
+(비밀 할당 필터 회귀, 인용된 worktree 경로)과 medium 5건(Windows 경로 식별, Python 3.11 junction·하드링크, 스키마 조회 busy,
+MCP 깊은 JSON·프레임 한도·인자 타입, 전역 옵션·MCP 시작 오류 경로)이다. Codex 환경에서는 `mklink /J`가 실패해 실제 junction
+테스트가 끝까지 돌지 못했다. 결과: **passed 아님**.
+
+### 2차 반영
+
+7건 모두 수정했다. 내용은 [ADR 2차 Amendments](../adr/ADR-MEMORY-001.md#eng-review-amendments--2026-11-10-codex-2차-검토e701d02).
+junction은 권한 없이 만들 수 있는 `_winapi.CreateJunction`을 먼저 쓰고, 안 되면 `mklink /J`를 쓴다. mock으로 하던 링크
+검사는 실제 junction·하드링크·디렉터리로 바꿨다. 추가 테스트 7개(할당·문장 구분과 topic 비밀, 인용 worktree와 git 실패 코드,
+파일시스템 식별 키, 부속 파일 일반 파일 검사, 스키마 busy, 전역 옵션과 MCP 시작 오류, 깊은·큰 프레임과 인자 타입).
+관련 테스트 31개 PASS, skip 0. 수정 후보는 3차 검토가 필요하다.
 
 ## 미실행
 

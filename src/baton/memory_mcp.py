@@ -58,6 +58,21 @@ TOOLS = [
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"topic": _string}}},
 ]
 _ALLOWED = {tool["name"]: set(tool["inputSchema"]["properties"]) for tool in TOOLS}
+_SCHEMAS = {tool["name"]: tool["inputSchema"]["properties"] for tool in TOOLS}
+
+
+def _matches(schema, value) -> bool:
+    """Enforce the declared tool schema before dispatch (no truthy strings for booleans)."""
+    kind = schema["type"]
+    if kind == "string":
+        ok = isinstance(value, str)
+    elif kind == "boolean":
+        ok = type(value) is bool
+    elif kind == "integer":
+        ok = (type(value) is int and schema.get("minimum", value) <= value <= schema.get("maximum", value))
+    else:
+        ok = False
+    return ok and ("enum" not in schema or value in schema["enum"])
 _REQUIRED = {tool["name"]: set(tool["inputSchema"].get("required", ())) for tool in TOOLS}
 
 
@@ -79,6 +94,9 @@ def call_tool(store, name, arguments, *, author, session):
         raise HarnessError("memory_unknown_tool")
     if not isinstance(arguments, dict) or set(arguments) - _ALLOWED[name] or _REQUIRED[name] - set(arguments):
         raise HarnessError("memory_invalid_arguments")
+    for key, value in arguments.items():
+        if not _matches(_SCHEMAS[name][key], value):
+            raise HarnessError("memory_invalid_arguments")
     a, who = arguments, {"author": author, "session": session}
     writes = {"memory_add", "memory_update", "memory_archive", "memory_claim", "memory_renew", "memory_release"}
     if name in writes and author is None:
@@ -113,6 +131,7 @@ def call_tool(store, name, arguments, *, author, session):
 
 INVALID_REQUEST = {"code": -32600, "message": "Invalid Request"}
 INVALID_PARAMS = {"code": -32602, "message": "Invalid params"}
+PARSE_ERROR = {"code": -32700, "message": "Parse error"}
 MAX_FRAME = 256_000
 
 
@@ -164,32 +183,59 @@ def handle(store, message, *, author, session):
     return _error(request_id, {"code": -32601, "message": "Method not found"})
 
 
+def _frames(stdin):
+    """Yield one frame at a time, reading at most MAX_FRAME + 1 per call. An oversized line is
+    drained in bounded chunks and reported as None so the next frame is still served."""
+    while True:
+        line = stdin.readline(MAX_FRAME + 1)
+        if not line:
+            return
+        newline = b"\n" if isinstance(line, bytes) else "\n"
+        if len(line) > MAX_FRAME and not line.endswith(newline):
+            while True:
+                rest = stdin.readline(MAX_FRAME + 1)
+                if not rest or rest.endswith(newline):
+                    break
+            yield None
+            continue
+        yield line
+
+
+def _parse(raw):
+    """(message, error) for one frame; decoding, syntax and depth errors stay per frame."""
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None, PARSE_ERROR
+    line = raw.strip()
+    if not line:
+        return None, None
+    try:
+        return json.loads(line), None
+    except (ValueError, RecursionError):
+        return None, PARSE_ERROR
+
+
 def serve(store, *, author=None, session=None, stdin, stdout):
-    """Serve newline-delimited frames. Bytes are decoded per line, so a bad frame is answered
-    with a JSON-RPC error and the session continues."""
+    """Serve newline-delimited frames; a bad frame is answered and the session continues."""
     if author is not None and author not in AUTHORS:
         raise HarnessError("memory_invalid_author")
     session = session or "mcp-" + uuid.uuid4().hex[:8]
-    for raw in stdin:
-        if len(raw) > MAX_FRAME:
+    for raw in _frames(stdin):
+        if raw is None:
             response = _error(None, {"code": -32600, "message": "Request too large"})
         else:
-            if isinstance(raw, bytes):
-                try:
-                    raw = raw.decode("utf-8")
-                except UnicodeDecodeError:
-                    raw = None
-            line = raw.strip() if raw is not None else None
-            if line == "":
+            message, error = _parse(raw)
+            if error is None and message is None and not raw.strip():
                 continue
-            try:
-                message = json.loads(line) if line is not None else None
-            except ValueError:
-                message = None
-            if line is None or message is None and line != "null":
-                response = _error(None, {"code": -32700, "message": "Parse error"})
+            if error is not None:
+                response = _error(None, error)
             else:
-                response = handle(store, message, author=author, session=session)
+                try:
+                    response = handle(store, message, author=author, session=session)
+                except RecursionError:
+                    response = _error(None, INVALID_REQUEST)
         if response is not None:
             stdout.write(json.dumps(response) + "\n")
             stdout.flush()

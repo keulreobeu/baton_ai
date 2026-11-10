@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import subprocess
 import uuid
 
@@ -36,14 +37,19 @@ TOPIC = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,79}")
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,64}")
 OPERATOR = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 ENTRY_ID = re.compile(r"mem_[0-9a-f]{16}")
-# Additions to the shared handoff/autocommit scanner for free text: e-mail addresses, JWTs and
-# opaque values assigned to token/password-like names. Plain prose such as "token: refresh" passes.
+GIT_TIMEOUT = 15
+# Additions to the shared handoff/autocommit scanner for free text: e-mail addresses and JWTs.
 SENSITIVE = re.compile(
     r"(?:gho_|ghs_)[A-Za-z0-9_]{20,}"
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
-    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
-    r"|(?:token|passwd|pwd|credential)s?[\"'\s]*[=:][\"'\s]*[A-Za-z0-9_\-./+=]{16,}", re.I)
+    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", re.I)
+# A secret-like name followed by "=" or ":" and a value. "=" or a quoted value is always an
+# assignment. After ":" only a single plain word (letters only, e.g. "token: refresh") is prose;
+# digits or symbols in the value (short or long) are treated as a secret.
+ASSIGNMENT = re.compile(
+    r"(?<![A-Za-z0-9_])(?:(?:access|refresh|id|auth)[_-]?)?(?:token|passwd|password|pwd|credential|secret|api[_-]?key)s?"
+    r"[\"']?\s*(=|:)\s*(\"[^\"]*\"|'[^']*'|\S+)", re.I)
 
 
 class MemoryRefused(HarnessError):
@@ -66,41 +72,85 @@ def baton_home(env=None) -> Path:
     return Path(base) / "baton" if base else Path.home() / ".baton"
 
 
-def _git_out(root, *args):
+def _git_bytes(root, *args) -> bytes:
+    """Raw git output. Unavailable git, timeout and non-repository are distinct codes."""
     try:
-        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        raise HarnessError("memory_not_git_repository") from None
-    if done.returncode != 0 or not done.stdout.strip():
+        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, timeout=GIT_TIMEOUT)
+    except OSError:
+        raise HarnessError("memory_git_unavailable") from None
+    except subprocess.TimeoutExpired:
+        raise HarnessError("memory_git_timeout") from None
+    if done.returncode != 0:
         raise HarnessError("memory_not_git_repository")
     return done.stdout
 
 
-def _norm(path) -> str:
-    text = str(Path(path).resolve())
-    return text.casefold() if os.name == "nt" else text
+def _identity(path) -> str:
+    """Filesystem identity of an existing directory: volume + file id, so case variants and
+    junction aliases match and distinct directories never do. Falls back to the OS-normalised
+    real path where the filesystem reports no file id."""
+    info = os.stat(path)
+    if info.st_ino:
+        return f"id:{info.st_dev}:{info.st_ino}"
+    return "path:" + os.path.normcase(os.path.realpath(path))
+
+
+def _same(current, recorded) -> bool:
+    """Compare file ids when both are known; otherwise the caller's resolved-path check decides."""
+    return current == recorded if current.startswith("id:") and recorded.startswith("id:") else True
 
 
 def project_info(root):
-    """(key, protected paths): the git common dir and every worktree of the repository."""
-    common = Path(_git_out(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()).resolve()
-    protected = [common, Path(_git_out(root, "rev-parse", "--show-toplevel").strip()).resolve()]
-    for line in _git_out(root, "worktree", "list", "--porcelain").splitlines():
-        if line.startswith("worktree "):
-            protected.append(Path(line[len("worktree "):]).resolve())
-    return hashlib.sha256(_norm(common).encode("utf-8")).hexdigest()[:32], protected
+    """(key, protected identities): the git common dir and every worktree of the repository.
+    Two git calls; worktree paths come NUL-separated (-z) so quoting never alters them."""
+    lines = os.fsdecode(_git_bytes(root, "rev-parse", "--path-format=absolute", "--git-common-dir",
+                                   "--show-toplevel")).splitlines()
+    if len(lines) != 2 or not all(lines):
+        raise HarnessError("memory_git_output_invalid")
+    common, toplevel = Path(lines[0]), Path(lines[1])
+    paths = [common, toplevel]
+    for record in _git_bytes(root, "worktree", "list", "--porcelain", "-z").split(b"\0"):
+        if record.startswith(b"worktree "):
+            paths.append(Path(os.fsdecode(record[len(b"worktree "):])))
+    try:
+        key = hashlib.sha256(_identity(common).encode("utf-8")).hexdigest()[:32]
+        protected = {_identity(item) for item in paths if item.exists()}
+    except OSError:
+        raise HarnessError("memory_git_output_invalid") from None
+    if len(paths) < 3:
+        raise HarnessError("memory_git_output_invalid")
+    return key, protected
 
 
 def project_key(root) -> str:
     return project_info(root)[0]
 
 
-def _linked(path) -> bool:
-    return path.is_symlink() or bool(getattr(path, "is_junction", lambda: False)())
+def _lstat(path):
+    try:
+        return os.lstat(path)
+    except FileNotFoundError:
+        return None
+
+
+def _is_link(info) -> bool:
+    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & reparse)
+
+
+def _assigned_secret(value) -> bool:
+    for match in ASSIGNMENT.finditer(value):
+        operator, given = match.group(1), match.group(2)
+        if operator == "=" or given[0] in "\"'":
+            return True
+        word = given.rstrip(".,;!?)")
+        if not word.isalpha():
+            return True
+    return False
 
 
 def _scan(value):
-    if SECRET.search(value) or SENSITIVE.search(value):
+    if SECRET.search(value) or SENSITIVE.search(value) or _assigned_secret(value):
         raise HarnessError("memory_sensitive_content")
     try:
         scan_content(value.encode("utf-8"), "memory.txt")
@@ -137,18 +187,19 @@ class MemoryStore:
         self.clock = clock or utc_now
         self.busy_timeout = float(busy_timeout)
         key, protected = project_info(root)  # before anything is created on disk
-        base = Path(home) if home is not None else baton_home(env)
+        base = Path(os.path.abspath(home if home is not None else baton_home(env)))
         self.directory = base / "memory"
         self.path = self.directory / (key + ".sqlite3")
-        expected = base.resolve() / "memory"
-        for guarded in protected:
-            if expected == guarded or expected.is_relative_to(guarded):
+        for ancestor in (self.directory, *self.directory.parents):
+            if ancestor.exists() and _identity(ancestor) in protected:
                 raise HarnessError("memory_storage_inside_repository")
-        self._expected_directory = expected
         base.mkdir(parents=True, exist_ok=True)
-        if _linked(self.directory):
+        info = _lstat(self.directory)
+        if info is not None and (_is_link(info) or not stat.S_ISDIR(info.st_mode)):
             raise HarnessError("memory_storage_escape")
         self.directory.mkdir(exist_ok=True)
+        self._expected_directory = self.directory.resolve()
+        self._directory_identity = _identity(self.directory)
         self._verify_storage()
         if not self._initialised():
             with self._write() as c:
@@ -167,12 +218,23 @@ class MemoryStore:
     # -- connections -------------------------------------------------------------------------
 
     def _verify_storage(self):
-        """Run at every connection: the directory, database and SQLite side files must be plain
-        entries inside BATON_HOME/memory, even if something was swapped after construction."""
-        if _linked(self.directory) or self.directory.resolve() != self._expected_directory:
+        """Run at every connection: the directory must still be the same real directory, and the
+        database and SQLite side files, where present, plain single-link files inside it (no
+        symlink, junction or other reparse point, no hard link to a file elsewhere)."""
+        info = _lstat(self.directory)
+        if (info is None or _is_link(info) or not stat.S_ISDIR(info.st_mode)
+                or self.directory.resolve() != self._expected_directory
+                or not _same(_identity(self.directory), self._directory_identity)):
             raise HarnessError("memory_storage_escape")
         for item in (self.path, *(Path(str(self.path) + suffix) for suffix in SIDE_FILES)):
-            if _linked(item) or item.resolve().parent != self._expected_directory:
+            info = _lstat(item)
+            if info is None:
+                continue
+            # st_nlink is 0 when Windows cannot open a file another process holds; only a
+            # known count above one is a hard link.
+            if _is_link(info) or not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
+                raise HarnessError("memory_storage_escape")
+            if item.resolve().parent != self._expected_directory:
                 raise HarnessError("memory_storage_escape")
 
     def _connect(self):
@@ -190,8 +252,8 @@ class MemoryStore:
             names = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             return TABLES <= names and c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         except sqlite3.OperationalError as error:
-            if _busy(error):
-                return False
+            if _busy(error):  # schema unknown: never fall through to a write transaction
+                raise MemoryRefused("memory_busy") from None
             raise
         finally:
             c.close()
