@@ -1214,7 +1214,19 @@
             },
             {
               "file": "tests/test_memory.py",
-              "symbol": "MemoryStoreTests.test_project_key_follows_filesystem_identity"
+              "symbol": "MemoryStoreTests.test_project_key_and_storage_checks_handle_path_aliases"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_project_key_survives_git_directory_replacement_at_same_path"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_existing_file_id_database_is_used_when_path_database_is_absent"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_two_project_databases_are_rejected_without_choosing_one"
             }
           ]
         },

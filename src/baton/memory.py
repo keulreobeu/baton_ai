@@ -104,7 +104,7 @@ def _same(current, recorded) -> bool:
 
 
 def project_info(root):
-    """(key, protected identities): the git common dir and every worktree of the repository.
+    """Return the path key, legacy file ID key, and protected directory identities.
     Two git calls; worktree paths come NUL-separated (-z) so quoting never alters them."""
     lines = os.fsdecode(_git_bytes(root, "rev-parse", "--path-format=absolute", "--git-common-dir",
                                    "--show-toplevel")).splitlines()
@@ -116,13 +116,18 @@ def project_info(root):
         if record.startswith(b"worktree "):
             paths.append(Path(os.fsdecode(record[len(b"worktree "):])))
     try:
-        key = hashlib.sha256(_identity(common).encode("utf-8")).hexdigest()[:32]
-        protected = {_identity(item) for item in paths if item.exists()}
+        # Resolve aliases to the filesystem's spelling without folding distinct names.
+        normalized = common.resolve(strict=True)
+        key = hashlib.sha256(os.fsencode(normalized)).hexdigest()[:32]
+        common_identity = _identity(common)
+        legacy_key = hashlib.sha256(common_identity.encode("utf-8")).hexdigest()[:32]
+        protected = {common_identity}
+        protected.update(_identity(item) for item in paths[1:] if item.exists())
     except OSError:
         raise HarnessError("memory_git_output_invalid") from None
     if len(paths) < 3:
         raise HarnessError("memory_git_output_invalid")
-    return key, protected
+    return key, legacy_key, protected
 
 
 def project_key(root) -> str:
@@ -211,7 +216,7 @@ class MemoryStore:
     def __init__(self, root, *, home=None, env=None, clock=None, busy_timeout=5.0):
         self.clock = clock or utc_now
         self.busy_timeout = float(busy_timeout)
-        key, protected = project_info(root)  # before anything is created on disk
+        key, legacy_key, protected = project_info(root)  # before anything is created on disk
         base = Path(os.path.abspath(home if home is not None else baton_home(env)))
         self.directory = base / "memory"
         self.path = self.directory / (key + ".sqlite3")
@@ -224,6 +229,10 @@ class MemoryStore:
         self.directory.mkdir(exist_ok=True)
         self._expected_directory = self.directory.resolve()
         self._directory_identity = _identity(self.directory)
+        self._alternate_path = self.directory / (legacy_key + ".sqlite3")
+        # Keep using an existing legacy database in place, including its SQLite side files.
+        if _lstat(self.path) is None and _lstat(self._alternate_path) is not None:
+            self.path, self._alternate_path = self._alternate_path, self.path
         self._verify_storage()
         if not self._initialised():
             with self._write() as c:
@@ -250,6 +259,8 @@ class MemoryStore:
                 or self.directory.resolve() != self._expected_directory
                 or not _same(_identity(self.directory), self._directory_identity)):
             raise HarnessError("memory_storage_escape")
+        if self._alternate_path != self.path and _lstat(self._alternate_path) is not None:
+            raise HarnessError("memory_storage_key_conflict")
         for item in (self.path, *(Path(str(self.path) + suffix) for suffix in SIDE_FILES)):
             info = _lstat(item)
             if info is None:

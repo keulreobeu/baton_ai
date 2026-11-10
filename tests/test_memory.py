@@ -1,6 +1,7 @@
 """MEMORY-001 shared memory store and CLI. Local SQLite and git only; model calls 0."""
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import os
@@ -520,10 +521,49 @@ class MemoryStoreTests(Base):
                 self.store()
         self.assertEqual(str(caught.exception), "memory_git_output_invalid")
 
-    def test_project_key_follows_filesystem_identity(self):
+    def test_project_key_survives_git_directory_replacement_at_same_path(self):
+        store = self.store()
+        entry = store.add(topic="restore", kind="note", body="kept", author="codex")
+        old_common = self.repo / ".git"
+        old_common.rename(self.base / "original-common")
+        make_repo(self.repo)
+        restored = self.store()
+        self.assertEqual(restored.path, store.path)
+        self.assertEqual(restored.show(entry["id"])["body"], "kept")
+
+    def test_existing_file_id_database_is_used_when_path_database_is_absent(self):
+        store = self.store()
+        entry = store.add(topic="legacy", kind="note", body="kept", author="codex")
+        identity = memory_module._identity(self.repo / ".git")
+        old_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
+        legacy_path = store.path.with_name(old_key + ".sqlite3")
+        store.path.rename(legacy_path)
+
+        reopened = self.store()
+        self.assertEqual(reopened.path, legacy_path)
+        self.assertEqual(reopened.show(entry["id"])["body"], "kept")
+        self.assertFalse(store.path.exists())
+
+    def test_two_project_databases_are_rejected_without_choosing_one(self):
+        canonical = self.store()
+        identity = memory_module._identity(self.repo / ".git")
+        old_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
+        legacy_path = canonical.path.with_name(old_key + ".sqlite3")
+        legacy_path.touch()
+        for read in (self.store, canonical.list):
+            with self.assertRaisesRegex(HarnessError, "^memory_storage_key_conflict$"):
+                read()
+        self.assertTrue(canonical.path.exists())
+        self.assertTrue(legacy_path.exists())
+
+    def test_project_key_and_storage_checks_handle_path_aliases(self):
         a = make_repo(self.base / "Straße")
         b = make_repo(self.base / "Strasse")
         self.assertNotEqual(self.store(a).path, self.store(b).path)
+        upper = make_repo(self.base / "CaseSensitive")
+        lower = self.base / "casesensitive"
+        if not lower.exists():
+            self.assertNotEqual(self.store(upper).path, self.store(make_repo(lower)).path)
         alias = self.base / "alias"
         self.link(alias, self.repo)
         self.assertEqual(self.store(alias).path, self.store().path)
@@ -540,8 +580,8 @@ class MemoryStoreTests(Base):
                 MemoryStore(self.repo, home=home, clock=self.clock)
             self.assertEqual(str(caught.exception), "memory_storage_inside_repository")
         self.assertEqual(list(inner.iterdir()), [])
-        if os.name == "nt":  # case-insensitive volume: a case variant is the same directory
-            variant = Path(str(self.repo).upper())
+        variant = self.repo.with_name(self.repo.name.upper())
+        if variant.exists() and variant.samefile(self.repo):
             self.assertEqual(self.store(variant).path, self.store().path)
             with self.assertRaises(HarnessError):
                 MemoryStore(self.repo, home=variant / "home", clock=self.clock)

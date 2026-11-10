@@ -120,7 +120,18 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "GitHub Actions PR #9 after the CI and review fixes"
+command = "python -X utf8 -m unittest tests.test_memory tests.test_memory_mcp (path-key integration on 7a91282)"
+result = "passed"
+evidence = "docs/tasks/TASK-MEMORY-001.md#push-점검-3--프로젝트-키-복원-통합-2026-11-10"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 36
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions PR #9 after the path-key integration"
 result = "not_run"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
@@ -131,6 +142,15 @@ evidence = "docs/validation/memory.md#review"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.
+
+## 프로젝트 키 복원 — 2026-11-10
+
+| AC | 변경 및 완료 조건 |
+|---|---|
+| AC-01 | 같은 위치에서 Git 디렉터리를 교체해도 경로 키로 생성한 DB를 다시 읽는다. 기존 파일 ID DB는 현재 ID가 일치할 때 제자리에서 읽고, 두 키의 DB가 함께 있으면 사용을 거부한다. worktree·경로 별칭과 저장 경로 검사는 회귀로 확인한다. |
+
+[로컬 검증](../validation/memory.md#프로젝트-키-복원)과 [설계 개정](../adr/ADR-MEMORY-001.md#eng-review-amendments--프로젝트-키-복원-2026-11-10) 참조.
+이 변경의 고정 후보 독립 검토와 CI는 대기 중이다. 기존 독립 검토는 당시 후보의 증거다.
 
 ## 구현 순서
 
@@ -171,3 +191,20 @@ evidence = "docs/validation/memory.md#review"
 - 변경 파일 6개(memory.py, test_memory.py, ADR, 이 Task, validation, traceability)는 모두 이 Task scope 안이고 ca43d07과 겹치지 않는다.
 - 검증: 메모리 테스트 33개 3회 연속 PASS, SDD 검사 PASS. 전체 회귀 519개 중 `test_run_tests_fast` 1개 실패는 실행 도중 ca43d07이
   같은 파일을 바꾼 탓이며 단독 3회 PASS다. 이 PR 범위의 회귀는 CI 결과로 확인한다.
+
+## Push 점검 3 — 프로젝트 키 복원 통합, 2026-11-10
+
+- 원격 `claude/shared-memory-spec-20261110`=7a91282(22704fe 위에 PORT-001 input-check 수정 한 개), `refs/heads/main`=a061d39.
+  이번에 게시할 커밋은 7a91282를 부모로 하는 통합 커밋 하나이고 fast-forward다. 원격에서 도달할 수 없는 다른 커밋은 없다.
+- 내용: `codex/memory-path-key`(26dacc2→2a78efd)와 후속 검토 반영을 담은 통합 스냅샷 diff(SHA-256 `830c5da7…`,
+  기준 ca43d07)를 깨끗한 7a91282 worktree에 3-way로 적용했다. ADR 끝 빈 줄 충돌 한 곳만 통합본 기준으로 정리했다.
+  memory.py, test_memory.py, ADR, validation은 통합 스냅샷과 바이트 단위로 같다. 이 Task는 PR의 Push 점검 2를 보존했고,
+  traceability는 7a91282의 PORT-001 테스트 항목을 보존했다. 명세의 경로 해시 project-key와 구현이 다시 일치한다.
+- 제외: ca43d07(TEST-SPEED-001)은 넣지 않는다. 루트 작업 폴더와 로컬 branch, 다른 세션의 미커밋 변경은 건드리지 않는다.
+  다른 로컬 branch의 미게시 커밋도 넣지 않는다: `codex/memory-path-key` 2개(내용은 이 커밋에 통합), `codex/sdd-goal-workflow` 2개.
+- 변경 파일 6개는 모두 이 Task scope 안이다. 1MB를 넘는 파일과 민감 경로는 없다. 추가된 줄의 `scan_content` 결과는 없음이다.
+- 검증(이 커밋과 같은 트리): 메모리·MCP 테스트 36개 PASS·skip 0, `check_sdd.py --base origin/main` PASS,
+  `run_tests_fast.py --workers 4` 523개 실패·오류 0·skip 1(기존). 로컬 병렬 결과라 공식 완료 증거는 CI로 확인한다.
+- 독립 검토: 통합 diff `830c5da7…`는 별도 Codex 검토자가 PASS했다. 이 커밋의 메모리 코드·테스트는 그 diff와 같지만
+  SHA가 다르므로 PR head 기준 최종 독립 검토는 아직 없다. CI와 함께 확인 전에는 verified로 올리지 않는다.
+- push 범위: origin의 `claude/shared-memory-spec-20261110` 하나. main 병합·강제 갱신 없음. 모델·GMS·네트워크 호출 0.

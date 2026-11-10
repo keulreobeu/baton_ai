@@ -29,6 +29,15 @@ SDD 검사: 변경 파일 14개로 `check_sdd.validate` PASS. 기본 `check_sdd.
 기존 CLI와 같은 콘솔 인코딩 문제이며 저장 값은 정상이다.
 
 <a id="review"></a>
+## 프로젝트 키 복원
+
+- 격리 후보에서 `python -X utf8 -m unittest tests.test_memory tests.test_memory_mcp -q` 실행.
+  PASS 33개, 실패·오류·skip 0, 종료 코드 0, 실제 모델 호출 0.
+- 새 회귀는 같은 경로에서 Git 디렉터리 교체 후 기존 경로 키 DB를 다시 읽는 경우와
+  현재 파일 ID에 해당하는 기존 DB를 계속 읽는 경우를 검증한다. 기존 worktree·junction
+  별칭과 저장 경로 보호 테스트도 통과했다.
+- 독립 검토와 이 변경의 원격 CI는 NOT_RUN이다.
+
 ## 독립 검토
 
 ### 1차 — Codex, reviewed_sha=8cc83b8: findings 8건
