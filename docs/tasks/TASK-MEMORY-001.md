@@ -154,8 +154,8 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "GitHub Actions PR #9 after the sixth-review fixes"
-result = "not_run"
+command = "GitHub Actions PR #9 at 52f987c (push and pull_request, 8 jobs)"
+result = "passed"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
@@ -245,3 +245,11 @@ evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_
 - 제외: ca43d07(TEST-SPEED-001), 다른 로컬 branch의 미게시 커밋(`codex/memory-path-key` 2개는 5c97f9d에 통합됨,
   `codex/sdd-goal-workflow` 2개, `codex/port-handoff-input-check-20261106`·`claude/port-review-fixes-20261106`의 로컬 커밋).
 - push 범위: origin의 이 branch 하나, fast-forward. main 병합·강제 갱신 없음. 모델·GMS·네트워크 호출 0.
+
+## CI 결과 — 52f987c, 2026-11-10
+
+- push 실행 42768501841·pull_request 실행 42768505260 모두 success, job 8개 통과(ubuntu·windows × Python 3.11·3.12).
+- ubuntu 3.11 job 기준 전체 회귀 524개 OK, skip 2(`verified_evidence_eligible=false`). CI 로그는 skip된 테스트 이름을 내지 않는다.
+  로컬 메모리·MCP 테스트의 skip은 0이다.
+- 상태는 in_progress로 둔다. SDD verified는 마지막 기록에 skip이 없어야 하는데 CI 전체 회귀에 기존 skip이 있고,
+  독립 검토는 모두 같은 모델 계열이며, 실제 호스트 MCP 등록 사용은 사용자 몫으로 미검증이다. main 병합은 별도 승인 대상이다.
