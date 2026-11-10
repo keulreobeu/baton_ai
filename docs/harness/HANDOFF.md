@@ -22,6 +22,9 @@ portable 성공을 차단한다. 비밀/DB/raw/runtime·링크는 include로도 
 각각 저장되고 사용자 index는 쓰지 않는다. `.local_runtime/handoff/checkpoints/`는 로컬
 저장소이며 DB/사용량/키는 포함하지 않는다. 자체 handoff runtime은 한 제외 디렉터리로
 인벤토리에 기록해 동일 백업의 ID가 runtime 영수증 때문에 바뀌지 않게 한다.
+scope 밖 ignored 파일(.venv, 도구 캐시)은 옮길 수 없으므로 인벤토리와 파일 수에 넣지 않는다.
+checkpoint 폴더는 모든 파일을 쓴 뒤에만 나타나므로 중단돼도 그대로 재시도할 수 있다.
+`git diff`는 index 복사본에서 실행해 실제 index를 바이트 단위로 그대로 둔다. 파일을 touch만 한 경우는 변경이 아니다.
 파일당 2MB, 전체 20MB, 인벤토리 20,000개, manifest 4MB를 넘으면 blocked다.
 
 Git 전담 agent가 승인된 기존 remote에 게시한다. **backup은 publish를 자동 호출하지 않는다.**

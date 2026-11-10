@@ -5,19 +5,21 @@ neither the user's index nor the source commit history is published.
 """
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
+import tempfile
 import time
 import uuid
 
 from .autocommit import eligible_paths, scan_content as _legacy_scan_content
-from .contracts import HarnessError, SENSITIVE_FIELDS, digest, encode, identifier, overlaps
+from .contracts import HarnessError, SENSITIVE_FIELDS, digest, encode, identifier, overlaps, replace_file
 from .isolation import repository_lock
 from .managed import ManagedStore, validate
 
@@ -116,9 +118,7 @@ def _atomic(path, value):
     temp.replace(path)
 
 
-def _read(path, limit=MAX_MANIFEST):
-    if path.stat().st_size > limit:
-        raise HarnessError("handoff_size_limit")
+def _parse(data):
     try:
         def unique(pairs):
             result = {}
@@ -126,13 +126,19 @@ def _read(path, limit=MAX_MANIFEST):
                 if key in result: raise ValueError()
                 result[key] = value
             return result
-        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+        return json.loads(data.decode("utf-8"), object_pairs_hook=unique)
     except (ValueError, UnicodeError, RecursionError):
         raise HarnessError("handoff_invalid_manifest") from None
 
 
-def _names(root, *args):
-    return set(_git(root, *args, "-z").decode("utf-8").rstrip("\0").split("\0")) - {""}
+def _read(path, limit=MAX_MANIFEST):
+    if path.stat().st_size > limit:
+        raise HarnessError("handoff_size_limit")
+    return _parse(path.read_bytes())
+
+
+def _names(root, *args, env=None):
+    return set(_git(root, *args, "-z", env=env).decode("utf-8").rstrip("\0").split("\0")) - {""}
 
 
 def _index(root):
@@ -152,12 +158,37 @@ def _index_hash(root):
     return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
 
 
+@contextmanager
+def _private_index(root):
+    """Porcelain git diff rewrites the stat cache of a touched file. Run it on a copy so the
+    real index stays byte-identical, as input_check does (ADR-PORT-001)."""
+    with tempfile.TemporaryDirectory(prefix="baton-handoff-") as scratch:
+        real = Path(_text(root, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+        if not real.exists():
+            yield None
+            return
+        private = Path(scratch) / "index"
+        # copy2 keeps the index mtime. Entries not older than the index are racy and git re-reads
+        # their content; a fresh mtime would let a same-size edit with a kept mtime look clean and
+        # drop it from the WIP (same fix as input_check, ADR-PORT-001).
+        shutil.copy2(real, private)
+        if os.stat(private).st_mtime_ns != os.stat(real).st_mtime_ns:
+            raise HarnessError("handoff_index_copy_timestamp_mismatch")
+        yield {**os.environ, "GIT_INDEX_FILE": str(private)}
+
+
 def _worktree_mode(info, index_mode, *, windows):
     # Windows has no POSIX executable bit; preserve Git's recorded mode there.
     # On POSIX an unstaged chmod must remain distinct from the index mode.
     if windows:
         return index_mode or "100644"
     return "100755" if info.st_mode & stat.S_IXUSR else "100644"
+
+
+def _restored_mode_matches(info, expected, *, windows):
+    # Windows cannot hold an executable bit captured on POSIX. The manifest and
+    # any index entry still carry it, so only POSIX can read the mode back.
+    return windows or _worktree_mode(info, None, windows=False) == expected
 
 
 class Handoff:
@@ -194,12 +225,30 @@ class Handoff:
             raise HarnessError("handoff_invalid_checkpoint")
         return _safe_file(self.root, ".local_runtime/handoff/checkpoints/" + checkpoint)
 
+    @staticmethod
+    def _receipt_body(checkpoint, status, started, **extra):
+        return dict(schema_version=VERSION, checkpoint=checkpoint, status=status,
+                    unverified=True, elapsed_seconds=round(time.monotonic() - started, 3),
+                    model_calls=0, restored_session=False, restored_usage=False, **extra)
+
     def _receipt(self, checkpoint, status, started, **extra):
-        result = dict(schema_version=VERSION, checkpoint=checkpoint, status=status,
-                      unverified=True, elapsed_seconds=round(time.monotonic() - started, 3),
-                      model_calls=0, restored_session=False, restored_usage=False, **extra)
+        result = self._receipt_body(checkpoint, status, started, **extra)
         _atomic(self._checkpoint(checkpoint) / "receipt.json", result)
         return result
+
+    @staticmethod
+    def _commit_checkpoint(directory, files):
+        """Expose a checkpoint only when complete; retries trust an existing directory."""
+        staging = directory.with_name(uuid.uuid4().hex + ".tmp")  # Shorter than the final name: Windows MAX_PATH.
+        try:
+            for name, content in files.items():
+                path = staging / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            replace_file(staging, directory)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
 
     @staticmethod
     def _ack(row):
@@ -233,22 +282,26 @@ class Handoff:
         index_hash = _index_hash(tree)
         entries = _index(tree)
         tracked = _names(tree, "ls-tree", "-r", "--name-only", "HEAD") | set(entries)
-        staged = _names(tree, "diff", "--cached", "--no-renames", "--name-only")
-        unstaged = _names(tree, "diff", "--no-renames", "--name-only")
+        with _private_index(tree) as env:
+            staged = _names(tree, "diff", "--cached", "--no-renames", "--name-only", env=env)
+            unstaged = _names(tree, "diff", "--no-renames", "--name-only", env=env)
         # Git represents nested repositories as directory records ending in '/'.
         # Keep the excluded directory in inventory without inventing a file path.
         untracked = {name.rstrip("/") for name in _names(tree, "ls-files", "--others", "--exclude-standard")}
         ignored = {name.rstrip("/") for name in _names(tree, "ls-files", "--others", "--ignored", "--exclude-standard")}
+        allowed, forbidden = row["task"]["scope"]["allowed_paths"], row["task"]["scope"]["forbidden_paths"]
+        def in_scope(name):
+            return any(overlaps(name, p) for p in allowed) and not any(overlaps(name, p) for p in forbidden)
+        # Out-of-scope ignored trees (.venv, tool caches) can never be carried, and
+        # must not spend the file limit or change the checkpoint ID of this task.
         # Inventory our own immutable artifact storage as one excluded directory.
         # Listing every receipt/blob would make an unchanged backup hash itself.
-        ignored = {name for name in ignored if not name.startswith(".local_runtime/handoff/")}
+        ignored = {name for name in ignored if not name.startswith(".local_runtime/handoff/")
+                   and (name in include or name in required or in_scope(name))}
         ignored.add(".local_runtime/handoff")
         names = sorted(tracked | untracked | ignored)
         if len(names) > MAX_FILES: raise HarnessError("handoff_file_count_limit")
         if len({n.casefold() for n in names}) != len(names): raise HarnessError("handoff_case_collision")
-        allowed, forbidden = row["task"]["scope"]["allowed_paths"], row["task"]["scope"]["forbidden_paths"]
-        def in_scope(name):
-            return any(overlaps(name, p) for p in allowed) and not any(overlaps(name, p) for p in forbidden)
         for name in include | required:
             _path(name)
             if name not in names or not in_scope(name): raise HarnessError("handoff_required_outside_scope_or_missing")
@@ -335,14 +388,13 @@ class Handoff:
                 self._load(checkpoint)
                 receipt = _read(directory / "receipt.json")
                 return dict(receipt, reused=True)
-            for sha, content in payloads.items():
-                target = directory / "blobs" / sha
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(content)
-            _atomic(directory / "manifest.json", manifest)
-            return self._receipt(checkpoint, "local_saved", started, manifest_sha256=checkpoint,
-                                 ref="refs/heads/codex/handoff/" + checkpoint, commit_sha=None,
-                                 next_action="delegated_publish", missing_count=len(manifest["missing_paths"]))
+            receipt = self._receipt_body(checkpoint, "local_saved", started, manifest_sha256=checkpoint,
+                                         ref="refs/heads/codex/handoff/" + checkpoint, commit_sha=None,
+                                         next_action="delegated_publish", missing_count=len(manifest["missing_paths"]))
+            self._commit_checkpoint(directory, {"manifest.json": (encode(manifest) + "\n").encode(),
+                                                "receipt.json": (encode(receipt) + "\n").encode(),
+                                                **{"blobs/" + sha: content for sha, content in payloads.items()}})
+            return receipt
 
     def _validate_manifest(self, manifest, checkpoint):
         if (not isinstance(manifest, dict) or manifest.get("schema_version") != VERSION
@@ -518,22 +570,22 @@ class Handoff:
             content = _object(download, expected_sha + ":handoff/manifest.json", MAX_MANIFEST)
             if len(content) > MAX_MANIFEST: raise HarnessError("handoff_size_limit")
             directory = self._checkpoint(checkpoint)
-            # Cache is immutable: compare before writing an existing checkpoint.
-            if directory.exists():
-                old, _ = self._load(checkpoint)
-                if content != (encode(old) + "\n").encode(): raise HarnessError("handoff_manifest_mismatch")
+            # Cache is immutable: compare with an existing checkpoint, never rewrite it.
+            cached = directory.exists()
+            if cached:
+                manifest, _ = self._load(checkpoint)
+                if content != (encode(manifest) + "\n").encode(): raise HarnessError("handoff_manifest_mismatch")
             else:
-                directory.mkdir(parents=True)
-                (directory / "manifest.json").write_bytes(content)
-            manifest = _read(directory / "manifest.json")
+                manifest = _parse(content)
             referenced = self._validate_manifest(manifest, checkpoint)
             expected_files = {"handoff/manifest.json", *("handoff/blobs/" + sha for sha in referenced)}
             if files != expected_files: raise HarnessError("handoff_invalid_artifact_tree")
+            payloads = {}
             for sha, size in referenced.items():
                 data = _object(download, expected_sha + ":handoff/blobs/" + sha, size)
                 if len(data) != size or hashlib.sha256(data).hexdigest() != sha: raise HarnessError("handoff_blob_mismatch")
-                path = directory / "blobs" / sha
-                path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
+                payloads["blobs/" + sha] = data
+            if not cached: self._commit_checkpoint(directory, {"manifest.json": content, **payloads})
             manifest, blobs = self._load(checkpoint)
             if manifest["missing_paths"]: raise HarnessError("handoff_missing_required_portable_files")
             if self._remote_sha(self.root, remote, base_ref) != manifest["base_sha"]: raise HarnessError("handoff_remote_base_mismatch")
@@ -584,18 +636,6 @@ class Handoff:
                         path.write_bytes(blobs[value["sha256"]])
                         if os.name != "nt": path.chmod(0o755 if value["mode"] == "100755" else 0o644)
                     elif path.exists(): path.unlink()
-                body = dict(manifest["task"])
-                body["task_id"] = new_task_id
-                body["depends_on"] = []
-                # Orca dispatch would start from the controller HEAD and ignore the restored WIP.
-                body["execution"] = {**{k: v for k, v in body["execution"].items() if k != "orca"}, "runtime": "local",
-                                     "preferred_provider": "codex", "fallback_provider": "codex", "allow_fallback": False, "resume_session": False}
-                store = self.store
-                store.create(body)
-                # New managed attempt must use restored WIP, not prepare a clean base worktree.
-                with store.tx() as connection:
-                    connection.execute("UPDATE managed_tasks SET worktree=? WHERE id=?", (str(destination), body["task_id"]))
-                store.control(body["task_id"], "pause")
                 included = [item["path"] for item in manifest["inventory"] if item["included"]]
                 # Read back both Git staging and physical bytes before success.
                 actual_index = _index(destination)
@@ -611,15 +651,29 @@ class Handoff:
                     path = _safe_file(destination, item["path"])
                     if value:
                         if not path.is_file() or path.read_bytes() != blobs[value["sha256"]]: raise HarnessError("handoff_restore_file_mismatch")
-                        mode = _worktree_mode(path.stat(), entry[0] if entry else None, windows=os.name == "nt")
-                        if mode != value["mode"]: raise HarnessError("handoff_restore_mode_mismatch")
+                        if not _restored_mode_matches(path.stat(), value["mode"], windows=os.name == "nt"):
+                            raise HarnessError("handoff_restore_mode_mismatch")
                     elif path.exists() and not path.is_dir(): raise HarnessError("handoff_restore_file_mismatch")
+                fingerprint = self._fingerprint(destination, included)
+                # Register only verified WIP: a PAUSED task can be resumed by the operator.
+                body = dict(manifest["task"])
+                body["task_id"] = new_task_id
+                body["depends_on"] = []
+                # Orca dispatch would start from the controller HEAD and ignore the restored WIP.
+                body["execution"] = {**{k: v for k, v in body["execution"].items() if k != "orca"}, "runtime": "local",
+                                     "preferred_provider": "codex", "fallback_provider": "codex", "allow_fallback": False, "resume_session": False}
+                store = self.store
+                store.create(body)
+                # New managed attempt must use restored WIP, not prepare a clean base worktree.
+                with store.tx() as connection:
+                    connection.execute("UPDATE managed_tasks SET worktree=? WHERE id=?", (str(destination), body["task_id"]))
+                store.control(body["task_id"], "pause")
                 result = self._receipt(checkpoint, "restore_verified", started, manifest_sha256=checkpoint,
                                        commit_sha=expected_sha, ref=ref, destination=str(destination),
                                        management_root=str(self.root), state_dir=self.store.directory.relative_to(self.root).as_posix(),
                                        new_task_id=body["task_id"], new_run_id=uuid.uuid4().hex,
                                        fingerprint_version=2,
-                                       restored_fingerprint=self._fingerprint(destination, included), next_action="review_then_resume_new_task")
+                                       restored_fingerprint=fingerprint, next_action="review_then_resume_new_task")
                 _atomic(saved, result)
                 return result
             except (HarnessError, OSError):
