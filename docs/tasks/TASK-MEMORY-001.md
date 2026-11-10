@@ -135,7 +135,7 @@ evidence = "docs/validation/memory.md#review"
   작성자는 모두 저장소 설정 `lwwde07`이다.
 - 커밋마다 변경 파일 전부가 이 Task scope 안에 있다. 민감 경로(.git/.env/DB/log/raw/runtime/keys)는 없고 1MB를 넘는 파일도 없다.
 - 비밀 검사(autocommit `scan_content`): `docs/validation/memory.md`의 AC 표 한 줄이 각 커밋에서 걸렸다. 테스트한 형식 이름을
-  나열한 설명문(`api_key=`, `Bearer`)이고 실제 값은 없는 오탐이다. 현재 문서는 문구를 바꿨다. 테스트의 비밀 예시는 문자열을
+  나열한 설명문(API 키 할당, 인증 헤더 형태)이고 실제 값은 없는 오탐이다. 현재 문서는 문구를 바꿨다. 테스트의 비밀 예시는 문자열을
   이어 붙여 만든 가짜 값이고 저장소 원문 검사에 걸리지 않는다. 이메일은 예약 도메인 `example.invalid`의 테스트 값뿐이다.
 - 승인 범위: 2026-11-10 사용자가 MEMORY-001(L3)을 승인했다. 모든 커밋은 그 구현·검토 반영·기록이다. 모델·GMS·네트워크 호출,
   스케줄러 등록, 호스트 MCP 등록은 없다.
