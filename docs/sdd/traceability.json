@@ -1024,6 +1024,10 @@
             {
               "file": "tests/test_input_check.py",
               "symbol": "InputCheckTests.test_jsonl_reports_only_bounded_line_and_csv_real_boundaries"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_stat_dirty_index_entries_are_not_rewritten_by_the_git_check"
             }
           ]
         },

@@ -234,7 +234,9 @@ class InputChecker:
     def _git_check(self, scope):
         before = _git(self.root, "rev-parse", "HEAD").decode().strip()
         index_before = _index_hash(self.root)
-        names = set(_git(self.root, "diff", "--no-renames", "--name-only", "HEAD", "-z").decode("utf-8").split("\0")) - {""}
+        # Plumbing only: porcelain `git diff` may refresh stat data and rewrite the index, which this
+        # read-only check must never do (and which made the index-unchanged assertion flaky).
+        names = set(_git(self.root, "diff-index", "--no-renames", "--name-only", "HEAD", "-z").decode("utf-8").split("\0")) - {""}
         names.update(set(_git(self.root, "ls-files", "--others", "--exclude-standard", "-z").decode("utf-8").split("\0")) - {""})
         if len(names) > 10000: raise CheckError("FILE_COUNT_LIMIT", blocked=True)
         records = {}
@@ -246,8 +248,8 @@ class InputChecker:
                              else "directory" if target.is_dir() else "deleted")
         if len({n.casefold() for n in names}) != len(names): raise CheckError("CASE_COLLISION", blocked=True)
         try:
-            _git(self.root, "diff", "--check")
-            _git(self.root, "diff", "--cached", "--check")
+            _git(self.root, "diff-files", "--check")
+            _git(self.root, "diff-index", "--cached", "--check", "HEAD")
         except HarnessError: raise CheckError("GIT_DIFF_CHECK_FAILED") from None
         if _git(self.root, "rev-parse", "HEAD").decode().strip() != before or _index_hash(self.root) != index_before:
             raise CheckError("GIT_HEAD_OR_INDEX_CHANGED", blocked=True)

@@ -39,3 +39,11 @@ expected_failures = 0
 
 Codex 리뷰(`b264a9c`) P2 2건을 고쳤다. linked worktree의 잠금 중복을 잠금 식별자 기준으로 없앴고, Orca 작업은 복원 시 local runtime으로 바꾼다. 수정 전 코드에서 새 테스트 2개가 실패하는 것을 확인했다. SHA가 바뀌어 이전 리뷰 결과는 무효이며 재검토가 필요하다.
 수정 후 `run_tests_fast.py`는 486개 실행, 실패 0개, skip 1개다.
+
+## PR #9 CI 반영 — 2026-11-10
+
+PR #9(MEMORY-001) CI에서 `test_staged_and_worktree_whitespace_fail_without_index_changes`가 ubuntu 3.12와 windows 3.11에서
+한 번씩 실패했다(같은 SHA의 다른 실행은 통과). 원인은 git 검사의 porcelain `git diff --check`가 stat만 바뀐 항목의 index를 다시
+쓰는 것이다. plumbing 명령으로 바꾸고, 그 상황을 매번 만드는 테스트 `test_stat_dirty_index_entries_are_not_rewritten_by_the_git_check`를
+추가했다. 이 테스트는 수정 전 코드에서 subtest 2개 모두 실패하고 수정 후 통과한다. `tests.test_input_check`는 로컬에서 통과했다.
+Task 상태는 바꾸지 않는다(독립 재검토 대기).

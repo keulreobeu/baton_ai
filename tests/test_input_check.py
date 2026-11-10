@@ -234,6 +234,22 @@ class InputCheckTests(unittest.TestCase):
                 self.assertEqual(result["results"][0]["error_code"], "GIT_DIFF_CHECK_FAILED")
                 self.assertEqual(_index_hash(self.root), before)
 
+    def test_stat_dirty_index_entries_are_not_rewritten_by_the_git_check(self):
+        # Same content but different stat data than the index entry: porcelain `git diff` refreshes
+        # and rewrites the index for it. The check must stay read-only.
+        for staged, current in (("value = 2  \n", "value = 2  \n"), ("value = 3\n", "value = 3\n")):
+            with self.subTest(staged=staged, current=current):
+                self.write("src/module.py", staged)
+                _git(self.root, "add", "src/module.py")
+                self.write("src/module.py", current)
+                index = Path(_git(self.root, "rev-parse", "--path-format=absolute", "--git-path", "index").decode().strip())
+                stamp = index.stat().st_mtime_ns - 10_000_000_000
+                os.utime(self.root / "src/module.py", ns=(stamp, stamp))
+                before = _index_hash(self.root)
+                result = self.run_check("git", None)
+                self.assertEqual(result["status"], "FAIL" if staged.endswith("  \n") else "PASS", result)
+                self.assertEqual(_index_hash(self.root), before)
+
     def test_timeout_and_nonzero_exit_are_structured_failures(self):
         check = {"check_id": "T", "kind": "tests", "argv": ["python", "-m", "unittest", "discover", "-s", "tests"]}
         with patch("baton.execution.run_process", return_value=(None, "PRIVATE", "PRIVATE", "timeout")):
