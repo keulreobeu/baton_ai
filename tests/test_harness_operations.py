@@ -56,6 +56,16 @@ class AutoCommitTests(unittest.TestCase):
         with self.assertRaisesRegex(HarnessError, "secret_in_commit"):
             scan_content(b'{"api_key":"no-provider-prefix-value"}')
 
+    def test_url_query_secret_scan_keeps_code_and_placeholders_out(self):
+        scan_content(b'request("GET", "/api/state?api_key=should-never-be-in-url")\n', "tests/test_server.py")
+        scan_content(b'url = f"{base}?token={value}"\n', "src/client.py")
+        scan_content(b"GET /callback?token={value}&id_token=<token>\n", "docs/api.md")
+        scan_content(b"GET /callback?token=%s&id_token=%(value)s\n", "docs/api.md")
+        for text in (b"https://host/path?token=abc123\n", b"https://host/path%3Ftoken%3Dabc123\n",
+                     b"https://host/path?token=%61bc123\n", b"https://host/path?token=%d1bc123\n"):
+            with self.subTest(text=text), self.assertRaisesRegex(HarnessError, "secret_in_commit"):
+                scan_content(text, "docs/api.md")
+
     def test_receipt_recovery_reconciles_old_index_and_preserves_user_staging(self):
         from unittest.mock import patch
         with patch("baton.autocommit._sync_entries", side_effect=HarnessError("simulated_crash")):

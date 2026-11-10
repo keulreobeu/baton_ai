@@ -148,8 +148,33 @@ SDD 검사 PASS, traceability 테스트 참조 194개가 모두 실제 심볼로
 
 검토 이력 요약: Codex 2회(사용자 실행), Claude 별도 세션·에이전트 5회. 같은 모델 계열 검토라 교차 모델 근거로는 약하다.
 
+### 8차 — Codex 교차 모델(사용자 승인 실행), reviewed_sha=4ddd438: findings 1건, **passed 아님**
+
+사용자 승인으로 `codex exec -s read-only --ephemeral`(ChatGPT 구독 로그인, 기본 provider)을 main 4ddd438 검토 전용 worktree에서
+실행했다. 검토자는 파일을 바꾸지 않았다. sandbox 정책으로 테스트는 실행하지 못했고 정적 분석으로 판정했다.
+
+- M1(medium, PORT-001 `input_check.py`): index 복사본의 새 mtime 때문에 git의 racy 항목 검사가 빠져, 크기가 같고 캐시된 mtime을
+  유지한 수정이 PASS될 수 있다. 메모리 코드에 대한 high·medium 지적은 없다.
+
+### 8차 반영
+
+로컬에서 재현했다(새 mtime 복사본은 놓치고 실제 index와 mtime 보존 복사본은 잡음). `shutil.copy2`로 mtime을 보존하고 불일치 시
+fail closed로 막도록 고쳤다. 회귀 테스트는 수정 전 3회 실패, 수정 후 PASS. [ADR-PORT-001 개정](../adr/ADR-PORT-001.md) 참조.
+수정 후보는 재검토가 필요하다.
+
+### 9차 — Claude 별도 에이전트, reviewed_sha=a1b91db: **passed**
+
+8차 M1 수정을 읽기 전용으로 검토했다. 실제 index와 copy2 복사본에 같은 git 명령을 실행해 racy 같은 크기 수정, smudge 항목,
+split index(추가 staged 파일, 공유 index 만료 포함), index v4, untracked cache를 비교했고 모든 경우 판정이 같았다(copyfile 복사본은
+대부분 달랐다). copy2는 mtime_ns를 정확히 보존했고, copyfile로 바꾸면 `GIT_INDEX_COPY_TIMESTAMP_MISMATCH`로 BLOCKED되며 실제 index는
+그대로였다. 새 회귀는 7ab0b47 코드에서 실패, a1b91db에서 통과. input_check·메모리·MCP 테스트 60개 OK, SDD 검사 PASS.
+fsmonitor 데몬과 다른 파일시스템의 임시 폴더는 실행하지 않았다. 검토자는 파일을 바꾸지 않았다.
+
+- L1(low): splitIndex에서 실제 `sharedindex.*` mtime이 갱신될 수 있다. L2(low): 정밀도 낮은 임시 파일시스템에서는 항상 BLOCKED.
+  둘 다 [ADR-PORT-001](../adr/ADR-PORT-001.md)에 한계로 기록했다.
+
 ## 미실행
 
-- 교차 모델(Codex) 최종 확인: PR head에 대해서는 미실행(통합 diff 830c5da7…는 Codex PASS). 사용자 판단 사항.
+- 교차 모델(Codex) 최종 확인: 8차(4ddd438)에서 medium 1건 → 반영. 수정본의 재검토는 아래 9차 기록을 따른다.
 - 실제 Claude Code·Codex 호스트에 MCP 등록 후 채팅 사용: 사용자 몫, 미검증.
 - GitHub Actions CI: 5c97f9d에서 8개 모두 통과(push·pull_request). 이후 head는 Task의 CI 기록을 따른다.
