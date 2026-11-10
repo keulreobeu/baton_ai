@@ -5,7 +5,7 @@ neither the user's index nor the source commit history is published.
 """
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import hashlib
 import json
 import os
@@ -14,6 +14,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 import time
 import uuid
 
@@ -136,8 +137,8 @@ def _read(path, limit=MAX_MANIFEST):
     return _parse(path.read_bytes())
 
 
-def _names(root, *args):
-    return set(_git(root, *args, "-z").decode("utf-8").rstrip("\0").split("\0")) - {""}
+def _names(root, *args, env=None):
+    return set(_git(root, *args, "-z", env=env).decode("utf-8").rstrip("\0").split("\0")) - {""}
 
 
 def _index(root):
@@ -153,9 +154,22 @@ def _index(root):
 
 
 def _index_hash(root):
-    # Hash staged entries, not index bytes: git diff rewrites the stat cache of a
-    # touched file, which is not a source change.
-    return hashlib.sha256(_git(root, "ls-files", "--stage", "-z")).hexdigest()
+    p = Path(_text(root, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+    return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+
+
+@contextmanager
+def _private_index(root):
+    """Porcelain git diff rewrites the stat cache of a touched file. Run it on a copy so the
+    real index stays byte-identical, as input_check does (ADR-PORT-001)."""
+    with tempfile.TemporaryDirectory(prefix="baton-handoff-") as scratch:
+        real = Path(_text(root, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+        if not real.exists():
+            yield None
+            return
+        private = Path(scratch) / "index"
+        shutil.copyfile(real, private)
+        yield {**os.environ, "GIT_INDEX_FILE": str(private)}
 
 
 def _worktree_mode(info, index_mode, *, windows):
@@ -263,8 +277,9 @@ class Handoff:
         index_hash = _index_hash(tree)
         entries = _index(tree)
         tracked = _names(tree, "ls-tree", "-r", "--name-only", "HEAD") | set(entries)
-        staged = _names(tree, "diff", "--cached", "--no-renames", "--name-only")
-        unstaged = _names(tree, "diff", "--no-renames", "--name-only")
+        with _private_index(tree) as env:
+            staged = _names(tree, "diff", "--cached", "--no-renames", "--name-only", env=env)
+            unstaged = _names(tree, "diff", "--no-renames", "--name-only", env=env)
         # Git represents nested repositories as directory records ending in '/'.
         # Keep the excluded directory in inventory without inventing a file path.
         untracked = {name.rstrip("/") for name in _names(tree, "ls-files", "--others", "--exclude-standard")}

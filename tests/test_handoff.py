@@ -500,7 +500,9 @@ class HandoffTests(unittest.TestCase):
     def test_touched_tracked_file_is_not_a_source_change(self):
         later = time.time() + 3600
         os.utime(self.root / "src/a.py", (later, later))
+        before = _index_hash(self.root)
         saved = self.saved()
+        self.assertEqual(_index_hash(self.root), before)  # The real index is never rewritten.
         manifest, _ = self.handoff._load(saved["checkpoint"])
         self.assertEqual(next(i for i in manifest["inventory"] if i["path"] == "src/a.py")["reason"], "base_commit")
 

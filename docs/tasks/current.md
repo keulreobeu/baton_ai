@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-10 공유 메모리
+
+- [TASK-MEMORY-001](TASK-MEMORY-001.md) in_progress: Codex·Claude가 같은 프로젝트 기억을 읽고 쓰는 로컬 공유 메모리. [MEMORY-001](../specs/MEMORY-001.md) 2026-11-10 사용자 승인.
+
 ## 현재 작업 — 2026-11-06 KAN-41/42 이식
 
 - [TASK-PORT-001](TASK-PORT-001.md): handoff, input-check, 재시도 계측을 집담에서 이식. GMS 보류 코드는 제외. PR #7 병합과 CI 통과 후 재리뷰 지적 6건을 `claude/port-review-fixes-20261106`에서 수정. 독립 재검토와 PR CI 대기.

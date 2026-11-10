@@ -29,7 +29,7 @@ H-01~05,08,09: stop 미확인·중복 writer·HEAD/index/내용 변경·충돌 i
 symlink/reparse point·비밀·DB/raw/runtime·파일 수/크기 초과를 거부한다.
 Python annotated/attribute/subscript 비밀 리터럴도 handoff 경계에서 추가 차단한다.
 필요한 ignored 파일은 명시 include 및 같은 검사를 거치며, 빠진 필수 파일은 portable 성공 불가다.
-scope 밖 ignored 파일은 인벤토리와 파일 수 제한에서 제외한다. index 재확인은 staged 항목 기준이다.
+scope 밖 ignored 파일은 인벤토리와 파일 수 제한에서 제외한다. `git diff`는 index 복사본에서 실행한다.
 checkpoint는 완성된 뒤에만 보이며, 복원 작업은 index·파일 재확인을 통과한 뒤에만 등록한다.
 Windows는 실행 비트를 보관하지 못하므로 복원 시 작업폴더 mode 재확인은 POSIX에서만 한다.
 문법 오류 WIP도 보존하며 원본 staged/unstaged 상태와 인벤토리가 유지된다.
