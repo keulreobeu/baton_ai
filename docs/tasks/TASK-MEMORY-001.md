@@ -288,3 +288,18 @@ evidence = "docs/validation/memory.md#9차--claude-별도-에이전트-reviewed_
 - Push 점검 6(Codex 반영): 원격 기록 branch=7ab0b47, main=4ddd438. 원격에서 도달할 수 없는 커밋은 a1b91db(PORT-001 input_check
   mtime 보존 수정·회귀·기록, scope 안)와 이 기록 커밋뿐이고 작성자는 `lwwde07`이다. 9차 독립 검토 passed, 전체 회귀
   `run_tests_fast.py --workers 4` 525개 실패·오류 0·skip 1(기존), SDD 검사 PASS. 민감 경로·1MB 초과 없음. PR #10에 fast-forward로 push한다.
+
+## PR #10 병합과 공개 전환 — 2026-11-10
+
+- PR #10 CI는 처음에 GitHub Actions 결제·사용 한도 문제로 job이 시작되지 않았다(코드 실패 아님). 사용자가 저장소를 PUBLIC으로
+  바꾼 뒤 재실행에서 push·pull_request 실행 모두 job 8개 통과(b689a00).
+- 사용자 지시("CI 통과 시 병합")로 `--match-head-commit b689a00`으로 고정해 merge commit 방식으로 병합했다. main=`19d8a11`, 원격 read-back 일치.
+  main push CI 실행 42784882219 success, job 4개 통과.
+- 공개 전 점검(원격에서 도달 가능한 blob 479개, 읽기 전용): 개인 키·GitHub 토큰·`sk-` 키·AWS 키·JWT 0건. autocommit `scan_content`
+  매칭은 변수명과 `synthetic-…`·`fixture-…` 같은 테스트 값뿐이다. 노출 항목은 커밋 70개의 작성자 이메일과 문서의 로컬 사용자 경로다.
+  이미 공개된 뒤라 PR ref가 옛 커밋을 보관하고 SHA 변경 비용이 커서 이력 재작성은 하지 않았다. 이메일 비공개 설정은 사용자 몫이다.
+- 상태는 사용자 결정으로 in_progress다(기존 skip 2개). Codex 교차 재검토는 사용자 결정으로 생략했다.
+- 원격 branch `claude/shared-memory-spec-20261110`, `claude/memory-merge-record-20261110`은 삭제하지 않았다.
+- Push 점검 7(PR #10 기록 branch): 원격 main=19d8a11, `claude/memory-pr10-record-20261110`은 원격에 없다. 원격에서 도달할 수 없는
+  커밋은 a6d9ede(이 Task·current.md)와 이 점검 기록 커밋뿐이고 작성자는 `lwwde07`이다. `scan_content` 결과 없음. 사용자 지시
+  ("push·PR·병합")로 push·PR 후 CI 통과 시 병합하며, 이 병합은 따로 기록하지 않는다.
