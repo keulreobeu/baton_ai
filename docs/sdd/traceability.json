@@ -25,7 +25,11 @@
     "docs/specs/LEAN-CORE-001.md",
     "docs/plans/handoff-lean-port.md",
     "docs/adr/ADR-PORT-001.md",
-    "docs/tasks/TASK-PORT-001.md"
+    "docs/tasks/TASK-PORT-001.md",
+    "docs/specs/MEMORY-001.md",
+    "docs/plans/shared-memory.md",
+    "docs/adr/ADR-MEMORY-001.md",
+    "docs/tasks/TASK-MEMORY-001.md"
   ],
   "features": [
     {
@@ -1138,6 +1142,114 @@
             {
               "file": "tests/test_lean_metrics.py",
               "symbol": "LeanMetricsTests.test_prior_four_failed_fixture_rows_and_tokens_are_immutable"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MEMORY-001",
+      "spec": "docs/specs/MEMORY-001.md",
+      "requirements": [
+        {
+          "id": "MEMORY-001-REQ-01",
+          "acs": [
+            "MEMORY-001-AC-01"
+          ]
+        },
+        {
+          "id": "MEMORY-001-REQ-02",
+          "acs": [
+            "MEMORY-001-AC-02"
+          ]
+        },
+        {
+          "id": "MEMORY-001-REQ-03",
+          "acs": [
+            "MEMORY-001-AC-03"
+          ]
+        },
+        {
+          "id": "MEMORY-001-REQ-04",
+          "acs": [
+            "MEMORY-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "MEMORY-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_worktrees_share_memory_and_other_repositories_do_not"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_non_git_and_symlinked_storage_are_rejected"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_history_keeps_every_revision_and_limits_are_enforced"
+            }
+          ]
+        },
+        {
+          "id": "MEMORY-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_concurrent_processes_never_write_partial_or_duplicate_revisions"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_busy_writer_gets_memory_busy_and_nothing_is_written"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_stale_expected_revision_is_refused_and_content_is_kept"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_claims_block_other_holders_until_release_or_expiry"
+            }
+          ]
+        },
+        {
+          "id": "MEMORY-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_secret_token_and_email_bodies_are_rejected_without_echo"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_outputs_are_labelled_untrusted_and_text_cannot_change_status"
+            },
+            {
+              "file": "tests/test_memory_mcp.py",
+              "symbol": "MemoryMcpTests.test_tool_errors_are_results_and_force_release_is_not_exposed"
+            }
+          ]
+        },
+        {
+          "id": "MEMORY-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_cli_commands_return_stable_codes_and_exit_codes"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_managed_cli_routes_memory_through_baton_home"
+            },
+            {
+              "file": "tests/test_memory_mcp.py",
+              "symbol": "MemoryMcpTests.test_stdio_initialize_list_and_call_share_the_cli_store"
+            },
+            {
+              "file": "tests/test_memory_mcp.py",
+              "symbol": "MemoryMcpTests.test_no_sockets_network_or_config_writes"
             }
           ]
         }

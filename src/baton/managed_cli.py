@@ -55,6 +55,8 @@ def main(argv=None, *, workspace=None):
     metrics_parser(sub)
     from .quota_window_cli import parser as quota_parser
     quota_parser(sub)
+    from .memory_cli import parser as memory_parser
+    memory_parser(sub)
     for name in ("status", "tasks"):
         s = sub.add_parser(name); s.add_argument("--task"); s.add_argument("--state")
     for name in ("new-task", "create"):
@@ -88,6 +90,10 @@ def main(argv=None, *, workspace=None):
     try:
         if args.command in {"credentials", "credentials-import"}:
             return _credentials(args)
+        if args.command == "memory":
+            # Per-user store (BATON_HOME) keyed by the repository, shared by every worktree.
+            from .memory_cli import run as memory_run
+            return memory_run(args, root)
         if args.command == "quota-window":
             # Per-user ledger (BATON_HOME): usage windows belong to the account, not the workspace.
             from .quota_window_cli import run as quota_run
