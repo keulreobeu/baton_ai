@@ -1028,6 +1028,10 @@
             {
               "file": "tests/test_input_check.py",
               "symbol": "InputCheckTests.test_stat_dirty_index_entries_are_not_rewritten_by_the_git_check"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_touched_but_unchanged_files_outside_scope_do_not_block_the_git_check"
             }
           ]
         },

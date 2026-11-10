@@ -250,6 +250,20 @@ class InputCheckTests(unittest.TestCase):
                 self.assertEqual(result["status"], "FAIL" if staged.endswith("  \n") else "PASS", result)
                 self.assertEqual(_index_hash(self.root), before)
 
+    def test_touched_but_unchanged_files_outside_scope_do_not_block_the_git_check(self):
+        # Plumbing diff-index lists a stat-dirty file whose content equals HEAD as modified, which
+        # sent an untouched out-of-scope file through the scope check (BLOCKED). The porcelain
+        # verdict must hold, and the real index must stay byte-identical while it is computed.
+        index = Path(_git(self.root, "rev-parse", "--path-format=absolute", "--git-path", "index").decode().strip())
+        for offset in (-10_000_000_000, 10_000_000_000):
+            with self.subTest(offset=offset):
+                stamp = index.stat().st_mtime_ns + offset
+                os.utime(self.root / ".gitignore", ns=(stamp, stamp))
+                before = _index_hash(self.root)
+                result = self.run_check("git", None)
+                self.assertEqual(result["status"], "PASS", result)
+                self.assertEqual(_index_hash(self.root), before)
+
     def test_timeout_and_nonzero_exit_are_structured_failures(self):
         check = {"check_id": "T", "kind": "tests", "argv": ["python", "-m", "unittest", "discover", "-s", "tests"]}
         with patch("baton.execution.run_process", return_value=(None, "PRIVATE", "PRIVATE", "timeout")):

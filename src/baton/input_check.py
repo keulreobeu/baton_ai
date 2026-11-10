@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import shutil
 import sys
+import tempfile
 import time
 
 from .autocommit import eligible_paths, scan_content
@@ -234,10 +235,22 @@ class InputChecker:
     def _git_check(self, scope):
         before = _git(self.root, "rev-parse", "HEAD").decode().strip()
         index_before = _index_hash(self.root)
-        # Plumbing only: porcelain `git diff` may refresh stat data and rewrite the index, which this
-        # read-only check must never do (and which made the index-unchanged assertion flaky).
-        names = set(_git(self.root, "diff-index", "--no-renames", "--name-only", "HEAD", "-z").decode("utf-8").split("\0")) - {""}
-        names.update(set(_git(self.root, "ls-files", "--others", "--exclude-standard", "-z").decode("utf-8").split("\0")) - {""})
+        # Porcelain `git diff` refreshes stat data and may rewrite the index (even with
+        # --no-optional-locks), which this read-only check must never do. Plumbing avoids the write
+        # but then lists touched-yet-unchanged files as modified. So run the porcelain commands
+        # against a private copy of the index: same verdicts as before, real index untouched.
+        with tempfile.TemporaryDirectory(prefix="baton-input-check-") as scratch:
+            env = None
+            real_index = Path(_git(self.root, "rev-parse", "--path-format=absolute", "--git-path", "index").decode().strip())
+            if real_index.exists():
+                private = Path(scratch) / "index"
+                shutil.copyfile(real_index, private)
+                env = {**os.environ, "GIT_INDEX_FILE": str(private)}
+            return self._git_check_with(scope, before, index_before, env)
+
+    def _git_check_with(self, scope, before, index_before, env):
+        names = set(_git(self.root, "diff", "--no-renames", "--name-only", "HEAD", "-z", env=env).decode("utf-8").split("\0")) - {""}
+        names.update(set(_git(self.root, "ls-files", "--others", "--exclude-standard", "-z", env=env).decode("utf-8").split("\0")) - {""})
         if len(names) > 10000: raise CheckError("FILE_COUNT_LIMIT", blocked=True)
         records = {}
         for name in sorted(names):
@@ -248,8 +261,8 @@ class InputChecker:
                              else "directory" if target.is_dir() else "deleted")
         if len({n.casefold() for n in names}) != len(names): raise CheckError("CASE_COLLISION", blocked=True)
         try:
-            _git(self.root, "diff-files", "--check")
-            _git(self.root, "diff-index", "--cached", "--check", "HEAD")
+            _git(self.root, "diff", "--check", env=env)
+            _git(self.root, "diff", "--cached", "--check", env=env)
         except HarnessError: raise CheckError("GIT_DIFF_CHECK_FAILED") from None
         if _git(self.root, "rev-parse", "HEAD").decode().strip() != before or _index_hash(self.root) != index_before:
             raise CheckError("GIT_HEAD_OR_INDEX_CHANGED", blocked=True)

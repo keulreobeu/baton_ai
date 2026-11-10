@@ -47,3 +47,7 @@ PR #9(MEMORY-001) CI에서 `test_staged_and_worktree_whitespace_fail_without_ind
 쓰는 것이다. plumbing 명령으로 바꾸고, 그 상황을 매번 만드는 테스트 `test_stat_dirty_index_entries_are_not_rewritten_by_the_git_check`를
 추가했다. 이 테스트는 수정 전 코드에서 subtest 2개 모두 실패하고 수정 후 통과한다. `tests.test_input_check`는 로컬에서 통과했다.
 Task 상태는 바꾸지 않는다(독립 재검토 대기).
+
+독립 검토(PR #9 head 5c97f9d)가 위 plumbing 전환의 회귀(medium)를 지적했다. 범위 밖 파일의 stat만 바뀌어도 BLOCKED가 됐다.
+index 복사본에서 porcelain 명령을 실행하도록 고치고 회귀 테스트를 추가했다([ADR 개정](../adr/ADR-PORT-001.md)).
+`tests.test_input_check` 5회 연속 PASS. Task 상태는 바꾸지 않는다.
