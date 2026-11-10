@@ -300,3 +300,6 @@ evidence = "docs/validation/memory.md#9차--claude-별도-에이전트-reviewed_
   이미 공개된 뒤라 PR ref가 옛 커밋을 보관하고 SHA 변경 비용이 커서 이력 재작성은 하지 않았다. 이메일 비공개 설정은 사용자 몫이다.
 - 상태는 사용자 결정으로 in_progress다(기존 skip 2개). Codex 교차 재검토는 사용자 결정으로 생략했다.
 - 원격 branch `claude/shared-memory-spec-20261110`, `claude/memory-merge-record-20261110`은 삭제하지 않았다.
+- Push 점검 7(PR #10 기록 branch): 원격 main=19d8a11, `claude/memory-pr10-record-20261110`은 원격에 없다. 원격에서 도달할 수 없는
+  커밋은 a6d9ede(이 Task·current.md)와 이 점검 기록 커밋뿐이고 작성자는 `lwwde07`이다. `scan_content` 결과 없음. 사용자 지시
+  ("push·PR·병합")로 push·PR 후 CI 통과 시 병합하며, 이 병합은 따로 기록하지 않는다.
