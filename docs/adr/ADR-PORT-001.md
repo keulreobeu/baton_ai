@@ -49,3 +49,5 @@ index에서는 잡히지만 복사본에서는 깨끗하게 보여 PASS가 될 �
 mtime 보존 복사본은 잡는다(2). 이제 `shutil.copy2`로 mtime을 보존하고, 복사본과 실제 index의 mtime(ns)이 다르면
 `GIT_INDEX_COPY_TIMESTAMP_MISMATCH`로 막는다(fail closed). 회귀 `test_racily_clean_entries_are_still_content_checked_on_the_private_index`는
 copyfile 코드에서 3회 모두 실패하고 수정 후 통과한다.
+알려진 한계(9차 검토, low): splitIndex를 켜면 복사본 갱신이 실제 `.git/sharedindex.*`의 mtime을 바꿀 수 있다(내용 불변, `git status`와 같은 수준).
+임시 폴더가 원본보다 시각 정밀도가 낮은 파일시스템(FAT 등)이면 git 검사가 항상 mismatch로 BLOCKED된다(fail closed).

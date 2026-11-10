@@ -165,9 +165,20 @@ result = "failed"
 evidence = "docs/validation/memory.md#8차--codex-교차-모델사용자-승인-실행-reviewed_sha4ddd438-findings-1건-passed-아님"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
+[[verification]]
+command = "Claude separate-agent review of a1b91db (read-only)"
+result = "passed"
+evidence = "docs/validation/memory.md#9차--claude-별도-에이전트-reviewed_shaa1b91db-passed"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 60
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
-result = "failed"
-evidence = "docs/validation/memory.md#8차-반영"
+result = "passed"
+evidence = "docs/validation/memory.md#9차--claude-별도-에이전트-reviewed_shaa1b91db-passed"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.
@@ -274,3 +285,6 @@ evidence = "docs/validation/memory.md#8차-반영"
 - Push 점검 5(기록 branch): 원격 main=4ddd438, `claude/memory-merge-record-20261110`은 원격에 없다. 원격 ref로 도달할 수 없는
   커밋은 a7dc68c(이 Task·current.md, scope 안)와 이 점검 기록 커밋뿐이고 작성자는 `lwwde07`이다. 민감 경로·1MB 초과·
   `scan_content` 결과 없음. 사용자 지시("push하고 PR")로 이 branch 하나를 push하고 main 대상 PR을 연다. 병합은 하지 않는다.
+- Push 점검 6(Codex 반영): 원격 기록 branch=7ab0b47, main=4ddd438. 원격에서 도달할 수 없는 커밋은 a1b91db(PORT-001 input_check
+  mtime 보존 수정·회귀·기록, scope 안)와 이 기록 커밋뿐이고 작성자는 `lwwde07`이다. 9차 독립 검토 passed, 전체 회귀
+  `run_tests_fast.py --workers 4` 525개 실패·오류 0·skip 1(기존), SDD 검사 PASS. 민감 경로·1MB 초과 없음. PR #10에 fast-forward로 push한다.
