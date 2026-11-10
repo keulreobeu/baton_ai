@@ -265,3 +265,6 @@ evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_
   메모리 기능과 무관하다. 해소는 GMS·TASK-PROFILE 후속 범위다.
 - 미실행: Codex 교차 모델 최종 확인(실모델 호출이라 사용자 승인 필요), 실제 호스트 MCP 등록 사용(사용자 몫).
   원격 branch `claude/shared-memory-spec-20261110`은 삭제하지 않았다.
+- Push 점검 5(기록 branch): 원격 main=4ddd438, `claude/memory-merge-record-20261110`은 원격에 없다. 원격 ref로 도달할 수 없는
+  커밋은 a7dc68c(이 Task·current.md, scope 안)와 이 점검 기록 커밋뿐이고 작성자는 `lwwde07`이다. 민감 경로·1MB 초과·
+  `scan_content` 결과 없음. 사용자 지시("push하고 PR")로 이 branch 하나를 push하고 main 대상 PR을 연다. 병합은 하지 않는다.
