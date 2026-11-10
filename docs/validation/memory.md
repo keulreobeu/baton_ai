@@ -10,7 +10,7 @@
 |---|---|
 | AC-01 | 두 worktree 공유, 다른 저장소 분리, 저장소 안 sqlite 없음, 비 Git·symlink 저장 경로 거부, revision 이력, 한도 |
 | AC-02 | 실제 두 프로세스가 busy_timeout 0.05초로 경쟁: 항목 40개, 공유 항목 revision 1→41 연속. 잠금 보유 중 memory_busy·기록 0. 낡은 revision 거부. claim 차단·만료(fake clock)·release·operator 필수 force 기록 |
-| AC-03 | sk-/ghp_/api_key=/이메일/Bearer 거부, 출력·DB 바이트에 원문 없음. 모든 출력 trust 표시, 본문 "approved"가 상태를 바꾸지 않음. MCP에 force release 없음 |
+| AC-03 | sk- 접두 키, ghp_ 토큰, api_key 할당, 이메일, Bearer 헤더 형태 거부, 출력·DB 바이트에 원문 없음. 모든 출력 trust 표시, 본문 "approved"가 상태를 바꾸지 않음. MCP에 force release 없음 |
 | AC-04 | CLI 정상/오류 JSON·종료 코드(0/2/3), `baton memory` 경로, MCP initialize·tools/list·tools/call·ping·오류 코드, socket 차단 상태 동작, print-config 파일 쓰기 없음 |
 
 1차 기준 symlink 검사는 mock이었다. 반영 후 Windows에서는 실제 junction(mklink /J), POSIX에서는 실제 symlink로 검증한다. `-journal` 등 부속 파일은 mock으로 확인한다.
