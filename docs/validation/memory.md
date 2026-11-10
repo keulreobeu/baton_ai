@@ -17,7 +17,7 @@
 
 ## 전체 오프라인 회귀
 
-`.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .` → 1차 500개, 1차 반영 후 510개, 2차·3차 반영 후 각각 517개 실행, 모두 OK, skip 1(기존 플랫폼/선택 의존성 skip, 이번 변경과 무관).
+`.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -t .` → 1차 500개, 1차 반영 후 510개, 2차·3차·4차 반영 후 각각 517개 실행, 모두 OK, skip 1(기존 플랫폼/선택 의존성 skip, 이번 변경과 무관).
 skip이 있어 verified 근거로는 쓰지 않는다(verified_evidence_eligible=false).
 SDD 검사: 변경 파일 14개로 `check_sdd.validate` PASS. 기본 `check_sdd.py`는 추적 안 된 기존 `.claude/worktrees/`
 경로 때문에 INVALID_PATH가 나며 이번 변경과 무관하다.
@@ -75,6 +75,18 @@ high 2건은 코드와 테스트로 고쳤다. low 1건은 ADR 문구를 실제 
 [ADR 3차 Amendments](../adr/ADR-MEMORY-001.md#eng-review-amendments--2026-11-10-3차-검토59b6f3d-claude-별도-세션).
 테스트 보강: `_TOKEN`·`db_pwd`·긴 글자 값 거부와 15자 경계, BATON_HOME 자체·하위·상위 링크가 저장소를 가리키는 경우.
 관련 테스트 31개 PASS, skip 0. 수정 후보는 4차 검토가 필요하다.
+
+### 4차 — Claude 별도 세션, reviewed_sha=bc8d52a: findings 2건
+
+같은 읽기 전용 세션이 검토했다. 3차 H1·H2·L1은 해결, L2는 수용된 한계로 판정했다. 검토자는 실제 junction으로 H2를 재현해 확인했다.
+새 findings: medium 1건(camelCase 비밀 이름 `githubToken=`·`dbPwd=` 미탐, 59b6f3d부터 있던 구멍), low 1건(의도된 엄격화로 경로·숫자 값 문장이 거부됨).
+결과: **passed 아님**.
+
+### 4차 반영
+
+이름 앞 문자 제한을 없애 camelCase 이름도 잡도록 하고, `githubToken=`·`refreshtoken=`·`authToken:`·`dbPwd=` 거부와
+`the tokenizer:`·`secrets.token_hex(16)` 허용 테스트를 추가했다. low는 ADR에 엄격화 비용으로 기록했다.
+관련 테스트 31개 PASS, skip 0. 수정 후보는 5차 검토가 필요하다.
 
 ## 미실행
 

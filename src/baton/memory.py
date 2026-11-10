@@ -44,13 +44,13 @@ SENSITIVE = re.compile(
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
     r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", re.I)
-# A secret-like name (also as the last part of NAME_TOKEN, db_pwd, ...) followed by "=" or ":"
+# A secret-like name (also as the end of NAME_TOKEN, db_pwd, githubToken, ...) followed by "=" or ":"
 # and a value. "=" or a quoted value is always an assignment. After ":" only one short plain word
 # (letters only, at most PROSE_WORD letters, e.g. "token: refresh") is prose; digits, symbols or a
 # long run of letters are treated as a secret.
 PROSE_WORD = 15
 ASSIGNMENT = re.compile(
-    r"(?<![A-Za-z0-9])(?:token|passwd|password|pwd|credential|secret|api[_-]?key)s?"
+    r"(?:token|passwd|password|pwd|credential|secret|api[_-]?key)s?"
     r"[\"']?\s*(=|:)\s*(\"[^\"]*\"|'[^']*'|\S+)", re.I)
 
 

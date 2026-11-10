@@ -478,9 +478,11 @@ class MemoryStoreTests(Base):
         refused = ["token=abc", "pwd: p@ss!", "password: 'two words'", 'credential: "short"', "token: abc123",
                    "refresh_token: x-y", "API_KEY = k", "GITHUB_TOKEN=" + "abcd1234efgh5678ijkl",
                    "NPM_TOKEN: " + "abcd1234", "HF_TOKEN=" + "hf_x", "SLACK_TOKEN=" + "xoxb-1", "db_pwd=" + "hunter2",
-                   "token: " + "AbCdEfGhIjKlMnOpQrStUvWx", "max_tokens=100"]
+                   "token: " + "AbCdEfGhIjKlMnOpQrStUvWx", "max_tokens=100", "githubToken=" + "abcd1234efgh5678ijkl",
+                   "refreshtoken=" + "abcd1234efgh5678", "authToken: " + "abc123xyz", "dbPwd=" + "hunter2"]
         allowed = ["token: refresh happens hourly", "credential: rotation is weekly", "the api key lives in the vault",
-                   "GITHUB_TOKEN: rotated weekly", "토큰: 새로고침", "token: refreshingnight"]  # 15 letters: the prose limit
+                   "GITHUB_TOKEN: rotated weekly", "토큰: 새로고침", "the tokenizer: splits words",
+                   "use secrets.token_hex(16)", "token: refreshingnight"]  # 15 letters: the prose limit
         for body in refused:
             with self.assertRaises(HarnessError, msg=body) as caught:
                 s.add(topic="t", kind="note", body=body, author="codex")
