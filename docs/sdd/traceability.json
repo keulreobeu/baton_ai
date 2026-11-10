@@ -1252,6 +1252,10 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_busy_schema_probe_returns_memory_busy_without_a_write"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_busy_reads_are_reported_as_retryable_memory_busy"
             }
           ]
         },
@@ -1318,6 +1322,10 @@
             {
               "file": "tests/test_memory_mcp.py",
               "symbol": "MemoryMcpTests.test_deep_and_oversized_frames_recover_and_argument_types_follow_the_schema"
+            },
+            {
+              "file": "tests/test_memory.py",
+              "symbol": "MemoryStoreTests.test_export_contains_every_active_entry_beyond_the_list_page"
             }
           ]
         }

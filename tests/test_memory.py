@@ -587,6 +587,48 @@ class MemoryStoreTests(Base):
         code = memory_main(["mcp", "--print-config", "nope"], self.repo, home=self.home, stdout=out, stderr=err)
         self.assertEqual((code, err.getvalue()), (2, ""))
         self.assertEqual(json.loads(out.getvalue())["error"], "memory_invalid_arguments")
+    def test_export_contains_every_active_entry_beyond_the_list_page(self):
+        s = self.store()
+        page = 5  # stands in for LIST_LIMIT (200) to keep the test fast; export must not use it
+        with mock.patch.object(memory_module, "LIST_LIMIT", page):
+            for i in range(page + 1):
+                s.add(topic="many", kind="note", body=f"entry {i:03d}", author="codex")
+            s.add(topic="other", kind="note", body="other topic", author="codex")
+            with self.assertRaises(HarnessError):
+                s.list(topic="many", limit=page + 1)
+            self.assertEqual(len(s.list(topic="many", limit=page)), page)
+            text = s.export(topic="many")
+            self.assertEqual(sum(1 for line in text.splitlines() if line.startswith("- [many]")), page + 1)
+            self.assertIn("entry 000", text)
+            self.assertNotIn("other topic", text)
+            self.assertEqual(sum(1 for line in s.export().splitlines() if line.startswith("- [")), page + 2)
+
+    def test_busy_reads_are_reported_as_retryable_memory_busy(self):
+        s = self.store()
+        e = s.add(topic="t", kind="note", body="x", author="codex")
+        original = s._connect
+
+        class Proxy:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, *args):
+                if sql.startswith("SELECT"):
+                    raise sqlite3.OperationalError("database is locked")
+                return self.connection.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        with mock.patch.object(s, "_connect", lambda: Proxy(original())):
+            for attempt in (lambda: s.show(e["id"]), lambda: s.history(e["id"]), lambda: s.list(),
+                            lambda: s.search("x"), lambda: s.claims(), lambda: s.claim_events(), lambda: s.export()):
+                with self.assertRaises(MemoryRefused) as caught:
+                    attempt()
+                self.assertEqual(str(caught.exception), "memory_busy")
+        code, out = self.cli("show", "--id", e["id"])
+        self.assertEqual(code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

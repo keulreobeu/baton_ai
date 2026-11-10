@@ -103,7 +103,24 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "GitHub Actions, approved remote publication required"
+command = "GitHub Actions PR #9 at 978ed10"
+result = "failed"
+evidence = "docs/validation/memory.md#pr-9-ci리뷰-반영"
+acs = ["MEMORY-001-AC-02"]
+
+[[verification]]
+command = "python -X utf8 -m unittest tests.test_memory tests.test_memory_mcp (3 consecutive runs)"
+result = "passed"
+evidence = "docs/validation/memory.md#pr-9-ci리뷰-반영"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 33
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions PR #9 after the CI and review fixes"
 result = "not_run"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
@@ -144,3 +161,13 @@ evidence = "docs/validation/memory.md#review"
 - 다른 로컬 branch의 미게시 커밋은 이번 push에 넣지 않는다: `codex/sdd-goal-workflow` 2개.
 - push 범위: origin의 `claude/shared-memory-spec-20261110` branch 하나. main 병합, PR, 강제 갱신은 하지 않는다.
 - CI: 첫 push로 실행된다. 결과를 확인하기 전에는 Task를 verified로 올리지 않는다.
+
+## Push 점검 2 — PR #9 CI·리뷰 반영, 2026-11-10
+
+- 원격 `claude/shared-memory-spec-20261110`=978ed10. 이번에 게시할 커밋은 978ed10을 부모로 하는 수정 커밋 하나다.
+- 같은 폴더의 다른 세션이 로컬 branch에 `ca43d07`(TEST-SPEED-001: README.md, TASK-TEST-SPEED-001, run_tests_fast)을 올렸다.
+  사용자 결정("Keep it out of PR")에 따라 이 커밋은 PR #9에 넣지 않는다. 수정 커밋은 임시 index로 978ed10 위에 따로 만들고,
+  작업 폴더·로컬 branch·다른 세션 커밋은 건드리지 않는다. push는 fast-forward이며 강제 갱신이 아니다.
+- 변경 파일 6개(memory.py, test_memory.py, ADR, 이 Task, validation, traceability)는 모두 이 Task scope 안이고 ca43d07과 겹치지 않는다.
+- 검증: 메모리 테스트 33개 3회 연속 PASS, SDD 검사 PASS. 전체 회귀 519개 중 `test_run_tests_fast` 1개 실패는 실행 도중 ca43d07이
+  같은 파일을 바꾼 탓이며 단독 3회 PASS다. 이 PR 범위의 회귀는 CI 결과로 확인한다.

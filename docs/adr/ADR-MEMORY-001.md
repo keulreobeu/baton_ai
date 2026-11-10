@@ -74,3 +74,15 @@ specs = ["docs/specs/MEMORY-001.md"]
 - 5차 검토(a342a7a)에서 확인한 알려진 미탐(이전부터 있던 정규식 범위): 대괄호 첨자 할당(`env["NPM_TOKEN"] = "..."`),
   다른 구분자(전각 콜론 `token：`, `token -> x`, `export NAME value`). 접두사가 있는 벤더 토큰(`ghp_`, `github_pat_`, `sk-`)은
   기존 스캐너가 잡는다. 메모리는 비밀값 저장소가 아니라는 사용 규칙을 유지한다.
+
+## PR #9 CI·리뷰 반영 — 2026-11-10
+
+- CI(ubuntu, Python 3.11)에서 동시 쓰기 테스트의 읽기가 `database is locked`를 그대로 냈다. WAL 읽기도 다른 프로세스의
+  checkpoint나 wal-index 복구 중에는 SQLITE_BUSY를 받을 수 있다. 모든 읽기 메서드가 이를 쓰기와 같은 재시도 가능
+  `memory_busy`로 돌려준다.
+- 로컬 Windows 스트레스에서 `memory_storage_escape` 오탐을 재현했다. 다른 프로세스가 지우는 중인 `-shm`/`-journal`에 대해
+  `Path.resolve()`가 확장 길이 경로를 돌려줘서 생긴 것이다. 파일별 resolve 비교를 없앴다. 파일의 실제 상위는 이미 검증한
+  디렉터리이고, 일반·비reparse·단일 링크 파일이면 다른 곳에 있을 수 없다.
+- Codex PR 리뷰(P2): `export()`가 `list()`의 200개 상한을 재사용해 오래된 항목을 조용히 빠뜨렸다. 이제 활성 항목 전부
+  (최대 MAX_ACTIVE)를 내보낸다.
+
