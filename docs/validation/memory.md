@@ -135,8 +135,21 @@ SDD 검사 PASS, traceability 테스트 참조 194개가 모두 실제 심볼로
 - L3·L4: 기존 한계·범위 밖으로 수용한다.
 - 수정 후보는 7차 검토가 필요하다.
 
+### 7차 — Claude 별도 에이전트, reviewed_sha=b187af6: **passed**
+
+6차 M1 수정(890f0f6)과 문서(b187af6)를 읽기 전용으로 검토했다. 임시 저장소에서 범위 안·밖 추적 파일의 mtime을 바꾸며 30회씩
+반복했다(기본, untrackedCache, index v4, splitIndex). 모두 PASS였고 실제 index는 바이트 단위로 같았다. 7a91282 이전 porcelain 코드와
+공백 오류(작업 트리·staged), 삭제, 미추적, 범위 밖 수정, 남은 `index.lock`, HEAD 없음, index 없음의 판정이 같았다. 새 회귀는 7a91282
+코드에서 실패하고 b187af6에서 통과한다. 메모리·MCP·input_check 테스트 59개 OK, SDD 검사 PASS. 검토자는 파일을 바꾸지 않았다.
+
+- L-A(low): splitIndex를 켜면 실제 git dir에 고아 `sharedindex.*` 파일이 생길 수 있다. [ADR-PORT-001](../adr/ADR-PORT-001.md)에 한계로 기록했다.
+- L-B(low): Windows 임시 폴더 정리 실패는 BLOCKED로 막힌다(fail closed). 재현되지 않았다.
+- 6차 L1·L2는 ADR 기록으로 해소, L3·L4는 수용. 5c97f9d..b187af6에 새 high·medium 없음.
+
+검토 이력 요약: Codex 2회(사용자 실행), Claude 별도 세션·에이전트 5회. 같은 모델 계열 검토라 교차 모델 근거로는 약하다.
+
 ## 미실행
 
-- 교차 모델(Codex) 최종 확인: a342a7a에 대해서는 미실행. 사용자 판단 사항.
+- 교차 모델(Codex) 최종 확인: PR head에 대해서는 미실행(통합 diff 830c5da7…는 Codex PASS). 사용자 판단 사항.
 - 실제 Claude Code·Codex 호스트에 MCP 등록 후 채팅 사용: 사용자 몫, 미검증.
-- GitHub Actions CI: push 전이라 미실행.
+- GitHub Actions CI: 5c97f9d에서 8개 모두 통과(push·pull_request). 이후 head는 Task의 CI 기록을 따른다.

@@ -33,6 +33,10 @@ stat만 다른 항목을 만나면 index를 새로 써서, read-only 검사라�
 범위 밖 추적 파일을 건드리기만 해도 범위 검사에서 `OUTSIDE_SCOPE`로 BLOCKED가 됐다. porcelain에 `--no-optional-locks`를 붙여도
 index 재기록은 막히지 않았다(로컬 재현 40/40). 그래서 git 검사는 실제 index를 임시 폴더에 복사하고 `GIT_INDEX_FILE`로 그 복사본을
 가리킨 채 원래의 porcelain 명령(`diff --name-only HEAD`, `diff --check`, `diff --cached --check`)을 실행한다. 판정은 plumbing
-전환 이전과 같고, stat 갱신은 복사본에만 쓰이며, 실제 index는 바이트 단위로 그대로다(기존 사후 해시 검사 유지).
+전환 이전과 같고, stat 갱신은 복사본에 쓰이며, 실제 index는 바이트 단위로 그대로다(기존 사후 해시 검사 유지).
+알려진 한계(7차 검토, low): `core.splitIndex=true`이면 git이 공유 index 파일(`sharedindex.*`)을 GIT_INDEX_FILE 옆이 아니라
+실제 git dir에 쓰므로, 고아 `sharedindex.*` 파일이 생길 수 있다(30회 중 2회). 실제 index와 그것이 참조하는 공유 파일은 바뀌지 않고,
+고아 파일은 git이 기한 후 정리한다. splitIndex는 기본 꺼짐이며, 이전 porcelain 코드는 이 설정에서 실제 index까지 다시 썼다.
+Windows에서 임시 폴더 정리가 실패하면 `run()`이 BLOCKED로 막는다(fail closed).
 회귀 `test_touched_but_unchanged_files_outside_scope_do_not_block_the_git_check`는 7a91282 코드에서 subtest 2개 모두 BLOCKED로
 실패하고 수정 후 통과한다.

@@ -137,14 +137,31 @@ evidence = "docs/validation/memory.md#6차--claude-별도-에이전트-reviewed_
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
 [[verification]]
-command = "GitHub Actions PR #9 after the path-key integration"
+command = "GitHub Actions PR #9 at 5c97f9d (push and pull_request, 8 jobs)"
+result = "passed"
+evidence = "docs/validation/memory.md#미실행"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+
+[[verification]]
+command = "Claude separate-agent review of b187af6 (read-only)"
+result = "passed"
+evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_shab187af6-passed"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+tests_run = 59
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions PR #9 after the sixth-review fixes"
 result = "not_run"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
 [independent_review]
-result = "failed"
-evidence = "docs/validation/memory.md#6차-반영"
+result = "passed"
+evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_shab187af6-passed"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.
@@ -214,3 +231,17 @@ evidence = "docs/validation/memory.md#6차-반영"
 - 독립 검토: 통합 diff `830c5da7…`는 별도 Codex 검토자가 PASS했다. 이 커밋의 메모리 코드·테스트는 그 diff와 같지만
   SHA가 다르므로 PR head 기준 최종 독립 검토는 아직 없다. CI와 함께 확인 전에는 verified로 올리지 않는다.
 - push 범위: origin의 `claude/shared-memory-spec-20261110` 하나. main 병합·강제 갱신 없음. 모델·GMS·네트워크 호출 0.
+
+## Push 점검 4 — 6차 검토 반영, 2026-11-10
+
+- 원격 `claude/shared-memory-spec-20261110`=5c97f9d(CI 8개 통과), `refs/heads/main`=a061d39. 원격에서 도달할 수 없는 커밋 전부:
+  890f0f6(PORT-001 input-check 수정), b187af6(6차 검토 기록), 그리고 이 점검 기록 커밋. 작성자는 모두 `lwwde07`, 부모 사슬은
+  5c97f9d부터 이어지는 fast-forward다.
+- 변경 파일 8개: 메모리 문서 3개(이 Task, ADR-MEMORY-001, validation)는 이 Task scope, `input_check.py`·`test_input_check.py`·
+  ADR-PORT-001·TASK-PORT-001·traceability는 TASK-PORT-001 scope다. PORT-001 수정은 이 PR에 이미 실린 7a91282의 회귀를 고친 것이라
+  같은 PR에 둔다. 민감 경로·1MB 초과 파일 없음, 추가 줄 `scan_content` 결과 없음.
+- 검증: 전체 회귀 `run_tests_fast.py --workers 4` 524개 실패·오류 0·skip 1(기존), `tests.test_input_check` 5회 연속 PASS,
+  SDD 검사 PASS. 7차 독립 검토(b187af6) passed, 남은 finding은 low 2건(ADR 기록).
+- 제외: ca43d07(TEST-SPEED-001), 다른 로컬 branch의 미게시 커밋(`codex/memory-path-key` 2개는 5c97f9d에 통합됨,
+  `codex/sdd-goal-workflow` 2개, `codex/port-handoff-input-check-20261106`·`claude/port-review-fixes-20261106`의 로컬 커밋).
+- push 범위: origin의 이 branch 하나, fast-forward. main 병합·강제 갱신 없음. 모델·GMS·네트워크 호출 0.
