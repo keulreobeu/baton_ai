@@ -40,3 +40,12 @@ index 재기록은 막히지 않았다(로컬 재현 40/40). 그래서 git 검�
 Windows에서 임시 폴더 정리가 실패하면 `run()`이 BLOCKED로 막는다(fail closed).
 회귀 `test_touched_but_unchanged_files_outside_scope_do_not_block_the_git_check`는 7a91282 코드에서 subtest 2개 모두 BLOCKED로
 실패하고 수정 후 통과한다.
+
+### 개정 — Codex 교차 검토(4ddd438) 반영, 2026-11-10
+
+index 복사에 `shutil.copyfile`을 쓰면 복사본의 mtime이 현재 시각이 된다. git은 index 파일보다 오래되지 않은 항목을 racy로 보고
+내용을 다시 읽는데, 새 mtime 복사본에서는 그 판정이 사라진다. 그래서 크기가 같고 캐시된 mtime을 유지한 수정(공백 오류 포함)이 실제
+index에서는 잡히지만 복사본에서는 깨끗하게 보여 PASS가 될 수 있었다. 로컬 재현: 복사본은 놓치고(`diff --check` 0), 실제 index와
+mtime 보존 복사본은 잡는다(2). 이제 `shutil.copy2`로 mtime을 보존하고, 복사본과 실제 index의 mtime(ns)이 다르면
+`GIT_INDEX_COPY_TIMESTAMP_MISMATCH`로 막는다(fail closed). 회귀 `test_racily_clean_entries_are_still_content_checked_on_the_private_index`는
+copyfile 코드에서 3회 모두 실패하고 수정 후 통과한다.

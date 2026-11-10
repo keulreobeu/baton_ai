@@ -159,9 +159,15 @@ result = "passed"
 evidence = "docs/validation/memory.md"
 acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
 
+[[verification]]
+command = "Codex cross-model review of 4ddd438 (codex exec, read-only, user-approved)"
+result = "failed"
+evidence = "docs/validation/memory.md#8차--codex-교차-모델사용자-승인-실행-reviewed_sha4ddd438-findings-1건-passed-아님"
+acs = ["MEMORY-001-AC-01", "MEMORY-001-AC-02", "MEMORY-001-AC-03", "MEMORY-001-AC-04"]
+
 [independent_review]
-result = "passed"
-evidence = "docs/validation/memory.md#7차--claude-별도-에이전트-reviewed_shab187af6-passed"
+result = "failed"
+evidence = "docs/validation/memory.md#8차-반영"
 ```
 
 2026-11-10 사용자 승인으로 in_progress. 구현과 함께 traceability에 요구→AC→테스트를 등록한다.
