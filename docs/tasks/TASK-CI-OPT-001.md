@@ -32,8 +32,8 @@ AC가 검증됐다는 뜻이 아니다.
 | 단계 | AC | 소유 파일 | 상태 |
 |---|---|---|---|
 | 작업 T1 | — (계약) | CI-OPT 4문서, `docs/proposals/T1-contract-revisions.md`, `docs/sdd/traceability.json`, `docs/tasks/current.md` | 문서 완료, 독립 검토 대기 |
-| 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보·로컬 통합 `351a8a9`. Task 전체 verified 아님 |
-| 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 작성 완료, 로컬 대상 검사 통과. 독립 검토·통합 대기, verified 아님 |
+| 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
+| 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 착수 전, T2 이후 |
 | 작업 T3b 분류기 | AC-07~09 | `scripts/ci_plan.py`, `tests/test_ci_plan.py` | 착수 전 |
 | 작업 T3c workflow·dispatch·gate | AC-08~12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 안내 문서 | 착수 전 |
@@ -103,6 +103,27 @@ AC가 검증됐다는 뜻이 아니다.
 - FAILED/BLOCKED 재검증(2-B): BATON 코드는 바꾸지 않는다. FAILED이면 기존 방식대로 새 Task + port를 사용한다. 같은 workspace 재검증은 T4 FLOW 개정 후보로만 기록한다.
 - 정리(4-B): T2 통합·증거 확정 전 workspace/worktree/BATON Task를 삭제하지 않는다. 이후 superseded author workspace의 hash 대조 삭제 목록을 먼저 사용자에게 보고한다. 버려진 BATON Task `TASK-SCOPE-PATH-001`(FAILED: validation 목록의 skip 모듈·full-discover timeout), `TASK-SCOPE-PATH-001-R2`(validated, review 전 R3/AC-04로 대체), `TASK-CI-OPT-001-T2A`(BLOCKED: worker bytecode cache·reuse redispatch binding 유실, attempts 2/2)는 삭제하지 않으며 cancel/supersede 기록만 제안한다.
 - 이 문서 후속 검사: 위 외부 Python·환경으로 `python -X utf8 -m unittest tests.test_ci_workflow tests.test_sdd` 39개 OK(failures/errors/skips 0, exit 0), `python -X utf8 scripts/check_sdd.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` PASS(exit 0, documents 37, tasks 12, changed_paths 21), `git diff --check` exit 0. ignored 항목 0. 이는 BATON 후보 재검증·독립 검토의 완료 선언이 아니다. `verify_environment.py`·전체 회귀·원격 CI·커밋/push/PR·실모델/GMS는 not_run, 비용은 `unknown`이다.
+
+## T2 통합·최종 검증 기록 — 2026-11-11
+
+사실 기록이다. 이 Task는 `in_progress`이며 verified·approved가 아니다. P-01 문안은 계속 사용자 확인 전 초안이다.
+
+1. 통합: Git worker `ctx_02013b6ab099`(claude, 별도 dispatch; 후속 `ctx_6e90fb0a26e6`, `ctx_1dcf55ce279c`, `ctx_e31b06603fe8`, `ctx_be204926c19f`, `ctx_4ec28b7d1651`)가
+   `codex/ci-opt-001`을 `351a8a9 -> ba694431`(SCOPE-PATH-001-R3)로 fast-forward했다. T2B workspace는 autostash 없이(patch backup → 5개 경로 restore → `checkout --detach` → `apply --3way`, 충돌 없음) `ba694431`로 옮겼다.
+   로컬 전용 후보 EVID `05e1113`, T2B `e16a8f7`을 만든 뒤, 사용자 1회 non-ff merge 승인으로 merge `529e93c02cd50835d8734d7e9760e27f5aff91f5`(parents `05e1113`, `e16a8f7`; 파일 겹침 없음, 충돌 없음)를 만들었다. stash 수는 내내 0이었다.
+2. coordinator 순서 오류: merge를 `codex/ci-opt-001`에 직접 만들어 BATON 통합 증거가 거부됐다(`candidate_base_advanced`: store root HEAD가 후보 base와 같아야 함).
+   복구는 checkout만 사용했다: 통합 worktree `D:/baton_ai/.local_runtime/integration/T2-529e93c`(`529e93c`), store root를 잠시 `ba694431`에 detach,
+   `TASK-CI-OPT-001-T2B` + `TASK-SCOPE-PATH-001-EVID` 묶음 통합 증거를 `529e93c`에 기록(member 검사: test_ci_workflow 12, test_sdd 27, skip 0), 이후 `codex/ci-opt-001`을 `529e93c`로 다시 checkout. reset/force/amend 없음.
+   앞으로의 순서: 통합 커밋은 별도 worktree에서 만들고, 대상 branch가 아직 base를 가리킬 때 통합 증거를 기록한 뒤 대상을 전진시킨다.
+3. 검토·모델 다양성(BATON 기록): T2A-R2 `same`(codex port·review, 내용 author claude). SCOPE-PATH-001-R3, SCOPE-PATH-001-EVID, CI-OPT-001-T2B는 Orca가 claude 쪽 model을 반환하지 않아 `unknown`.
+   provider는 교차했다(R3 claude->codex, EVID claude->codex, T2B codex->claude).
+4. `529e93c` 최종 공식 순차 검사: `python -X utf8 scripts/verify_environment.py` exit 0, 1019초. check_sdd PASS(acs 52, features 8, tasks 12, provider_calls 0).
+   564 tests OK, failures/errors 0, skipped 1(기존 Jipdam 환경 skip) → `verified_evidence_eligible=false`, live_provider_validation NOT_RUN. 따라서 Task는 `in_progress`(verified 아님).
+   AC-03/04의 원격 CI/E2E는 not_run(push/PR 승인 필요).
+5. 정리 제안(4-B, 삭제 없음): `C:/Users/SSAFY/orca/workspaces/baton_ai` 아래 author workspace 7개가 모두 git blob hash로 각자의 후보와 일치한다
+   (T2A-author·T2A-R2-author = `351a8a9`; SCOPE-PATH-001-author·R2-author = `144fa832`, superseded, branch `codex/task-scope-path-001-r2`에 보존; R3-author = `ba694431`; EVID-author = `05e1113`; T2B-author = `e16a8f7`).
+   제안: BATON Task `TASK-SCOPE-PATH-001`, `TASK-SCOPE-PATH-001-R2`, `TASK-CI-OPT-001-T2A`에 cancel/supersede 기록(삭제 아님).
+6. 남은 사용자 gate: `baton approve`(`TASK-CI-OPT-001-T2A-R2`, `TASK-SCOPE-PATH-001-R3`, `TASK-SCOPE-PATH-001-EVID`, `TASK-CI-OPT-001-T2B`); P-01 AGENTS 문안 확인(초안만); push/PR 결정; 정리 결정.
 
 ## P-01 AGENTS 문안 초안
 

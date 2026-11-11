@@ -130,3 +130,8 @@ CI-OPT-001 계약·Task·traceability는 바꾸지 않았다. CI-OPT 작업 T2b�
   hash 확인 삭제 목록을 먼저 사용자에게 보고한다. 중단된 BATON task는 삭제하지 않고 cancel/supersede 기록만 제안한다:
   `TASK-SCOPE-PATH-001`(FAILED: 검증 목록에 skip 모듈과 전체 discover timeout), `TASK-SCOPE-PATH-001-R2`(validated, 검토 전 R3/AC-04로 대체),
   `TASK-CI-OPT-001-T2A`(BLOCKED: worker bytecode cache + reuse 재배정으로 binding 상실, attempts 2/2).
+
+### T2 통합·최종 검증 (2026-11-11)
+
+[TASK-CI-OPT-001 'T2 통합·최종 검증 기록'](TASK-CI-OPT-001.md#t2-통합최종-검증-기록--2026-11-11) 항목 1~3이 이 Task에 해당한다: R3 `ba694431` fast-forward와 EVID 후보 `05e1113`의 로컬 merge `529e93c`,
+`candidate_base_advanced` 거부 뒤 checkout만으로 복구한 묶음 통합 증거, R3·EVID의 `model_diversity=unknown`(provider는 claude->codex 교차). approve·push는 대기이며 이 Task는 verified가 아니다.

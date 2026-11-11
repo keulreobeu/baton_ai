@@ -4,11 +4,11 @@
 
 - [TASK-SCOPE-PATH-001](TASK-SCOPE-PATH-001.md) in_progress L3: CI-OPT 작업 T2를 Orca로 돌리다 찾은 하네스 결함 3건과 검토 보고 형식 결함 1건. [SCOPE-PATH-001](../specs/SCOPE-PATH-001.md) revision 2는 2026-11-11 사용자 승인('2번으로 진행해', '승인 진행해', '진행', 'AC-4 추가해서 진행').
   task scope가 `.github/workflows/`를 받음, ignored `__pycache__` bytecode는 snapshot에서 제외, 시작 전 실패한 재사용 재배정이 소유 binding을 유지,
-  검토 프롬프트가 JSON 단일 본문·PASS `findings == []`·`notes`·Windows 전송 규칙을 알림(AC-04, 작성 단위 R3). CI-OPT T2b는 이 Task 뒤. 독립 검토·커밋 전.
+  검토 프롬프트가 JSON 단일 본문·PASS `findings == []`·`notes`·Windows 전송 규칙을 알림(AC-04, 작성 단위 R3). R3 `ba694431`·EVID `05e1113`은 integrated locally at `529e93c`, approve/push pending.
 
 ## 현재 작업 — 2026-11-11 CI 호출 축소
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: 작업 T1(계약 문서) 완료. 작업 T2a(AC-01·02 검증 사다리·Worker 입출력 지침, 정적 테스트)는 로컬 통합 완료(`351a8a9`). 작업 T2b(AC-03·04 PR/main 트리거·concurrency)는 작성·대상 검사 완료(39 tests, skip 0), 독립 검토·통합 대기, verified 아님. P-01 AGENTS 문안은 Task에 초안만(사용자 확인 전 미반영). [CI-OPT-001](../specs/CI-OPT-001.md)은 2026-11-11 사용자 구현 요청으로 승인(미결정 항목 제외).
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: 작업 T1(계약 문서) 완료. 작업 T2a(AC-01·02 검증 사다리·Worker 입출력 지침, 정적 테스트)는 로컬 통합 완료(`351a8a9`). 작업 T2b(AC-03·04 PR/main 트리거·concurrency)는 후보 `e16a8f7`, 검토 PASS. T2는 integrated locally at `529e93c`, approve/push pending, verified 아님(공식 검사 skip 1, 원격 CI not_run). P-01 AGENTS 문안은 Task에 초안만(사용자 확인 전 미반영). [CI-OPT-001](../specs/CI-OPT-001.md)은 2026-11-11 사용자 구현 요청으로 승인(미결정 항목 제외).
   draft PR만 tier 축소, ready/main은 항상 전체 4 matrix라는 후속 T3 계약이며, T2b는 고정 4 matrix·timeout 15를 유지한다. 작업 T2는 Orca coordinator dispatch로 진행(처음 기록한 Orca 미설치는 오진단, 2026-11-11 정정). 기존 계약 개정 제안: [제안서](../proposals/T1-contract-revisions.md).
 
 ## 현재 작업 — 2026-11-10 저장소 busy
