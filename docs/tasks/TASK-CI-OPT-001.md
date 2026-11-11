@@ -54,6 +54,14 @@ AC가 검증됐다는 뜻이 아니다.
   계약 문서의 독립 검토는 아직 없다.
 - 제품 코드·테스트·workflow 변경 0, push/PR 0, 모델 호출 0.
 
+## 계약 문서 독립 검토 — 2026-11-11
+
+- 1차(a61f46c): FAIL. blocker 1(작성 도구 마크업 잔재), major 1, minor 5.
+- 수정: 8904380.
+- 2차(8904380): PASS_WITH_FINDINGS, minor 1. 다음 커밋에서 문구만 반영했고 재검토는 하지 않았다.
+- 검토자는 작성 Worker와 다른 subagent다. 둘 다 Orca가 아닌 이 세션 내부 subagent이며 Orca는 not_installed다.
+- not_run: 전체 회귀, `verify_environment.py`, 원격 CI. 이 검토는 계약 문서 검토이며 구현 검토가 아니다. Task는 verified가 아니다.
+
 ## 작업 T2 착수 전 남은 조건
 
 1. Orca 부재: Orca 설치·자격 또는 사용자가 정한 실행 방식. 다른 Provider로 우회 금지.
