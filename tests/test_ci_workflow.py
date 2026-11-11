@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GUIDANCE_DOCS = ("AGENTS.md", "README.md", "docs/sdd.md")
 TASK_DOC = "docs/tasks/TASK-CI-OPT-001.md"
 PUSH_HEADING = "## Git 작업 완료와 push — 2026-11-04 사용자 승인"
-# SHA256 of the P-01 section (LF-normalized, trailing newlines stripped) at c896b34.
-PUSH_SECTION_SHA256 = "0b1c9cb27bf06f46dedfd2755f43e1d51618b68325e0be669d4aba61f35f40dc"
+# SHA256 of the first four push bullets (LF-joined) at b3c9aad.
+PUSH_FIRST_FOUR_SHA256 = "56f447a7ad314ae87a3afae93fe561809a496908619a31a6584f19432ac7fc53"
 
 
 def read(name):
@@ -100,11 +100,25 @@ class WorkerIoDocsTests(unittest.TestCase):
                 self.assertNotIn("미수집은 0", text)
 
     def test_agents_push_section_unchanged(self):
-        # P-01: the user-approved push section must not change before user confirmation.
-        body = section(read("AGENTS.md"), PUSH_HEADING)
-        self.assertEqual(hashlib.sha256(body.encode("utf-8")).hexdigest(), PUSH_SECTION_SHA256)
-        self.assertIn("최초 push로 실행되는 실제 CI", body)
-        self.assertNotIn("PR(draft 포함)의 첫 CI", read("AGENTS.md"))
+        # P-01: only the final bullet changes to the confirmed wording.
+        agents = read("AGENTS.md")
+        body = section(agents, PUSH_HEADING)
+        bullets = [line for line in body.splitlines() if line.startswith("- ")]
+        self.assertEqual(len(bullets), 5)
+        first_four = "\n".join(bullets[:4])
+        self.assertEqual(
+            hashlib.sha256(first_four.encode("utf-8")).hexdigest(),
+            PUSH_FIRST_FOUR_SHA256,
+        )
+        self.assertEqual(bullets[-1], (
+            "- PR(draft 포함)의 첫 CI는 push 전 로컬 검증과 구분하고 결과 확인 전 Task/Jira 완료로 승격하지 않는다. "
+            "CI가 실행되지 않은 push는 CI 증거가 아니다. "
+            "이 지시는 PR 생성·main 병합·타인 branch 정리·강제 갱신·실모델·GMS·전원 실행 승인으로 확대하지 않는다."
+        ))
+        self.assertNotIn("최초 push로 실행되는 실제 CI", agents)
+        for term in ("draft로 열", "ready로 전환"):
+            with self.subTest(term=term):
+                self.assertNotIn(term, agents)
 
     def test_p01_draft_recorded_in_task_as_unconfirmed(self):
         draft = section(read(TASK_DOC), "## P-01 AGENTS 문안 초안")
