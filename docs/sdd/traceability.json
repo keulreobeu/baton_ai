@@ -30,7 +30,11 @@
     "docs/specs/MEMORY-001.md",
     "docs/plans/shared-memory.md",
     "docs/adr/ADR-MEMORY-001.md",
-    "docs/tasks/TASK-MEMORY-001.md"
+    "docs/tasks/TASK-MEMORY-001.md",
+    "docs/specs/CI-OPT-001.md",
+    "docs/plans/ci-optimization.md",
+    "docs/adr/ADR-CI-OPT-001.md",
+    "docs/tasks/TASK-CI-OPT-001.md"
   ],
   "features": [
     {
