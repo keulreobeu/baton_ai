@@ -41,6 +41,13 @@ L3는 Spec/Plan/ADR/Task·독립 검토와 필요한 사용자 승인을 유지�
 GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위는 [GMS-001](docs/specs/GMS-001.md)의 로컬 키 관리와 사용자가 직접 켠 GMS 실행이다.
 에이전트는 테스트·검증 목적으로 실제 GMS를 호출하거나 키·잔액을 조회하지 않는다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.
 
+## 검증 사다리와 Worker 입출력 — CI-OPT-001 (2026-11-11)
+
+- 검증 사다리: 편집 중=변경 모듈·AC 대상 테스트. 작업 단위=대상 테스트 + Task 시작 base 기준 `check_sdd.py --base`, 공유/고위험 경로는 기존 fast runner(`scripts/run_tests_fast.py`) 추가. 리뷰 반영=지적을 묶은 뒤 대상 테스트 + 빠른 회귀 1회, 회차마다 push하지 않는다. 최종 L2/L3 후보=정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영=영향 파일 검사·빠른 회귀 후 바뀐 후보/base의 최종 증거 갱신.
+- 같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다. 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. 자동 cache·새 검증 DB·새 영향 분석 엔진은 두지 않고, `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다.
+- Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한하고, 결과는 기능/계약 변화·검증·후보 SHA·미해결·다음 행동으로 요약한다. raw transcript를 재전달하지 않는다. 가까운 수정·리뷰 지적은 묶어서 반영한다. 관측 기록은 기존 계측(MetricsStore·Task 증거)으로 남기고 수집 불가 값은 `unknown`/`partial`/`null`이며 0으로 바꾸지 않는다.
+- 이 지침은 모델 호출·Orca 배정·push를 승인하지 않는다. 상세는 [docs/sdd.md](docs/sdd.md).
+
 
 ## Git 작업 완료와 push — 2026-11-04 사용자 승인
 
@@ -48,4 +55,4 @@ GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위
 - 커밋 직전 branch/HEAD·dirty·index·scope를 재확인한다. 다른 작업자가 작성 중이면 고정 snapshot의 SHA/파일 해시로 검증 대상을 고정하고 Git 담당자 한 명만 저장한다. 기존 staged 변경·원본·키·로그·DB·raw·runtime을 포함하지 않는다. 커밋 후 포함 파일·검증 내용 일치와 실제 HEAD를 확인한다. 커밋 실패는 실패로 보고하고 완료 저장으로 표시하지 않는다.
 - push 전 실제 원격 refs를 확인하고, 대상 branch에서 원격 refs로 도달할 수 없는 **기존 커밋 전부**와 새 커밋을 목록화한다. 각 커밋의 변경/민감정보/승인 범위를 점검하고 최종 후보의 계약·관련 회귀·필요 독립 검토를 확인한다. HEAD만 검사해 과거 미게시 커밋을 생략하지 않는다. 다른 로컬 branch의 미게시 커밋은 미포함 목록으로 남긴다.
 - 점검 결과를 Task에 남긴 뒤 현재 요청으로 정해진 원격·branch·범위만 push한다. 점검 이후 HEAD나 원격 상태가 달라지면 다시 확인한다. 실패·차단·미확인 finding이 남거나 대상이 정해지지 않았으면 push 대기다. push 후 원격 SHA read-back 전에는 게시 완료라고 하지 않는다.
-- 최초 push로 실행되는 실제 CI는 push 전 로컬 검증과 구분하고 결과 확인 전 Task/Jira 완료로 승격하지 않는다. 이 지시는 main 병합·타인 branch 정리·강제 갱신·실모델·GMS·전원 실행 승인으로 확대하지 않는다.
+- PR(draft 포함)의 첫 CI는 push 전 로컬 검증과 구분하고 결과 확인 전 Task/Jira 완료로 승격하지 않는다. CI가 실행되지 않은 push는 CI 증거가 아니다. 이 지시는 PR 생성·main 병합·타인 branch 정리·강제 갱신·실모델·GMS·전원 실행 승인으로 확대하지 않는다.

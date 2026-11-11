@@ -65,6 +65,30 @@ CI --ci는 push의 before/after 또는 PR base와 현재 HEAD를 사용하며 �
 verified_evidence_eligible=false를 공개한다. exit0만으로 Task 전체를 verified로 만들지 않는다.
 CI 파일은 준비할 수 있지만 원격 push/PR/merge는 현재 별도 승인 전 실행하지 않는다.
 
+## 검증 사다리 (CI-OPT-001 AC-01)
+
+같은 작업량에서 전체 회귀·리뷰 회차·push 횟수를 줄인다. 최종 게이트는 약하게 하지 않는다.
+
+| 단계 | 실행하는 검사 |
+|---|---|
+| 편집 중 | 변경 모듈·AC 대상 테스트 |
+| 작업 단위 | 대상 테스트 + Task 시작 base 기준 `check_sdd.py --base REF`. 공유/고위험 경로는 기존 fast runner(`scripts/run_tests_fast.py`)를 추가 |
+| 리뷰 반영 | 지적을 묶은 뒤 대상 테스트 + 빠른 회귀 1회. 회차마다 push하지 않는다 |
+| 최종 L2/L3 후보 | 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI |
+| 통합·충돌 반영 | 영향 파일 검사·빠른 회귀 후 바뀐 후보/base의 최종 증거 갱신 |
+
+같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
+최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다.
+자동 cache·새 검증 DB·새 영향 분석 엔진을 추가하지 않는다. 기존 후보/통합 검사(`evidence.py`의 전체 AC·nonzero·no-skip)는 바뀌지 않는다.
+fast runner 결과는 SDD 검사가 아니며 verified 증거로 쓰지 않는다.
+
+## Worker 입출력과 묶음 반영 (CI-OPT-001 AC-02)
+
+Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한한다. 결과는 기능/계약 변화·검증·후보 SHA·미해결·다음 행동으로
+요약하고 raw transcript를 재전달하지 않는다. 가까운 수정·리뷰 지적은 묶어서 반영한다.
+관측 기록은 CI-OPT 작업 T2부터 기존 계측(MetricsStore·Task 증거)으로 시작한다. 수집 불가 값은 `unknown`/`partial`/`null`로 두며
+0으로 바꾸지 않는다. 이 지침은 모델 호출·Orca 배정·push를 승인하지 않는다.
+
 ## P0 우선순위
 
 SDD 고급 기능보다 P0를 우선한다. P0는 quota-window(구현됨)이고, 마지막 단계로 TASK-POWER-001
