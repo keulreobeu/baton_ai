@@ -88,8 +88,8 @@ CI-OPT-001 AC-12에 따라 Task 증거에 둔다. 승인 필요 항목: 필드 �
 ref: main 5c07aea(원격 ls-remote 2026-11-11); 작업 branch codex/ci-opt-001
 handoff: Claude(T1 Worker) → 마스터 조율; 작업 T1 문서 완료 후
 task/status: TASK-CI-OPT-001 in_progress(작업 T1만), CI-OPT-001 rev1 approved(미결정 제외); verified 아님
-next: CI-OPT 계약 독립 검토 + Orca 실행 방식 결정 → 작업 T2a
-pending: Orca not_installed; CI-OPT 독립 검토 없음; 원격 E2E not_run; 기본 checkout dirty 10개 소유자 unknown
+next: Orca coordinator 터미널에서 작업 T2a dispatch(coordinator_required)
+pending: Orca live 자격·provider host discovery 미확인; CI-OPT 계약 독립 검토 2차 PASS_WITH_FINDINGS(재검토 없음); 원격 E2E not_run; 기본 checkout dirty 10개 소유자 unknown
 inputs: docs/specs/CI-OPT-001.md; docs/tasks/TASK-CI-OPT-001.md; docs/proposals/T1-contract-revisions.md
 ```
 
@@ -98,5 +98,5 @@ inputs: docs/specs/CI-OPT-001.md; docs/tasks/TASK-CI-OPT-001.md; docs/proposals/
 - 변경 계약: CI-OPT-001 rev1(이 branch), FLOW-001 rev2·HANDOFF-001 rev4·LEAN-CORE-001 rev3(위 후보, 미반영).
 - 유지 게이트: verified 규칙, L3 독립 검토, 최종 후보 공식 순차 검증, ready/main 전체 4 matrix, 원격·실모델·Orca·GMS·전원 별도 승인.
 - 사용자 확인이 필요한 새 항목: CI-OPT 미결정 P-01~P-09, 3절 관측 schema, 새 Task 분리(TASK-FLOW-002·Hook Task·TASK-OBS-001) 여부.
-- 실행 blocker: Orca `not_installed`(우회 금지), 기본 checkout dirty 소유자 unknown, 원격 E2E 미승인.
+- 실행 blocker: Orca coordinator 터미널에서의 dispatch 필요(coordinator_required), provider host discovery와 live 자격은 미확인(우회 금지. 처음 기록한 `not_installed`는 `ORCA_CLI_COMMAND` 미설정에 따른 당시 오진단, 2026-11-11 정정), 기본 checkout dirty 소유자 unknown, 원격 E2E 미승인.
 - 미실행 증거: GitHub workflow E2E, 실제 Hook 호스트 smoke, Orca 취소·Codex Worker, 전체 오프라인 회귀(문서만 변경으로 생략).

@@ -3,7 +3,7 @@
 ## 현재 작업 — 2026-11-11 CI 호출 축소
 
 - [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: 작업 T1(계약 문서)만 진행. [CI-OPT-001](../specs/CI-OPT-001.md)은 2026-11-11 사용자 구현 요청으로 승인(미결정 P-01~07 제외).
-  draft PR만 tier 축소, ready/main은 항상 전체 4 matrix. 독립 검토 전, Orca 미설치로 작업 T2 미착수. 기존 계약 개정 제안: [제안서](../proposals/T1-contract-revisions.md).
+  draft PR만 tier 축소, ready/main은 항상 전체 4 matrix. 작업 T2 미착수: Orca coordinator 터미널 dispatch 필요, provider host discovery·live 자격 미확인(처음 기록한 Orca 미설치는 오진단, 2026-11-11 정정). 기존 계약 개정 제안: [제안서](../proposals/T1-contract-revisions.md).
 
 ## 현재 작업 — 2026-11-10 저장소 busy
 
