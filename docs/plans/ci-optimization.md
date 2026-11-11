@@ -18,14 +18,15 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 2. 작업 T2a — 방법론(AC-01·02). AGENTS/README/sdd에 검증 사다리·짧은 Worker 입출력·회차 묶기. 관측 기록 시작.
    P-01(AGENTS push 문구)은 사용자 확인 뒤에만 고친다.
 3. 작업 T2b — 트리거·concurrency(AC-03·04). `verify.yml`에 PR activity 4종 + main push, PR 번호 그룹 취소, main SHA 그룹.
-   고정 4 matrix·`fetch-depth: 0`·GMS optional 검사 유지. dispatch·`ci:full` 즉시 실행을 안내하지 않는다.
+   고정 4 matrix·`fetch-depth: 0`·GMS optional 검사 유지, `timeout-minutes` 미변경(P-07 결정). 정적 텍스트 테스트는 `tests/test_ci_workflow.py`(P-06 결정).
+   dispatch·`ci:full` 즉시 실행을 안내하지 않는다.
 4. 작업 T3a — `eligible_tasks()` 추출(AC-05) + PR 정상·실패 회귀(AC-06). 기존 `tests.test_sdd` 전체 통과, CLI·출력 불변.
 5. 작업 T3b — `ci_plan.py` + `test_ci_plan.py`(AC-07~09): tier × draft/ready/main/dispatch 전 조합, 실제/fallback T3 구분,
    빈 diff, 500개 초과, 제외 경로, 갱신 안 된 Task 무시, 실제 `check_sdd` 모듈 사용.
 6. 작업 T3c — workflow plan job·draft-T0 job·동적 matrix·dispatch·종료 gate(AC-08~12). 이 단계 완료 뒤에만 dispatch 안내.
-7. 원장 등록(Spec 미결정 P-06, pending) — 검사기가 heading·REQ/AC 집합 일치, AC마다 실제 테스트 symbol, 전체 AC의 Task 연결을
+7. 원장 등록(Spec P-06, 2026-11-11 결정·AC-12·13 처리만 pending) — 검사기가 heading·REQ/AC 집합 일치, AC마다 실제 테스트 symbol, 전체 AC의 Task 연결을
    요구하므로 13개 AC를 한 번에 등록한다. 시점은 모든 AC에 실제 테스트 symbol이 생긴 묶음이다. 문서·workflow AC는 정적 텍스트 테스트
-   후보(예: `tests/test_ci_workflow.py`, scope 추가는 결정 대상)로 덮고, AC-12·13처럼 오프라인으로 증명할 수 없는 AC의 처리는 미결정이다.
+   (`tests/test_ci_workflow.py`, scope 추가 결정됨)로 덮고, AC-12·13처럼 오프라인으로 증명할 수 없는 AC의 처리는 미결정이다.
    같은 묶음에서 Task `acs`를 CI-OPT-001-AC-01~13으로 바꾸고 임시 SDD-001-AC-06 연결을 끝낸다.
 8. 최종 후보 — 공식 순차 `verify_environment.py` 1회, 독립 검토(`check_sdd.py` 포함), 승인된 경우에만 원격 E2E.
 

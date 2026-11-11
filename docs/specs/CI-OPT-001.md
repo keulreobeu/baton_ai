@@ -153,6 +153,7 @@ ready 성공은 현재 증거가 아니다. ready/main 4개 job의 실제 성공
 "계획"은 인계서 13절 사용자 계획 원문, "확정"은 인계서 4절 사용자 확정 결정, "통합"은 저장 통합 계획(c18f3d0b)이다.
 2026-11-11 사용자 확인: 이 approved 연결을 유지한다고 사용자가 직접 답했다. 범위는 아래 REQ/AC뿐이며 미결정 P-01~P-07은 계속 pending이다.
 그 뒤 독립 검토 반영으로 추가한 P-08·P-09도 pending이며 승인 범위를 넓히지 않는다.
+2026-11-11 사용자 결정: P-01·P-06·P-07을 아래처럼 정했다(실행 방식·순서·scope 결정이며 새 AC나 승인 범위 확대가 아니다). 남은 pending은 P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 방침이다. 작업 T2 실행 경로는 Orca coordinator(사용자가 Orca 앱에서 연 baton_ai 채팅)로 정했다.
 AC-06·AC-11 문구 수정(8904380)은 독립 검토를 반영한 명확화이며 같은 계획 조항(R3, 결과 집계 검사) 범위다. 승인 범위는 넓히지 않는다.
 
 | AC | 계획 조항 | 확정/통합 근거 |
@@ -175,22 +176,25 @@ AC-06·AC-11 문구 수정(8904380)은 독립 검토를 반영한 명확화이�
 
 아래는 계획에 없던 세부이거나 사용자 승인 정책 문구를 바꾸는 항목이다. AC가 아니며 결정 전에는 구현 근거로 쓰지 않는다.
 
-- P-01 AGENTS.md "Git 작업 완료와 push — 2026-11-04 사용자 승인" 절의 "최초 push로 실행되는 실제 CI" 문구 변경. 트리거 변경 후
+- P-01 **결정됨(2026-11-11 사용자)**: 작업 T2 Worker가 "PR(draft 포함)의 첫 CI" 기준 문안 초안을 Task의 'P-01 AGENTS 문안 초안' 절에 만든다. AGENTS.md에는 사용자 확인 전까지 반영하지 않는다(문안 확정은 계속 사용자 확인 대상).
+  배경: AGENTS.md "Git 작업 완료와 push — 2026-11-04 사용자 승인" 절의 "최초 push로 실행되는 실제 CI" 문구 변경. 트리거 변경 후
   PR 없는 push는 CI를 부르지 않으므로 원 초안 SC1은 "draft PR의 첫 CI"로 바꾸자고 했다. 사용자 승인 정책 문구라 정확한 문안을 확인받는다.
 - P-02 "PR은 draft로 열고 병합 후보에서 ready로 전환" 관행(원 초안 Arch #2). 축소 효과는 draft에서만 생긴다. PR 생성 자체는 별도 승인이다.
 - P-03 T0 제외 범위 해석. 계획은 "SDD 정책/traceability"를 제외한다. 이 Spec은 더 엄격하게 `docs/sdd/**` 전체를 제외했다(축소 방향이
   아니라 확대 방향이므로 안전 기본값). 더 좁히려면 결정이 필요하다.
 - P-04 `workflow_dispatch` 입력 세부: `tier`는 `full` 하나만 허용(choice)하고 `base`는 필수로 둔다. 다른 tier 값 지원은 계획에 없다.
 - P-05 fallback 사유 코드 이름 집합(예: `PLANNER_EXCEPTION`, `CHANGE_COUNT_LIMIT`, `UNKNOWN_EVENT`). 정책이 아니라 작업 T3 구현 세부이며 테스트로 고정한다.
-- P-06 CI-OPT-001의 REQ/AC 원장(traceability feature) 등록 조건. `check_sdd`는 feature마다 Spec heading 집합이 등록 REQ·AC 집합과
+- P-06 **결정됨(2026-11-11 사용자, AC-12·13 처리 방침만 pending)**: `tests/test_ci_workflow.py`를 Task scope에 추가하고 문서·workflow AC는 정적 텍스트 테스트로 덮는다. AC 13개는 작업 T3 묶음에서 한 번에 등록한다.
+  배경: CI-OPT-001의 REQ/AC 원장(traceability feature) 등록 조건. `check_sdd`는 feature마다 Spec heading 집합이 등록 REQ·AC 집합과
   같아야 하고(`headings == local | requirement_ids`), AC마다 실제 테스트 symbol이 1개 이상 있어야 하며, 전체 AC가 Task에 덮여야 한다
   (`task_coverage == all_acs`). 따라서 AC-01~13을 일부만 등록할 수 없고 13개를 한 번에 등록해야 한다.
   - 등록 시점: 13개 AC 모두에 실제 테스트 symbol이 생긴 변경 묶음.
-  - 문서·workflow AC(AC-01~04, AC-10·11의 workflow 부분): 정적 텍스트 테스트 후보로 덮는다(예: 새 `tests/test_ci_workflow.py`). 새 파일은 Task scope 추가라 결정 대상이다.
-  - AC-12(원격 E2E 증거)·AC-13(범위 경계)처럼 오프라인 테스트로 증명할 수 없는 AC의 처리 방침(테스트 symbol 대상, AC 재구성 등)은 미결정이다.
+  - 문서·workflow AC(AC-01~04, AC-10·11의 workflow 부분): 정적 텍스트 테스트 후보로 덮는다(예: 새 `tests/test_ci_workflow.py`). 새 파일 scope 추가는 결정됨.
+  - AC-12(원격 E2E 증거)·AC-13(범위 경계)처럼 오프라인 테스트로 증명할 수 없는 AC의 처리 방침(테스트 대신 증거 문서 등)은 작업 T3 전에 다시 결정해야 하며 계속 pending이다.
   - 임시 SDD-001-AC-06 연결의 종료 조건: CI-OPT-001 feature가 위 조건으로 등록되는 같은 변경 묶음에서 Task `acs`를 CI-OPT-001-AC-01~13으로 바꾸고 SDD-001-AC-06 연결을 뗀다.
-  이 항목 전체는 pending이며 승인 범위를 넓히지 않는다.
-- P-07 `timeout-minutes`와 미병합 TASK-CI-TIME-001(draft, 다른 branch `claude/ci-windows-time-20261110`)의 `verify.yml` 변경 충돌. CI-OPT는 timeout을 바꾸지 않는다.
+  이 결정은 승인 범위를 넓히지 않는다.
+- P-07 **결정됨(2026-11-11 사용자)**: CI-OPT를 먼저 진행한다. CI-OPT는 `verify.yml`의 트리거·concurrency만 바꾸고 `timeout-minutes`는 건드리지 않는다. `claude/ci-windows-time-20261110`은 이후 rebase 때 충돌을 해소한다.
+  배경: `timeout-minutes`와 미병합 TASK-CI-TIME-001(draft, 다른 branch `claude/ci-windows-time-20261110`)의 `verify.yml` 변경 충돌. CI-OPT는 timeout을 바꾸지 않는다.
 - P-08 AC-07 판정 순서. T0 허용 문서 판정을 먼저 할지, `required_level`·Task level 최댓값을 먼저 볼지(예: L3 Task가 문서만 바꾼 draft를
   T0로 둘지 T3로 올릴지)는 계획에서 정해진 적이 없다.
 - P-09 최상위 `skills/baton-flow/**` 경로는 `check_sdd.required_level()`의 `"/skills/" in name` 조건(scripts/check_sdd.py:211)에 걸리지 않아
