@@ -120,11 +120,19 @@ class WorkerIoDocsTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertNotIn(term, agents)
 
-    def test_p01_draft_recorded_in_task_as_unconfirmed(self):
+    def test_p01_recorded_in_task_as_confirmed_and_applied(self):
         draft = section(read(TASK_DOC), "## P-01 AGENTS 문안 초안")
-        self.assertIn("PR(draft 포함)의 첫 CI", draft)
-        self.assertIn("사용자 확인 전", draft)
-        self.assertIn("AGENTS.md 미반영", draft)
+        status = next(line for line in draft.splitlines() if line.startswith("상태:"))
+        self.assertIn("사용자 확인", status)
+        self.assertIn("AGENTS.md 반영됨", status)
+        self.assertIn("TASK-CI-OPT-001-P01-R2", status)
+        self.assertNotIn("사용자 확인 전", status)
+        self.assertNotIn("미반영", status)
+        quoted = draft.split("초안 문구:", 1)[1].split("메모:", 1)[0]
+        draft_text = next(line for line in quoted.splitlines() if line.startswith("> "))[2:]
+        bullets = [line for line in section(read("AGENTS.md"), PUSH_HEADING).splitlines()
+                   if line.startswith("- ")]
+        self.assertEqual(bullets[-1], "- " + draft_text)
 
 
 class PrMainWorkflowTests(unittest.TestCase):

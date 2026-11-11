@@ -127,7 +127,7 @@ AC가 검증됐다는 뜻이 아니다.
 
 ## P-01 AGENTS 문안 초안
 
-상태: **초안, 사용자 확인 전, AGENTS.md 미반영.** 작업 T2a Worker 작성(2026-11-11). 확정·반영은 사용자 확인 뒤 별도 변경으로 한다.
+상태: **2026-11-11 사용자 확인(초안 그대로 확정), AGENTS.md 반영됨**("Git 작업 완료와 push" 절 마지막 항목). 반영 BATON 단위 `TASK-CI-OPT-001-P01-R2`, 후보 `8d2abe2`(author port codex `ctx_261595921d6e`, review claude `ctx_74207778d748` PASS, 강화 검토 규칙·재현 음성 사례 4건 포함). 첫 등록 `TASK-CI-OPT-001-P01`(author `ctx_60b33a0b55f4`, validated)은 검토가 강화 규칙을 쓰도록 검토 전에 대체(superseded)했으며 삭제하지 않았다. 초안은 작업 T2a Worker 작성(2026-11-11)이며 아래 초안 문구·메모는 기록으로 유지한다.
 대상: AGENTS.md "Git 작업 완료와 push — 2026-11-04 사용자 승인" 절의 마지막 항목. 다른 항목은 바꾸지 않는다.
 
 현재 문구:
@@ -140,6 +140,18 @@ AC가 검증됐다는 뜻이 아니다.
 
 메모: 기준을 "최초 push"에서 "PR(draft 포함)의 첫 CI"로 바꾸는 이유는 작업 T2b 트리거 변경(AC-03) 뒤의 CI 실행 조건과 맞추기 위해서다. 따라서 반영 시점은 T2b 적용과 함께 사용자가 정한다.
 "PR 생성" 추가는 PR 생성이 별도 승인이라는 기존 경계를 명시한 것이며, draft로 열고 ready로 바꾸는 관행(P-02)은 이 초안에 넣지 않았다.
+
+## T2 run 실수 기록 — 2026-11-11
+
+사실 기록이다. 각 항목: 일어난 일 / 영향 / 처리 / 채택 규칙.
+
+1. coordinator의 직접 Git 쓰기: 사용자의 Git worker 결정 전에 coordinator가 `codex/ci-opt-001`을 `c896b34 -> 351a8a9` fast-forward했고, SCOPE-PATH-R3 author workspace에서 `git checkout -m --detach`(autostash)를 실행했다. / 영향: 통합 Git이 별도 검토 가능한 dispatch 밖에서 일어났다. / 처리: 기록만 하고 되돌리지 않았다. 이후 stash 수 0. / 규칙: 모든 통합 Git은 별도 Git worker dispatch가 한다.
+2. 미검토 하네스 코드로 만든 판정: `TASK-CI-OPT-001-T2B`를 미검토 SCOPE-PATH 후보 src로 등록·ingest·validate했고, R3/T2A-R2 검토 prompt도 그 src가 생성했다. / 영향: 그 판정의 근거 코드가 검토되지 않았다. / 처리: T2B 판정을 버리고 통합 BATON(`ba694431`)으로 재검증했다. / 규칙: 통합 BATON으로 재검증하며 후보 src의 판정은 증거가 아니다.
+3. 같은 모델 검토: `TASK-CI-OPT-001-T2A-R2`의 port와 review가 모두 codex(gpt-6.1-sol)였고 내용 author는 claude였다. BATON `model_diversity=same`. / 영향: 독립성이 약하다. / 처리: 사용자 결정 3-B로 추가 검토 없음. / 규칙: reviewer provider는 후보의 BATON author(porter 포함)와 다르게 정한다.
+4. 놓친·늦은 wake: background wait loop가 worker-show의 잘못된 field를 읽어 끝나지 않았고(중지함), Orca가 Git worker의 worker_done 2건을 `task_dispatch_mismatch`로 거부했으며(재전송 보고는 수락), Codex 시작 1회가 agent-update-prompt에 막혀 사용자가 Codex를 0.167.1로 갱신할 때까지 대기했다. / 영향: 진행 지연. / 처리: loop 중지, 보고 재전송, 사용자 갱신. / 규칙: worker-show는 보조 확인으로만 쓰고 provider 자동 전환은 하지 않는다.
+5. 형식 오류 PASS: T2A-R2 검토 `ctx_afd00bd05f89`가 PASS를 보고했으나 본문이 유효 JSON이 아니었고(PowerShell 5.1 quote stripping) 정보성 항목을 findings에 넣어 BATON이 `invalid_review_report`로 기록했다. / 영향: 검토 판정 무효. / 처리: SCOPE-PATH-001 AC-04 prompt 규칙으로 고치고 `ctx_f54d466c132d`로 재검토했다. / 규칙: 보고는 유효 JSON 하나, PASS는 `findings=[]`, 정보성은 notes. coordinator의 통합 순서 오류(통합 증거 전 merge → `candidate_base_advanced`, checkout만으로 복구)는 'T2 통합·최종 검증 기록' 절에 이미 있다.
+
+검토 깊이 점검(read-only, codex): 검토 6건에서 근거 없는 PASS는 없었다. 제안은 검토 명세 문구(P-01-R2부터 적용)와 계약 변경(SCOPE-PATH-001 AC-04 확장: `files_reviewed`/`checks_run`/`ac_evidence`; FLOW-001: 거부 조건, 별도 reviewer 목표, 같은 workspace 재검증)으로 나눴고 계약 변경은 사용자 결정 대기다.
 
 ## 작업 T2 착수 전 남은 조건
 
