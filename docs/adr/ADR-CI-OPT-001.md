@@ -38,5 +38,3 @@ verified 근거는 skip 없는 CI 전체 matrix이므로 최종 후보 깊이는
 대가: draft로 열지 않은 PR은 절감이 없고, 병합 직후 main 4 job 중복(R4)은 남는다. gate는 GitHub UI 병합을 강제로 막지 않는다.
 대안 기각: labeled 트리거(이벤트·concurrency 간섭 관리 비용), 경로 등급만 사용(Task 선언 등급 무시), 선택 조건 복사(조용한 불일치),
 API 기반 job 열거(새 권한·외부 의존).
-</content>
-</invoke>

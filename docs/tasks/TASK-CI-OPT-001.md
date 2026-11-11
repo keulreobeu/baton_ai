@@ -58,7 +58,5 @@ AC가 검증됐다는 뜻이 아니다.
 
 1. Orca 부재: Orca 설치·자격 또는 사용자가 정한 실행 방식. 다른 Provider로 우회 금지.
 2. 이 계약 문서(Spec revision 1·Plan·ADR)의 독립 검토 — 권장(L3, verified 전 필수).
-3. Spec 미결정 P-01·P-06(T2 전), P-07(verify.yml 수정 전).
+3. Spec 미결정 P-01·P-06(T2 전), P-07(verify.yml 수정 전), P-08·P-09(T3b 전).
 4. 원격 E2E·push·PR은 별도 승인. 승인 전 E2E는 not_run.
-</content>
-</invoke>

@@ -74,7 +74,9 @@ required_level(item)`, scope 정확/접두 일치)을 `eligible_tasks(item, task
 
 ### CI-OPT-001-AC-06
 
-`tests/test_sdd.py`에 회귀 2개를 추가한다(R3). 정상: fixture 저장소에서 `{"pull_request":{"base":{"sha":<base>}}}`이면
+`tests/test_sdd.py`에 회귀 2개를 추가한다(R3). fixture 전제: worktree가 clean이고(`changes()`는 base 이후 diff에 untracked
+파일도 더하므로 잔여 파일이 없어야 한다), base는 traceability `baseline_commit` 이후의 commit이다(이전이면 baseline으로 한정된다).
+정상: fixture 저장소에서 `{"pull_request":{"base":{"sha":<base>}}}`이면
 base 이후 바뀐 파일만 changed이고 `basis.requested_base == base`. 실패: `GITHUB_EVENT_PATH`에 `{"pull_request":{}}`를 두고
 `main(["--ci", "--root", ...])`를 실행하면 `status=FAIL`, exit 1. 검사기 동작은 바꾸지 않는다.
 
@@ -88,6 +90,7 @@ tier 규칙. T0=바뀐 경로가 전부 허용 문서(`README.md`, `docs/**`)이
 `skills/**`, `AGENTS.md`, `CLAUDE.md`, `docs/sdd.md`, `docs/sdd/**`(traceability 포함). T1~T3=바뀐 경로의 `required_level`
 최댓값과 `eligible_tasks()`로 고른 Task `level` 최댓값 중 큰 값(L1→T1, L2→T2, L3→T3). 빈 diff=T1.
 음성: 제외 경로가 섞이면 T0가 아니다. 갱신되지 않았거나 scope 밖인 Task는 tier에 영향을 주지 않는다.
+판정 순서(T0 허용 문서 판정과 Task level 중 무엇을 먼저 따지는지)는 미결정 P-08이다.
 
 ### CI-OPT-001-AC-08
 
@@ -121,8 +124,10 @@ merge-ref 검증이나 main 커밋 증거를 대체하지 않고, PR/main 실행
 
 ### CI-OPT-001-AC-11
 
-`if: always()` 종료 gate job이 이벤트 사실(이벤트 이름·draft·라벨)로 요구 깊이를 다시 계산해 계획한 matrix 집합과 비교하고,
-선택된 회귀 job(또는 draft-T0 job)의 **집계 결과**가 success인지 확인한다. plan 실패, 선택 job skip/cancel/fail,
+`if: always()` 종료 gate job이 깊이를 두 경우로 나눠 확인한다. ready PR·main push(및 dispatch)는 plan 출력과 무관하게
+이벤트 사실만으로 전체 4 matrix를 요구하고 계획한 matrix 집합이 그와 같은지 본다. draft PR은 plan 출력(tier·fallback 사유·`ci:full`
+반영)과 계획한 matrix 집합(또는 draft-T0 전용 job)이 AC-08 표와 일관되는지 본다. 이어서 선택된 회귀 job(또는 draft-T0 job)의
+**집계 결과**가 success인지 확인한다. plan 실패, 선택 job skip/cancel/fail,
 요구·계획 matrix 불일치는 gate 실패다. 비교 로직은 `ci_plan.py`의 순수 함수와 `tests/test_ci_plan.py`로 검증한다.
 한계: `needs.<job>.result`는 matrix 집계이므로 이 gate는 실제 4개 개별 job 완료를 독립 열거했다고 주장하지 않는다.
 원격 required check/ruleset 등록과 GitHub UI의 강제 병합 차단 보장은 범위 밖이다.
@@ -147,10 +152,11 @@ ready 성공은 현재 증거가 아니다. ready/main 4개 job의 실제 성공
 
 "계획"은 인계서 13절 사용자 계획 원문, "확정"은 인계서 4절 사용자 확정 결정, "통합"은 저장 통합 계획(c18f3d0b)이다.
 2026-11-11 사용자 확인: 이 approved 연결을 유지한다고 사용자가 직접 답했다. 범위는 아래 REQ/AC뿐이며 미결정 P-01~P-07은 계속 pending이다.
+그 뒤 독립 검토 반영으로 추가한 P-08·P-09도 pending이며 승인 범위를 넓히지 않는다.
 
 | AC | 계획 조항 | 확정/통합 근거 |
 |---|---|---|
-| AC-01 | 1절 "호출 횟수를 줄이는 방법론을 먼저", 2절 표 1/T2 "검증 사다리", 4절 "최종 통합 후보는 공식 검증·독립 리뷰·필수 CI", 1절 "최종 검증 캐시 … 추가하지 않는다" | 확정 2-C→A·고정 조건, 통합 단계 1 |
+| AC-01 | 1절 "호출 횟수를 줄이는 방법론을 먼저", 2절 표 1/T2 "검증 사다리", 4절 "최종 통합 후보는 공식 검증·독립 리뷰·필수 CI", 1절 "최종 검증 캐시 … 추가하지 않는다", 4절 증거 "source·base·Task·설정 변경 시 기존 증거 무효화" | 확정 2-C→A·고정 조건, 통합 단계 1 |
 | AC-02 | 2절 표 1/T2 "짧은 Worker 입력/결과·리뷰 묶음 반영", 2절 "관측 기록은 T2부터 시작" | 통합 단계 1 |
 | AC-03 | 2절 표 1/T2 "PR 중복 트리거 제거", 1절 `ci:full` 다음 이벤트 반영 | 확정 D3=B, 통합 단계 1 |
 | AC-04 | 2절 표 1/T2 "concurrency 정리", 종료 조건 "고정 4 matrix를 유지한 후보" | 확정 R1·D3=B, 통합 단계 1·2(fetch-depth:0, GMS 검사) |
@@ -175,8 +181,17 @@ ready 성공은 현재 증거가 아니다. ready/main 4개 job의 실제 성공
   아니라 확대 방향이므로 안전 기본값). 더 좁히려면 결정이 필요하다.
 - P-04 `workflow_dispatch` 입력 세부: `tier`는 `full` 하나만 허용(choice)하고 `base`는 필수로 둔다. 다른 tier 값 지원은 계획에 없다.
 - P-05 fallback 사유 코드 이름 집합(예: `PLANNER_EXCEPTION`, `CHANGE_COUNT_LIMIT`, `UNKNOWN_EVENT`). 정책이 아니라 작업 T3 구현 세부이며 테스트로 고정한다.
-- P-06 CI-OPT-001의 REQ/AC 원장(traceability feature) 등록 시점과 workflow 정적 검사 테스트 위치. 검사기는 AC마다 실제 테스트 symbol을
-  요구하므로 테스트가 생기는 작업 T2/T3 변경 묶음에서 등록한다. workflow 텍스트 검사용 새 테스트 파일이 필요하면 scope 추가 결정이 필요하다.
+- P-06 CI-OPT-001의 REQ/AC 원장(traceability feature) 등록 조건. `check_sdd`는 feature마다 Spec heading 집합이 등록 REQ·AC 집합과
+  같아야 하고(`headings == local | requirement_ids`), AC마다 실제 테스트 symbol이 1개 이상 있어야 하며, 전체 AC가 Task에 덮여야 한다
+  (`task_coverage == all_acs`). 따라서 AC-01~13을 일부만 등록할 수 없고 13개를 한 번에 등록해야 한다.
+  - 등록 시점: 13개 AC 모두에 실제 테스트 symbol이 생긴 변경 묶음.
+  - 문서·workflow AC(AC-01~04, AC-10·11의 workflow 부분): 정적 텍스트 테스트 후보로 덮는다(예: 새 `tests/test_ci_workflow.py`). 새 파일은 Task scope 추가라 결정 대상이다.
+  - AC-12(원격 E2E 증거)·AC-13(범위 경계)처럼 오프라인 테스트로 증명할 수 없는 AC의 처리 방침(테스트 symbol 대상, AC 재구성 등)은 미결정이다.
+  - 임시 SDD-001-AC-06 연결의 종료 조건: CI-OPT-001 feature가 위 조건으로 등록되는 같은 변경 묶음에서 Task `acs`를 CI-OPT-001-AC-01~13으로 바꾸고 SDD-001-AC-06 연결을 뗀다.
+  이 항목 전체는 pending이며 승인 범위를 넓히지 않는다.
 - P-07 `timeout-minutes`와 미병합 TASK-CI-TIME-001(draft, 다른 branch `claude/ci-windows-time-20261110`)의 `verify.yml` 변경 충돌. CI-OPT는 timeout을 바꾸지 않는다.
-</content>
-</invoke>
+- P-08 AC-07 판정 순서. T0 허용 문서 판정을 먼저 할지, `required_level`·Task level 최댓값을 먼저 볼지(예: L3 Task가 문서만 바꾼 draft를
+  T0로 둘지 T3로 올릴지)는 계획에서 정해진 적이 없다.
+- P-09 최상위 `skills/baton-flow/**` 경로는 `check_sdd.required_level()`의 `"/skills/" in name` 조건(scripts/check_sdd.py:211)에 걸리지 않아
+  level 1로 분류된다. R2에 따라 검사기 동작은 바꾸지 않는다. AC-07의 T0 제외에는 이미 `skills/**`가 있다. `ci_plan.py`에서 이 경로의
+  등급을 별도로 올릴지는 결정 대상이다.

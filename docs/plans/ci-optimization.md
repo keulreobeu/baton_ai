@@ -23,7 +23,10 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 5. 작업 T3b — `ci_plan.py` + `test_ci_plan.py`(AC-07~09): tier × draft/ready/main/dispatch 전 조합, 실제/fallback T3 구분,
    빈 diff, 500개 초과, 제외 경로, 갱신 안 된 Task 무시, 실제 `check_sdd` 모듈 사용.
 6. 작업 T3c — workflow plan job·draft-T0 job·동적 matrix·dispatch·종료 gate(AC-08~12). 이 단계 완료 뒤에만 dispatch 안내.
-7. 원장 등록 — 테스트가 생긴 묶음에서 CI-OPT-001 feature(REQ/AC→실제 테스트)를 traceability에 등록하고 Task `acs`를 바꾼다.
+7. 원장 등록(Spec 미결정 P-06, pending) — 검사기가 heading·REQ/AC 집합 일치, AC마다 실제 테스트 symbol, 전체 AC의 Task 연결을
+   요구하므로 13개 AC를 한 번에 등록한다. 시점은 모든 AC에 실제 테스트 symbol이 생긴 묶음이다. 문서·workflow AC는 정적 텍스트 테스트
+   후보(예: `tests/test_ci_workflow.py`, scope 추가는 결정 대상)로 덮고, AC-12·13처럼 오프라인으로 증명할 수 없는 AC의 처리는 미결정이다.
+   같은 묶음에서 Task `acs`를 CI-OPT-001-AC-01~13으로 바꾸고 임시 SDD-001-AC-06 연결을 끝낸다.
 8. 최종 후보 — 공식 순차 `verify_environment.py` 1회, 독립 검토(`check_sdd.py` 포함), 승인된 경우에만 원격 E2E.
 
 ## 단계별 검증
@@ -46,22 +49,3 @@ plan job 예외→T3+사유, bootstrap 불가→workflow 실패, SDD FAIL 유지
 ## 범위 밖
 
 R4 main 중복 생략, merge_group, CI 테스트 병렬화, cache/새 DB/벤치마크, 원격 보호설정, timeout 변경(CI-TIME-001 쪽).
-</content>
-</invoke>
-<invoke name="Bash">
-<parameter name="command">cd D:/baton_ai/.local_runtime/ci-opt-001 && python - <<'EOF'
-import json,re
-p='docs/sdd/traceability.json'
-raw=open(p,'rb').read()
-crlf=b'\r\n' in raw
-t=raw.decode('utf-8')
-old='    "docs/tasks/TASK-MEMORY-001.md"\n  ],'
-nl='\r\n' if crlf else '\n'
-old=old.replace('\n',nl)
-assert t.count(old)==1, t[t.find('TASK-MEMORY-001.md')-10:t.find('TASK-MEMORY-001.md')+40]
-new=nl.join(['    "docs/tasks/TASK-MEMORY-001.md",','    "docs/specs/CI-OPT-001.md",','    "docs/plans/ci-optimization.md",','    "docs/adr/ADR-CI-OPT-001.md",','    "docs/tasks/TASK-CI-OPT-001.md"','  ],'])
-t=t.replace(old,new)
-open(p,'wb').write(t.encode('utf-8'))
-json.loads(t); print('ok crlf=',crlf)
-EOF
-git diff --stat

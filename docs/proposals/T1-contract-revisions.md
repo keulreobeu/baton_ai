@@ -97,8 +97,6 @@ inputs: docs/specs/CI-OPT-001.md; docs/tasks/TASK-CI-OPT-001.md; docs/proposals/
 
 - 변경 계약: CI-OPT-001 rev1(이 branch), FLOW-001 rev2·HANDOFF-001 rev4·LEAN-CORE-001 rev3(위 후보, 미반영).
 - 유지 게이트: verified 규칙, L3 독립 검토, 최종 후보 공식 순차 검증, ready/main 전체 4 matrix, 원격·실모델·Orca·GMS·전원 별도 승인.
-- 사용자 확인이 필요한 새 항목: CI-OPT 미결정 P-01~P-07, 3절 관측 schema, 새 Task 분리(TASK-FLOW-002·Hook Task·TASK-OBS-001) 여부.
+- 사용자 확인이 필요한 새 항목: CI-OPT 미결정 P-01~P-09, 3절 관측 schema, 새 Task 분리(TASK-FLOW-002·Hook Task·TASK-OBS-001) 여부.
 - 실행 blocker: Orca `not_installed`(우회 금지), 기본 checkout dirty 소유자 unknown, 원격 E2E 미승인.
 - 미실행 증거: GitHub workflow E2E, 실제 Hook 호스트 smoke, Orca 취소·Codex Worker, 전체 오프라인 회귀(문서만 변경으로 생략).
-</content>
-</invoke>
