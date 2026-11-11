@@ -8,7 +8,7 @@ owner = "Claude"
 revision = 1
 approved_by = "사용자"
 approved_at = "2026-11-11"
-approval_ref = "2026-11-11 사용자 'PLEASE IMPLEMENT THIS PLAN' — BATON 통합 개선 실행 계획(Claude 첫 작업 인계서 13절 원문, 저장 통합 계획 SHA256 c18f3d0bb8fc6a32b3599cbfb0aa302ab3e5cce7ade5334f59c210a34a8000d3) + 같은 날 세션 지시 '확정 계획에 대한 구현 요청을 승인 근거로 연결'. 승인 범위는 아래 '승인 근거 대조'의 REQ/AC만이며 '미결정' 절은 제외"
+approval_ref = "2026-11-11 사용자 'PLEASE IMPLEMENT THIS PLAN' — BATON 통합 개선 실행 계획(Claude 첫 작업 인계서 13절 원문, 저장 통합 계획 SHA256 c18f3d0bb8fc6a32b3599cbfb0aa302ab3e5cce7ade5334f59c210a34a8000d3) + 같은 날 세션 지시 '확정 계획에 대한 구현 요청을 승인 근거로 연결' + 2026-11-11 같은 세션에서 사용자가 이 approved 연결에 'approved 유지'라고 직접 답함. 승인 범위는 아래 '승인 근거 대조'의 REQ/AC만이며 '미결정' 절은 제외"
 ```
 
 용어: 이 문서의 **tier T0~T3**는 변경 분류이고, **작업 T1~T6**은 인계 계획의 작업 묶음이다. 둘을 섞지 않는다.
@@ -146,6 +146,7 @@ ready 성공은 현재 증거가 아니다. ready/main 4개 job의 실제 성공
 ## 승인 근거 대조
 
 "계획"은 인계서 13절 사용자 계획 원문, "확정"은 인계서 4절 사용자 확정 결정, "통합"은 저장 통합 계획(c18f3d0b)이다.
+2026-11-11 사용자 확인: 이 approved 연결을 유지한다고 사용자가 직접 답했다. 범위는 아래 REQ/AC뿐이며 미결정 P-01~P-07은 계속 pending이다.
 
 | AC | 계획 조항 | 확정/통합 근거 |
 |---|---|---|
