@@ -180,3 +180,19 @@ baton credentials-import
 `python -X utf8 scripts/verify_environment.py`는 기존 오프라인 테스트까지 실행한다.
 테스트 skip과 실제 Provider/Windows 현장 미실행은 별도로 보고하며 실제 완료로 소급하지 않는다.
 연결 프로젝트의 AGENTS/SDD/Skill은 프로젝트가 소유한다.
+
+### 검증 사다리와 Worker 입출력 (CI-OPT-001)
+
+- 편집 중: 변경 모듈·AC 대상 테스트.
+- 작업 단위: 대상 테스트 + Task 시작 base 기준 `check_sdd.py --base`. 공유/고위험 경로는 기존 fast runner(`scripts/run_tests_fast.py`) 추가.
+- 리뷰 반영: 지적을 묶은 뒤 대상 테스트 + 빠른 회귀 1회. 회차마다 push하지 않는다.
+- 최종 L2/L3 후보: 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI.
+- 통합·충돌 반영: 영향 파일 검사·빠른 회귀 후 바뀐 후보/base의 최종 증거 갱신.
+
+같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
+최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. 자동 cache·새 검증 DB·새 영향 분석 엔진은
+추가하지 않고 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다.
+Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한하고, 결과는 기능/계약 변화·검증·후보 SHA·미해결·다음 행동으로 요약한다.
+raw transcript를 재전달하지 않고 가까운 수정·리뷰 지적은 묶어서 반영한다. 관측 기록은 기존 계측(MetricsStore·Task 증거)으로 남기며
+수집 불가 값은 `unknown`/`partial`/`null`이고 0으로 바꾸지 않는다. 이 지침은 모델 호출·Orca 배정·push를 승인하지 않는다.
+상세는 [개발 계약](docs/sdd.md)의 검증 사다리 절.
