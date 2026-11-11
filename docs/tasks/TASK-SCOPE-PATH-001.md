@@ -92,3 +92,41 @@ CI-OPT-001 계약·Task·traceability는 바꾸지 않았다. CI-OPT 작업 T2b�
 - 수정 우회 확인: `_keep_owner`를 무력화하면 AC-03 양성 테스트가 실패한다.
 - 기존 테스트 변경: `test_stale_dispatch_stays_unadoptable_across_an_attempt_that_never_started`의 중간 단언을 새 계약에 맞게 바꿨다(ADR 결과 절).
 - not_run: `verify_environment.py`(지시로 제외), 전체 discover 회귀의 공식 순차 실행, 독립 검토, 원격 CI. 커밋·push 없음.
+
+## Orca 실행·통합 기록 — 2026-11-11
+
+이 절은 실행 사실과 사용자 결정 기록이다. 이 Task는 `in_progress`이며 verified·approved가 아니다.
+
+### BATON 작업 단위
+
+- R1: BATON Task `TASK-SCOPE-PATH-001` author `ctx_a4609a03bbd4`(claude) FAILED. 검증 목록에 `tests.test_harness`(환경 skip 모듈)가 있었고 전체 discover가 timeout됐다.
+- R2: codex `ctx_fc9ccd3b1488`가 port, validated, 후보 `144fa832`. 검토 전에 R3(AC-04)로 대체(superseded)됐다.
+- R3: author `ctx_80121686f97d`(claude), 후보 `f36a865a`. 검토 `ctx_10af53061374`(codex) FAIL, [P2] AC-02 추적 bytecode 삭제가 숨겨짐.
+  수정은 후속 dispatch `ctx_d0c16357224c`(같은 claude author agent, BATON이 추적하지 않음)가 했다. BATON 증거의 author는 `orca:ctx_80121686f97d`로 유지된다.
+- coordinator가 R3 workspace를 `git checkout -m --detach`로 base `351a8a9`에 옮겼고 이때 autostash가 사용됐다.
+  이후 stash list를 확인했으며 0건, 삭제된 것 없음. 기록만 하고 되돌리지 않았다.
+- 재검증: `baton validate --base 351a8a9`, 후보 `ba694431`(publisher `codex/task-scope-path-001-r3-b2`).
+  검토 `ctx_3929328b93f9`(codex gpt-6.1-sol) PASS, findings `[]`. Orca가 claude author의 model을 보고하지 않아 BATON `model_diversity`는 `unknown`이다(provider는 다름).
+- 통합 증거는 `ba694431` 기준이다. Git worker `ctx_02013b6ab099`가 `codex/ci-opt-001`에 fast-forward했다.
+- 사실: R3 검토 prompt는 검토되지 않은 후보 BATON src(AC-04 prompt)가 생성했다.
+- approve는 사용자 gate로 대기 중이다. not_run: `verify_environment.py`, 원격 CI.
+
+### 사용자 결정·실행 사실 (2026-11-11, coordinator chat)
+
+- (a) T2 Orca 실행 후 채택한 규칙:
+  - worker ENV RULE: workspace에 `.venv`를 만들지 않고 ignored 파일 0개(`git status --short --ignored`에 `!!` 없음), Python은 `D:/baton_ai/.venv/Scripts/python.exe` + `PYTHONPATH=src` + `PYTHONDONTWRITEBYTECODE=1` + 임시 `BATON_HOME`.
+  - Task 검증 목록은 대상 모듈만 쓴다(전체 discover 금지, `test_harness` Jipdam skip 같은 환경 skip 모듈 금지).
+  - 검토되지 않은 후보 BATON src로 검증한 Task는 통합된 BATON으로 재검증하며, 그 이전 판정은 증거가 아니다.
+  - 의존 순서대로 한 묶음으로 통합한다(SCOPE-PATH -> T2B rebase -> 재검증).
+  - reviewer model은 후보의 BATON author model과 다르게 둔다.
+  - 늦은 Orca wake는 `worker-show`로 확인할 수 있다.
+  - 통합 Git은 별도 Git worker dispatch가 한다(autostash/stash/reset/force/amend/push/PR/main 병합 없음).
+- (b) Provider 규칙: coordinator provider(claude)가 작은 몫, codex가 큰 몫을 맡는다. 검토는 교차하고 `preferred_provider`/`review_provider`를 명시한다.
+  quota 소진 시 사용자에게 묻고 자동 전환하지 않는다. 사용량 기준: 5시간 window 90% 또는 주간 95%면 새 worker 전에 멈추고 묻는다
+  (계속 / reset 대기 / checkpoint + handoff card). 확인 가능한 출처로만 판단하고 그 외는 `unknown`이다.
+- (c) pnpm setup hook: 사용자가 Orca repo 설정에서 끈다. 그 전에 만든 workspace의 pnpm 실패 로그는 무시한다.
+- (d) FAILED/BLOCKED 재검증(2-B): BATON 코드는 바꾸지 않는다. FAILED면 기존처럼 새 Task + port. 같은 workspace 재검증은 T4 FLOW 개정 후보로만 기록한다.
+- (e) 정리(4-B): T2 통합과 증거가 확정되기 전에는 workspace/worktree/BATON task를 삭제하지 않는다. 그 후 대체된 author workspace의
+  hash 확인 삭제 목록을 먼저 사용자에게 보고한다. 중단된 BATON task는 삭제하지 않고 cancel/supersede 기록만 제안한다:
+  `TASK-SCOPE-PATH-001`(FAILED: 검증 목록에 skip 모듈과 전체 discover timeout), `TASK-SCOPE-PATH-001-R2`(validated, 검토 전 R3/AC-04로 대체),
+  `TASK-CI-OPT-001-T2A`(BLOCKED: worker bytecode cache + reuse 재배정으로 binding 상실, attempts 2/2).
