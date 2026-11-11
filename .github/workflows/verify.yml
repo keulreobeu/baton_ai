@@ -1,5 +1,12 @@
 name: BATON offline verification
-on: [push, pull_request]
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('verify-pr-{0}', github.event.pull_request.number) || format('verify-main-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:

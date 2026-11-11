@@ -32,8 +32,8 @@ AC가 검증됐다는 뜻이 아니다.
 | 단계 | AC | 소유 파일 | 상태 |
 |---|---|---|---|
 | 작업 T1 | — (계약) | CI-OPT 4문서, `docs/proposals/T1-contract-revisions.md`, `docs/sdd/traceability.json`, `docs/tasks/current.md` | 문서 완료, 독립 검토 대기 |
-| 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | 작성 완료, 로컬 작업 단위 검사 통과. 독립 검토·커밋 대기, verified 아님 |
-| 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py` | 착수 전 |
+| 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보·로컬 통합 `351a8a9`. Task 전체 verified 아님 |
+| 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 작성 완료, 로컬 대상 검사 통과. 독립 검토·통합 대기, verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 착수 전, T2 이후 |
 | 작업 T3b 분류기 | AC-07~09 | `scripts/ci_plan.py`, `tests/test_ci_plan.py` | 착수 전 |
 | 작업 T3c workflow·dispatch·gate | AC-08~12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 안내 문서 | 착수 전 |
@@ -79,6 +79,30 @@ AC가 검증됐다는 뜻이 아니다.
 - 검사(모델 호출 0, `D:/baton_ai/.venv` Python, 임시 BATON_HOME): `python -X utf8 -m unittest tests.test_ci_workflow tests.test_sdd` 35개 OK(exit 0), `check_sdd.py --base 5c07aea…` PASS(exit 0, documents 33, tasks 11, changed_paths 11), `git diff --check` exit 0.
 - not_run: `verify_environment.py`(최종 후보 전용), fast runner(공유/고위험 코드 변경 없음), 전체 회귀, 원격 CI, 독립 검토. 커밋·push·PR 0.
 - 관측: Worker 비용·토큰·시간 `unknown`(수집 계측 없음).
+
+## 작업 T2b 기록 — 2026-11-11
+
+- 작업 위치: Orca worktree, branch `keulreobeu/TASK-CI-OPT-001-T2B-author`, workspace base/현재 HEAD `351a8a9350cb6eafbab3b44c0d12809dc4f6d7d6`(T2a 로컬 통합 후). Task 검사 base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`. 새 후보 커밋은 없음.
+- 변경: workflow의 PR activity 4종·main push와 최상위 concurrency만 변경. PR 번호 그룹은 취소, main SHA 그룹은 보존한다. 이름·permissions·고정 4 matrix·fail-fast·timeout 15·env·fetch-depth 0·GMS optional 두 단계·공식 검증 단계는 유지했다. README에 branch push/PR/main 및 충돌 PR의 CI 공백 안내를 추가하고 기존 T2a 테스트에 AC-03·04 정적 테스트 4개를 더했다.
+- 검사: 이 checkout의 `.venv/Scripts/python.exe`(표준 라이브러리 전용 venv), `PYTHONDONTWRITEBYTECODE=1`, 임시 `BATON_HOME`, `PYTHONPATH=src`. `python -X utf8 -m unittest tests.test_ci_workflow tests.test_sdd` 39개 OK(exit 0, failures/errors/skips 0); `check_sdd.py --base 5c07aea…` PASS(exit 0, documents 33, tasks 11, changed_paths 12); `git diff --check` exit 0. 첫 검사에서 Windows CRLF를 LF 바이트로 나눈 테스트 오류 1개를 줄바꿈 정규화로 수정한 뒤 재검사했다.
+- 경계: AGENTS.md와 push 절, traceability는 미변경. P-01 초안은 사용자 확인 전 그대로이며, P-06의 feature 등록은 T3에 남긴다. 원장 연결 전 정적 테스트이며 Task 전체 AC passed/verified 증거로 승격하지 않는다.
+- not_run: `verify_environment.py`(최종 후보 전용), fast runner·전체 회귀(이 작업의 지정 검사 범위 밖), 원격 CI/E2E, 독립 검토, 커밋·push·PR, 실제 모델·GMS 호출. 다음 행동은 고정 후보 독립 검토와 coordinator 통합이며, 최종 후보의 공식 검증·필수 CI는 남아 있다.
+- 작업 종료 상태: `git status --short --ignored`의 ignored 항목은 `.venv/`뿐이고 그 밖에는 없음. Worker 비용·토큰·시간은 `unknown`(미관측).
+
+## T2 Orca 실행·통합 기록 — 2026-11-11
+
+아래는 coordinator 채팅의 실행 사실·사용자 결정이다. 앞의 T2a/T2b 기록은 각 작성 시점의 상태이며, 현재 workspace는 detached base `ba694431b2730db04f9a29bb8fa818fe0091867f`다. P-01 문안은 계속 사용자 확인 전 초안이다.
+
+- T2a 첫 BATON 단위 `TASK-CI-OPT-001-T2A`: author `ctx_319c558763c3`(claude), worker bytecode cache 때문에 BLOCKED. 후속 `ctx_0eb601b64b63` 정리는 BATON 미추적이며, reuse redispatch에서 binding을 잃고 attempts 2/2에 도달해 `TASK-CI-OPT-001-T2A-R2`로 재등록했다. 내용 author=claude(T2a), port·review=codex(gpt-6.1-sol).
+- T2a 첫 검토 `ctx_afd00bd05f89`는 PASS였으나 PowerShell 5.1 quote stripping으로 본문이 유효 JSON이 아니고 info finding도 있어 `invalid_review_report`였다. 둘째 `ctx_f54d466c132d`는 PASS, `findings=[]`; 사용자 요청인 AGENTS.md ladder 절의 P-01/P-02 확인도 포함했다(정보성·비차단, push 절 byte-identical). 후보·통합은 `351a8a9`. Git worker 결정 전에 coordinator가 직접 `codex/ci-opt-001`을 `c896b34 -> 351a8a9` fast-forward한 사실을 기록하며 되돌리지 않았다. T2A-R2의 BATON `model_diversity=same`, 사용자 결정 3-B에 따라 추가 검토 없음.
+- T2b `TASK-CI-OPT-001-T2B`: author `ctx_5288407b2c40`(codex), 후속 `ctx_5de9ed3a093d`의 `.venv` 정리는 BATON 미추적. 미검토 SCOPE-PATH 후보 BATON src로 등록·ingest·validate했으므로 그 판정은 증거가 아니다. 통합 BATON과 base `ba694431`에서 재검증하는 대상으로 두며 reviewer는 claude다. Git worker `ctx_02013b6ab099`가 backup patch → 5개 경로 restore → `checkout --detach` → `apply --3way`로 workspace를 옮겼고 충돌은 없었다.
+- 선행 `TASK-SCOPE-PATH-001` 계약(AC-01..04: `.github/workflows` scope 경로, bytecode 제외, binding 유지, review prompt)은 `ba694431`로 통합됐다. 의존 순서대로 한 묶음(SCOPE-PATH → T2B rebase → revalidate)으로 진행하며, 미검토 후보 BATON src의 기존 판정 대신 통합 BATON으로 재검증한다.
+- 실행 규칙: workspace `.venv` 생성 금지, ignored 파일 0. Python은 `D:/baton_ai/.venv/Scripts/python.exe`, `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, 임시 `BATON_HOME`으로 실행한다. Task validation 목록은 대상 모듈만 사용하며 full discover와 환경 skip 모듈(예: test_harness의 Jipdam skip)은 제외한다. reviewer 모델은 후보의 BATON author 모델과 다르게 정한다. 늦은 Orca wake는 `worker-show`로 확인할 수 있다. 통합 Git은 별도 Git worker dispatch가 담당하며 autostash/stash/reset/force/amend/push/PR/main merge는 하지 않는다.
+- Provider 결정: coordinator provider인 claude는 작은 몫, codex는 큰 몫을 맡고 검토는 교차한다. `preferred_provider`/`review_provider`를 명시하며 quota 소진 시 자동 전환하지 않고 사용자에게 묻는다. 5h window 90% 또는 weekly 95%이면 새 worker 전에 멈추고 계속/리셋 대기/checkpoint + handoff card 중 결정을 묻는다. 검증 가능한 출처로만 판단하며 출처가 없으면 `unknown`이다.
+- pnpm setup hook은 사용자가 Orca repo settings에서 끈다. 그 전에 생성된 workspace의 pnpm 실패 로그는 무시한다.
+- FAILED/BLOCKED 재검증(2-B): BATON 코드는 바꾸지 않는다. FAILED이면 기존 방식대로 새 Task + port를 사용한다. 같은 workspace 재검증은 T4 FLOW 개정 후보로만 기록한다.
+- 정리(4-B): T2 통합·증거 확정 전 workspace/worktree/BATON Task를 삭제하지 않는다. 이후 superseded author workspace의 hash 대조 삭제 목록을 먼저 사용자에게 보고한다. 버려진 BATON Task `TASK-SCOPE-PATH-001`(FAILED: validation 목록의 skip 모듈·full-discover timeout), `TASK-SCOPE-PATH-001-R2`(validated, review 전 R3/AC-04로 대체), `TASK-CI-OPT-001-T2A`(BLOCKED: worker bytecode cache·reuse redispatch binding 유실, attempts 2/2)는 삭제하지 않으며 cancel/supersede 기록만 제안한다.
+- 이 문서 후속 검사: 위 외부 Python·환경으로 `python -X utf8 -m unittest tests.test_ci_workflow tests.test_sdd` 39개 OK(failures/errors/skips 0, exit 0), `python -X utf8 scripts/check_sdd.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` PASS(exit 0, documents 37, tasks 12, changed_paths 21), `git diff --check` exit 0. ignored 항목 0. 이는 BATON 후보 재검증·독립 검토의 완료 선언이 아니다. `verify_environment.py`·전체 회귀·원격 CI·커밋/push/PR·실모델/GMS는 not_run, 비용은 `unknown`이다.
 
 ## P-01 AGENTS 문안 초안
 
