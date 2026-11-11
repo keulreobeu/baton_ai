@@ -113,5 +113,79 @@ class WorkerIoDocsTests(unittest.TestCase):
         self.assertIn("AGENTS.md 미반영", draft)
 
 
+class PrMainWorkflowTests(unittest.TestCase):
+    """CI-OPT-001-AC-03/04: exact events and per-event concurrency policy."""
+
+    def test_only_supported_pr_activities_and_main_push(self):
+        text = read(".github/workflows/verify.yml")
+        self.assertEqual(text.split("concurrency:\n", 1)[0], (
+            "name: BATON offline verification\n"
+            "on:\n"
+            "  pull_request:\n"
+            "    types: [opened, synchronize, reopened, ready_for_review]\n"
+            "  push:\n"
+            "    branches: [main]\n"
+        ))
+        for forbidden in ("labeled", "unlabeled", "[skip ci]", "workflow_dispatch", "paths:", "paths-ignore:"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text)
+
+    def test_pr_number_group_cancels_pr_only_and_main_sha_is_retained(self):
+        text = read(".github/workflows/verify.yml")
+        # The same event predicate selects the PR group and cancellation: main
+        # takes the SHA fallback and evaluates cancel-in-progress to false.
+        self.assertEqual(text.split("concurrency:\n", 1)[1].split("permissions:\n", 1)[0], (
+            "  group: ${{ github.event_name == 'pull_request' && "
+            "format('verify-pr-{0}', github.event.pull_request.number) || "
+            "format('verify-main-{0}', github.sha) }}\n"
+            "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
+        ))
+
+    def test_fixed_matrix_timeout_and_verification_steps_unchanged(self):
+        # Literal baseline from 351a8a9 (checkout line endings normalized):
+        # protects permissions, env, actions and both GMS steps as well.
+        expected = '''permissions:
+  contents: read
+jobs:
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Base install without the gms extra
+        run: python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers
+      - name: Install the optional gms extra dependency
+        run: python -m pip install "cryptography>=42"
+      - name: Offline SDD and existing regression (no provider calls)
+        run: python -X utf8 scripts/verify_environment.py --ci
+'''
+        actual = read(".github/workflows/verify.yml")
+        self.assertEqual("permissions:\n" + actual.split("permissions:\n", 1)[1], expected)
+
+    def test_docs_explain_branch_push_pr_events_and_conflict_gap(self):
+        text = read("README.md")
+        for term in (
+            "PR 없는 branch push는 CI를 실행하지 않는다",
+            "CI는 PR의 `opened`/`synchronize`/`reopened`/`ready_for_review` 이벤트와\n`main` push에서 실행한다",
+            "충돌이 있는 PR은 merge ref가 없어 PR CI가 실행되지 않으며",
+            "충돌 해결 전에는 검증된 것으로 보지 않는다",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, text)
+
+
 if __name__ == "__main__":
     unittest.main()

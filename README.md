@@ -183,6 +183,9 @@ baton credentials-import
 
 ### 검증 사다리와 Worker 입출력 (CI-OPT-001)
 
+PR 없는 branch push는 CI를 실행하지 않는다. CI는 PR의 `opened`/`synchronize`/`reopened`/`ready_for_review` 이벤트와
+`main` push에서 실행한다. 충돌이 있는 PR은 merge ref가 없어 PR CI가 실행되지 않으며, 충돌 해결 전에는 검증된 것으로 보지 않는다.
+
 - 편집 중: 변경 모듈·AC 대상 테스트.
 - 작업 단위: 대상 테스트 + Task 시작 base 기준 `check_sdd.py --base`. 공유/고위험 경로는 기존 fast runner(`scripts/run_tests_fast.py`) 추가.
 - 리뷰 반영: 지적을 묶은 뒤 대상 테스트 + 빠른 회귀 1회. 회차마다 push하지 않는다.

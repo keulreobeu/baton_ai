@@ -8,8 +8,8 @@
 
 ## 현재 작업 — 2026-11-11 CI 호출 축소
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: 작업 T1(계약 문서) 완료. 작업 T2a(AC-01·02 검증 사다리·Worker 입출력 지침, 정적 테스트) 로컬 작성·검사 완료, 독립 검토·커밋 대기. P-01 AGENTS 문안은 Task에 초안만(사용자 확인 전 미반영). [CI-OPT-001](../specs/CI-OPT-001.md)은 2026-11-11 사용자 구현 요청으로 승인(미결정 P-01~07 제외).
-  draft PR만 tier 축소, ready/main은 항상 전체 4 matrix. 작업 T2b(트리거·concurrency) 미착수. 작업 T2는 Orca coordinator dispatch로 진행(처음 기록한 Orca 미설치는 오진단, 2026-11-11 정정). 기존 계약 개정 제안: [제안서](../proposals/T1-contract-revisions.md).
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: 작업 T1(계약 문서) 완료. 작업 T2a(AC-01·02 검증 사다리·Worker 입출력 지침, 정적 테스트)는 로컬 통합 완료(`351a8a9`). 작업 T2b(AC-03·04 PR/main 트리거·concurrency)는 작성·대상 검사 완료(39 tests, skip 0), 독립 검토·통합 대기, verified 아님. P-01 AGENTS 문안은 Task에 초안만(사용자 확인 전 미반영). [CI-OPT-001](../specs/CI-OPT-001.md)은 2026-11-11 사용자 구현 요청으로 승인(미결정 항목 제외).
+  draft PR만 tier 축소, ready/main은 항상 전체 4 matrix라는 후속 T3 계약이며, T2b는 고정 4 matrix·timeout 15를 유지한다. 작업 T2는 Orca coordinator dispatch로 진행(처음 기록한 Orca 미설치는 오진단, 2026-11-11 정정). 기존 계약 개정 제안: [제안서](../proposals/T1-contract-revisions.md).
 
 ## 현재 작업 — 2026-11-10 저장소 busy
 
