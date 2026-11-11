@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import time
 from contextlib import contextmanager
@@ -100,10 +100,22 @@ def prepare_worktree(store, task):
     return target
 
 
+def interpreter_cache(name):
+    """A git-ignored compiled module under a __pycache__ directory; nothing else."""
+    path = PurePosixPath(name)
+    return "__pycache__" in path.parts[:-1] and path.suffix in {".pyc", ".pyo"}
+
+
 def snapshot(root, base="HEAD"):
     names = set(git(root, "diff", "--name-only", "--no-renames", "-z", base).split("\0"))
     # Include ignored files: an ignored data/raw write must still block fallback/scope checks.
-    names.update(git(root, "ls-files", "--others", "-z").split("\0"))
+    untracked = set(git(root, "ls-files", "--others", "-z").split("\0"))
+    # Only an ignored interpreter cache is not a worker change; every other ignored file still counts.
+    # The exclusion applies to the untracked contribution only: every path the tracked diff reports
+    # (modify, delete, staged removal, add) stays in the snapshot.
+    ignored = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").split("\0")
+    untracked.difference_update(name for name in ignored if interpreter_cache(name))
+    names.update(untracked)
     result = {}
     for name in sorted(names - {""}):
         name = canonical_path(root, name)
@@ -130,7 +142,8 @@ def pack_context(task, root, previous=None):
                 "Allowed paths: " + str(task["scope"]["allowed_paths"]),
                 "Forbidden paths: " + str(task["scope"]["forbidden_paths"]),
                 "Do not collect data, access credentials, run remote git, deploy, merge or destroy files.",
-                "Keep changes inside scope. Use deterministic tests. Do not change harness policy."]
+                "Keep changes inside scope. Use deterministic tests. Do not change harness policy.",
+                "Set PYTHONDONTWRITEBYTECODE=1 before running Python so interpreter caches are not written into the workspace."]
     if previous:
         # Keep only bounded previous diagnostics. Never forward raw provider logs.
         sections.append("Prior validation/failure: " + str(previous)[:4000])

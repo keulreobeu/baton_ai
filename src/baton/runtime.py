@@ -377,6 +377,20 @@ def _settle_unstarted_control(store, task_id):
         if str(exc) not in {"worker_busy", "external_assignment_owned_elsewhere"}: raise
 
 
+def _keep_owner(old, failed):
+    """A reuse that never started a worker keeps the settled binding that proved workspace ownership.
+
+    Only a binding with the same proof register_workspace(finished=True) demands is kept; the
+    failed attempt is appended to its bounded history instead of replacing its identity.
+    """
+    owned = (old.get("settled") is True and old.get("dispatch_id") and old.get("owner_dispatch_id") == old["dispatch_id"]
+             and old.get("ownership_state") in {"owned", "released"} and old.get("workspace_id") == failed.get("workspace_id"))
+    if not owned:
+        return failed
+    attempt = {"attempt": failed["attempt"], "state": "failed", "reason": "pre_dispatch_failed", "base_sha": failed["base_sha"]}
+    return {**old, "failed_redispatches": (old.get("failed_redispatches", []) + [attempt])[-10:]}
+
+
 def dispatch(store, task_id, client=None, *, review=False):
     client = client or OrcaCLI()
     key = "review_runtime" if review else "runtime"
@@ -456,9 +470,17 @@ def dispatch(store, task_id, client=None, *, review=False):
             check_scope(task, snapshot(context_tree, base=base))
             prompt += pack_context(task, context_tree)
             if review:
-                prompt += "\nThis is verification, not implementation. Do not edit or commit. Send your worker_done report with a body that is ONLY this JSON object, with no other text: " + encode({
+                # SCOPE-PATH-001-AC-04: prompt text only; review_report and evidence checks stay as they are.
+                prompt += ("\nThis is verification, not implementation. Do not edit or commit. Send your worker_done report"
+                           " with a body that is exactly one valid JSON object with these keys, with no other text: " + encode({
                     "candidate_sha": base, "base_sha": row["result"]["candidate"]["base_sha"],
-                    "verdict": "PASS or FAIL", "findings": []})
+                    "verdict": "PASS or FAIL", "findings": [], "notes": []})
+                    + "\nverdict PASS requires findings to be []. Put any informational, non-blocking remark in the optional"
+                    " notes list of strings, never in findings. verdict FAIL lists every blocking finding in findings."
+                    "\nOn Windows, do not pass the JSON as a native argument from PowerShell 5.1, which strips its double"
+                    " quotes: send it from a POSIX shell such as Git Bash with the body in single quotes, or escape the"
+                    " quotes. Then read the stored body back with 'orca orchestration inbox --full --json' and confirm"
+                    " it parses as one JSON object.")
             previous = dict(binding)
             binding = {**binding, "phase": "submitting"}
             if store.get(task_id)["control"]:
@@ -507,7 +529,7 @@ def dispatch(store, task_id, client=None, *, review=False):
                           final_state=stopped if before_start and review else None)
             if before_start and not review:
                 _settle_author(store, task_id, row["lease"], stopped or "BLOCKED",
-                               {"reason": "pre_dispatch_failed", "runtime": binding})
+                               {"reason": "pre_dispatch_failed", "runtime": _keep_owner(old, binding) if reusable else binding})
                 _reserve_slot(store, task_id, role, config.get("max_active_tasks", 2), release=True)
             elif before_start:
                 _reserve_slot(store, task_id, role, config.get("max_active_tasks", 2), release=True)

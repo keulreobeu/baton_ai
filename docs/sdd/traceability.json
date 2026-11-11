@@ -34,7 +34,11 @@
     "docs/specs/CI-OPT-001.md",
     "docs/plans/ci-optimization.md",
     "docs/adr/ADR-CI-OPT-001.md",
-    "docs/tasks/TASK-CI-OPT-001.md"
+    "docs/tasks/TASK-CI-OPT-001.md",
+    "docs/specs/SCOPE-PATH-001.md",
+    "docs/plans/scope-path.md",
+    "docs/adr/ADR-SCOPE-PATH-001.md",
+    "docs/tasks/TASK-SCOPE-PATH-001.md"
   ],
   "features": [
     {
@@ -1363,6 +1367,122 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_export_contains_every_active_entry_beyond_the_list_page"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SCOPE-PATH-001",
+      "spec": "docs/specs/SCOPE-PATH-001.md",
+      "requirements": [
+        {
+          "id": "SCOPE-PATH-001-REQ-01",
+          "acs": [
+            "SCOPE-PATH-001-AC-01"
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-REQ-02",
+          "acs": [
+            "SCOPE-PATH-001-AC-02"
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-REQ-03",
+          "acs": [
+            "SCOPE-PATH-001-AC-03"
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-REQ-04",
+          "acs": [
+            "SCOPE-PATH-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "SCOPE-PATH-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "WorkflowScopePathTests.test_workflow_files_are_accepted_as_scope_paths"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "WorkflowScopePathTests.test_other_dot_paths_stay_rejected"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "WorkflowScopePathTests.test_workflow_scope_does_not_widen_context_files"
+            }
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_ignored_pycache_bytecode_is_not_a_change"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_every_other_ignored_or_tracked_file_is_still_reported"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_tracked_or_unignored_bytecode_is_still_reported"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_modified_tracked_bytecode_under_ignored_pycache_still_blocks"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_deleted_or_staged_removal_of_tracked_bytecode_under_ignored_pycache_still_blocks"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_worker_context_asks_for_no_bytecode"
+            }
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_reuse_before_start_keeps_the_owner_for_validation"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_reuse_does_not_lend_ownership_that_was_never_proven"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_stale_dispatch_stays_unadoptable_across_an_attempt_that_never_started"
+            }
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_review_prompt_states_the_json_findings_notes_and_windows_rules"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_pass_report_with_notes_and_empty_findings_is_accepted"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_non_json_body_and_pass_with_findings_stay_rejected"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_reviewer_with_a_notes_report_still_cannot_edit"
             }
           ]
         }
