@@ -41,7 +41,8 @@
     "docs/tasks/TASK-SCOPE-PATH-001.md",
     "docs/tasks/TASK-CI-TIME-001.md",
     "docs/plans/ci-windows-time.md",
-    "docs/adr/ADR-CI-TIME-001.md"
+    "docs/adr/ADR-CI-TIME-001.md",
+    "docs/tasks/TASK-JIPDAM-SKIP-001.md"
   ],
   "features": [
     {
