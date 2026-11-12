@@ -1,0 +1,721 @@
+"""BATON's single validation policy and CBM 0.12.1 CLI adapter.
+
+Plans are not validation evidence. V1/L1 Fast Feedback, V2/L2 Impact
+Validation and V3/L3 Full Validation are distinct from SDD risk levels.
+No model, remote CI, database, repository graph persistence or result cache.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import builtins
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+import tomllib
+
+try:
+    from . import check_sdd as sdd
+except ImportError:
+    import check_sdd as sdd
+
+STAGES = {"in_progress": 1, "debugging": 1, "checkpoint": 2,
+          "task_complete": 3, "pre_merge": 3}
+SCOPES = {1: "graph_affected", 2: "affected_modules", 3: "full"}
+LIMIT = 2 * 1024 * 1024
+MAX_TESTS = 10000
+CBM = "codebase-memory-mcp"
+EDGES = ("CALLS", "IMPORTS", "INHERITS")
+
+
+class PlanError(Exception):
+    """Only fixed diagnostic codes may cross the machine-output boundary."""
+
+
+def need(condition, code):
+    if not condition:
+        raise PlanError(code)
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=True).encode()).hexdigest()
+
+
+def baton_root(root):
+    """Positive development-root identification; never adopt a connected project."""
+    try:
+        root = Path(root).resolve()
+        project = tomllib.loads(sdd.read(root, "pyproject.toml"))
+        return (project.get("project", {}).get("name") == "baton-ai"
+                and all((root / p).is_file() for p in (
+                    "src/baton/orchestrator.py", "scripts/verify_environment.py",
+                    "scripts/check_sdd.py", "docs/sdd/traceability.json")))
+    except (OSError, ValueError, sdd.SddError):
+        return False
+
+
+def freeze(root):
+    """Hash all tracked contents, the actual index, and relevant untracked files.
+
+    Includes clean files too: same HEAD plus dirty-status is insufficient.
+    Git's ignore policy defines relevant untracked; no raw contents leave here.
+    """
+    head = sdd.commit(root, "HEAD")
+    index = sdd.git(root, "ls-files", "--stage", "-z")
+    tracked = sorted(set(sdd.git(root, "ls-files", "-z").split("\0")) - {""})
+    other = sorted(set(sdd.git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0")) - {""})
+    # Ignored Python source in discovery/import roots can still execute. Hash
+    # these relevant files too; bytecode/runtime stores remain excluded.
+    relevant = {p.relative_to(root).as_posix() for directory in ("src", "tests", "scripts")
+                for p in (root / directory).rglob("*.py")}
+    other = sorted(set(other) | (relevant - set(tracked)))
+    need(len(tracked) + len(other) <= 20000, "MANIFEST_LIMIT")
+
+    def manifest(names):
+        rows = []
+        for name in names:
+            file = sdd.path(root, name, exists=False)
+            if not file.exists():
+                rows.append((name, "deleted")); continue
+            need(file.is_file() and file.stat().st_size <= 20 * LIMIT, "MANIFEST_FILE_LIMIT")
+            rows.append((name, hashlib.sha256(file.read_bytes()).hexdigest(), file.stat().st_mode & 0o111))
+        return fingerprint(rows)
+
+    index_path = Path(sdd.git(root, "rev-parse", "--git-path", "index").strip())
+    if not index_path.is_absolute():
+        index_path = root / index_path
+    need(index_path.is_file() and index_path.stat().st_size <= 20 * LIMIT, "INDEX_UNAVAILABLE")
+    return {"head": head, "root": fingerprint(str(root)), "tracked": fingerprint(sdd.git(root, "ls-tree", "-r", "HEAD")),
+            "worktree": manifest(tracked), "index": fingerprint([index, hashlib.sha256(index_path.read_bytes()).hexdigest()]),
+            "untracked": manifest(other), "untracked_count": len(other)}
+
+
+def policy_reason(name):
+    p = name.lower()
+    if sdd.required_level(name) == 3:
+        return "SDD_L3_PATH"
+    if (p in {"agents.md", "claude.md", "docs/sdd.md", ".gitignore",
+              "src/baton/orchestrator.py", "src/baton/evidence.py", "src/baton/execution.py",
+              "src/baton/managed.py", "src/baton/managed_cli.py", "src/baton/contracts.py"}
+            or p.startswith(("docs/sdd/", "docs/templates/", "skills/", ".github/"))
+            or "/skills/" in p):
+        return "POLICY_PATH"
+    # Configuration is intentionally broad, including unfamiliar lock/config names.
+    if (p.startswith(("tests/", "scripts/")) or any(x in p for x in (
+            "config", "planner", "policy", "validat", "test", "ci_plan", "cbm", "codebase-memory", "requirements",
+            "dependency", "dependencies", "lock", "install", "setup", "conftest"))
+            or Path(p).suffix in {".toml", ".yaml", ".yml", ".ini", ".cfg", ".json"}
+            or Path(p).name in {"makefile", "dockerfile", "tox.ini", "pytest.ini"}):
+        return "CONFIG_OR_TEST_PATH"
+    if not p.startswith(("src/", "docs/")) or Path(p).suffix not in {".py", ".md", ".txt", ".rst"}:
+        return "UNKNOWN_PATH"
+    return None
+
+
+def inventory(root):
+    """Full static unittest inventory, without importing tests or running discovery.
+
+    Inheritance, load_tests, generated/aliased test methods and nonstandard
+    discovery cannot be certified by this adapter. Keep their inventory unknown
+    rather than asserting that Python Smart CI natively handles them.
+    """
+    tests, modules, issues = {}, {}, []
+    files = sorted((root / "tests").rglob("test*.py"))
+    for file in files:
+        name = file.relative_to(root).as_posix()
+        tree = ast.parse(sdd.read(root, name), filename=name)
+        module = name[:-3].replace("/", ".")
+        modules[module] = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "load_tests":
+                issues.append("DYNAMIC_INVENTORY")
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            methods = [n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")]
+            bases = [ast.unparse(b) for b in cls.bases]
+            if bases and bases not in (["unittest.TestCase"], ["TestCase"], ["object"]):
+                issues.append("INHERITED_OR_UNKNOWN_TESTS")
+            if not methods:
+                continue
+            if bases not in (["unittest.TestCase"], ["TestCase"]):
+                issues.append("INHERITED_OR_UNKNOWN_TESTS")
+            for method in methods:
+                key = module + "." + cls.name + "." + method.name
+                need(key not in tests and len(tests) < MAX_TESTS, "INVENTORY_LIMIT_OR_DUPLICATE")
+                tests[key] = {"file": name, "symbol": cls.name + "." + method.name,
+                              "start": method.lineno, "end": method.end_lineno}
+                modules[module].append(key)
+        # Dynamic test creation or module/class attribute mutation is not inventory.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and ast.unparse(node.func) in {
+                    "exec", "eval", "setattr", "type", "globals", "locals", "__import__"}:
+                issues.append("DYNAMIC_INVENTORY")
+            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                if any(isinstance(t, ast.Name) and t.id.startswith("test")
+                       or isinstance(t, ast.Attribute) and t.attr.startswith("test") for t in targets):
+                    issues.append("DYNAMIC_INVENTORY")
+            if isinstance(node, ast.ClassDef) and node not in tree.body and any(
+                    isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and m.name.startswith("test") for m in node.body):
+                issues.append("DYNAMIC_INVENTORY")
+    return {"tests": tests, "modules": modules, "complete": not issues,
+            "issues": sorted(set(issues)), "count": len(tests)}
+
+
+def static_scope(root, nodes, changed=()):
+    """Independently check Python symbol locations and reject dynamic constructs.
+
+    Graph coverage metadata is best effort, not a certificate. A V2 candidate
+    also needs every returned Python definition to match source AST and every
+    changed definition to be seeded. Dynamic Python is conservatively rejected.
+    """
+    by_file = {}
+    for node in nodes:
+        if not isinstance(node, dict) or not isinstance(node.get("file"), str):
+            return False
+        by_file.setdefault(node["file"], []).append(node)
+    if not by_file:
+        return False
+    for name, records in by_file.items():
+        if not name.endswith(".py"):
+            return False
+        try:
+            tree = ast.parse(sdd.read(root, name))
+        except (sdd.SddError, OSError, SyntaxError):
+            return False
+        names = {node.name for node in ast.walk(tree)
+                 if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))}
+        # An unrepresented definition in an affected file remains unverified.
+        if name in changed and not names <= {str(record.get("qn", "")).rsplit(".", 1)[-1] for record in records}:
+            return False
+        for record in records:
+            qn = record.get("qn")
+            if not isinstance(qn, str) or qn.rsplit(".", 1)[-1] not in names:
+                return False
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Lambda, ast.AsyncFunctionDef, ast.Await)):
+                return False
+            if isinstance(node, ast.Call):
+                if not isinstance(node.func, (ast.Name, ast.Attribute)):
+                    return False
+                terminal = node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+                if terminal in {"getattr", "setattr", "eval", "exec", "globals", "locals", "__import__", "import_module"}:
+                    return False
+    return True
+
+
+def direct_checks(root, names):
+    """Minimum V1 checks; deletion is checked against Git by the planner itself."""
+    checks, unverified = [], []
+    for name in names:
+        file = sdd.path(root, name, exists=False)
+        if not file.exists():
+            checks.append({"kind": "deleted", "file": name})
+        elif file.suffix == ".py":
+            checks.append({"kind": "python_ast", "file": name})
+        elif file.suffix.lower() in {".md", ".txt", ".rst"}:
+            checks.append({"kind": "utf8", "file": name})
+        else:
+            unverified.append(name)
+    return checks, unverified
+
+
+def audit_static_edges(root, inv, nodes, edges):
+    """Cross-check resolvable AST calls/imports/bases against actual graph edges.
+
+    This is deliberately a restricted Python adapter, not a new inference
+    engine. Aliases, dynamic receivers or unresolved edges reject V2 narrowing.
+    No recorded issue, watcher state or partial LSP alone can pass this audit.
+    """
+    files = {test["file"] for test in inv["tests"].values()} | {node["file"] for node in nodes}
+    for name in files:
+        if not name.endswith(".py"):
+            return False
+        try:
+            tree = ast.parse(sdd.read(root, name))
+        except (OSError, sdd.SddError, SyntaxError):
+            return False
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                modules = [n.name for n in node.names] if isinstance(node, ast.Import) else [node.module]
+                if any(n.asname for n in node.names) or any(not m for m in modules):
+                    return False
+                for module in modules:
+                    if not any(row[1] == name and isinstance(row[2], str)
+                               and (row[2] == module or row[2].endswith("." + module)) for row in edges["IMPORTS"]):
+                        return False
+        imported_modules = {alias.name.split(".", 1)[0] for node in ast.walk(tree)
+                            if isinstance(node, ast.Import) for alias in node.names}
+        imported_names = {alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names}
+        functions = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+        def visit(body, prefix=""):
+            for node in body:
+                if isinstance(node, ast.ClassDef):
+                    symbol = prefix + node.name
+                    for base in node.bases:
+                        terminal = ast.unparse(base).rsplit(".", 1)[-1]
+                        if not any(row[1] == name and isinstance(row[0], str) and row[0].endswith("." + symbol)
+                                   and isinstance(row[2], str) and row[2].endswith("." + terminal)
+                                   for row in edges["INHERITS"]):
+                            return False
+                    if not visit(node.body, symbol + "."):
+                        return False
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    symbol = prefix + node.name
+                    for call in ast.walk(node):
+                        if not isinstance(call, ast.Call):
+                            continue
+                        if isinstance(call.func, ast.Name):
+                            terminal = call.func.id
+                            parameters = {a.arg for a in node.args.posonlyargs + node.args.args + node.args.kwonlyargs}
+                            if terminal in parameters or terminal not in functions | imported_names | set(dir(builtins)):
+                                return False
+                        elif isinstance(call.func, ast.Attribute):
+                            terminal = call.func.attr
+                            receiver = call.func.value
+                            if isinstance(receiver, ast.Name) and receiver.id in {"self", "cls"}:
+                                if not terminal.startswith("assert") and terminal not in functions:
+                                    return False
+                            else:
+                                while isinstance(receiver, ast.Attribute):
+                                    receiver = receiver.value
+                                if not isinstance(receiver, ast.Name) or receiver.id not in imported_modules:
+                                    return False
+                        else:
+                            return False
+                        if terminal in {"getattr", "setattr", "eval", "exec", "globals", "locals", "__import__", "import_module"}:
+                            return False
+                        if not any(row[1] == name and isinstance(row[0], str) and row[0].endswith("." + symbol)
+                                   and isinstance(row[2], str) and row[2].endswith("." + terminal)
+                                   for row in edges["CALLS"]):
+                            return False
+            return True
+        if not visit(tree.body):
+            return False
+    return True
+
+
+class CbmCLI:
+    """Actual local CLI, JSON stdin avoids Windows shell JSON quote stripping.
+
+    Provenance: installed 0.12.1 --help and each tool --help, index_status,
+    check_index_coverage, get_graph_schema, detect_changes and query_graph.
+    No invented complete=true flag: coverage's best_effort signal is retained.
+    """
+    def __init__(self, root, executable=None, runner=subprocess.run, clock=time.monotonic):
+        self.root = Path(root).resolve()
+        self.executable = executable or shutil.which(CBM)
+        if not self.executable and os.name == "nt":
+            candidate = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/codebase-memory-mcp/codebase-memory-mcp.exe"
+            if candidate.is_file():
+                self.executable = str(candidate)
+        self.runner, self.clock = runner, clock
+
+    def call(self, tool, **args):
+        need(bool(self.executable), "CBM_ABSENT")
+        result = self.runner([self.executable, "cli", "--quiet", tool],
+                             input=json.dumps(args), text=True, encoding="utf-8",
+                             capture_output=True, cwd=self.root, timeout=45)
+        need(result.returncode == 0 and len(result.stdout.encode("utf-8")) <= LIMIT, "CBM_EXECUTION_FAILED")
+        try:
+            data = sdd.json_object(result.stdout)
+        except (ValueError, sdd.SddError):
+            raise PlanError("CBM_INVALID_JSON") from None
+        need("error" not in data and not data.get("isError"), "CBM_TOOL_ERROR")
+        return data
+
+    def query(self, project, query):
+        result = self.call("query_graph", project=project, query=query,
+                           format="json", max_rows=99998, max_output_tokens=250000)
+        need(result.get("total_relation") == "eq" and result.get("has_more") is False
+             and result.get("truncated") is False and result.get("returned") == len(result.get("rows", []))
+             and result.get("total") == result.get("returned"), "CBM_MISSING_PAGE")
+        return result
+
+    def inspect(self, names, base, inv):
+        started = self.clock()
+        projects = self.call("list_projects", format="json", limit=500)
+        need(projects.get("has_more") is False, "CBM_MISSING_PAGE")
+        matches = [p for p in projects.get("projects", [])
+                   if Path(p.get("root_path", "")).resolve() == self.root]
+        need(len(matches) == 1, "CBM_WRONG_ROOT")
+        project = matches[0]["name"]
+        status = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
+        need(Path(status.get("root_path", "")).resolve() == self.root
+             and Path(status.get("git", {}).get("worktree_root", "")).resolve() == self.root,
+             "CBM_WRONG_ROOT")
+        need(status.get("status") == "ready", "CBM_NOT_READY")
+        paths = sorted(set(names) | {t["file"] for t in inv["tests"].values()})
+
+        def coverage():
+            rows, generation = [], None
+            for offset in range(0, len(paths), 128):
+                batch = paths[offset:offset + 128]
+                data = self.call("check_index_coverage", project=project, paths=batch,
+                                 path_limit=128, diagnostics="full", format="json")
+                meta = data.get("metadata", {})
+                need(meta.get("recording_status") == "complete" and meta.get("hash_records_complete") is True
+                     and meta.get("generation_matches") is True and meta.get("coverage_version") == 9,
+                     "CBM_UNKNOWN_GENERATION_OR_SCHEMA")
+                need(meta.get("index_mode") == "full" and data.get("signal") == "best_effort",
+                     "CBM_UNKNOWN_COVERAGE_SCHEMA")
+                g = meta.get("generation")
+                need(isinstance(g, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", g)
+                     and g == status.get("indexed_at")
+                     and (generation is None or g == generation), "CBM_WRONG_GENERATION")
+                generation = g
+                need(data.get("has_more") is False and data.get("path_has_more") is False
+                     and data.get("scope_truncated") is False and data.get("path_total") == len(batch)
+                     and data.get("path_returned") == len(batch), "CBM_MISSING_PAGE")
+                selected = data.get("paths", [])
+                need({r.get("requested_path") for r in selected} == set(batch), "CBM_PATH_COVERAGE")
+                rows.extend(selected)
+            return generation, rows
+
+        generation, rows = coverage()
+        if any(r.get("freshness") != "metadata_match" for r in rows):
+            # index_repository automatically updates the existing index incrementally.
+            self.call("index_repository", repo_path=str(self.root), persistence=False)
+            status = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
+            need(status.get("status") == "ready" and Path(status.get("root_path", "")).resolve() == self.root
+                 and Path(status.get("git", {}).get("worktree_root", "")).resolve() == self.root,
+                 "CBM_REINDEX_FAILED")
+            generation, rows = coverage()
+        need(all(r.get("freshness") == "metadata_match" for r in rows), "CBM_STALE")
+        coverage_ok = all(r.get("status") == "no_recorded_issue" and r.get("coverage") == [] for r in rows)
+        # Whole-project parse gaps invalidate V2, not V1. Watch status proves nothing.
+        coverage_ok &= all(status.get(k, {}).get("count") == 0
+                           and status.get(k, {}).get("truncated") is False
+                           for k in ("parse_partial", "parse_unusable", "skipped"))
+        schema = self.call("get_graph_schema", project=project, format="json", limit=500)
+        need(schema.get("has_more") is False, "CBM_MISSING_PAGE")
+        edges = {e["type"] for e in schema.get("edge_types", [])}
+        need(set(EDGES) <= edges and bool(edges & {"TESTS", "TESTS_FILE"}), "CBM_MISSING_EDGE")
+        # scope=tests is native experimental C/C++ Smart CI. Read it for diagnostics,
+        # never treat its lanes/receipt as Python unittest IDs or certification.
+        self.call("detect_changes", project=project, scope="tests", since=base, format="json")
+        impact = self.call("detect_changes", project=project, scope="impact", since=base,
+                           direction="inbound", edge_types=list(EDGES), fixpoint=True,
+                           seeds="list", seed_limit=5000, limit=5000, changed_limit=500,
+                           module_limit=500, max_output_tokens=250000, format="json")
+        need(impact.get("base") == base and impact.get("merge_base") == base
+             and impact.get("edge_types") == list(EDGES) and impact.get("fixpoint") is True,
+             "CBM_UNKNOWN_IMPACT_SCHEMA")
+        need(impact.get("truncated") is False and all(impact.get(k) is False for k in (
+            "changed_has_more", "seed_has_more", "impacted_has_more", "module_has_more")), "CBM_MISSING_PAGE")
+        need(impact.get("changed_returned") == impact.get("changed_total")
+             == len(impact.get("changed_files", [])), "CBM_MISSING_PAGE")
+        need(set(names) <= set(impact.get("changed_files", [])), "CBM_COMMITTED_DIFF_GAP")
+        relations = []
+        for edge in sorted(edges & {"TESTS", "TESTS_FILE"}):
+            result = self.query(project, "MATCH (a)-[r:" + edge + "]->(b) RETURN a.qualified_name, a.file_path, b.qualified_name, b.file_path")
+            need(result.get("columns") == ["a.qualified_name", "a.file_path", "b.qualified_name", "b.file_path"], "CBM_UNKNOWN_QUERY_SCHEMA")
+            relations.extend(result["rows"])
+        graph_edges = {}
+        for edge in EDGES:
+            result = self.query(project, "MATCH (a)-[r:" + edge + "]->(b) RETURN a.qualified_name, a.file_path, b.qualified_name, b.file_path")
+            need(result.get("columns") == ["a.qualified_name", "a.file_path", "b.qualified_name", "b.file_path"], "CBM_UNKNOWN_QUERY_SCHEMA")
+            need(all(isinstance(row, list) and len(row) == 4 for row in result["rows"]), "CBM_UNKNOWN_QUERY_SCHEMA")
+            graph_edges[edge] = result["rows"]
+        seeds = impact.get("seeds", [])
+        impacted = seeds + impact.get("impacted", [])
+        need(impact.get("seed_returned") == impact.get("seed_total") == len(seeds)
+             and impact.get("impacted_total_relation") == "eq"
+             and impact.get("impacted_shown") == impact.get("impacted_total") == len(impact.get("impacted", [])),
+             "CBM_MISSING_PAGE")
+        scope_paths = {n.get("file") for n in impacted}
+        need(all(isinstance(name, str) for name in scope_paths), "CBM_UNKNOWN_IMPACT_SCHEMA")
+        for name in scope_paths:
+            sdd.path(self.root, name)
+        if not scope_paths <= set(paths):
+            paths = sorted(set(paths) | scope_paths)
+            scope_generation, scope_rows = coverage()
+            need(scope_generation == generation, "CBM_GENERATION_CHANGED")
+            need(all(r.get("freshness") == "metadata_match" for r in scope_rows), "CBM_STALE_IMPACT_SCOPE")
+            coverage_ok &= all(r.get("status") == "no_recorded_issue" and r.get("coverage") == [] for r in scope_rows)
+        targets = {n["qn"] for n in impacted}
+        mapped, all_mapped, target_files, mapped_targets = set(), set(), set(), set()
+        for row in relations:
+            need(isinstance(row, list) and len(row) == 4, "CBM_UNKNOWN_QUERY_SCHEMA")
+            test_qn, test_file, target_qn, target_file = row
+            matching = [key for key, test in inv["tests"].items()
+                        if test["file"] == test_file and isinstance(test_qn, str)
+                        and test_qn.endswith("." + key)]
+            all_mapped.update(matching)
+            if target_qn in targets or target_file in names:
+                mapped.update(matching)
+                if matching:
+                    target_files.add(target_file)
+                    mapped_targets.add(target_qn)
+        # Absence of a TESTS edge is not proof of absence of impact.
+        complete = (coverage_ok and inv["complete"] and all_mapped == set(inv["tests"])
+                    and set(names) <= target_files and bool(mapped)
+                    and {n.get("qn") for n in impacted if n.get("file") not in {test["file"] for test in inv["tests"].values()}} <= mapped_targets
+                    and static_scope(self.root, impacted, names)
+                    and audit_static_edges(self.root, inv, impacted, graph_edges))
+        after = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
+        need(after.get("indexed_at") == generation and after.get("root_path") == status.get("root_path")
+             and after.get("status") == "ready"
+             and Path(after.get("git", {}).get("worktree_root", "")).resolve() == self.root,
+             "CBM_GENERATION_CHANGED")
+        return {"selected": sorted(mapped), "complete": complete,
+                "state": "best_effort", "index_id": fingerprint([project, str(self.root)]),
+                "index_id_kind": "project_root_fingerprint",
+                "generation": generation, "freshness": "checked", "coverage": "mapped" if complete else "partial",
+                "seconds": self.clock() - started}
+
+
+IDENTITY_FIELDS = {"code", "sha", "target_base", "task_ac", "policy", "commands",
+                   "test_config", "dependencies", "environment", "required_checks"}
+CODE_FIELDS = {"root", "tracked", "index", "worktree", "untracked"}
+ENV_FIELDS = {"os", "python", "tools", "relevant_env"}
+
+
+def known(value):
+    if value is None or isinstance(value, str) and (not value or value.lower() in {
+            "unknown", "partial", "not_run", "not_configured", "unavailable"}):
+        return False
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and known(v) for k, v in value.items())
+    if isinstance(value, list):
+        return all(known(v) for v in value)
+    return isinstance(value, (str, int, float, bool)) and not isinstance(value, float)
+
+
+def complete_identity(value):
+    if not isinstance(value, dict) or set(value) != IDENTITY_FIELDS or not known(value):
+        return False
+    if (not isinstance(value["code"], dict) or set(value["code"]) != CODE_FIELDS
+            or any(not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{64}", v) for v in value["code"].values())
+            or not all(isinstance(value[k], str) and re.fullmatch(r"[0-9a-f]{40}", value[k]) for k in ("sha", "target_base"))
+            or not all(isinstance(value[k], str) and re.fullmatch(r"[0-9a-f]{64}", value[k]) for k in ("policy", "test_config"))):
+        return False
+    env = value["environment"]
+    if (not isinstance(env, dict) or set(env) != ENV_FIELDS
+            or not all(isinstance(env[k], str) and env[k] for k in ("os", "python"))
+            or not isinstance(env["tools"], dict) or not env["tools"]
+            or not all(isinstance(version, str) and version for version in env["tools"].values())
+            or not isinstance(env["relevant_env"], dict)):
+        return False
+    commands, tasks, checks = value["commands"], value["task_ac"], value["required_checks"]
+    return (isinstance(commands, list) and bool(commands)
+            and all(isinstance(argv, list) and argv and all(isinstance(a, str) and a for a in argv) for argv in commands)
+            and isinstance(tasks, dict) and bool(tasks)
+            and all(isinstance(acs, list) and acs and all(isinstance(ac, str) and ac for ac in acs) for acs in tasks.values())
+            and isinstance(checks, list) and bool(checks) and all(isinstance(c, str) and c for c in checks)
+            and len(set(checks)) == len(checks) and isinstance(value["dependencies"], dict)
+            and all(isinstance(v, str) and v for v in value["dependencies"].values()))
+
+
+def reuse_v3(current, evidence, *, remote=False):
+    """Pure, strict comparison of caller-provided existing evidence; never writes."""
+    reasons, equal = [], {}
+    if remote:
+        reasons.append("MANDATORY_REMOTE_CI")
+    if not isinstance(current, dict) or set(current) != IDENTITY_FIELDS:
+        reasons.append("INCOMPLETE_CURRENT_IDENTITY")
+    else:
+        for field in IDENTITY_FIELDS:
+            equal[field] = (known(current[field]) and isinstance(evidence, dict)
+                            and isinstance(evidence.get("identity"), dict)
+                            and known(evidence["identity"].get(field))
+                            and type(current[field]) is type(evidence["identity"].get(field))
+                            and fingerprint(current[field]) == fingerprint(evidence["identity"][field]))
+        if (not isinstance(current.get("code"), dict) or set(current["code"]) != CODE_FIELDS
+                or not isinstance(current.get("environment"), dict) or set(current["environment"]) != ENV_FIELDS
+                or not current.get("task_ac") or not current.get("commands")
+                or not current.get("required_checks") or not current.get("policy")
+                or not re.fullmatch(r"[0-9a-f]{40}", str(current.get("sha")))
+                or not re.fullmatch(r"[0-9a-f]{40}", str(current.get("target_base")))):
+            reasons.append("INCOMPLETE_CURRENT_IDENTITY")
+        if (isinstance(current.get("code"), dict)
+                and any(not isinstance(v, str) or re.fullmatch(r"[0-9a-f]{64}", v) is None
+                        for v in current["code"].values())):
+            reasons.append("INCOMPLETE_CODE_IDENTITY")
+        if isinstance(evidence, dict) and isinstance(evidence.get("identity"), dict) and set(evidence["identity"]) != IDENTITY_FIELDS:
+            reasons.append("INCOMPLETE_EVIDENCE_IDENTITY")
+        if not all(equal.values()):
+            reasons.append("IDENTITY_UNKNOWN_OR_CHANGED")
+        if not complete_identity(current):
+            reasons.append("INCOMPLETE_CURRENT_IDENTITY")
+    if not isinstance(evidence, dict) or evidence.get("tier") != "V3" or evidence.get("state_stable") is not True:
+        reasons.append("NO_STABLE_V3_EVIDENCE")
+    else:
+        checks = evidence.get("checks")
+        required = current.get("required_checks") if isinstance(current, dict) else None
+        if (not isinstance(checks, list) or not checks or not isinstance(required, list)
+                or [c.get("id") for c in checks if isinstance(c, dict)] != required):
+            reasons.append("REQUIRED_CHECKS_MISMATCH")
+        else:
+            for check in checks:
+                if (check.get("status") != "passed" or type(check.get("tests_run")) is not int or check["tests_run"] <= 0
+                        or any(type(check.get(k)) is not int or check[k] != 0 for k in (
+                            "failures", "errors", "skipped", "expected_failures", "unexpected_successes"))):
+                    reasons.append("UNSUCCESSFUL_OR_UNKNOWN_CHECK"); break
+        if evidence.get("independent_review") != "passed":
+            reasons.append("REVIEW_NOT_PASSED")
+    return {"allowed": not reasons, "reasons": sorted(set(reasons)), "equality_checks": dict(sorted(equal.items())),
+            "remote_ci_skippable": False}
+
+
+def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures=False,
+           state_stable=True, event="local"):
+    """Pure policy: callers may raise a tier, never lower its stage default."""
+    default = STAGES.get(stage, 3)
+    tier = max(default, minimum if type(minimum) is int and minimum in {1, 2, 3} else 3)
+    reasons = []
+    if stage not in STAGES:
+        reasons.append("UNKNOWN_STAGE")
+    if event not in {"local", "draft", "ready", "main", "dispatch"}:
+        tier = 3; reasons.append("UNKNOWN_EVENT")
+    elif event in {"ready", "main", "dispatch"}:
+        tier = 3; reasons.append("FINAL_EVENT")
+    elif event == "draft":
+        tier = max(tier, 2)
+    if len(names) > 500:
+        tier = 3; reasons.append("CHANGE_COUNT_LIMIT")
+    for name in names:
+        reason = policy_reason(name)
+        if reason:
+            tier = 3; reasons.append(reason)
+    if outside_failures:
+        tier = 3; reasons.append("OUTSIDE_SCOPE_FAILURE")
+    if not state_stable:
+        tier = 3; reasons.append("STATE_CHANGED")
+    if tier == 2 and (not names or not inv["complete"] or not graph.get("complete") or not graph.get("selected")):
+        tier = 3; reasons.append("INCOMPLETE_IMPACT_SCOPE")
+    if tier == 1 and not graph.get("complete"):
+        reasons.append("FAST_GRAPH_LIMITATION")
+    selected = set(required)
+    if tier < 3:
+        selected.update(graph.get("selected", []))
+        selected.update(key for key, test in inv["tests"].items() if test["file"] in names)
+        if not selected <= inv["tests"].keys():
+            # Bad graph test IDs cannot be trusted, even for fast feedback.
+            selected = set(required) & inv["tests"].keys()
+            if tier == 2:
+                tier = 3
+            reasons.append("UNMAPPED_TEST")
+        if tier == 2:
+            modules = {key.rsplit(".", 2)[0] for key in selected}
+            selected = {test for module in modules for test in inv["modules"].get(module, [])}
+    if tier == 3:
+        selected = set(inv["tests"])
+    if tier == 2 and not selected:
+        tier = 3; selected = set(inv["tests"]); reasons.append("EMPTY_SELECTION")
+    return {"requested_tier": "V" + str(default), "effective_tier": "V" + str(tier),
+            "scope": SCOPES[tier], "selected_ids": sorted(selected),
+            "selected_modules": sorted({key.rsplit(".", 2)[0] for key in selected}),
+            "reasons": sorted(set(reasons)), "inventory_count": inv["count"] if inv["complete"] else None,
+            "static_inventory_count": inv["count"], "inventory_complete": inv["complete"]}
+
+
+def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter=None,
+         required=(), outside_failures=False, current_identity=None, prior_evidence=None):
+    root = Path(root).resolve()
+    need(baton_root(root), "NOT_BATON_DEVELOPMENT_ROOT")
+    need(Path(sdd.git(root, "rev-parse", "--show-toplevel").strip()).resolve() == root,
+         "NOT_GIT_WORKTREE_ROOT")
+    before = freeze(root)
+    registry = sdd.json_object(sdd.read(root, "docs/sdd/traceability.json"))
+    # Never use the latest commit as a substitute for the full Task-base diff.
+    names, basis = sdd.changes(root, registry, base)
+    full_names = set(sdd.git(root, "diff", "--name-only", "--no-renames", "-z", sdd.commit(root, base), "--").split("\0")) - {""}
+    full_names.update(sdd.git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0"))
+    full_names.discard("")
+    names = sorted(set(names) | full_names)
+    # SDD failure is an actual failure, never graph fallback success.
+    sdd.validate(root, changed=names, base=base)
+    tasks = []
+    for name in registry["documents"]:
+        meta, _ = sdd.document(root, name)
+        if meta["kind"] == "task":
+            tasks.append((name, meta))
+    selected_tasks = {}
+    for name in names:
+        for task_name, task in sdd.eligible_tasks(name, tasks, names):
+            selected_tasks[task_name] = task
+    task_minima = [t.get("validation_minimum", 1) for t in selected_tasks.values()]
+    if type(minimum) is not int or minimum not in {1, 2, 3} or any(
+            type(value) is not int or value not in {1, 2, 3} for value in task_minima):
+        minimum = 3
+    else:
+        minimum = max([minimum, *task_minima])
+    acs = {ac for task in selected_tasks.values() for ac in task["acs"]}
+    required = set(required)
+    for feature in registry["features"]:
+        for ac in feature["acs"]:
+            if ac["id"] in acs:
+                for ref in ac["tests"]:
+                    required.add(ref["file"][:-3].replace("/", ".") + "." + ref["symbol"])
+    inv = inventory(root)
+    graph = {"state": "not_run", "complete": False, "selected": [], "seconds": None,
+             "index_id": None, "generation": None, "freshness": "unknown", "coverage": "unknown"}
+    # V2's preliminary incompleteness is expected before querying. Risk paths,
+    # final stages/events and explicit minimum=3 do not need graph service.
+    query_needed = STAGES.get(stage, 3) < 3 and minimum != 3 and event in {"local", "draft"}
+    query_needed &= not any(policy_reason(n) for n in names) and len(names) <= 500 and not outside_failures
+    if query_needed and names:
+        try:
+            graph = (adapter or CbmCLI(root)).inspect(names, sdd.commit(root, base), inv)
+            need(isinstance(graph, dict) and isinstance(graph.get("selected"), list), "CBM_UNKNOWN_SCHEMA")
+        except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
+            graph = {**graph, "state": "failed", "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA",
+                     "selected": [], "complete": False}
+    stable = before == freeze(root)
+    result = choose(stage, names, inv, graph, required, minimum=minimum, event=event,
+                    outside_failures=outside_failures, state_stable=stable)
+    checks, unverified = direct_checks(root, names)
+    if not set(required) <= inv["tests"].keys():
+        raise PlanError("REQUIRED_TEST_NOT_IN_INVENTORY")
+    tier = result["effective_tier"]
+    required_checks = ["official_sequential", "independent_review", "remote_ci"] if tier == "V3" else (
+        ["selected_unittest", "sdd"] if tier == "V2" else ["direct_files"] + (["selected_unittest"] if result["selected_ids"] else []))
+    result.update(status="PLANNED", stage=stage if stage in STAGES else "unknown", base=basis, target_base=sdd.commit(root, base), code_identity=before,
+                  state_stable=stable, task_ids=sorted(t["id"] for t in selected_tasks.values()), acs=sorted(acs),
+                  direct_checks=checks if tier == "V1" else [], unverified_scope=unverified if tier == "V1" else [],
+                  required_checks=required_checks, graph={k: v for k, v in graph.items() if k != "selected"},
+                  required_check_status={name: "not_configured" if name in {"independent_review", "remote_ci"}
+                                         else "NOT_RUN" for name in required_checks},
+                  minimum_tier="V" + str(minimum),
+                  execution_status="NOT_RUN", final_evidence_eligible=False,
+                  reuse=reuse_v3(current_identity, prior_evidence, remote=event != "local"))
+    if graph.get("reason"):
+        result["reasons"] = sorted(set(result["reasons"]) | {graph["reason"]})
+    if tier == "V1" and not graph.get("complete"):
+        result["unverified_scope"] = sorted(set(result["unverified_scope"]) | {"transitive_impact"})
+    # Bounded output must fail, rather than silently truncate a test/check list.
+    need(len(json.dumps(result).encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--base", required=True)
+    parser.add_argument("--stage", default="task_complete")
+    parser.add_argument("--minimum", type=int, default=1)
+    parser.add_argument("--event", default="local")
+    parser.add_argument("--outside-scope-failure", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        result = plan(args.root, base=args.base, stage=args.stage, minimum=args.minimum, event=args.event,
+                      outside_failures=args.outside_scope_failure)
+    except (PlanError, sdd.SddError, OSError, ValueError, KeyError, TypeError, SyntaxError, RecursionError, subprocess.TimeoutExpired) as exc:
+        result = {"status": "FAIL", "error_code": str(exc) if isinstance(exc, (PlanError, sdd.SddError)) else "INVALID_INPUT_OR_STORAGE",
+                  "effective_tier": "V3", "scope": "full",
+                  "execution_status": "NOT_RUN", "final_evidence_eligible": False}
+    print(json.dumps(result, ensure_ascii=True, sort_keys=True))
+    return 0 if result["status"] == "PLANNED" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

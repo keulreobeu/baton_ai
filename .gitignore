@@ -5,3 +5,4 @@ build/
 dist/
 .venv/
 .local_runtime/
+.codebase-memory/

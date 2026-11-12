@@ -59,3 +59,13 @@ V3는 코드 상태·SHA·base·Task/AC·정책·검증 설정·의존성·환�
 E 설치/클라이언트 등록/백업은 환경 사실이며 repository 변경이 아니다. resource cap은 실측 뒤 결정한다.
 P-02~05/P-08/P-09는 Spec의 superseded/re-scoped 표로 대체하고 P-06 AC-12/13은 계약 정적 검사와 원격 증거를 분리한다.
 훅은 T4 Codex 복귀까지 pending/ON HOLD다. 이번 단위는 계약 작성이며 구현·원격 실행·push 승인이 아니다.
+
+## Eng Review Amendments — 2026-11-12 V1 그래프 실패 처리
+
+사용자 정책 승인(coordinator `msg_beb3d53cbede`)으로 위 revision 2의 그래프 불완전 시 일괄 V3 규칙을 V1에 한해 개정한다.
+V1=L1 Fast Feedback은 CBM 가용 영향 범위 + 전체 Task-base Git 직접 변경 파일 검사를 실행한다.
+partial/failed graph만으로 full fallback/실패하지 않으며 잘못된 root/generation/schema 결과는 폐기한다.
+실행 검사 실패는 실패, 검사 없음은 NOT_RUN이고 미검증 범위/한계를 남긴다.
+V2=L2 Impact Validation은 completeness/fallback을 유지하고 V3=L3 Full Validation은 graph 독립 full이다.
+별칭은 SDD 위험 등급과 다르며 allAC/nonzero/no-skip/독립 검토/CI 및 별도 위험 경로 상향은 유지한다.
+내부 stage API만 노출하며 호출자 연결 pending을 명시한다. 독립 검토·최종 V3·원격 CI는 pending이다.

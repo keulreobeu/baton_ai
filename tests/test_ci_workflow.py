@@ -34,7 +34,7 @@ class MethodologyDocsTests(unittest.TestCase):
         "통합·충돌 반영", "영향 파일 검사", "최종 증거 갱신",
         "freshness/coverage", "stale incremental index", "graph stale/failed/partial",
         "draft PR=V2 범위, ready/main=V3 전체 4 matrix",
-        "선택/재사용 구현은 CI-OPT T3에 남아 있다",
+        "V1/V2 stage는 API-only", "실제 호출자 연결은 pending",
     )
     NEGATIVE_TERMS = (
         "같은 SHA만으로 검증 재사용을 결정하지 않는다",
@@ -227,7 +227,7 @@ class VStageContractTests(unittest.TestCase):
 
     def test_single_planner_keeps_shared_task_selection_and_pr_regressions(self):
         spec = read("docs/specs/CI-OPT-001.md")
-        self.assertIn("revision = 2", spec)
+        self.assertIn("revision = 3", spec)
         self.assertIn('approved_at = "2026-11-12"', spec)
         for term in ("ci_plan.py", "두 번째 정책 엔진은 두지 않는다", "아직 미구현"):
             self.assertIn(term, spec)
@@ -262,6 +262,22 @@ class VStageContractTests(unittest.TestCase):
                      "필수 검사 skip/PASS", "Git 자동 커밋", "auto_index=false", ".codebase-memory/"):
             with self.subTest(term=term):
                 self.assertIn(term, ac)
+
+    def test_v1_graph_limitations_do_not_force_full_and_tiers_are_distinct(self):
+        ac7, ac9 = self.ac(7), self.ac(9)
+        self.assertIn("그래프 불완전/조회 실패만으로 full fallback하거나 실패하지 않는다", ac7)
+        self.assertIn("직접 변경 파일 검사", ac7)
+        self.assertIn("검사 없음은 NOT_RUN", ac7)
+        self.assertIn("실제 실행 검사 실패는 V1 실패", ac9)
+        self.assertIn("잘못된 root/generation/schema 결과를 폐기", ac9)
+        self.assertIn("V2에서 CBM 없음", ac9)
+        self.assertIn("partial/fast pass", self.ac(12))
+        self.assertIn("V1/V2/V3는 상호 대체하지 않는다", self.ac(13))
+        for name in GUIDANCE_DOCS:
+            text = read(name)
+            for term in ("V1=L1 Fast Feedback", "V2=L2 Impact Validation", "V3=L3 Full Validation",
+                         "SDD 변경 위험 등급", "검사 없음은 NOT_RUN"):
+                self.assertIn(term, text)
 
     def test_v3_gate_and_reuse_require_complete_matching_evidence(self):
         for term in ("if: always()", "draft=V2 이상", "ready/main/dispatch=V3 full 4",

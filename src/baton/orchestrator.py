@@ -21,6 +21,27 @@ def persisted_text(value):
     return value
 
 
+def validation_planner():
+    """Load controller-owned policy, never an arbitrary connected-project script."""
+    import importlib.util
+    import types
+    directory = Path(__file__).resolve().parents[2] / "scripts"
+    if not (directory / "ci_plan.py").is_file():
+        return None
+    package_name = "_baton_validation_" + digest(str(directory))[:12]
+    if package_name not in sys.modules:
+        package = types.ModuleType(package_name)
+        package.__path__ = [str(directory)]
+        sys.modules[package_name] = package
+    name = package_name + ".ci_plan"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, directory / "ci_plan.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
 class Orchestrator:
     def __init__(self, store: ManagedStore, providers=None, runtime_client=None):
         self.store = store
@@ -199,18 +220,91 @@ class Orchestrator:
         finally:
             close_metrics()
 
-    def validate(self, task, tree, stop):
+    def validate(self, task, tree, stop, *, stage="task_complete", target_base=None):
         from .execution import redact, run_process
         results = []
-        for check in task["validation"]:
+        # The optional API exposes fast/checkpoint validation; current completion
+        # callers retain task_complete. No public validation-command relaxation.
+        planner = validation_planner()
+        local_plan = None
+        started = time.monotonic()
+        total = task["execution"]["total_timeout_seconds"]
+        def bounded_stop():
+            return stop() or ("timeout" if time.monotonic() - started >= total else None)
+        if planner is not None and planner.baton_root(tree):
+            try:
+                target_base = target_base or self.store.get(task["task_id"])["result"].get("base_commit")
+                if not target_base:
+                    raise HarnessError("validation_base_required")
+                local_plan = planner.plan(tree, base=target_base, stage=stage)
+                target_base = local_plan["target_base"]
+                execution_state = planner.freeze(tree)
+            except Exception:
+                # Bootstrap/SDD failure must not turn into a successful full plan.
+                raise HarnessError("validation_planner_failed") from None
+        checks = list(task["validation"])
+        internal = []
+        if local_plan is not None:
+            tier = local_plan["effective_tier"]
+            if tier == "V3":
+                internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/verify_environment.py"), "--base", target_base],
+                                 "acs": [], "official": True})
+            else:
+                if local_plan["selected_ids"]:
+                    targets = local_plan.get("selected_modules", local_plan["selected_ids"]) if tier == "V2" else local_plan["selected_ids"]
+                    # Bound argv size on Windows, preserving the entire selection.
+                    batches, batch, size = [], [], 0
+                    for target in targets:
+                        if batch and size + len(target) + 1 > 24000:
+                            batches.append(batch); batch, size = [], 0
+                        batch.append(target); size += len(target) + 1
+                    if batch: batches.append(batch)
+                    for batch in batches:
+                        internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": []})
+                if tier == "V2":
+                    internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/check_sdd.py"), "--base", target_base], "acs": []})
+                for direct in local_plan["direct_checks"]:
+                    # AST/UTF-8 checks execute here without writing bytecode. They
+                    # are fast feedback with test_count=0, not AC test evidence.
+                    code = 0
+                    try:
+                        if bounded_stop():
+                            raise HarnessError("validation_stopped")
+                        file = planner.sdd.path(tree, direct["file"], exists=False)
+                        if direct["kind"] == "deleted":
+                            if file.exists(): raise ValueError()
+                        elif direct["kind"] == "python_ast":
+                            planner.ast.parse(planner.sdd.read(tree, direct["file"]))
+                        else:
+                            planner.sdd.read(tree, direct["file"])
+                    except Exception:
+                        code = 2
+                    results.append({"argv": ["direct_file", direct["kind"], direct["file"]], "acs": [],
+                                    "exit_code": code, "test_count": 0, "skipped": 0,
+                                    "expected_failures": 0, "unexpected_successes": 0,
+                                    "output": "direct_file_passed" if code == 0 else "direct_file_failed",
+                                    "stop_reason": bounded_stop(), "_planner_internal": True})
+            # Retain every declared Task/AC check, including generic commands.
+            checks.extend(internal)
+        internal_ids = {id(check) for check in internal}
+        for check in checks:
             argv = list(check["argv"])
             if argv[0] == "python": argv[0] = sys.executable
             if argv[1:3] == ["-m", "pytest"]:
                 argv[3:3] = ["-o", "addopts=", "-p", "no:cacheprovider"]
             from .runtime import project_paths
             source_paths = os.pathsep.join(str(tree / p) for p in project_paths(tree)["source_roots"] + ["."])
-            rc, out, err, reason = run_process(argv, tree, "", min(300, task["execution"]["timeout_seconds"]), stop,
-                                              env_overrides={"PYTHONPATH": source_paths})
+            if local_plan is not None and bounded_stop():
+                results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": -1,
+                                "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
+                                "output": "validation_stopped", "stop_reason": bounded_stop(),
+                                "_planner_internal": id(check) in internal_ids})
+                break
+            timeout = min(300, task["execution"]["timeout_seconds"])
+            if check.get("official"):
+                timeout = max(0.05, total - (time.monotonic() - started))
+            rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
+                                              env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
             output = out + "\n" + err
             counts = re.findall(r"Ran (\d+) tests?", output) if argv[1:3] == ["-m", "unittest"] else re.findall(r"(\d+) passed", output) if argv[1:3] == ["-m", "pytest"] else []
             skipped = sum(int(n) for n in re.findall(r"(?:skipped[= ]|skip=)(\d+)", output))
@@ -219,12 +313,58 @@ class Orchestrator:
             expected += sum(int(n) for n in re.findall(r"(\d+) xfailed", output))
             unexpected = sum(int(count) for pair in re.findall(r"(\d+) xpassed|unexpected successes[= ](\d+)", output) for count in pair if count)
             code = rc if rc is not None else -1
+            if check.get("official"):
+                summary = None
+                for line in output.splitlines():
+                    try:
+                        value = json.loads(line)
+                        if isinstance(value, dict) and value.get("scope") == "offline_tests_only": summary = value
+                    except (ValueError, TypeError):
+                        continue
+                valid = (summary is not None and summary.get("status") == "PASS"
+                         and summary.get("verified_evidence_eligible") is True
+                         and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
+                         and all(type(summary.get(k)) is int and summary[k] == 0
+                                 for k in ("failures", "errors", "skipped", "expected_failures")))
+                if not valid: code = 2
+                counts = [str(summary["tests_run"])] if summary and type(summary.get("tests_run")) is int else []
+                skipped = summary.get("skipped", 0) if summary else 0
+                expected = summary.get("expected_failures", 0) if summary else 0
             if argv[1:3] in (["-m", "unittest"], ["-m", "pytest"]) and (sum(int(n) for n in counts) <= 0 or skipped or expected or unexpected):
                 code = 2
             results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": code,
                             "test_count": int(counts[-1]) if counts else 0, "skipped": skipped, "expected_failures": expected, "unexpected_successes": unexpected,
                             "output": persisted_text(output)[-6000:], "stop_reason": reason})
+            if local_plan is not None:
+                results[-1]["_planner_internal"] = id(check) in internal_ids
             if reason: break
+        if local_plan is not None:
+            try:
+                stable = execution_state == planner.freeze(tree)
+            except Exception:
+                stable = False
+            if not stable:
+                for result in results:
+                    result["exit_code"] = 2
+                    result["stop_reason"] = "validation_state_changed"
+            if not results:
+                raise HarnessError("validation_not_run")
+            # evidence.py intentionally requires one result per declared check.
+            # Keep planner checks in separate metadata, propagate their failures
+            # into a declared result, and never credit their counts/ACs as tests.
+            feedback, declared = [], []
+            for result in results:
+                (feedback if result.pop("_planner_internal", False) else declared).append(result)
+            if not declared:
+                raise HarnessError("validation_not_run")
+            failed = [r for r in feedback if r["exit_code"] != 0]
+            if failed and declared[0]["exit_code"] == 0:
+                declared[0]["exit_code"] = failed[0]["exit_code"]
+                declared[0]["stop_reason"] = failed[0]["stop_reason"]
+            declared[0]["planner"] = {**local_plan, "executed_checks": feedback,
+                                       "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared) else "passed",
+                                       "final_evidence_eligible": False}
+            results = declared
         return results
 
     def verify(self, task_id, *, base_sha=None):

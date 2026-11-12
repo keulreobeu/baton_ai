@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
-scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py"]
+scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "tests/test_managed_harness.py"]
 acs = ["SDD-001-AC-06"]
 
 [[verification]]
@@ -19,7 +19,7 @@ evidence = "docs/tasks/TASK-CI-OPT-001.md#작업-t1-기록--2026-11-11"
 acs = ["SDD-001-AC-06"]
 ```
 
-계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 2, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
+계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 3, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
 독립 검토(`independent_review`)는 아직 없다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
 
 AC 연결: 검사기는 원장 feature의 AC마다 실제 테스트 symbol을 요구한다. CI-OPT-001 AC의 테스트는 작업 T2/T3에서 생기므로 지금은
@@ -35,7 +35,7 @@ AC가 검증됐다는 뜻이 아니다.
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 완료, 로컬 checkpoint 대상; 독립 검토 pending |
-| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore` | 미구현, 단일 정책 엔진 |
+| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | 작성·V2 테스트 99개 PASS, 로컬 저장/독립 검토 대기; V1/V2 API-only·호출자 연결 pending |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | 미구현, draft V2 / ready-main V3 full 4 |
 | 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability | 미구현, 전용 필드와 13 AC 일괄 등록 |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
@@ -212,3 +212,87 @@ SDD 검사 base는 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26이다. Task는 in_pr
 - V2: checkout `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_sdd tests.test_ci_workflow` 49 tests PASS, failures/errors/skips 0, 7.173 s.
 - `scripts/check_sdd.py --base ec6536535968bd7653185c69104881d1c8899ecd` PASS (48 documents, 18 tasks, 9 features, 62 ACs, 4 changed paths, provider_calls 0); `git diff --check` PASS. checkout Python과 `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS 임시 `BATON_HOME`으로 실행했다.
 - 독립 검토는 pending이다(기존 교차 provider 정책 유지, Claude 한도 소진). 공식 V3·필수 원격 CI는 최종 후보에서 별도 실행하며 Task는 in_progress 유지한다. 13 AC feature 원장 등록은 기존 결정대로 T3d에서 일괄 처리한다. 기존 traceability 문서 등록은 이미 존재하므로 이번 단위에서는 변경하지 않았다.
+
+## T3b 단일 planner·CBM·로컬 API — 2026-11-12
+
+- 작성자 Codex, 작업 위치 `D:/baton_ai/.local_runtime/ci-opt-001`, branch `codex/ci-opt-001`, Task base/현재 HEAD
+  `bb4d270ac7707b24f1bfbf050a971a6d8974dc3f`. 시작 index/worktree clean을 실제 확인했다. Worker는 stage/commit/merge/push/stash/reset/checkout을 하지 않는다.
+- 내부 API 승인 `msg_15675fbaa43a`에 따라 source 편집 전에 `src/baton/orchestrator.py`와 `tests/test_managed_harness.py`를 위 영구 scope에 추가했다.
+  사용자 V1 정책 승인 전달 `msg_beb3d53cbede`에 따라 Spec revision 3(approval_ref에 실제 전달 경로), ADR/Plan/AGENTS/README/sdd와 정적 테스트를 같은 묶음으로 개정했다.
+  기존 이력은 보존했다. current/HANDOFF·workflow·verify_environment/check_sdd·13 AC registry는 수정하지 않는다. GIT-CALL DEFERRED 유지.
+- 구현: `scripts/ci_plan.py` 하나에 순수 tier/상향·선택·strict reuse 비교와 실제 CBM CLI adapter를 둔다. `changes`/`required_level`/`eligible_tasks`를 재사용하며
+  Task base의 committed/index/worktree/untracked diff 전체를 합친다. 전체 tracked tree·실제 index·작업 내용·관련 untracked/ignored Python source manifest를 전후 고정한다.
+  중간 변경은 narrowing을 폐기하며 SDD 실패는 실패로 남긴다. 검사 결과/evidence를 생성하거나 final passed로 꾸미지 않는다.
+- V1=L1 Fast Feedback은 가용 영향 테스트 + Git 직접 변경 파일(AST/UTF-8/삭제 확인) + Task/AC 필수 테스트다. graph partial/failure만으로 full/실패하지 않는다.
+  잘못된 root/generation/schema 결과는 폐기한다. 실행 실패는 실패이며 검사 없음은 NOT_RUN이다. 미검증 transitive scope를 남긴다.
+  V2=L2 Impact Validation은 매핑된 모듈의 전체 테스트 + 필수 테스트 + Task-base SDD이고 completeness 불명/누락/범위 밖 실패는 full이다.
+  V3=L3 Full Validation은 graph 독립 full이다. 별칭은 SDD 변경 위험 등급과 다르며 정책/설정/위험 경로의 별도 V3 상향은 유지한다.
+  영구 Task TOML의 선택 `validation_minimum = 1|2|3` 및 API/CLI minimum은 stage 기본값을 올리기만 한다. 미상 값은 V3다.
+- 실제 CLI provenance: 설치 exe의 `--help`에서 **codebase-memory-mcp 0.12.1**을 확인하고 index_status/check_index_coverage/detect_changes/index_repository/query_graph/
+  trace_path/get_graph_schema/list_projects의 `cli TOOL --help`와 read-only JSON 응답을 확인했다. stdin JSON을 사용하여 Windows quote stripping을 피한다.
+  `index_status`: root_path, git.worktree_root, indexed_at, ready, parse_partial/parse_unusable/skipped count/truncated.
+  `check_index_coverage`: signal=best_effort, metadata.generation/index_mode/recording_status/hash_records_complete/coverage_version=9/generation_matches,
+  paths[].requested_path/status/freshness/coverage 및 path_total/path_returned/path_has_more/scope_truncated/has_more. paths는 실제 최대 128씩 요청한다.
+  index id는 네이티브 필드를 발명하지 않고 검증한 project/root의 fingerprint라고 명시한다. generation은 실제 metadata/indexed_at이다.
+  `detect_changes scope=impact --since BASE`는 changed_files·seeds(qn/file)·impacted(qn/file)·각 total/returned/shown/has_more/truncated를 사용하며
+  inbound fixpoint CALLS/IMPORTS/INHERITS를 요청한다. scope=tests의 `cbm.test_impact.v0` C/C++ receipt/lanes를 Python 선택 증거로 사용하지 않는다.
+  query_graph의 columns/rows/returned/total/total_relation/has_more/truncated를 검사하고 TESTS/존재하는 TESTS_FILE 및 CALLS/IMPORTS/INHERITS를 실제 조회한다.
+- 한계: 이 checkout의 실제 index는 PowerShell parse_partial 1건을 보고했고 coverage는 명시적으로 best-effort다. no_recorded_issue/관찰자/partial LSP를 completeness 증거로 쓰지 않는다.
+  [공식 v0.12.1 source](https://github.com/DeusData/codebase-memory-mcp/blob/v0.12.1/src/mcp/mcp.c)의 coverage_path_freshness도 metadata_match가 mtime_ns/size 비교임을 확인했다.
+  독립 AST inventory·실제 TESTS mapping·영향 scope freshness·AST calls/imports/inheritance edge 대조가 모두 맞는 제한된 정적 Python만 V2 narrowing 후보가 된다.
+  동적 호출/receiver·alias·상속/생성 테스트·load_tests·변경 파일의 미표현 symbol·빠진 edge/page/schema는 V2 full이며 V1은 직접 검사와 명시적 한계를 유지한다.
+  positive V1/V2 fake-CLI/synthetic-Git 경로는 테스트하지만 실제 BATON graph 전체를 complete라고 주장하지 않는다. repository persistence/config/install/hooks 변경 없음;
+  `.gitignore`에 `.codebase-memory/`만 추가했다. 새 DB/service/result cache 없음.
+- 로컬 연결: controller-owned planner를 긍정 식별한 BATON 개발 root에서만 호출한다. `validate(..., *, stage="task_complete", target_base=...)`이며 현재 완료 호출은 V3다.
+  모든 선언 Task/AC 명령과 공공 allowlist·일반 300초 cap을 보존한다. 내부 V3는 실제 target tree/해결된 base·전체 configured total budget/stop/cancel을 사용한다
+  (기존 run_process 자체의 3600초 상한은 유지). 공식 JSON nonzero/no-skip summary를 검사하고 전후 코드 지문이 달라지면 실패다.
+  evidence.py의 선언 검사당 결과 한 개 계약을 보존하며 내부 검사는 별도 metadata에 기록하고 실패만 선언 결과에 전파한다. 내부 count/AC를 완료 증거에 합산하지 않는다.
+  V1/V2 **API-only**, 실제 stage 호출자 연결·원격 narrowing은 pending이다. 비-BATON 프로젝트는 원래 generic validation을 유지한다.
+- 재사용은 기존 증거를 입력받는 순수 비교다. root/전체 code/index/worktree/untracked·SHA·base·Task/AC·policy·commands/test config·실제 dependency 버전·OS/Python/tools/env·필수 검사와 성공 결과를
+  모두 known/equal로 요구한다. None/unknown/partial/누락/변경, skip/cancel/fail/not_configured/tests0, V1/V2, 독립 검토 미완료는 거부한다. 원격 CI 생략은 항상 false다.
+  현재 수집/저장 연결은 T3d에 남기며 기본 계획의 reuse는 거부다. MetricsStore 전용 필드/원장 feature 등록을 앞당기지 않았다.
+- V1 편집 검사(각 실행 시점 snapshot): planner+로컬 연결+정적 테스트 48 tests OK, 12.226 s; 이후 보강한 planner+연결 31 tests OK, 18.794 s.
+  앞선 fake clock이 소진되는 테스트 오류 10건은 무한 deterministic clock으로 고쳤다. 이 수치는 CI 시간/절감률 실측이 아니다.
+- V2 checkpoint 결과는 아래 후속 기록으로 확정한다. 현재 Task in_progress, T3a 교차-provider 검토·T3b 독립 검토 pending,
+  실제 공식 full/V3·전체 회귀·원격 CI/E2E NOT_RUN. initial CI 5분/final 20분은 목표이며 입증한 성능 수치가 아니다. Worker 비용/토큰/실제 graph/CI 시간은 unknown/null이다.
+
+### T3b V2 checkpoint 검사
+
+- `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_ci_plan tests.test_sdd tests.test_managed_harness tests.test_ci_workflow`
+  **99 tests OK, 52.987 s**, exit 0, failures/errors/skipped/expected failures/unexpected successes 0.
+  checkout Python, `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS-temp `BATON_HOME`; fake CLI/clock/process와 synthetic Git만 사용했다.
+  실제 model/GMS/provider/quota/key/balance/원격 CI 호출은 0이며 공식 verify_environment.py는 실행하지 않았다.
+- 포함 경계: positive V1/V2 선택·모듈 전체 확장·필수 AC union, graph partial/실패 V1 직접 검사 및 동일 입력 V2 full,
+  실제 실행 실패 전파/NOT_RUN, Task-base committed+index+worktree+untracked diff, state change, root/generation/freshness/reindex/coverage/page/schema,
+  누락 TESTS 및 CALLS/IMPORTS/INHERITS 각 edge, 동적/상속 inventory, strict reuse 항목별 변경/미상/빈 값/비성공, generic 프로젝트 보존,
+  실제 target/base·V3 전체 budget/cancel·공식 nonzero/no-skip JSON·evidence.py의 검사 개수/AC accounting 보존.
+- 읽기 전용 초기 discovery에서 Orca 환경 변수 목록을 과도하게 조회하여 런타임 토큰 값이 도구 출력에 포함된 실수가 있었다.
+  이 Task나 파일/해시 manifest에는 토큰 값·raw transcript·DB를 기록하지 않았다. 이후 전체 환경 변수 목록을 조회하지 않았다.
+- ignored read-back: 기존 `.venv/`, `.local_runtime/` 외 pycache 3곳은 이 Worker 실행 이전의 파일이다
+  (scripts/tests 최신 write 2026-11-11, src/baton 최신 write 2026-11-12 07:40:20 UTC; 최초 CLI index inspection은 08:32:40 UTC generation).
+  해당 기존 파일을 수정/삭제하지 않았다. 새 workspace runtime/cache 출력은 만들지 않았다.
+- 다음은 Git 담당자의 고정 checkpoint 저장과 필수 독립 검토다. T3c는 그 checkpoint를 바탕으로 workflow/gate를 연결한다.
+  로컬 fast/checkpoint 호출자의 stage 연결은 API-only 범위 밖 pending이며 원격 end-to-end narrowing·전체 T3 완료를 주장하지 않는다.
+
+- Task-base SDD checkpoint: `.venv/Scripts/python.exe -X utf8 scripts/check_sdd.py --base bb4d270ac7707b24f1bfbf050a971a6d8974dc3f` PASS, exit 0; documents 48, features 9, tasks 18, ACs 62, changed paths 13, provider_calls 0; requested/effective base both equal the full Task base.
+- `git diff --check` PASS, exit 0; final evidence/manifest update is followed by the same SDD and diff read-back.
+- Actual planner CLI smoke (plan only): checkpoint requested V2, effective V3 for policy/config/unknown paths; status PLANNED, state stable, graph not_run, execution NOT_RUN, reuse false; static inventory 634, complete inventory count null, output 64040 characters. This did not execute official V3 or query/reindex CBM.
+
+### T3b raw SHA256 checkpoint manifest
+
+Base/HEAD: `bb4d270ac7707b24f1bfbf050a971a6d8974dc3f`; index empty; no new candidate commit. These are raw worktree bytes, not Git blob hashes. The Task file is excluded from its own manifest to avoid a self-reference; its final raw SHA256 is provided in the worker completion receipt.
+
+| File | Raw SHA256 | Bytes |
+|---|---|---:|
+| `.gitignore` | `ff14b8ea65d0867a5107f1adc2409770c8e7dfd80eb69febec7a4a0d92160303` | 93 |
+| `AGENTS.md` | `8d0612f5abea43b88e4bea531b2da929c47cfb9b47aa32dea69984290940aac7` | 9471 |
+| `README.md` | `82c1e5d138808aed63956b0e14a7be389c66840e963beabc334d6b578b2cae1e` | 14117 |
+| `docs/adr/ADR-CI-OPT-001.md` | `0d69b44b1afaf50058d1e4c9730781763a11081d423f40de8262f839c50b9e88` | 6698 |
+| `docs/plans/ci-optimization.md` | `87e5d32393a05753520f4533cdf61321ce26688fd936641dc77410247154bc0b` | 7089 |
+| `docs/sdd.md` | `f74c0f4f548e41d578132d07c14297b3a54199cd7fc3441dd35283a9b74b71fc` | 9280 |
+| `docs/specs/CI-OPT-001.md` | `2a24aa13ce8794260ba18854a6646143bde40a57354869e9b2d77808ea0c218a` | 26471 |
+| `scripts/ci_plan.py` | `97c79105bba352cc2279f1ef26f5a36d63e129a81025048239e778f2867ba2d6` | 41296 |
+| `src/baton/orchestrator.py` | `bf6ad23e3c5363e1a28bea2d8e25f5364741aad9cc47a3fc8eaed24f20e0080a` | 30069 |
+| `tests/test_ci_plan.py` | `f03d936d4eb7c0705d1e7b98021b5e32e290ad8e8100aa9d122cf8d79aa9981d` | 26368 |
+| `tests/test_ci_workflow.py` | `6368423bf6f8a6173cead992852798f27f03d8dbfec3bf5fa62e17002388a25c` | 16414 |
+| `tests/test_managed_harness.py` | `76c819c8c2fe37f52886f247b6fb12300435e20668303adac542c10a590cce22` | 24397 |

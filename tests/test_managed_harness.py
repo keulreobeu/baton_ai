@@ -28,6 +28,138 @@ class Provider:
         return self.call(self.calls, task, cwd, stop)
 
 
+class ValidationPlannerIntegrationTests(unittest.TestCase):
+    """Fake processes only: never run official full verification in T3b tests."""
+    def setUp(self):
+        from types import SimpleNamespace
+        from scripts import ci_plan
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        (self.root / "value.py").write_text("value=1\n", encoding="utf-8")
+        self.plan = {"effective_tier": "V1", "selected_ids": ["tests.test_value.T.test_value"],
+                     "direct_checks": [{"kind": "python_ast", "file": "value.py"}],
+                     "final_evidence_eligible": False, "execution_status": "NOT_RUN"}
+        self.state = {"tracked": "same"}
+        self.calls = []
+        self.planner = SimpleNamespace(
+            baton_root=lambda root: True, plan=self.make_plan, freeze=lambda tree: dict(self.state),
+            ast=ci_plan.ast, sdd=ci_plan.sdd)
+        self.task = {"task_id": "TASK-OFFLINE", "validation": [{"argv": ["python", "-m", "unittest", "tests.test_value"], "acs": ["AC1"]}],
+                     "execution": {"timeout_seconds": 600, "total_timeout_seconds": 1200}}
+        self.orchestrator = Orchestrator(SimpleNamespace(get=lambda task: {"result": {"base_commit": "a" * 40}}), providers={})
+        self.patch = patch("baton.orchestrator.validation_planner", return_value=self.planner)
+        self.patch.start(); self.addCleanup(self.patch.stop)
+
+    def make_plan(self, root, **kwargs):
+        self.calls.append((root, kwargs)); return {**deepcopy(self.plan), "target_base": kwargs["base"]}
+
+    def run_validation(self, runner=None, stop=lambda: None, **kwargs):
+        if runner is None: runner = lambda *a, **k: (0, "", "Ran 2 tests in 0.1s\nOK", None)
+        with patch("baton.execution.run_process", side_effect=runner) as process:
+            result = self.orchestrator.validate(self.task, self.root, stop, **kwargs)
+        return result, process
+
+    def test_v1_direct_and_selected_checks_preserve_declared_ac_checks(self):
+        result, process = self.run_validation(stage="in_progress", target_base="b" * 40)
+        self.assertEqual(self.calls[0], (self.root, {"base": "b" * 40, "stage": "in_progress"}))
+        self.assertEqual(len(result), len(self.task["validation"]))
+        feedback = result[0]["planner"]["executed_checks"]
+        self.assertEqual(len(feedback), 2)
+        self.assertEqual(feedback[0]["test_count"], 0)
+        self.assertEqual(feedback[0]["acs"], [])
+        self.assertEqual(result[0]["acs"], ["AC1"])
+        self.assertTrue(all(check["exit_code"] == 0 for check in result))
+        self.assertTrue(all(not check["planner"]["final_evidence_eligible"] for check in result))
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual(process.call_args_list[0].args[3], 300)
+
+    def test_failed_direct_check_or_executed_test_makes_fast_fail(self):
+        (self.root / "value.py").write_text("invalid !!!\n", encoding="utf-8")
+        result, _ = self.run_validation(stage="in_progress")
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        result, _ = self.run_validation(lambda *a, **k: (1, "", "Ran 2 tests\nFAILED (failures=1)", None), stage="in_progress")
+        self.assertTrue(any(c["exit_code"] != 0 for c in result))
+
+    def test_no_checks_not_run_never_pass(self):
+        self.task["validation"] = []
+        self.plan.update(selected_ids=[], direct_checks=[])
+        with self.assertRaisesRegex(HarnessError, "validation_not_run"):
+            self.run_validation(stage="in_progress")
+
+    def test_v2_uses_same_planner_and_base_sdd_preserving_commands(self):
+        self.plan.update(effective_tier="V2", direct_checks=[])
+        result, process = self.run_validation(stage="checkpoint")
+        self.assertEqual(self.calls[0][1]["stage"], "checkpoint")
+        self.assertEqual(result[0]["argv"], self.task["validation"][0]["argv"])
+        self.assertIn(str(self.root / "scripts/check_sdd.py"), process.call_args_list[-1].args[0])
+        self.assertEqual(process.call_args_list[-1].args[0][-2:], ["--base", "a" * 40])
+
+    def official_output(self, **changes):
+        value = dict(status="PASS", scope="offline_tests_only", tests_run=5, failures=0, errors=0,
+                     skipped=0, expected_failures=0, verified_evidence_eligible=True)
+        value.update(changes); return json.dumps(value)
+
+    def test_default_v3_actual_target_base_full_budget_and_accounting(self):
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        def runner(argv, *args, **kw):
+            if "--base" in argv: return 0, self.official_output(), "", None
+            return 0, "", "Ran 2 tests\nOK", None
+        result, process = self.run_validation(runner)
+        self.assertEqual(self.calls[0][1]["stage"], "task_complete")
+        call = process.call_args_list[-1]
+        self.assertEqual(call.args[0], [sys.executable, "-X", "utf8", str(self.root / "scripts/verify_environment.py"), "--base", "a" * 40])
+        self.assertEqual(call.args[1], self.root)
+        self.assertGreater(call.args[3], 1100)
+        self.assertLessEqual(call.args[3], 1200)
+        self.assertEqual(len(result), len(self.task["validation"]))
+        official = result[0]["planner"]["executed_checks"][-1]
+        self.assertEqual(official["test_count"], 5)
+        self.assertEqual(official["acs"], [])
+        self.assertEqual(result[0]["test_count"], 2)
+
+    def test_official_zero_skip_fail_missing_summary_are_failure(self):
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        for summary in (self.official_output(tests_run=0), self.official_output(skipped=1),
+                        self.official_output(status="FAIL"), self.official_output(verified_evidence_eligible=False),
+                        "Ran 5 tests\nOK"):
+            result, _ = self.run_validation(lambda *a, **k: (0, summary, "", None))
+            self.assertNotEqual(result[-1]["exit_code"], 0)
+
+    def test_stop_and_state_change_invalidate_no_summary_success(self):
+        result, process = self.run_validation(stop=lambda: "cancel")
+        self.assertTrue(any(c["exit_code"] != 0 for c in result))
+        self.assertEqual(process.call_count, 0)
+        def changed(*a, **kw):
+            self.state["tracked"] = "changed"
+            return 0, "", "Ran 2 tests\nOK", None
+        result, _ = self.run_validation(changed)
+        self.assertTrue(all(c["exit_code"] != 0 for c in result))
+        self.assertEqual(result[-1]["stop_reason"], "validation_state_changed")
+
+    def test_bootstrap_failure_and_foreign_root_generic_behavior(self):
+        self.planner.plan = lambda *a, **kw: (_ for _ in ()).throw(ValueError("never leak diagnostics"))
+        with self.assertRaisesRegex(HarnessError, "validation_planner_failed"): self.run_validation()
+        self.planner.baton_root = lambda tree: False
+        result, process = self.run_validation()
+        self.assertEqual(len(result), 1)
+        self.assertNotIn("planner", result[0])
+        self.assertEqual(result[0]["acs"], ["AC1"])
+        self.assertEqual(process.call_args.args[3], 300)
+
+    def test_evidence_checks_keep_one_result_per_declared_check_and_nonzero_acs(self):
+        from baton.evidence import _checks
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        task = {**self.task, "acceptance_criteria": ["AC1"]}
+        def runner(argv, *a, **kw):
+            if "--base" in argv: return 0, self.official_output(), "", None
+            return 0, "", "Ran 2 tests\nOK", None
+        with patch("baton.execution.run_process", side_effect=runner):
+            checks = _checks(self.orchestrator.store, {"task": task}, self.root)
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["test_count"], 2)
+        self.assertEqual(checks[0]["acs"], ["AC1"])
+
+
 class ManagedHarnessTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
