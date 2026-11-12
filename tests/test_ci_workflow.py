@@ -164,7 +164,8 @@ class PrMainWorkflowTests(unittest.TestCase):
         ))
 
     def test_fixed_matrix_timeout_and_verification_steps_unchanged(self):
-        # Literal baseline from 351a8a9 (checkout line endings normalized):
+        # Literal baseline from 351a8a9, with only TASK-CI-TIME-001's
+        # ADR-CI-TIME-001 timeout increase (15 -> 25) applied:
         # protects permissions, env, actions and both GMS steps as well.
         expected = '''permissions:
   contents: read
@@ -176,7 +177,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ['3.11', '3.12']
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       PYTHONPATH: src
       PYTHONDONTWRITEBYTECODE: '1'

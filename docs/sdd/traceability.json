@@ -38,7 +38,10 @@
     "docs/specs/SCOPE-PATH-001.md",
     "docs/plans/scope-path.md",
     "docs/adr/ADR-SCOPE-PATH-001.md",
-    "docs/tasks/TASK-SCOPE-PATH-001.md"
+    "docs/tasks/TASK-SCOPE-PATH-001.md",
+    "docs/tasks/TASK-CI-TIME-001.md",
+    "docs/plans/ci-windows-time.md",
+    "docs/adr/ADR-CI-TIME-001.md"
   ],
   "features": [
     {
@@ -252,6 +255,30 @@
             {
               "file": "tests/test_harness_gateway.py",
               "symbol": "HarnessGatewayTests.test_storage_held_by_another_connection_fails_closed_before_call"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "GitPathTests.test_windows_bin_and_cmd_use_same_install_case_insensitively"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "GitPathTests.test_non_windows_never_resolves_or_changes_git"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_progress_is_flushed_on_module_start_and_keeps_nested_order"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_main_preserves_json_exit_and_unittest_accounting"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_sdd_failure_stops_before_discovery"
             }
           ]
         },

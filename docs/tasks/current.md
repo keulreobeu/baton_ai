@@ -1,5 +1,12 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-12 Windows CI 시간
+
+- [TASK-CI-TIME-001](TASK-CI-TIME-001.md) in_progress L3, owner Codex: PR13 run42992036949 Windows 3.11이 약 15분에 cancelled.
+  timeout 강하게 시사, 명시 annotation은 없어 직접 입증 아님. 같은 설치 Git 런처 우회·모듈 진행 줄·timeout 25 로컬 구현.
+  `다시 확인해서 진행`의 coordinator 배정에 따라 진행하며 새 SHA 게시 승인은 별도다.
+  최종 공식 순차 검증·독립 검토·원격 CI pending, 부모 TASK-CI-OPT-001 in_progress 유지, T3 미변경.
+
 ## 현재 작업 — 2026-11-11 workflow scope 경로·재배정 복구
 
 - [TASK-SCOPE-PATH-001](TASK-SCOPE-PATH-001.md) in_progress L3: CI-OPT 작업 T2를 Orca로 돌리다 찾은 하네스 결함 3건과 검토 보고 형식 결함 1건. [SCOPE-PATH-001](../specs/SCOPE-PATH-001.md) revision 2는 2026-11-11 사용자 승인('2번으로 진행해', '승인 진행해', '진행', 'AC-4 추가해서 진행').
