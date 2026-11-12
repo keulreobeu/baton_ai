@@ -213,6 +213,18 @@ def required_level(name):
     return 1
 
 
+def eligible_tasks(item, tasks, changed):
+    """Select already-validated, updated tasks covering a changed path.
+
+    Shared by the SDD checker and CI planner; preserves task order and the
+    checker's existing status, minimum-level and exact/path-prefix rules.
+    """
+    return [(name, task) for name, task in tasks
+            if name in changed and task["status"] in {"ready", "in_progress", "verified"}
+            and task["level"] >= required_level(item)
+            and any(item == p or item.startswith(p + "/") for p in task["scope"])]
+
+
 def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False):
     root = Path(root).resolve()
     registry = json_object(read(root, "docs/sdd/traceability.json"))
@@ -312,9 +324,7 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
         require(set(changed) <= {"README.md"}, "INVALID_L0_EXEMPTION")
     else:
         for item in changed:
-            eligible = [(name, t) for name, t in tasks if name in changed and t["status"] in {"ready", "in_progress", "verified"}
-                        and t["level"] >= required_level(item) and any(item == p or item.startswith(p + "/") for p in t["scope"])]
-            require(bool(eligible), "CHANGE_WITHOUT_UPDATED_TASK")
+            require(bool(eligible_tasks(item, tasks, changed)), "CHANGE_WITHOUT_UPDATED_TASK")
     return {"status": "PASS", "documents": len(documents), "features": len(features), "acs": len(all_acs),
             "tasks": len(tasks), "changed_paths": len(changed), "basis": basis,
             "provider_calls": 0, "meaning": "static_contract_check_only"}

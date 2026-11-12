@@ -4,7 +4,7 @@
 kind = "task"
 id = "TASK-CI-OPT-001"
 status = "in_progress"
-owner = "Claude"
+owner = "Codex"
 level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
@@ -34,7 +34,7 @@ AC가 검증됐다는 뜻이 아니다.
 | 작업 T1 | — (계약) | CI-OPT 4문서, `docs/proposals/T1-contract-revisions.md`, `docs/sdd/traceability.json`, `docs/tasks/current.md` | 문서 완료, 독립 검토 대기 |
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
-| 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 착수 전, T2 이후 |
+| 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 완료, 로컬 checkpoint 대상; 독립 검토 pending |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore` | 미구현, 단일 정책 엔진 |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | 미구현, draft V2 / ready-main V3 full 4 |
 | 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability | 미구현, 전용 필드와 13 AC 일괄 등록 |
@@ -201,3 +201,14 @@ SDD 검사 base는 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26이다. Task는 in_pr
 - `git status --short --ignored`: 지정 scope 9개 수정, index 비어 있음, ignored(!!) 0. HEAD fa10f2a9a90a8553f9f24f8476760e835a8003cd 유지, 커밋/push/PR 0.
 - traceability.json은 이미 계약 문서를 등록하고 있어 변경하지 않았다. CI-OPT feature 등록/13 AC 연결은 T3d까지 보류하며 기존 entries를 보존했다.
 - 공식 verify_environment·fast runner·전체 회귀·원격 CI/E2E·독립 검토는 이 작성 단위에서 not_run. 계약 정적 테스트의 PASS를 구현/원격 증거로 승격하지 않는다.
+
+## T3a 공유 선택·PR 이벤트 회귀 — 2026-11-12
+
+- 사용자 최신 지시로 CI 단계 분할 T3를 우선한다. GIT-CALL 수정 결과는 별도 author 작업 공간에 미커밋 보존하고, 추가 검증·리뷰·통합을 보류한다.
+- 작성자 Codex, 작업 위치 `D:/baton_ai/.local_runtime/ci-opt-001`, 시작 HEAD/base `ec6536535968bd7653185c69104881d1c8899ecd`; 이전 변경·index 없음 확인.
+- `eligible_tasks(item, tasks, changed)`를 기존 `validate()` 조건에서 그대로 추출했다. 활성 상태·동일 변경 묶음의 Task·최소 level·정확/디렉터리 접두 scope·입력 순서를 유지하며, CLI/JSON/오류 의미는 변경하지 않는다. T3b planner가 이 함수를 공유할 예정이다.
+- 새 테스트: 공유 선택 함수의 상태/등급/경로 경계, clean fixture의 PR base 이후 변경 및 CLI 성공, base 필드가 없는 PR 이벤트의 CLI exit 1. PR fixture의 base는 adoption baseline 이후이며 이벤트 파일은 저장소 밖에 둔다.
+- V1: checkout `.venv/Scripts/python.exe -X utf8 -m unittest`로 새 테스트 3개 PASS, failures/errors/skips 0, 2.785 s. 모델/네트워크 호출 없음.
+- V2: checkout `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_sdd tests.test_ci_workflow` 49 tests PASS, failures/errors/skips 0, 7.173 s.
+- `scripts/check_sdd.py --base ec6536535968bd7653185c69104881d1c8899ecd` PASS (48 documents, 18 tasks, 9 features, 62 ACs, 4 changed paths, provider_calls 0); `git diff --check` PASS. checkout Python과 `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS 임시 `BATON_HOME`으로 실행했다.
+- 독립 검토는 pending이다(기존 교차 provider 정책 유지, Claude 한도 소진). 공식 V3·필수 원격 CI는 최종 후보에서 별도 실행하며 Task는 in_progress 유지한다. 13 AC feature 원장 등록은 기존 결정대로 T3d에서 일괄 처리한다. 기존 traceability 문서 등록은 이미 존재하므로 이번 단위에서는 변경하지 않았다.

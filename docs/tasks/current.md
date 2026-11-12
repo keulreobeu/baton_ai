@@ -1,11 +1,28 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-12 CI 단계 분할 T3 재개
+
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 사용자 지시로 T3a 공유 Task 선택·PR 회귀부터 재개했다. T3b planner → T3c workflow/gate → T3d 계측 순서이며 아직 CI 축소는 활성화하지 않았다. GIT-CALL은 별도 작업 공간에 미커밋 보존하고 검증·리뷰·통합 보류다. 최종 V3/독립 검토/원격 CI pending.
+
+## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
+
+- [TASK-REVIEW-READ-001](TASK-REVIEW-READ-001.md) in_progress L3: 큰 coordinator inbox(`--full` 163,655 byte)가 `review_report`를 `orca_response_too_large`로 막던 결함. [REVIEW-READ-001](../specs/REVIEW-READ-001.md)은 2026-11-12 사용자 승인('inbox 결함은 2안으로 고치고'): 비-full 목록에서 대상을 찾고 `--limit N --full`로 그 범위만 읽음, 상한 불변. 독립 검토·공식 검증 pending.
+
 ## 현재 작업 — 2026-11-12 Windows CI 시간
 
 - [TASK-CI-TIME-001](TASK-CI-TIME-001.md) in_progress L3, owner Codex: PR13 run42992036949 Windows 3.11이 약 15분에 cancelled.
   timeout 강하게 시사, 명시 annotation은 없어 직접 입증 아님. 같은 설치 Git 런처 우회·모듈 진행 줄·timeout 25 로컬 구현.
   `다시 확인해서 진행`의 coordinator 배정에 따라 진행하며 새 SHA 게시 승인은 별도다.
   최종 공식 순차 검증·독립 검토·원격 CI pending, 부모 TASK-CI-OPT-001 in_progress 유지, T3 미변경.
+
+## T4 local advisory implementation - 2026-11-12
+
+- TASK-BATON-T4-PREP-001 upgraded L3 for approved contract staging; TASK-HOOK-QUAL-001 in_progress local/offline adapter; TASK-FLOW-002 blocked on CI preceding bundle/qualification, AC-12 on T5 API. User accepted exact dd3121a amendments on 2026-11-12; no live/registration/native session/model/push authorization. All host qualification and card persistence NOT_RUN; separate Git owner and new independent review/final validation pending. Below source-candidate CI/history text is preserved.
+
+## 본체 lane 준비 — 2026-11-12 T4 계약 초안
+
+- [TASK-BATON-T4-PREP-001](TASK-BATON-T4-PREP-001.md) in_progress L1, owner Codex: 기존 SDD-001-AC-06 아래 문서·제안만 준비한다. [FLOW rev2/HANDOFF rev4 초안](../proposals/T4-contract-draft.md)과 [호스트 근거](../validation/host-hook-capabilities.md)는 미승인 제안이며 제품 계약·동작은 불변이다.
+  CI lane과 병렬 허용된 준비만 수행하며 전체 FLOW 구현의 CI 선행 묶음 완료 의존성은 유지한다. CI-OPT/T3·CI-TIME은 기존 Claude coordinator 소유다. 미래 구현은 별도 L3 계약·Task·검토·승인이 필요하며 실제 Hook 등록/native resume/model smoke는 NOT_RUN, T5 API는 pending이다. 독립 후보 검토 전이므로 verified 아님. 저장·통합은 별도 Git 담당자 몫이다.
 
 ## 현재 작업 — 2026-11-11 workflow scope 경로·재배정 복구
 
