@@ -103,5 +103,43 @@ This targeted run does not establish full-suite skip counts or V3 eligibility.
 
 ## Open items
 
-Independent review (Claude): NOT_RUN; official V3 and CI: NOT_RUN.
+Independent review (Claude): NOT_RUN at author time; superseded by the review
+and integration record below (PASS). Official V3 and CI: NOT_RUN.
 The coordinator schedules those checks; this Task remains in_progress.
+
+## Review and integration record - 2026-11-12
+
+- First independent review: Claude, dispatch `ctx_d14fbbbc130e`, verdict PASS
+  with info-only notes.
+- Lifecycle freeze attempt: `baton git snapshot --stage candidate` exited 2 with
+  `secret_in_commit`. The cause was the pre-existing literal synthetic `api_key`
+  fixture in `tests/test_harness.py` (committed before this Task at `2705fd3`,
+  present at base `4da562a`), not this change. Nothing was committed; the
+  scanner was not bypassed.
+- Fixture rewrite (user decision; scanner unchanged): dispatch
+  `ctx_807c5c5b799f` built the same dictionary from variables, as described in
+  "Decision and scope" above.
+- Re-review: Claude, dispatch `ctx_6b7d942d6dd4`, verdict PASS. Info: the
+  scanner has a blind spot for indirect (variable-built) field names; noted,
+  not changed in this Task.
+- Freeze: the same STARTED lifecycle (no second start) produced snapshot
+  `0001-739066118a20` and local candidate
+  `627db2459d6743a9873b1a97a1dade94d5baca46` (parent
+  `4da562acf579540bae7bd83cd0dc4d16ed97855b`, tree
+  `e47212d03105d8632b59f35699c4edc5ff7eb348`) on branch
+  `codex/task-jipdam-skip-001`.
+- Reviewed source SHA-256: `tests/test_harness.py`
+  `cd77c5ded7439510f2005e73ff1a7776b60585b28f3d37f3a09b3cceefbd519c`;
+  `docs/tasks/TASK-JIPDAM-SKIP-001.md`
+  `ae30ec6153b214a60c1ac5d01e9830e149ec6bef3344173c3ee3efcfe1565860`;
+  `docs/sdd/traceability.json`
+  `0786e0676ae5cd4e15694634a19e42d49667f5a8e182981b9ff7817591b2254f`.
+  The first two candidate blobs are byte-identical; the traceability blob is the
+  same content with LF line endings (Git normalization).
+- Integration: the single Git worker merged it into `codex/ci-opt-001` (old HEAD
+  `687069e94769f749c1b5afa09d30630d144f9e54`) as
+  `99486ffb9618eb506cc7db5e593d999155d32595`, user-approved order step 2, local
+  only. The `docs/sdd/traceability.json` documents-list conflict was resolved as a
+  union of both sides; no other path changed in the merge.
+- Status stays in_progress. Official V3 `verify_environment.py` and required CI:
+  NOT_RUN. No push, PR or model call.
