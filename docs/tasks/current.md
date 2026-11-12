@@ -13,10 +13,13 @@
   task scope가 `.github/workflows/`를 받음, ignored `__pycache__` bytecode는 snapshot에서 제외, 시작 전 실패한 재사용 재배정이 소유 binding을 유지,
   검토 프롬프트가 JSON 단일 본문·PASS `findings == []`·`notes`·Windows 전송 규칙을 알림(AC-04, 작성 단위 R3). R3 `ba694431`·EVID `05e1113`은 integrated locally at `529e93c`, approve/push pending.
 
-## 현재 작업 — 2026-11-11 CI 호출 축소
+## 현재 작업 — 2026-11-12 CI 호출 축소 V1/V2/V3 계약
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: 작업 T1(계약 문서) 완료. 작업 T2a(AC-01·02 검증 사다리·Worker 입출력 지침, 정적 테스트)는 로컬 통합 완료(`351a8a9`). 작업 T2b(AC-03·04 PR/main 트리거·concurrency)는 후보 `e16a8f7`, 검토 PASS. T2a/T2b/P-01은 integrated locally(최신 후보는 이 T2 실수 기록 단위의 후보이며 base는 P-01 반영 후보 `8d2abe2`; P-01은 2026-11-11 사용자 확인 후 AGENTS.md 반영), approve/push pending, verified 아님(공식 검사 skip 1, 원격 CI not_run). [CI-OPT-001](../specs/CI-OPT-001.md)은 2026-11-11 사용자 구현 요청으로 승인(미결정 항목 제외).
-  draft PR만 tier 축소, ready/main은 항상 전체 4 matrix라는 후속 T3 계약이며, T2b는 고정 4 matrix·timeout 15를 유지한다. 작업 T2는 Orca coordinator dispatch로 진행(처음 기록한 Orca 미설치는 오진단, 2026-11-11 정정). 기존 계약 개정 제안: [제안서](../proposals/T1-contract-revisions.md).
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: [CI-OPT-001](../specs/CI-OPT-001.md) revision 2는 사용자 A/B/C/E/F(2026-11-12)로 승인된 단계 기반 설계다.
+  T2 구현/증거는 보존한다. 미구현 T3a eligible_tasks+PR 회귀 → T3b 단일 ci_plan.py/CBM CLI adapter → T3c draft V2·ready/main V3 full 4+gate → T3d MetricsStore 필드/원장 등록 순서다.
+  편집 V1·checkpoint V2는 로컬 validation, 완료/pre_merge V3는 공식 순차 검증·독립 검토·CI다. CBM 실패/부분/미상은 V3이고 V3 재사용은 SHA 외 코드/base/설정/의존성/환경/필수 검사까지 엄격 동일해야 한다.
+  이번 단위는 문서·정적 테스트뿐이며 src/scripts/workflow 구현 없음. 이전 T3 pending은 Spec 처분 표로 대체, hooks는 T4 복귀까지 ON HOLD.
+  계약 독립 검토·T3 구현·공식 검증·원격 CI pending, verified 아님. AGENTS push 절과 별도 push 승인 경계는 유지한다.
 
 ## 현재 작업 — 2026-11-10 저장소 busy
 

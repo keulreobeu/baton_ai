@@ -1,4 +1,4 @@
-# PLAN-CI-OPT-001 — 방법론 → 트리거 → 분류기 → gate
+# PLAN-CI-OPT-001 — 방법론 → 트리거 → V-planner → gate → 계측
 
 ```toml
 kind = "plan"
@@ -20,33 +20,41 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 3. 작업 T2b — 트리거·concurrency(AC-03·04). `verify.yml`에 PR activity 4종 + main push, PR 번호 그룹 취소, main SHA 그룹.
    고정 4 matrix·`fetch-depth: 0`·GMS optional 검사 유지, `timeout-minutes` 미변경(P-07 결정). 정적 텍스트 테스트는 `tests/test_ci_workflow.py`(P-06 결정).
    dispatch·`ci:full` 즉시 실행을 안내하지 않는다.
-4. 작업 T3a — `eligible_tasks()` 추출(AC-05) + PR 정상·실패 회귀(AC-06). 기존 `tests.test_sdd` 전체 통과, CLI·출력 불변.
-5. 작업 T3b — `ci_plan.py` + `test_ci_plan.py`(AC-07~09): tier × draft/ready/main/dispatch 전 조합, 실제/fallback T3 구분,
-   빈 diff, 500개 초과, 제외 경로, 갱신 안 된 Task 무시, 실제 `check_sdd` 모듈 사용.
-6. 작업 T3c — workflow plan job·draft-T0 job·동적 matrix·dispatch·종료 gate(AC-08~12). 이 단계 완료 뒤에만 dispatch 안내.
-7. 원장 등록(Spec P-06, 2026-11-11 결정·AC-12·13 처리만 pending) — 검사기가 heading·REQ/AC 집합 일치, AC마다 실제 테스트 symbol, 전체 AC의 Task 연결을
-   요구하므로 13개 AC를 한 번에 등록한다. 시점은 모든 AC에 실제 테스트 symbol이 생긴 묶음이다. 문서·workflow AC는 정적 텍스트 테스트
-   (`tests/test_ci_workflow.py`, scope 추가 결정됨)로 덮고, AC-12·13처럼 오프라인으로 증명할 수 없는 AC의 처리는 미결정이다.
-   같은 묶음에서 Task `acs`를 CI-OPT-001-AC-01~13으로 바꾸고 임시 SDD-001-AC-06 연결을 끝낸다.
-8. 최종 후보 — 공식 순차 `verify_environment.py` 1회, 독립 검토(`check_sdd.py` 포함), 승인된 경우에만 원격 E2E.
+4. 작업 T3a — `eligible_tasks()` 추출(AC-05) + PR 정상·필드 누락 회귀(AC-06). 기존 checker CLI/JSON 의미는 불변.
+5. 작업 T3b — 단일 `scripts/ci_plan.py` V-planner + 같은 파일의 CBM CLI adapter(AC-07/09/12). 별도 엔진 없음.
+   stage 기본값, 전체 base diff·변경 상태 고정, root/generation/freshness/coverage, stale incremental 재색인, Python test inventory/TESTS 매핑,
+   V3 상향/fallback과 strict equality 재사용 판단을 순수 함수/가짜 CLI·clock으로 검증한다. BATON 로컬 validation 연결도 이 planner를 호출한다.
+   필요한 실제 src 연결 경로가 추가 발견되면 영구 Task scope에 먼저 연결한다. `.gitignore`에 `.codebase-memory/` 추가, persistence off.
+6. 작업 T3c — workflow draft=V2 affected_modules / ready-main=V3 full 4 + gate + V3 dispatch(AC-08/10/11/12).
+   draft도 기존 고정 4 matrix에서 범위만 축소하며 `ci:full`은 다음 지원 이벤트에서 V3로만 상향한다.
+   공식 순차 검증·GMS optional 검사·fetch-depth·concurrency 보존. 구현 뒤에만 dispatch 실행 안내.
+7. 작업 T3d — 기존 MetricsStore/Task 증거 필드 확장(AC-02/12/13), 새 DB/table 없음.
+   task/commit/worktree/base·index id/freshness·V 단계·선택/전체 테스트/이유·graph/CI 시간·상향·재사용 결정·V3-only defects를 기록한다.
+   measured/assumed 구분·unknown/partial/null 보존, 허용 payload·개인정보·크기 제한 회귀를 검증한다.
+   13 AC 모두 실제 테스트 symbol이 생기는 이 묶음에서 feature를 일괄 원장 등록하고 임시 SDD-001-AC-06 연결을 끝낸다.
+   AC-12/13 정적 검사는 계약 경계만 증명하며 원격 E2E와 대체하지 않는다. 미승인/미실행 원격 E2E는 not_run, verified 금지.
+8. 최종 후보 — 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 독립 검토(`check_sdd.py` 포함) + 필수 CI.
+   엄격히 동일한 기존 V3만 AC-12대로 재사용할 수 있으며 로컬 재사용으로 ready/main CI 4 job은 생략하지 않는다.
 
 ## 단계별 검증
 
-| 단계 | 로컬 | 원격 |
+| 단계 | 검사 | 실패/음성 |
 |---|---|---|
-| T1 | `check_sdd.py --base 5c07aea`, `tests.test_sdd` | 없음 |
-| T2a | `check_sdd.py --base <Task base>`, `tests.test_sdd` | 없음 |
-| T2b | 위 + workflow 텍스트 검토(정적 테스트 위치는 P-06) | 승인 시: 한 PR 실행, 오래된 PR 취소, main SHA 그룹 |
-| T3a | `tests.test_sdd` 전체 + 새 회귀 2개 | 없음 |
-| T3b | `tests.test_ci_plan`, `tests.test_sdd` | 없음 |
-| T3c | 위 + fast runner 1회 | 승인 시: draft tier별 job 수, ready/main 실제 4 job 이름별 성공, 선택 job 실패의 gate 반영, 옛 draft 재실행 |
-| 최종 | 공식 순차 1회 | 승인된 E2E 결과 기록 |
+| 계약 revision 2 | tests.test_ci_workflow + tests.test_sdd, check_sdd --base 5c07aea, diff --check | push 절 byte 동일, Korean UTF-8, 구현 없음 |
+| T3a | tests.test_sdd 전체 + 새 PR 회귀 2개 | 누락 base exit1, CLI/JSON 불변 |
+| T3b | tests.test_ci_plan + tests.test_sdd + 로컬 연결 대상 테스트 | stale/absent/partial/오류/누락 edge/빈 선택/committed diff/상태 변경→V3; 동등성 항목 각각 변경·미상→재사용 거부 |
+| T3c | 위 + tests.test_ci_workflow + fast runner 1회 | 이벤트×stage, draft→ready, 실패/skip/cancel/not_configured→gate 실패; bootstrap 실패; remote E2E 별도 |
+| T3d | tests.test_observability + planner/SDD/정적 테스트 | 누락 계측≠0, 새 DB 없음, payload/민감정보 경계, 13 AC 원장 연결 |
+| 최종 V3 | 공식 순차 1회·독립 검토·CI | 모든 AC·nonzero·no-skip 유지; 원격 not_run을 passed로 승격 금지 |
 
-## 실패 처리
+원격 E2E는 승인 시 draft 선택 범위·ready/main 실제 4 job 이름별 성공·gate 실패 전파·옛 draft 재실행을 확인한다.
+충돌 PR은 CI가 없으므로 검증된 것으로 보지 않는다. 결과를 안전하게 만들지 못하면 실패하며 SDD FAIL은 fallback으로 지워지지 않는다.
 
-plan job 예외→T3+사유, bootstrap 불가→workflow 실패, SDD FAIL 유지, 빈 matrix는 draft-T0 전용 job과 비지 않는 기본값으로 방지,
-충돌 PR은 CI 없음(검증된 것으로 보지 않음), 원격 E2E 미승인→not_run 유지·verified 금지.
+## 결정과 경계 — 2026-11-12
 
-## 범위 밖
-
-R4 main 중복 생략, merge_group, CI 테스트 병렬화, cache/새 DB/벤치마크, 원격 보호설정, timeout 변경(CI-TIME-001 쪽).
+사용자 A/B/C/E/F 원문과 Graph scope·D 보류는 Spec revision 2의 승인/환경 절을 따른다.
+이 Plan의 T3는 아직 미구현이며 현재 workflow는 T2 고정 4 전체 회귀다. 훅 통합은 T4 Codex 복귀까지 ON HOLD.
+CBM은 프로젝트/worktree별 graph, 전역 cache/config만 공유한다. watcher 기본값 유지·선택 전 freshness 확인·실패 V3.
+resource cap은 측정 뒤 결정하며 trial 7.5 s/16 MB를 절감률로 일반화하지 않는다.
+범위 밖: main tree만 같은 생략·merge_group·공식 검증 병렬화·새 verification DB/서비스·Base+Delta overlay·원격 보호설정.
+timeout은 CI-TIME-001 소유다. push/PR/model/GMS 승인과 설치/설정 변경은 이 계약 단위에 포함하지 않는다.

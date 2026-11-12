@@ -26,18 +26,25 @@ class MethodologyDocsTests(unittest.TestCase):
     """CI-OPT-001-AC-01: verification ladder shared by AGENTS/README/sdd."""
 
     LADDER_TERMS = (
-        "편집 중", "변경 모듈·AC 대상 테스트",
-        "작업 단위", "Task 시작 base 기준 `check_sdd.py --base", "fast runner",
-        "리뷰 반영", "지적을 묶은 뒤", "빠른 회귀 1회", "회차마다 push하지 않",
-        "최종 L2/L3 후보", "공식 순차 `verify_environment.py` 1회", "필수 독립 검토·CI",
+        "편집 중(in_progress/debugging)=V1 `graph_affected`",
+        "작업 단위/checkpoint=V2 `affected_modules`", "Task 시작 base 기준 `check_sdd.py --base",
+        "리뷰 반영", "지적을 묶은 뒤 V2 1회", "회차마다 push하지 않",
+        "최종 L2/L3 후보(task_complete/pre_merge)=V3 `full`",
+        "공식 순차 `verify_environment.py` 1회", "필수 독립 검토·CI",
         "통합·충돌 반영", "영향 파일 검사", "최종 증거 갱신",
+        "freshness/coverage", "stale incremental index", "graph stale/failed/partial",
+        "draft PR=V2 범위, ready/main=V3 전체 4 matrix",
+        "선택/재사용 구현은 CI-OPT T3에 남아 있다",
     )
     NEGATIVE_TERMS = (
         "같은 SHA만으로 검증 재사용을 결정하지 않는다",
+        "코드 상태·commit SHA·target base·Task/AC·정책·테스트 설정·의존성·환경·필수 검사 목록/성공 결과",
+        "unknown/partial이면 재실행",
         "후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효",
         "최근 1~3개 커밋 조회는 빠른 파악용",
         "최종 diff 범위는 Task base 또는 통합 대상",
-        "자동 cache·새 검증 DB·새 영향 분석 엔진",
+        "새 검증 DB·두 번째 정책 엔진은 금지",
+        "graph 실패가 검사를 생략하지 않는다", "`not_configured`이며 passed가 아니다",
         "`evidence.py`의", "전체 AC·nonzero·no-skip", "바뀌지 않는다",
     )
 
@@ -63,7 +70,7 @@ class MethodologyDocsTests(unittest.TestCase):
                     self.assertNotIn(term, text)
 
     def test_docs_do_not_add_pending_draft_first_practice(self):
-        # P-02 (open PRs as draft, switch to ready at merge candidate) is still pending.
+        # Revision 2 supersedes P-02: event-based stages do not mandate PR creation practice.
         for name in GUIDANCE_DOCS:
             text = read(name)
             for term in ("draft로 열", "ready로 전환"):
@@ -208,6 +215,85 @@ jobs:
         ):
             with self.subTest(term=term):
                 self.assertIn(term, text)
+
+
+class VStageContractTests(unittest.TestCase):
+    """Static contract boundaries; these do not claim planner or remote E2E success."""
+
+    def ac(self, number):
+        text = read("docs/specs/CI-OPT-001.md")
+        rest = text.split(f"### CI-OPT-001-AC-{number:02d}\n", 1)[1]
+        return rest.split("\n##", 1)[0]
+
+    def test_single_planner_keeps_shared_task_selection_and_pr_regressions(self):
+        spec = read("docs/specs/CI-OPT-001.md")
+        self.assertIn("revision = 2", spec)
+        self.assertIn('approved_at = "2026-11-12"', spec)
+        for term in ("ci_plan.py", "두 번째 정책 엔진은 두지 않는다", "아직 미구현"):
+            self.assertIn(term, spec)
+        self.assertIn("eligible_tasks(item, tasks, changed)", self.ac(5))
+        self.assertIn("basis.requested_base == base", self.ac(6))
+        self.assertIn("exit 1", self.ac(6))
+
+    def test_stage_defaults_and_automatic_escalations(self):
+        ac = self.ac(7)
+        for term in ("in_progress / debugging | V1", "checkpoint / 작업 단위 | V2",
+                     "task_complete / pre_merge | V3", "graph_affected", "affected_modules",
+                     "required_level()", "L3", ".github/workflows/**", "scripts/verify_environment.py",
+                     "dependency/lockfile", "CBM config", "skills/**", "매핑 불가", "이전 범위 밖 실패",
+                     "빈 diff/선택 0개", "500개 초과", "V3로 자동 상향", "단계를 올릴 수만"):
+            with self.subTest(term=term):
+                self.assertIn(term, ac)
+
+    def test_draft_v2_and_ready_main_full_four_are_contractual(self):
+        ac = self.ac(8)
+        for term in ("draft PR은 V2", "ready PR·병합 후보·main push는 V3 full",
+                     "ready/main은 항상 전체 4 matrix", "어떤 입력도 4 미만으로 낮추지 않는다",
+                     "기존 4 matrix에서 테스트 범위만 V2", "V3 fallback", "draft-T0 전용 job은 만들지 않는다"):
+            with self.subTest(term=term):
+                self.assertIn(term, ac)
+
+    def test_graph_freshness_mapping_and_fallback_fail_closed(self):
+        ac = self.ac(9)
+        for term in ("프로젝트별·git worktree별", "하나의 전역 병합 graph를 만들지 않는다",
+                     "index_status", "check_index_coverage", "index_repository", "incremental",
+                     "TESTS/TESTS_FILE", "Python unittest", "committed 변경을 누락하지 않는다",
+                     "부분 LSP", "CBM 없음", "partial coverage", "V3 full", "SDD FAIL/exit1",
+                     "필수 검사 skip/PASS", "Git 자동 커밋", "auto_index=false", ".codebase-memory/"):
+            with self.subTest(term=term):
+                self.assertIn(term, ac)
+
+    def test_v3_gate_and_reuse_require_complete_matching_evidence(self):
+        for term in ("if: always()", "draft=V2 이상", "ready/main/dispatch=V3 full 4",
+                     "skip/cancel/fail", "not_configured", "passed로 취급하지 않는다", "유효한 V3"):
+            self.assertIn(term, self.ac(11))
+        ac = self.ac(12)
+        for term in ("코드 상태", "commit SHA", "target base", "Task/AC와 정책", "테스트 설정/명령",
+                     "실제 의존성 버전", "환경(OS·Python", "필수 검사 목록/결과", "unknown/partial/누락",
+                     "같은 SHA만으로", "tests_run=0", "검사 전후", "CI full 4 job을 재사용으로 생략하지 않는다",
+                     "merge-ref SHA/tree", "옛 draft 재실행", "not_run", "원격 E2E passed 근거가 아니다"):
+            self.assertIn(term, ac)
+
+    def test_measurements_preserve_unknowns_and_no_new_database(self):
+        for term in ("MetricsStore", "task / commit / worktree / target_base", "index_id", "freshness",
+                     "selected_tests / total_tests", "graph_seconds / ci_seconds", "escalations", "reuse_decision",
+                     "v3_only_defects", "measured / measured_calculation / assumed", "unknown/partial/null",
+                     "새 verification DB/table"):
+            self.assertIn(term, self.ac(12))
+        for term in ("새 검증 DB는 금지", "verify_environment.py", "순차 유지", "ON HOLD/pending", "T4"):
+            self.assertIn(term, self.ac(13))
+
+    def test_superseded_pending_items_and_implementation_order(self):
+        spec = read("docs/specs/CI-OPT-001.md")
+        for item in ("P-02", "P-03", "P-08", "P-09"):
+            self.assertRegex(spec, rf"\| {item} \| superseded:")
+        for item in ("P-04", "P-05", "P-06 (AC-12/13)"):
+            self.assertIn(f"| {item} | re-scoped:", spec)
+        plan = read("docs/plans/ci-optimization.md")
+        positions = [plan.index(f"작업 T3{letter} —") for letter in "abcd"]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("13 AC", plan)
+        self.assertIn("ON HOLD", plan)
 
 
 if __name__ == "__main__":

@@ -38,3 +38,24 @@ verified 근거는 skip 없는 CI 전체 matrix이므로 최종 후보 깊이는
 대가: draft로 열지 않은 PR은 절감이 없고, 병합 직후 main 4 job 중복(R4)은 남는다. gate는 GitHub UI 병합을 강제로 막지 않는다.
 대안 기각: labeled 트리거(이벤트·concurrency 간섭 관리 비용), 경로 등급만 사용(Task 선언 등급 무시), 선택 조건 복사(조용한 불일치),
 API 기반 job 열거(새 권한·외부 의존).
+
+## Eng Review Amendments — 2026-11-12 V1/V2/V3 재설계
+
+사용자 A='1', B='제안대로', C='변경 허용'과 E/F 환경 결정을 CI-OPT-001 revision 2 approval_ref에 원문으로 기록했다.
+위 revision 1의 3-A/T0~T3 draft matrix 결정 중 draft 분류 부분은 폐기하고 ready/main 항상 full 4 원칙은 보존한다.
+편집 V1 graph_affected, checkpoint V2 affected_modules, 완료/pre_merge V3 full로 바꾼다. draft는 V2 범위로 기존 4 matrix,
+ready/main은 V3 전체 4이며 로컬 BATON도 같은 ci_plan.py 정책을 사용한다. eligible_tasks 공유·PR base 회귀는 유지한다.
+
+AC-01의 새 영향 분석 엔진/cache 금지와 AC-13의 검증 cache 범위 밖 규정을 필요한 만큼만 개정한다:
+CBM은 그래프 자료원이고 ci_plan.py 하나가 Python 테스트 선택/상향/재사용 정책을 맡는다. 별도 엔진·검증 DB·Base+Delta overlay는 없다.
+V3는 코드 상태·SHA·base·Task/AC·정책·검증 설정·의존성·환경·필수 검사 목록/성공 결과가 전부 동일할 때만 기존 증거를 재사용한다.
+같은 SHA만으로는 불가하고 unknown/partial은 재실행한다. 필수 원격 ready/main CI를 생략하지 않는다.
+기존 MetricsStore append-only events/profile·Task 증거로 선택 이유·freshness·시간·상향·재사용·V3-only defects를 남긴다.
+기존 evidence.py 전체 AC/nonzero/no-skip과 순차 verify_environment·독립 검토는 보존한다.
+
+대가: Python 동적 관계/부분 LSP·없는 edge는 영향 없음의 증명이 아니므로 보수적으로 V3가 잦을 수 있다.
+매 선택 freshness/coverage 검사·stale incremental 색인 후 재확인, 실패·partial·매핑 불가·위험 경로·이전 범위 밖 실패는 V3다.
+프로젝트/worktree별 graph를 유지하고 cache/config만 전역 공유한다. CBM graph 자동 커밋·persistence는 끈다.
+E 설치/클라이언트 등록/백업은 환경 사실이며 repository 변경이 아니다. resource cap은 실측 뒤 결정한다.
+P-02~05/P-08/P-09는 Spec의 superseded/re-scoped 표로 대체하고 P-06 AC-12/13은 계약 정적 검사와 원격 증거를 분리한다.
+훅은 T4 Codex 복귀까지 pending/ON HOLD다. 이번 단위는 계약 작성이며 구현·원격 실행·push 승인이 아니다.

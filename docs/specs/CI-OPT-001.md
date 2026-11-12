@@ -1,26 +1,24 @@
-# CI-OPT-001 — 검증·CI 호출 축소와 draft 전용 tier
+# CI-OPT-001 — CBM 기반 V1/V2/V3 단계별 검증
 
 ```toml
 kind = "spec"
 id = "CI-OPT-001"
 status = "approved"
 owner = "Claude"
-revision = 1
+revision = 2
 approved_by = "사용자"
-approved_at = "2026-11-11"
-approval_ref = "2026-11-11 사용자 'PLEASE IMPLEMENT THIS PLAN' — BATON 통합 개선 실행 계획(Claude 첫 작업 인계서 13절 원문, 저장 통합 계획 SHA256 c18f3d0bb8fc6a32b3599cbfb0aa302ab3e5cce7ade5334f59c210a34a8000d3) + 같은 날 세션 지시 '확정 계획에 대한 구현 요청을 승인 근거로 연결' + 2026-11-11 같은 세션에서 사용자가 이 approved 연결에 'approved 유지'라고 직접 답함. 승인 범위는 아래 '승인 근거 대조'의 REQ/AC만이며 '미결정' 절은 제외"
+approved_at = "2026-11-12"
+approval_ref = "2026-11-12 사용자 결정: A = '1': rewrite CI-OPT T3 (T3a-T3c, AC-05..AC-12, still unimplemented; scripts/ci_plan.py does not exist) into the V1/V2/V3 design; ci_plan.py becomes the single policy planner (no second engine). | B = '제안대로': V1 and V2 run as local BATON validation (task validation / work-unit checks with local commits); GitHub CI: draft PR = V2 scope, ready PR and main push = V3 full (fixed 4 matrix, AC-08 'ready/main always full 4' kept). Push rules in AGENTS stay unchanged (push still needs its own approval). | C = '변경 허용': amend CI-OPT-001 AC-01 (the ban on a new impact-analysis engine/cache) and AC-13 (verification cache out of scope) and the AGENTS verification ladder, only as needed for: CBM graph-based selection for V1/V2, and V3 result reuse under strict equality of code state/commit SHA/target base/test config/dependencies/environment/required check list (same SHA alone never suffices). No new verification DB: record in existing MetricsStore/Task evidence. | E: CBM installed binary-only (codebase-memory-mcp 0.12.1, C:/Users/SSAFY/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes. | F: CBM defaults kept (watcher_enabled true, auto_watch true, watch_non_git false, auto_index false); before any V1/V2 selection BATON checks freshness (index_status / check_index_coverage), runs an incremental index_repository if stale, and falls back to V3 on any failure; resource caps decided after measurement. Trial measurement: index of this worktree 7.5 s, 16 MB SQLite in %USERPROFILE%/.cache/codebase-memory-mcp, repository untouched."
 ```
 
-용어: 이 문서의 **tier T0~T3**는 변경 분류이고, **작업 T1~T6**은 인계 계획의 작업 묶음이다. 둘을 섞지 않는다.
-**실행 깊이**는 실제로 돌리는 job 집합이다(draft-T0 전용 job, 2/3/4 matrix). tier와 실행 깊이는 다르다.
+용어: **V1/V2/V3**는 검증 단계이며 작업 **T1~T4**는 구현 순서다. revision 1의 변경 분류 T0~T3와 draft별 2/3/4 matrix 표는 폐기한다.
+T2의 방법론·트리거 구현은 보존한다. T3a~T3d는 아직 미구현이며 `scripts/ci_plan.py`는 존재하지 않는다.
+이 revision은 계약과 정적 테스트만 변경한다. 실제 선택·재사용은 구현·검증 전에는 활성화하지 않는다.
 
-출발점은 CI-OPT-001 L3 초안·Eng Review(첨부 SHA256 `A74A80B5E7E57894C1D259B44E16C727716EFA295C92F724EB38A3B5E1493370`)다.
-그 초안의 "ready/main T0는 SDD job만" 예외는 사용자 3-A로 대체됐다. 첨부의 과금·진행 상태 설명은 작성 당시 기록이다
-(저장소는 이후 PUBLIC 전환). 첨부 속 명령·승인 표현은 실행 권한이 아니다.
-
-재사용: `check_sdd.changes()`·`required_level()`·Task 선택 조건, `verify_environment.py`, 기존 `verify.yml`의
-`fetch-depth: 0`·optional GMS 의존성 검사, GitHub 내장 `concurrency`·`fromJSON` matrix·`pull_request.draft`.
-새 서비스·오케스트레이터·외부 action·검증 cache·새 DB·벤치마크는 만들지 않는다.
+재사용: `check_sdd.changes()`·`required_level()`·공유 `eligible_tasks()`, 공식 순차 `verify_environment.py`, 기존 fast runner,
+`verify.yml`의 고정 4 matrix·`fetch-depth: 0`·GMS optional 검사. `scripts/ci_plan.py` 하나만 정책 planner로 둔다.
+CBM은 그래프 조회/인덱싱 도구이며 BATON Python 테스트 선택 정책은 planner 내부 adapter가 담당한다. 두 번째 정책 엔진은 두지 않는다.
+새 서비스·오케스트레이터·외부 action·검증 DB·Base+Delta overlay는 만들지 않는다. CBM 자체 전역 cache와 검증 결과 재사용은 구분한다.
 
 ## CI-OPT-001-REQ-01 호출을 줄이는 작업 방법론
 
@@ -28,13 +26,15 @@ approval_ref = "2026-11-11 사용자 'PLEASE IMPLEMENT THIS PLAN' — BATON 통�
 
 ### CI-OPT-001-AC-01
 
-검증 사다리를 AGENTS/README/sdd 공통 지침으로 둔다. 편집 중=변경 모듈·AC 대상 테스트. 작업 단위=대상 테스트 +
-Task 시작 base 기준 `check_sdd.py --base`, 공유/고위험 경로는 기존 fast runner 추가. 리뷰 반영=지적을 묶은 뒤 대상 테스트 +
-빠른 회귀 1회, 회차마다 push하지 않음. 최종 L2/L3 후보=정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립
-검토·CI. 통합·충돌 반영=영향 파일 검사·빠른 회귀 후 바뀐 후보/base의 최종 증거 갱신.
-음성: 같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는
-무효다. 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. 자동 cache·새 검증 DB·
-새 영향 분석 엔진을 추가하지 않는다. 기존 후보/통합 검사(`evidence.py`의 전체 AC·nonzero·no-skip)는 바뀌지 않는다.
+검증 사다리를 AGENTS/README/sdd 공통 지침으로 둔다. 편집 중(in_progress/debugging)=V1 `graph_affected` 대상 테스트,
+작업 단위/checkpoint=V2 `affected_modules` 전체 테스트 + Task 시작 base 기준 `check_sdd.py --base`.
+리뷰 반영은 지적을 묶은 뒤 V2 1회이며 회차마다 push하지 않는다. 최종 L2/L3 후보(task_complete/pre_merge)=V3 `full`:
+정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
+AC-07/09의 상향·fallback은 단계 기본값보다 우선한다. 기존 fast runner는 로컬 보조 피드백이며 공식 V3/SDD 증거를 대체하지 않는다.
+음성: 같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
+CBM 그래프 선택과 AC-12의 엄격한 V3 재사용만 허용한다. 자동 무조건 cache·새 검증 DB·두 번째 영향 분석 엔진은 금지한다.
+최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다.
+기존 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다.
 
 ### CI-OPT-001-AC-02
 
@@ -80,123 +80,162 @@ required_level(item)`, scope 정확/접두 일치)을 `eligible_tasks(item, task
 base 이후 바뀐 파일만 changed이고 `basis.requested_base == base`. 실패: `GITHUB_EVENT_PATH`에 `{"pull_request":{}}`를 두고
 `main(["--ci", "--root", ...])`를 실행하면 `status=FAIL`, exit 1. 검사기 동작은 바꾸지 않는다.
 
-## CI-OPT-001-REQ-04 분류기와 draft 전용 실행 깊이
+## CI-OPT-001-REQ-04 단계 planner와 CBM 선택
 
-작업 T3의 둘째 묶음이다. 새 `scripts/ci_plan.py`가 `check_sdd`를 import해 tier·실행 깊이·사유를 출력한다.
+작업 T3b. `scripts/ci_plan.py`가 로컬 BATON task validation/작업 단위 검사와 GitHub CI의 단일 정책 planner다.
+입력은 Task/AC·stage·worktree·후보 코드 상태·commit SHA·target base·변경 경로·이벤트·검증 설정·의존성·환경·필수 검사 목록이다.
+출력은 요청/실효 V 단계·선택 테스트/모듈·전체 테스트 수·선택/상향/fallback 사유·검사 목록·증거 식별·재사용 결정인 기계 판독 JSON이다.
+경로와 테스트 ID는 저장소 내부의 검증된 값만 허용하고 raw graph/source/transcript·비밀값을 출력하지 않는다.
 
 ### CI-OPT-001-AC-07
 
-tier 규칙. T0=바뀐 경로가 전부 허용 문서(`README.md`, `docs/**`)이고 제외 경로가 하나도 없음. 제외: `docs/templates/**`,
-`skills/**`, `AGENTS.md`, `CLAUDE.md`, `docs/sdd.md`, `docs/sdd/**`(traceability 포함). T1~T3=바뀐 경로의 `required_level`
-최댓값과 `eligible_tasks()`로 고른 Task `level` 최댓값 중 큰 값(L1→T1, L2→T2, L3→T3). 빈 diff=T1.
-음성: 제외 경로가 섞이면 T0가 아니다. 갱신되지 않았거나 scope 밖인 Task는 tier에 영향을 주지 않는다.
-판정 순서(T0 허용 문서 판정과 Task level 중 무엇을 먼저 따지는지)는 미결정 P-08이다.
+| stage | 기본 단계 | 범위 |
+|---|---|---|
+| in_progress / debugging | V1 | graph_affected: 변경 심볼과 영향 심볼에 매핑되는 테스트 + Task/AC 필수 대상 테스트 |
+| checkpoint / 작업 단위 | V2 | affected_modules: 영향 모듈에 속한 전체 테스트 + Task/AC 필수 대상 테스트 + Task base SDD |
+| task_complete / pre_merge | V3 | full: 공식 순차 verify_environment + 필수 독립 검토·CI |
+
+`changes()`로 Task base/통합 대상부터 전체 후보 diff(작업 파일/index·untracked 포함)를 구하고 `eligible_tasks()`로 Task를 고른다.
+`required_level()` L3 경로, workflow/검증 진입점(`.github/workflows/**`, `scripts/verify_environment.py`, `scripts/check_sdd.py`,
+`scripts/ci_plan.py`), dependency/lockfile/설치·테스트·planner·CBM config 변경은 V3로 자동 상향한다.
+정책 경로 `AGENTS.md`, `CLAUDE.md`, `docs/sdd.md`, `docs/sdd/**`, `docs/templates/**`, `skills/**`도 V3다.
+따라서 최상위 skills의 required_level 최소값이 1이어도 축소하지 않는다. 검사기의 등급/CLI 의미는 바꾸지 않는다.
+알 수 없는 stage·경로·이벤트, 빈 diff/선택 0개, 500개 초과 변경, 매핑 불가 테스트, 이전 범위 밖 실패가 미해결이면 V3다.
+필수 검사 실패는 차단하며, 상향 성공으로 실패 이력을 지우지 않는다. 사용자/Task는 V 단계를 올릴 수만 있다.
+음성: 문서 전용 T0 예외·Task level로 위험도를 낮추는 예외·빈 선택 성공은 없다.
 
 ### CI-OPT-001-AC-08
 
-실행 깊이(3-A). draft PR만 축소한다: T0=SDD + `tests.test_sdd` 전용 job, T1=ubuntu 3.12 + windows 3.12, T2=ubuntu 3.11/3.12
-+ windows 3.12, T3=전체 4. ready PR·병합 후보·main push는 T0를 포함해 모든 tier에서 전체 4 matrix다. `ci:full` 라벨은 이벤트
-payload에서 읽으며 다음 지원 PR 이벤트에서만 반영되고 깊이를 올리기만 한다(D3=B). draft-T0만 전용 job으로 보내고 회귀 matrix는
-비지 않는 기본값을 가진다. job 조건은 tier가 아니라 실행 깊이로 판단해 ready/main T0가 축소되지 않는다.
-음성: 어떤 입력도 ready/main 깊이를 4 미만으로 낮추지 않는다.
+로컬 BATON validation은 편집 V1·작업 단위/로컬 커밋 V2·완료 V3를 사용하며 커밋·push 승인 규칙은 AGENTS를 그대로 따른다.
+GitHub draft PR은 V2 affected_modules 범위, ready PR·병합 후보·main push는 V3 full이다.
+ready/main은 항상 전체 4 matrix(ubuntu/windows × Python 3.11/3.12)이며 어떤 입력도 4 미만으로 낮추지 않는다.
+이 계약은 draft도 기존 4 matrix에서 테스트 범위만 V2로 줄인다(새 2/3 matrix 정책 없음). V3 fallback이면 전체 테스트를 4개 모두 실행한다.
+`ci:full` 라벨은 다음 지원 PR 이벤트에서 V3로 올리기만 한다. labeled/unlabeled 이벤트는 추가하지 않는다.
+고정 4 matrix·fetch-depth: 0·기본 설치/GMS extra 검사는 유지한다. draft-T0 전용 job은 만들지 않는다.
+아직 workflow는 T2의 전체 4 회귀이며 T3 구현 전 draft 축소를 실행 중이라고 안내하지 않는다.
 
 ### CI-OPT-001-AC-09
 
-두 층 fail-closed. 분류기 예외·변경 경로 500개 초과·알 수 없거나 필드가 빠진 이벤트·판정 불가 입력은 T3/전체 4 + 기계 판독
-가능한 정제 사유로 출력하고, 실제 T3(사유 없음)와 fallback T3(사유 있음)를 구분한다. import 실패는 bootstrap이 안전하게 같은
-fallback을 출력할 수 있을 때만 fallback이며, 결과를 안전하게 만들 수 없으면 workflow가 실패한다. 별도 SDD 검사의 잘못된
-이벤트·metadata FAIL/exit1은 그대로이므로 전체 fallback이 검증 실패를 지우지 않는다. 음성: 판정 실패가 축소 PASS가 되지 않는다.
+CBM graph는 프로젝트별·git worktree별 기본 분리다. cache 디렉터리와 CBM config만 전역이다.
+교차 프로젝트 참조는 필요할 때 CBM cross-repo 기능을 쓰며 하나의 전역 병합 graph를 만들지 않는다.
+매 V1/V2 선택 전에 worktree/root·index id/generation과 `index_status` / `check_index_coverage`로 변경 경로 및 영향 범위의 freshness/coverage를 확인한다.
+stale이면 `codebase-memory-mcp cli index_repository ...`로 incremental index 후 두 검사를 다시 한다.
+`detect_changes`(scope tests)의 영향 심볼과 CALLS/IMPORTS/INHERITS 및 TESTS/TESTS_FILE 관계를 이용해 BATON이 Python unittest ID/모듈로 매핑한다.
+CBM detect_changes의 uncommitted 분석만으로 base 이후 committed 변경을 누락하지 않는다: `changes()`의 전체 diff 중 graph에 확실히 대응하지 않는 경로가 하나라도 있으면 V3다.
+Python 동적 호출·부분 LSP·없는 TESTS edge를 무영향 증명으로 쓰지 않는다. 테스트 inventory와 대응이 불완전하면 V3다.
+CBM 없음·실행/timeout/parse 오류·잘못된 root/generation·stale 지속·partial coverage·페이지 누락·알 수 없는 schema는 V3 full + 정제된 사유다.
+watcher 알림이나 no_recorded_issue만으로 완전성을 보장하지 않는다. 최신성 확인과 선택 사이 코드 상태가 달라져도 폐기하고 V3다.
+planner/bootstrap이 안전한 fallback 출력을 만들지 못하면 validation/workflow를 실패시킨다. SDD FAIL/exit1은 그대로 보존한다.
+음성: graph 실패가 필수 검사 skip/PASS로 변하지 않고 graph가 Git 자동 커밋을 하지 않는다.
+CBM 기본값 watcher_enabled=true, auto_watch=true, watch_non_git=false, auto_index=false를 유지하며 resource cap은 실측 후 결정한다.
+repository persistence(`.codebase-memory/graph.db.zst`)는 끈다. 구현 묶음에서 `.codebase-memory/`만 `.gitignore`에 추가하고 graph/cache를 커밋하지 않는다.
 
 ## CI-OPT-001-REQ-05 수동 전체 실행
 
-작업 T3의 셋째 묶음이다. 즉시 전체 검사는 이 경로가 구현·테스트된 뒤에만 안내한다.
-
 ### CI-OPT-001-AC-10
 
-`workflow_dispatch`(입력 `base`, `tier=full`)는 명시한 base에 기존 `--base` 경로를 쓰고 PR/push 필드가 없는 dispatch에
-`--ci`를 적용하지 않는다. 동시 실행 그룹은 PR/main과 분리된 ref + run id, `cancel-in-progress: false`다. 실행 깊이는 전체 4다
-(draft PR이 아니므로). 증거에는 실제 head SHA와 입력 base를 기록한다. 음성: dispatch 결과는 진단용 전체 실행이며 현재 ready PR의
-merge-ref 검증이나 main 커밋 증거를 대체하지 않고, PR/main 실행을 취소하지 않는다.
+`workflow_dispatch` 입력은 필수 `base`, `tier=full`만 허용(choice)한다. V3 full 4 matrix이며 명시 base에 기존 `--base` 경로를 쓴다.
+PR/push 필드가 없는 dispatch에는 `--ci`를 적용하지 않는다. 그룹은 PR/main과 분리한 ref + run id, cancel-in-progress=false다.
+실제 head SHA와 입력 base를 기록한다. 구현·테스트 뒤에만 즉시 전체 실행을 안내한다.
+음성: 진단용 dispatch는 현재 ready PR merge-ref나 main 증거를 대체하지 않고 PR/main 실행을 취소하지 않는다.
 
-## CI-OPT-001-REQ-06 최종 깊이 일관성 gate와 증거 식별
-
-작업 T3의 넷째 묶음이다. 새 GitHub API 권한·외부 action·결과 수집 시스템 없이 작은 job 하나와 순수 함수로 둔다.
+## CI-OPT-001-REQ-06 gate·증거·V3 재사용
 
 ### CI-OPT-001-AC-11
 
-`if: always()` 종료 gate job이 깊이를 두 경우로 나눠 확인한다. ready PR·main push(및 dispatch)는 plan 출력과 무관하게
-이벤트 사실만으로 전체 4 matrix를 요구하고 계획한 matrix 집합이 그와 같은지 본다. draft PR은 plan 출력(tier·fallback 사유·`ci:full`
-반영)과 계획한 matrix 집합(또는 draft-T0 전용 job)이 AC-08 표와 일관되는지 본다. 이어서 선택된 회귀 job(또는 draft-T0 job)의
-**집계 결과**가 success인지 확인한다. plan 실패, 선택 job skip/cancel/fail,
-요구·계획 matrix 불일치는 gate 실패다. 비교 로직은 `ci_plan.py`의 순수 함수와 `tests/test_ci_plan.py`로 검증한다.
-한계: `needs.<job>.result`는 matrix 집계이므로 이 gate는 실제 4개 개별 job 완료를 독립 열거했다고 주장하지 않는다.
-원격 required check/ruleset 등록과 GitHub UI의 강제 병합 차단 보장은 범위 밖이다.
+`if: always()` 종료 gate가 이벤트 사실에서 요구 단계를 독립 확인한다: draft=V2 이상, ready/main/dispatch=V3 full 4.
+요구 단계·planner 검사 목록·계획 matrix 집합이 일치하고 선택 job의 집계 결과가 success여야 한다.
+plan 실패·필수 job skip/cancel/fail·빈 검사 목록·필수 검사 누락·일치하지 않는 코드 상태는 gate 실패다.
+미설정 검사는 `not_configured`로 기록하고 passed로 취급하지 않는다. 필수 검사라면 merge/완료를 차단한다.
+merge에는 유효한 V3가 필요하고 validation은 검사한 코드 상태와 일치해야 한다. V1/V2는 merge 증거가 아니다.
+비교는 `ci_plan.py` 순수 함수 + `tests/test_ci_plan.py`로 검증한다. 별도 policy engine·새 GitHub API 권한·외부 action은 없다.
+한계: needs 집계 결과는 실제 4개 job의 개별 완료를 독립 열거하지 않는다. 원격 ruleset 등록/강제 차단은 범위 밖이다.
 
 ### CI-OPT-001-AC-12
 
-PR 증거는 실제 검사한 merge-ref SHA/tree·base(PR head·이후 main 커밋과 구분)와 이벤트 이름·activity·이벤트 시점 draft 상태·
-run id·run attempt를 기록한다. 같은 head의 옛 draft 이벤트 재실행은 draft 의미를 유지하며 ready 증거가 아니다. 이전 head/base의
-ready 성공은 현재 증거가 아니다. ready/main 4개 job의 실제 성공은 승인된 원격 E2E에서 개별 job을 확인해 기록하며, 그 전에는
-`not_run`이다. 오프라인 planner 테스트를 workflow 실행 자격 근거로 쓰지 않는다.
+V3 결과 재사용은 기존 MetricsStore·Task 증거에 있는 성공한 V3의 다음 조건이 **모두 엄격히 동일**할 때만 허용한다.
+코드 상태(전체 tracked 파일·index·작업 파일·관련 untracked manifest 포함), commit SHA, target base, Task/AC와 정책,
+테스트 설정/명령, 실제 의존성 버전, 환경(OS·Python·실행 도구/버전·관련 env), 필수 검사 목록/결과가 동일해야 한다.
+항목이 unknown/partial/누락이거나 변경되면 재사용하지 않고 V3를 실행한다. 같은 SHA만으로 검증 재사용을 결정하지 않는다.
+실패·취소·skip·not_configured 필수 검사·tests_run=0 증거는 재사용 불가이며 기존 nonzero/no-skip·독립 검토 조건을 보존한다.
+코드 상태는 검사 전후 고정해서 비교하고, 달라지면 해당 증거를 무효화한다. 재사용 결정과 각 비교 사유를 남긴다.
+로컬 V3 재사용은 필수 원격 CI를 대신하지 않는다. ready/main CI full 4 job을 재사용으로 생략하지 않는다.
+PR 증거는 실제 merge-ref SHA/tree·base(PR head/이후 main과 구분), event/activity·이벤트 시점 draft·run id/attempt를 기록한다.
+같은 head의 옛 draft 재실행은 ready 증거가 아니며 이전 head/base ready 성공도 현재 증거가 아니다.
+ready/main 실제 4 job 성공은 별도 승인된 원격 E2E에서 개별 job으로 확인하고 그 전에는 `not_run`이다.
+정적 계약 테스트·오프라인 planner 테스트는 원격 E2E passed 근거가 아니다.
+
+기존 MetricsStore의 append-only event/profile과 Task 증거에 다음 필드를 기록한다(아직 해당 전용 필드/API는 미구현).
+새 verification DB/table·별도 결과 cache 서비스를 만들지 않는다. 기존 payload 허용 목록/크기·개인정보 경계를 지키며 필요한 확장은 T3d에서 검증한다.
+
+| 필드 | 의미 |
+|---|---|
+| task / commit / worktree / target_base | Task·후보/통합 코드 상태 식별 및 fingerprint |
+| index_id / generation / freshness / coverage | 프로젝트/worktree·검사 시점·갱신 결과, partial 여부 |
+| requested_level / effective_level / stage | 기본/최종 V 단계 |
+| selected_tests / total_tests / selection_reasons | 테스트 ID·수와 선택/누락 이유, 모듈 inventory |
+| graph_seconds / ci_seconds / validation_seconds | 실제 측정 구간별 시간, 미수집 null |
+| escalations / fallback_reasons | 상향 원인·실패 보존 |
+| reuse_decision / equality_checks / source_evidence | 재사용 여부·비교 근거와 원 증거 참조 |
+| v3_only_defects | V1/V2 밖에서 V3가 찾은 결함·선택 범위·후속 조치 |
+| measurement_kind / coverage_state | measured / measured_calculation / assumed 구분, unknown/partial/null 유지 |
 
 ## CI-OPT-001-REQ-07 범위 경계와 진실성
 
 ### CI-OPT-001-AC-13
 
-범위 밖: 병합 직후 main tree 동일성 기반 생략(R4, 후속 과제), `merge_group`(merge queue 사용 여부 `unknown`), CI 안 테스트
-병렬화·공식 검증 병렬화(TEST-SPEED 쪽 별도 L3), 검증 cache·새 DB·벤치마크·비교실험, 원격 보호설정 변경. `verify_environment.py`는
-순차로 유지한다. verified 규칙(모든 AC passed, tests_run>0, skip 0, L3 독립 검토)은 바뀌지 않는다. 이 Spec은 push·PR·merge·
-원격 실행·실모델·Orca 배정을 승인하지 않는다. 효과 수치는 실측·실측 기반 계산·가상 기준선을 구분하며 실제 절감률로 부르지 않는다.
+AC-01/13의 기존 '새 영향 분석 엔진/cache 전면 금지'는 CBM V1/V2 선택과 AC-12 엄격 동등성 V3 재사용에 한해서 개정한다.
+새 검증 DB는 금지하고 기존 MetricsStore·Task 증거를 사용한다. CBM 자체 SQLite index는 전역 cache 아래 프로젝트/worktree별이며 검증 DB가 아니다.
+범위 밖: main tree 동일성만으로 생략(R4), merge_group(사용 unknown), CI/공식 검증 병렬화, Base+Delta overlay,
+별도 벤치마크/비교실험 시스템·원격 보호설정 변경. 공식 `verify_environment.py`는 순차 유지한다.
+verified 규칙(모든 AC passed, tests_run>0, skip 0, L3 독립 검토)은 바뀌지 않는다.
+hook 통합(BATON/CBM/Orca)은 Codex T4 lane 복귀까지 ON HOLD/pending이며 이 계약에서 hooks를 구현/설치하지 않는다.
+이 Spec은 push·PR·merge·원격 실행·실모델·GMS·Orca 배정을 승인하지 않는다. AGENTS push 절은 변경하지 않는다.
+효과 수치는 실측·실측 기반 계산·가상 기준선을 구분하고 실제 절감률로 부르지 않는다.
 
-## 승인 근거 대조
+## 승인 근거와 환경 사실 — 2026-11-12
 
-"계획"은 인계서 13절 사용자 계획 원문, "확정"은 인계서 4절 사용자 확정 결정, "통합"은 저장 통합 계획(c18f3d0b)이다.
-2026-11-11 사용자 확인: 이 approved 연결을 유지한다고 사용자가 직접 답했다. 범위는 아래 REQ/AC뿐이며 미결정 P-01~P-07은 계속 pending이다.
-그 뒤 독립 검토 반영으로 추가한 P-08·P-09도 pending이며 승인 범위를 넓히지 않는다.
-2026-11-11 사용자 결정: P-01·P-06·P-07을 아래처럼 정했다(실행 방식·순서·scope 결정이며 새 AC나 승인 범위 확대가 아니다). 남은 pending은 P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 방침이다. 작업 T2 실행 경로는 Orca coordinator(사용자가 Orca 앱에서 연 baton_ai 채팅)로 정했다.
-AC-06·AC-11 문구 수정(8904380)은 독립 검토를 반영한 명확화이며 같은 계획 조항(R3, 결과 집계 검사) 범위다. 승인 범위는 넓히지 않는다.
+revision 1의 AC-01~06 근거(2026-11-11 사용자 구현 요청·approved 유지, R1/R2/R3)는 유지한다.
+revision 2의 AC-01·07~13 개정과 T3 재구성의 승인 근거는 아래 사용자 결정 원문이다. E는 설치 환경 사실이며 저장소 변경 승인이 아니다.
 
-| AC | 계획 조항 | 확정/통합 근거 |
-|---|---|---|
-| AC-01 | 1절 "호출 횟수를 줄이는 방법론을 먼저", 2절 표 1/T2 "검증 사다리", 4절 "최종 통합 후보는 공식 검증·독립 리뷰·필수 CI", 1절 "최종 검증 캐시 … 추가하지 않는다", 4절 증거 "source·base·Task·설정 변경 시 기존 증거 무효화" | 확정 2-C→A·고정 조건, 통합 단계 1 |
-| AC-02 | 2절 표 1/T2 "짧은 Worker 입력/결과·리뷰 묶음 반영", 2절 "관측 기록은 T2부터 시작" | 통합 단계 1 |
-| AC-03 | 2절 표 1/T2 "PR 중복 트리거 제거", 1절 `ci:full` 다음 이벤트 반영 | 확정 D3=B, 통합 단계 1 |
-| AC-04 | 2절 표 1/T2 "concurrency 정리", 종료 조건 "고정 4 matrix를 유지한 후보" | 확정 R1·D3=B, 통합 단계 1·2(fetch-depth:0, GMS 검사) |
-| AC-05 | 2절 표 2/T3 "`eligible_tasks()` 공유", 4절 "checker CLI … 유지" | 확정 R2 |
-| AC-06 | 4절 CI "PR 정상·누락 이벤트" | 확정 R3 |
-| AC-07 | 4절 CI "T0 제외 경로, Task 등급, 빈 diff" | 통합 단계 2 |
-| AC-08 | 1절 "draft PR만 T0~T3 축소 … ready/main은 T0도 전체 4개", `ci:full` | 확정 3-A·D3=B, 통합 단계 2 |
-| AC-09 | 4절 CI "오류·과다 변경의 fail-closed 처리" | 통합 단계 2(F5 처분) |
-| AC-10 | 1절 "구현된 `workflow_dispatch tier=full` … ready PR CI를 대체하지 않는다", 4절 증거 "수동 실행과 PR merge-ref의 구분" | 확정 D3=B, 통합 단계 2(F2 처분) |
-| AC-11 | 2절 표 2/T3 "결과 집계 검사" | 통합 단계 2(F1 처분) |
-| AC-12 | 4절 증거 "오래된 draft 실행 재사용 차단, source·base·Task·설정 변경 시 기존 증거 무효화", "코드 구현 완료만으로 … verified로 올리지 않는다" | 통합 단계 2(F4 처분) |
-| AC-13 | 1절 "새 오케스트레이터·별도 측정 DB·벤치마크는 추가하지 않는다", 5절 "원격 게시·보호설정 변경 … 실행하지 않는다" | 확정 R4·고정 조건, 통합 단계 2(F6) |
+> A = '1': rewrite CI-OPT T3 (T3a-T3c, AC-05..AC-12, still unimplemented; scripts/ci_plan.py does not exist) into the V1/V2/V3 design; ci_plan.py becomes the single policy planner (no second engine).
 
-## 미결정 (pending — 이 revision의 승인 범위 밖)
+> B = '제안대로': V1 and V2 run as local BATON validation (task validation / work-unit checks with local commits); GitHub CI: draft PR = V2 scope, ready PR and main push = V3 full (fixed 4 matrix, AC-08 'ready/main always full 4' kept). Push rules in AGENTS stay unchanged (push still needs its own approval).
 
-아래는 계획에 없던 세부이거나 사용자 승인 정책 문구를 바꾸는 항목이다. AC가 아니며 결정 전에는 구현 근거로 쓰지 않는다.
+> C = '변경 허용': amend CI-OPT-001 AC-01 (the ban on a new impact-analysis engine/cache) and AC-13 (verification cache out of scope) and the AGENTS verification ladder, only as needed for: CBM graph-based selection for V1/V2, and V3 result reuse under strict equality of code state/commit SHA/target base/test config/dependencies/environment/required check list (same SHA alone never suffices). No new verification DB: record in existing MetricsStore/Task evidence.
 
-- P-01 **결정됨(2026-11-11 사용자)**: 작업 T2 Worker가 "PR(draft 포함)의 첫 CI" 기준 문안 초안을 Task의 'P-01 AGENTS 문안 초안' 절에 만든다. AGENTS.md에는 사용자 확인 전까지 반영하지 않는다(문안 확정은 계속 사용자 확인 대상).
-  배경: AGENTS.md "Git 작업 완료와 push — 2026-11-04 사용자 승인" 절의 "최초 push로 실행되는 실제 CI" 문구 변경. 트리거 변경 후
-  PR 없는 push는 CI를 부르지 않으므로 원 초안 SC1은 "draft PR의 첫 CI"로 바꾸자고 했다. 사용자 승인 정책 문구라 정확한 문안을 확인받는다.
-- P-02 "PR은 draft로 열고 병합 후보에서 ready로 전환" 관행(원 초안 Arch #2). 축소 효과는 draft에서만 생긴다. PR 생성 자체는 별도 승인이다.
-- P-03 T0 제외 범위 해석. 계획은 "SDD 정책/traceability"를 제외한다. 이 Spec은 더 엄격하게 `docs/sdd/**` 전체를 제외했다(축소 방향이
-  아니라 확대 방향이므로 안전 기본값). 더 좁히려면 결정이 필요하다.
-- P-04 `workflow_dispatch` 입력 세부: `tier`는 `full` 하나만 허용(choice)하고 `base`는 필수로 둔다. 다른 tier 값 지원은 계획에 없다.
-- P-05 fallback 사유 코드 이름 집합(예: `PLANNER_EXCEPTION`, `CHANGE_COUNT_LIMIT`, `UNKNOWN_EVENT`). 정책이 아니라 작업 T3 구현 세부이며 테스트로 고정한다.
-- P-06 **결정됨(2026-11-11 사용자, AC-12·13 처리 방침만 pending)**: `tests/test_ci_workflow.py`를 Task scope에 추가하고 문서·workflow AC는 정적 텍스트 테스트로 덮는다. AC 13개는 작업 T3 묶음에서 한 번에 등록한다.
-  배경: CI-OPT-001의 REQ/AC 원장(traceability feature) 등록 조건. `check_sdd`는 feature마다 Spec heading 집합이 등록 REQ·AC 집합과
-  같아야 하고(`headings == local | requirement_ids`), AC마다 실제 테스트 symbol이 1개 이상 있어야 하며, 전체 AC가 Task에 덮여야 한다
-  (`task_coverage == all_acs`). 따라서 AC-01~13을 일부만 등록할 수 없고 13개를 한 번에 등록해야 한다.
-  - 등록 시점: 13개 AC 모두에 실제 테스트 symbol이 생긴 변경 묶음.
-  - 문서·workflow AC(AC-01~04, AC-10·11의 workflow 부분): 정적 텍스트 테스트 후보로 덮는다(예: 새 `tests/test_ci_workflow.py`). 새 파일 scope 추가는 결정됨.
-  - AC-12(원격 E2E 증거)·AC-13(범위 경계)처럼 오프라인 테스트로 증명할 수 없는 AC의 처리 방침(테스트 대신 증거 문서 등)은 작업 T3 전에 다시 결정해야 하며 계속 pending이다.
-  - 임시 SDD-001-AC-06 연결의 종료 조건: CI-OPT-001 feature가 위 조건으로 등록되는 같은 변경 묶음에서 Task `acs`를 CI-OPT-001-AC-01~13으로 바꾸고 SDD-001-AC-06 연결을 뗀다.
-  이 결정은 승인 범위를 넓히지 않는다.
-- P-07 **결정됨(2026-11-11 사용자)**: CI-OPT를 먼저 진행한다. CI-OPT는 `verify.yml`의 트리거·concurrency만 바꾸고 `timeout-minutes`는 건드리지 않는다. `claude/ci-windows-time-20261110`은 이후 rebase 때 충돌을 해소한다.
-  배경: `timeout-minutes`와 미병합 TASK-CI-TIME-001(draft, 다른 branch `claude/ci-windows-time-20261110`)의 `verify.yml` 변경 충돌. CI-OPT는 timeout을 바꾸지 않는다.
-- P-08 AC-07 판정 순서. T0 허용 문서 판정을 먼저 할지, `required_level`·Task level 최댓값을 먼저 볼지(예: L3 Task가 문서만 바꾼 draft를
-  T0로 둘지 T3로 올릴지)는 계획에서 정해진 적이 없다.
-- P-09 최상위 `skills/baton-flow/**` 경로는 `check_sdd.required_level()`의 `"/skills/" in name` 조건(scripts/check_sdd.py:211)에 걸리지 않아
-  level 1로 분류된다. R2에 따라 검사기 동작은 바꾸지 않는다. AC-07의 T0 제외에는 이미 `skills/**`가 있다. `ci_plan.py`에서 이 경로의
-  등급을 별도로 올릴지는 결정 대상이다.
+> D: hook integration (BATON vs CBM vs Orca hooks) is ON HOLD until Codex returns (it belongs to the Codex T4 lane). Record as pending; no hooks in this contract.
+
+> E: CBM installed binary-only (codebase-memory-mcp 0.12.1, C:/Users/SSAFY/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes.
+
+> F: CBM defaults kept (watcher_enabled true, auto_watch true, watch_non_git false, auto_index false); before any V1/V2 selection BATON checks freshness (index_status / check_index_coverage), runs an incremental index_repository if stale, and falls back to V3 on any failure; resource caps decided after measurement. Trial measurement: index of this worktree 7.5 s, 16 MB SQLite in %USERPROFILE%/.cache/codebase-memory-mcp, repository untouched.
+
+Graph scope 사용자 결정 원문:
+> Graph scope: per project and per git worktree (CBM default); only the cache directory and CBM config are global; cross-project references use CBM cross-repo features on demand, never one merged global graph.
+
+설치/백업 경로는 환경 사실만 기록한다. 이 작성 단위는 설치·설정 변경·hook·repository persistence를 실행하지 않는다.
+coordinator의 trial 7.5 s / 16 MB는 단일 worktree index 실측 보고이며 반복 측정·CI 절감률·resource cap 근거로 일반화하지 않는다.
+
+CBM 사실 출처: coordinator가 2026-11-12 확인한 [공식 저장소](https://github.com/DeusData/codebase-memory-mcp),
+[Smart CI 문서](https://github.com/DeusData/codebase-memory-mcp/blob/main/docs/SMART_CI.md).
+MIT·C binary·Windows native이며 Python은 tree-sitter + partial LSP다. MCP 도구는 index_repository, index_status,
+check_index_coverage, detect_changes, trace_path, search_graph, query_graph(read-only Cypher subset), compare_graphs를 포함한다.
+CLI는 `codebase-memory-mcp cli <tool> ...`, incremental indexing·worktree별 기본 분리를 제공하며 indexing/query에는 LLM/API 호출·telemetry가 없다.
+Smart CI test-impact는 C/C++ 전용이므로 Python 선택을 그대로 제공한다고 주장하지 않는다. BATON이 detect_changes/TESTS 관계로 구축하고 불확실하면 V3다.
+Base+Delta overlay는 없으며 새로 만들지 않는다. persistence는 off로 둔다.
+
+## 이전 pending 항목 처분 (revision 1 → 2)
+
+| 항목 | 처분 |
+|---|---|
+| P-01 | 2026-11-11 확정·AGENTS 반영 완료, 이번 push 절 변경 없음 |
+| P-02 | superseded: draft-first 관행 의무화 대신 이벤트 사실로 draft V2/ready V3 결정. PR 생성 승인은 별도 |
+| P-03 | superseded: T0 제외 해석 폐기, AC-07 정책 경로는 V3 |
+| P-04 | re-scoped: AC-10 필수 base + tier=full, V3 전용 dispatch로 고정 |
+| P-05 | re-scoped: T3b에서 정제 사유 코드를 결정/테스트. AC-09 fallback 조건은 이미 필수 |
+| P-06 (AC-12/13) | re-scoped: 정적 테스트는 계약 경계만 증명; 원격 E2E는 not_run 유지. 구현 테스트 symbol이 전부 생길 T3d 묶음에서 13 AC 일괄 원장 등록, 임시 SDD-001-AC-06 연결 종료. E2E 전 verified 금지 |
+| P-07 | 기존 CI owner 순서 보존. timeout은 CI-TIME-001 소유이며 이번 변경 없음 |
+| P-08 | superseded: T0 판정 순서 폐기, 단계 기본값보다 V3 상향이 항상 우선 |
+| P-09 | superseded: checker required_level은 불변, planner는 skills/** 정책 경로를 V3로 강제 |
+
+남은 pending은 hook 통합(T4), 실측 후 resource cap, T3b 사유 코드의 구현 세부이며 기존 미결정으로 T3 전체를 막지 않는다.

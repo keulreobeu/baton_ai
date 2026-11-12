@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
-scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py"]
+scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py"]
 acs = ["SDD-001-AC-06"]
 
 [[verification]]
@@ -19,7 +19,7 @@ evidence = "docs/tasks/TASK-CI-OPT-001.md#작업-t1-기록--2026-11-11"
 acs = ["SDD-001-AC-06"]
 ```
 
-계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 1, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
+계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 2, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
 독립 검토(`independent_review`)는 아직 없다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
 
 AC 연결: 검사기는 원장 feature의 AC마다 실제 테스트 symbol을 요구한다. CI-OPT-001 AC의 테스트는 작업 T2/T3에서 생기므로 지금은
@@ -35,8 +35,9 @@ AC가 검증됐다는 뜻이 아니다.
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 착수 전, T2 이후 |
-| 작업 T3b 분류기 | AC-07~09 | `scripts/ci_plan.py`, `tests/test_ci_plan.py` | 착수 전 |
-| 작업 T3c workflow·dispatch·gate | AC-08~12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 안내 문서 | 착수 전 |
+| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore` | 미구현, 단일 정책 엔진 |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | 미구현, draft V2 / ready-main V3 full 4 |
+| 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability | 미구현, 전용 필드와 13 AC 일괄 등록 |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | 2026-11-11 결정됨. 남은 pending: P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 |
@@ -159,3 +160,44 @@ AC가 검증됐다는 뜻이 아니다.
 2. (2026-11-11 해소) 계약 문서 독립 검토는 2차 PASS_WITH_FINDINGS(재검토 없음). 구현 후보의 L3 독립 검토는 verified 전 별도로 필요하다.
 3. (2026-11-11 해소) P-01·P-06·P-07은 결정됨. 남은 P-02~P-05·P-08·P-09·P-06의 AC-12·13 처리는 이후 결정 대상(P-02는 작업 T2a 문서에 넣기 전, 나머지는 작업 T3 전)이며 T2 착수를 막지 않는다.
 4. 원격 E2E·push·PR은 별도 승인. 승인 전 E2E는 not_run.
+
+## V1/V2/V3 계약 개정 결정 — 2026-11-12
+
+이 절이 위 과거 pending/T3 기록보다 우선한다. author-only base는 fa10f2a9a90a8553f9f24f8476760e835a8003cd,
+SDD 검사 base는 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26이다. Task는 in_progress이며 구현/원장 등록/verified 선언은 하지 않는다.
+사용자 원문(이 결정은 commit/push/PR/model/GMS나 설치/설정 변경 실행 승인이 아니다):
+
+> A = '1': rewrite CI-OPT T3 (T3a-T3c, AC-05..AC-12, still unimplemented; scripts/ci_plan.py does not exist) into the V1/V2/V3 design; ci_plan.py becomes the single policy planner (no second engine).
+
+> B = '제안대로': V1 and V2 run as local BATON validation (task validation / work-unit checks with local commits); GitHub CI: draft PR = V2 scope, ready PR and main push = V3 full (fixed 4 matrix, AC-08 'ready/main always full 4' kept). Push rules in AGENTS stay unchanged (push still needs its own approval).
+
+> C = '변경 허용': amend CI-OPT-001 AC-01 (the ban on a new impact-analysis engine/cache) and AC-13 (verification cache out of scope) and the AGENTS verification ladder, only as needed for: CBM graph-based selection for V1/V2, and V3 result reuse under strict equality of code state/commit SHA/target base/test config/dependencies/environment/required check list (same SHA alone never suffices). No new verification DB: record in existing MetricsStore/Task evidence.
+
+> D: hook integration (BATON vs CBM vs Orca hooks) is ON HOLD until Codex returns (it belongs to the Codex T4 lane). Record as pending; no hooks in this contract.
+
+> E: CBM installed binary-only (codebase-memory-mcp 0.12.1, C:/Users/SSAFY/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes.
+
+> F: CBM defaults kept (watcher_enabled true, auto_watch true, watch_non_git false, auto_index false); before any V1/V2 selection BATON checks freshness (index_status / check_index_coverage), runs an incremental index_repository if stale, and falls back to V3 on any failure; resource caps decided after measurement. Trial measurement: index of this worktree 7.5 s, 16 MB SQLite in %USERPROFILE%/.cache/codebase-memory-mcp, repository untouched.
+
+> Graph scope: per project and per git worktree (CBM default); only the cache directory and CBM config are global; cross-project references use CBM cross-repo features on demand, never one merged global graph.
+
+- 계약: AC-01/13의 금지 범위만 CBM 선택·엄격 V3 재사용에 맞춰 개정, AC-02~06 유지, AC-07~12 단계/상향/fallback/gate/증거 재구성.
+- P-02/03/08/09 superseded, P-04/05/P-06(AC-12/13) re-scoped. AC-12/13 정적 테스트는 계약 경계만 검증하고 원격 E2E는 not_run 유지.
+  실제 테스트 symbol이 전부 생기는 T3d에서 13 AC feature 일괄 등록·임시 SDD-001-AC-06 연결 종료. traceability 기존 entries/baseline은 그대로 보존한다.
+- 구현 scope는 .gitignore와 MetricsStore/테스트를 추가했으나 이번 수정 범위는 계약 문서·test_ci_workflow뿐이다. src/scripts/workflow/.gitignore는 수정하지 않는다.
+- CBM graph-first 확인: 기존 coordinator project D-baton_ai-.local_runtime-ci-opt-001에서 search_graph로 MetricsStore(176~574), changes(144~182),
+  required_level(205~213)을 찾고 check_index_coverage로 4개 관련 Python 경로 metadata_match/no_recorded_issue를 확인했다.
+  이는 다른 worktree의 best-effort 참고이며 이 author worktree의 freshness/선택/검증 증거가 아니다. 로컬 파일을 직접 읽어 비교했다.
+- 환경 사실 E/F는 위 원문 보고 그대로이며 이 작업에서 설치·설정·색인·hook·DB 생성은 하지 않았다. 비용/토큰/절감률 unknown.
+- 남은 항목: 계약 독립 검토, T3a~T3d 구현·검증·필수 CI, hook T4 보류, 실측 뒤 resource cap. push 절 byte-identical 유지.
+
+### 작성 단위 검증
+
+- 실행 환경: D:/baton_ai/.venv/Scripts/python.exe, PYTHONPATH=src, PYTHONDONTWRITEBYTECODE=1, OS 임시 BATON_HOME. workspace .venv/ignored 파일 생성 없음.
+- `python -X utf8 -m unittest tests.test_ci_workflow tests.test_sdd`: 46 tests OK, failures/errors/skips 0, exit 0.
+- `python -X utf8 scripts/check_sdd.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`: PASS, exit 0 (documents 44, tasks 14, features 9, ACs 55, changed_paths 31; provider_calls 0). 이 숫자는 Task base 이후 전체 범위다.
+- `git diff --check`: exit 0. 변경 파일 9개 모두 UTF-8 read-back, 추가한 한국어 줄에 '?' 대체/Unicode replacement 없음.
+- AGENTS push 절과 ladder 이전 prefix는 checkout-filtered HEAD와 byte-identical. 첫 보조 비교는 LF Git blob과 CRLF worktree를 직접 비교해 exit 1이었고(core.autocrlf=true), `git cat-file --filters HEAD:AGENTS.md` 기준으로 다시 비교해 exit 0. 내용 차이는 없었다.
+- `git status --short --ignored`: 지정 scope 9개 수정, index 비어 있음, ignored(!!) 0. HEAD fa10f2a9a90a8553f9f24f8476760e835a8003cd 유지, 커밋/push/PR 0.
+- traceability.json은 이미 계약 문서를 등록하고 있어 변경하지 않았다. CI-OPT feature 등록/13 AC 연결은 T3d까지 보류하며 기존 entries를 보존했다.
+- 공식 verify_environment·fast runner·전체 회귀·원격 CI/E2E·독립 검토는 이 작성 단위에서 not_run. 계약 정적 테스트의 PASS를 구현/원격 증거로 승격하지 않는다.

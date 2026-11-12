@@ -43,8 +43,11 @@ GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위
 
 ## 검증 사다리와 Worker 입출력 — CI-OPT-001 (2026-11-11)
 
-- 검증 사다리: 편집 중=변경 모듈·AC 대상 테스트. 작업 단위=대상 테스트 + Task 시작 base 기준 `check_sdd.py --base`, 공유/고위험 경로는 기존 fast runner(`scripts/run_tests_fast.py`) 추가. 리뷰 반영=지적을 묶은 뒤 대상 테스트 + 빠른 회귀 1회, 회차마다 push하지 않는다. 최종 L2/L3 후보=정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영=영향 파일 검사·빠른 회귀 후 바뀐 후보/base의 최종 증거 갱신.
-- 같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다. 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. 자동 cache·새 검증 DB·새 영향 분석 엔진은 두지 않고, `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다.
+- 검증 사다리: 편집 중(in_progress/debugging)=V1 `graph_affected` 대상 테스트. 작업 단위/checkpoint=V2 `affected_modules` 전체 테스트 + Task 시작 base 기준 `check_sdd.py --base`. 리뷰 반영은 지적을 묶은 뒤 V2 1회이며 회차마다 push하지 않는다. 최종 L2/L3 후보(task_complete/pre_merge)=V3 `full`: 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
+- CBM 선택 전 freshness/coverage 확인·stale incremental index·재확인을 요구한다. L3 경로·workflow/검증 진입점·의존성/설정 변경·graph stale/failed/partial·테스트 매핑 불가·이전 범위 밖 실패는 V3로 상향/fallback한다. graph 실패가 검사를 생략하지 않는다. 기존 fast runner는 보조 피드백이며 공식 V3를 대체하지 않는다.
+- 같은 SHA만으로 검증 재사용을 결정하지 않는다. V3 재사용은 코드 상태·commit SHA·target base·Task/AC·정책·테스트 설정·의존성·환경·필수 검사 목록/성공 결과가 모두 엄격히 동일할 때만 허용하며 unknown/partial이면 재실행한다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
+- 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. CBM 선택과 엄격한 V3 재사용만 허용하며 새 검증 DB·두 번째 정책 엔진은 금지한다. 기존 MetricsStore·Task 증거를 사용하고 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다. merge에는 유효한 V3가 필요하고 미설정 검사는 `not_configured`이며 passed가 아니다.
+- 이 사다리의 선택/재사용 구현은 CI-OPT T3에 남아 있다. 구현 전에는 기존 검사를 유지한다. draft PR=V2 범위, ready/main=V3 전체 4 matrix이며 로컬 재사용이 필수 원격 CI를 생략하지 않는다.
 - Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한하고, 결과는 기능/계약 변화·검증·후보 SHA·미해결·다음 행동으로 요약한다. raw transcript를 재전달하지 않는다. 가까운 수정·리뷰 지적은 묶어서 반영한다. 관측 기록은 기존 계측(MetricsStore·Task 증거)으로 남기고 수집 불가 값은 `unknown`/`partial`/`null`이며 0으로 바꾸지 않는다.
 - 이 지침은 모델 호출·Orca 배정·push를 승인하지 않는다. 상세는 [docs/sdd.md](docs/sdd.md).
 
