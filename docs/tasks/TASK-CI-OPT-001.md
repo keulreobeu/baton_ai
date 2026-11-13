@@ -430,3 +430,68 @@ Evidence-only status files at this checkpoint:
 |---|---|---:|
 | `docs/tasks/current.md` | `6b4bf131038159374f52b611605f26e30e020f094c9dc9d032a5cedf77947e28` | 8587 |
 | `docs/plans/ci-optimization.md` | `3436da864dd51192333ece7745746e9e311bdebcbed31e0c812a6e4a916d022c` | 7530 |
+
+## 2026-11-13 별도 세션 타당성 재검토
+
+사용자 요청: LUNA로 진행된 오늘 작업의 진행 방식과 구현 타당성을 다시 검토한다.
+검토 고정 후보는 `dcd45aad48e4448e10f8be2e15663ed4b3ecbd5b`, 오늘 구현 diff는
+`2cc905f25f5c5350908ca2d3fa56124351b4049b..dcd45aa`의 17개 파일이다.
+원래 Task 시작 base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`도 SDD로 재확인했다.
+이 절은 별도 Codex 세션의 재검토이며 교차-provider 독립 검토 PASS를 대체하지 않는다.
+제품 코드/테스트/workflow 수정, 모델 실행, push/PR은 하지 않았다.
+
+### 판정과 진행 방식
+
+- 판정: 수정 후 재검토 필요. 모델명 자체가 결함의 근거는 아니며 아래 재현 결과가 근거다.
+- 오늘 로컬 이력: T3c workflow/plan/gate `644eef2` → T3d bounded metrics/원장 `2abcd40`
+  → stage caller/계측 연결 `30a8b36` → 계약 문구 동기화 `50417d7` → 검증 상태 기록 `dcd45aa`.
+  작업 단위를 나눠 저장하고 Task를 in_progress로 유지한 점은 타당하다.
+- 단일 planner, 고정 4 matrix, hosted CBM 부재 시 V3 fallback, V1/V2 뒤 REVIEW_REQUIRED와
+  evidence.py의 기본 V3 재검증, 새 검증 DB를 만들지 않은 구조는 유지됐다.
+  다만 hosted CI 절감은 아직 없고 remote E2E/교차-provider review는 미완료다.
+- 기존 관련 144 tests가 모두 통과해도 아래 실행 결과 경계는 검증되지 않았다.
+  remote 테스트는 CompletedProcess(returncode=0)만으로 성공을 가정하고,
+  local 중단 테스트는 실행 전 취소만 검사해 정상 종료 코드와 중단 사유가 공존하는 경우를 놓쳤다.
+
+### R1 — P1: 원격 실행이 no-skip/nonzero 결과를 강제하지 않음
+
+- 위치: `scripts/ci_plan.py`의 remote_main run 분기, subprocess 실행 뒤 returncode 검사.
+- remote는 V2 unittest 결과나 V3 공식 JSON의 tests_run/skipped/expected_failures/
+  verified_evidence_eligible을 확인하지 않는다. 공식 verify_environment.py는 skip이 있어도
+  unittest 성공이면 exit 0을 반환하며 JSON에만 eligible=false를 기록한다.
+  따라서 실제 skip이 있는 full run도 offline/gate success가 될 수 있다.
+- fake-process 재현: 현재 RemoteTests fixture와 실제 remote_main을 사용하고 실행 결과만
+  exit 0 + skipped=1/eligible=false로 주입하면 remote run exit 0이다.
+  exit 0 + tests_run=0/status=FAIL도 거부하지 않았다(후자는 방어 경계 주입 사례다).
+  실제 모델/원격 CI/공식 V3는 실행하지 않았다.
+- 수정 방향: 원격 V2/V3의 실제 실행 summary를 검사하고 nonzero/no-skip를 강제한다.
+  공식 summary 누락/FAIL/tests0/skip/expectedFailure를 거부하는 실행 경로 테스트가 필요하다.
+
+### R2 — P2: 취소된 검증을 계측에 passed/complete로 기록할 수 있음
+
+- 위치: `src/baton/orchestrator.py` validate의 reason break/actual_status 계산 및
+  _record_ci_observation의 coverage_state 계산.
+- run_process는 프로세스가 exit 0으로 끝나도 reader 정리 중 stop을 관찰하면
+  reason=cancel/timeout을 함께 반환할 수 있다. validate는 reason으로 나머지 검사를 중단하지만
+  actual_status는 exit_code만 확인하고 coverage_state는 실효 단계가 V3인지로 결정한다.
+- fake-process 재현: V3 계획에서 첫 선언 검사가 exit 0 + 'Ran 2 tests' + reason=cancel을
+  반환하게 했다. process 1회, 공식 V3 미실행인데 기록은 status=passed,
+  coverage_state=complete, effective_level=3이었다.
+  상위 worker의 취소 상태 처리는 유지되므로 이것이 Task 완료 우회라는 주장은 하지 않는다.
+- 수정 방향: stop_reason과 실제 필수 검사 실행 여부를 결과 집계에 포함하고,
+  중단/미실행 범위를 partial/not_run 또는 failed로 기록한다. 취소 후 성공 집계 음성 테스트가 필요하다.
+
+### 재검증과 증거 한계
+
+- checkout `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_observability tests.test_ci_plan
+  tests.test_sdd tests.test_ci_workflow tests.test_managed_harness`: **144 tests OK, 112.933 s**,
+  failures/errors/skips 0. PYTHONPATH=src, PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME.
+- `scripts/check_sdd.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`: PASS,
+  documents 48, features 10, tasks 18, ACs 75, changed_paths 57, provider_calls 0.
+- 위 두 경계 재현은 기존 fixture + unittest.mock을 사용한 읽기 전용 조사이며 테스트 파일에
+  아직 추가하지 않았다. 기존 회귀 통과와 재현 결함이 동시에 존재한다.
+- 과거 647-test/996.240s V3는 당시 기록된 `50417d7`/`2abcd40` 조건의 증거다.
+  현재 HEAD 또는 위 수정 후 후보의 V3로 자동 재사용하지 않는다. 오늘 검토에서는 공식 V3를
+  반복하지 않았으며 R1/R2를 묶어 수정한 뒤 V2, 정확한 최종 후보 V3와 필수 독립 검토/CI가 남는다.
+- Task in_progress 유지. 이번 검토는 구현 완료/verified/push/PR/원격 CI 승인 또는
+  교차-provider 검토 완료를 뜻하지 않는다.
