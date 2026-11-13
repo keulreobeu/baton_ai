@@ -134,6 +134,35 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertEqual(official["test_count"], 5)
         self.assertEqual(official["acs"], [])
         self.assertEqual(result[0]["test_count"], 2)
+        self.assertTrue(result[0]["planner"]["execution_complete"])
+        self.assertEqual(self.observations[-1][2]["coverage_state"], "complete")
+
+    def test_zero_exit_with_cancel_or_timeout_never_records_full_success(self):
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        for reason in ("cancel", "timeout", "pause"):
+            with self.subTest(reason=reason):
+                result, process = self.run_validation(
+                    lambda *a, **kw: (0, "", "Ran 2 tests\nOK", reason))
+                self.assertEqual(process.call_count, 1)
+                self.assertFalse(any("--base" in c.args[0] for c in process.call_args_list))
+                self.assertNotEqual(result[0]["exit_code"], 0)
+                self.assertEqual(result[0]["stop_reason"], reason)
+                self.assertFalse(result[0]["planner"]["execution_complete"])
+                event = self.observations[-1][2]
+                self.assertEqual(event["status"], "failed")
+                self.assertEqual(event["coverage_state"], "partial")
+
+    def test_cancel_on_final_official_process_is_partial_despite_success_summary(self):
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        def runner(argv, *args, **kw):
+            if "--base" in argv: return 0, self.official_output(), "", "cancel"
+            return 0, "", "Ran 2 tests\nOK", None
+        result, process = self.run_validation(runner)
+        self.assertEqual(process.call_count, 2)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        self.assertFalse(result[0]["planner"]["execution_complete"])
+        self.assertEqual(self.observations[-1][2]["status"], "failed")
+        self.assertEqual(self.observations[-1][2]["coverage_state"], "partial")
 
     def test_official_zero_skip_fail_missing_summary_are_failure(self):
         self.plan.update(effective_tier="V3", direct_checks=[])

@@ -605,16 +605,90 @@ class RemoteTests(unittest.TestCase):
             env.update(BATON_CI_PLAN=outputs["plan"], BATON_CI_DIGEST=outputs["digest"])
             with self.context(), patch.dict(os.environ, env), patch.object(cp.sys, "version_info", (3, 11)), \
                  patch.object(cp, "freeze", return_value={"fixed": True}), \
-                 patch.object(cp.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as runner, \
+                 patch.object(cp, "run_remote_check") as runner, \
                  redirect_stdout(io.StringIO()):
                 self.assertEqual(cp.main(["--remote", "run"]), 0)
-                self.assertEqual(runner.call_args.args[0][3:], ["scripts/verify_environment.py", "--ci"])
-                runner.return_value.returncode = 1
+                self.assertEqual(runner.call_args.args[1], ["scripts/verify_environment.py", "--ci"])
+                runner.side_effect = cp.PlanError("REMOTE_CHECK_FAILED")
                 self.assertEqual(cp.main(["--remote", "run"]), 1)
                 env["BATON_CI_NEEDS"] = json.dumps({"plan": {"result": "failure"}, "offline": {"result": "skipped"}})
                 with patch.dict(os.environ, env): self.assertEqual(cp.main(["--remote", "gate"]), 1)
             with self.context(), patch.dict(os.environ, dict(env, BATON_CI_PLAN="")), redirect_stdout(io.StringIO()):
                 self.assertEqual(cp.main(["--remote", "gate"]), 1)
+
+
+class RemoteResultTests(unittest.TestCase):
+    def summary(self, **changes):
+        value = dict(status="PASS", scope="offline_tests_only", tests_run=2,
+                     failures=0, errors=0, skipped=0, expected_failures=0,
+                     verified_evidence_eligible=True)
+        value.update(changes)
+        return json.dumps(value)
+
+    def test_official_requires_nonzero_no_skip_eligible_summary(self):
+        command = ["scripts/verify_environment.py", "--ci"]
+        cp.validate_remote_result(command, 0, self.summary())
+        for output in ("", "Ran 2 tests\nOK\n", self.summary(tests_run=0),
+                       self.summary(tests_run=True), self.summary(skipped=1),
+                       self.summary(expected_failures=1), self.summary(errors=1),
+                       self.summary(failures=1), self.summary(status="FAIL"),
+                       self.summary(verified_evidence_eligible=False)):
+            with self.subTest(output=output), self.assertRaises(cp.PlanError):
+                cp.validate_remote_result(command, 0, output)
+        with self.assertRaises(cp.PlanError):
+            cp.validate_remote_result(command, 1, self.summary())
+
+    def test_v2_rejects_empty_skipped_expected_and_unexpected_success(self):
+        command = ["-m", "unittest", "tests.test_value"]
+        cp.validate_remote_result(command, 0, "..\nRan 2 tests in 0.1s\n\nOK\n")
+        for output in ("", "Ran 0 tests\nOK\n", "Ran 2 tests\nOK (skipped=1)\n",
+                       "Ran 2 tests\nOK (expected failures=1)\n",
+                       "Ran 2 tests\nFAILED (unexpected successes=1)\n"):
+            with self.subTest(output=output), self.assertRaises(cp.PlanError):
+                cp.validate_remote_result(command, 0, output)
+
+    def test_sdd_requires_success_summary(self):
+        command = ["scripts/check_sdd.py", "--base", "a" * 40]
+        cp.validate_remote_result(command, 0, '{"status":"PASS"}\n')
+        for output in ("", '{"status":"FAIL"}\n'):
+            with self.assertRaises(cp.PlanError):
+                cp.validate_remote_result(command, 0, output)
+
+    def test_real_remote_process_streams_output_and_rejects_exit_zero_skip(self):
+        # A tiny synthetic official script exercises the actual subprocess and
+        # summary boundary; never runs the repository's official full verifier.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); (root / "scripts").mkdir()
+            script = root / "scripts/verify_environment.py"
+            for skipped in (0, 1):
+                script.write_text("print('progress marker', flush=True)\nprint(" + repr(
+                    self.summary(skipped=skipped, verified_evidence_eligible=not skipped)) + ")\n", encoding="utf-8")
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    if skipped:
+                        with self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                            cp.run_remote_check(root, ["scripts/verify_environment.py", "--ci"])
+                    else:
+                        cp.run_remote_check(root, ["scripts/verify_environment.py", "--ci"])
+                self.assertIn("progress marker", output.getvalue())
+
+    def test_real_v2_unittest_rejects_skip_and_zero_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / "test_remote_boundary.py"
+            sources = (
+                "import unittest\nclass T(unittest.TestCase):\n def test_ok(self): pass\n",
+                "import unittest\nclass T(unittest.TestCase):\n @unittest.skip('offline fixture')\n def test_skip(self): pass\n",
+                "import unittest\n",
+            )
+            for index, source in enumerate(sources):
+                module.write_text(source, encoding="utf-8")
+                with self.subTest(index=index), redirect_stdout(io.StringIO()):
+                    if index:
+                        with self.assertRaisesRegex(cp.PlanError, "REMOTE_(?:CHECK|TEST_EVIDENCE)_FAILED"):
+                            cp.run_remote_check(root, ["-m", "unittest", "test_remote_boundary"])
+                    else:
+                        cp.run_remote_check(root, ["-m", "unittest", "test_remote_boundary"])
 
 
 if __name__ == "__main__":

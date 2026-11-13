@@ -495,3 +495,43 @@ Evidence-only status files at this checkpoint:
   반복하지 않았으며 R1/R2를 묶어 수정한 뒤 V2, 정확한 최종 후보 V3와 필수 독립 검토/CI가 남는다.
 - Task in_progress 유지. 이번 검토는 구현 완료/verified/push/PR/원격 CI 승인 또는
   교차-provider 검토 완료를 뜻하지 않는다.
+
+## R1/R2 수정 및 Claude 병렬 검토 — 2026-11-13
+
+- 사용자 승인: 두 결함을 수정하면서 Claude가 수정 전 후보를 동시에 독립 검토한다.
+  수정 작업 시작 HEAD `6a37bb378c9d230fb456fbd5e5139ef9008838b0`, branch `codex/ci-opt-001`,
+  시작 worktree/index clean. 원래 Task base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` 유지.
+- R1: remote check 출력은 진행 상황을 계속 표시하면서 bounded tail만 유지한다.
+  종료 코드에 더해 V2 unittest의 nonzero/no-skip 결과와 V3 공식 JSON의 PASS/
+  eligible/nonzero/zero failures-errors-skips-expected failures를 검사한다. SDD도 PASS JSON이 필요하다.
+  원격 plan/gate/고정 matrix/공식 순차 명령/권한은 바꾸지 않았다.
+- R2: stop_reason이 있으면 exit 0도 성공으로 집계하지 않는다. 실제 선언 검사와 내부 검사의
+  완료 여부를 확인하고, 중단/미실행을 failed/partial로 기록한다. V3의 complete는 필요한 실행이
+  끝나고 성공했을 때만 기록하며 evidence digest에도 완료 여부/상태/중단 사유를 포함한다.
+  기존 Task 완료/AC accounting/evidence.py 경계는 유지한다.
+- V1: remote fixture/새 실제 synthetic subprocess 경계/로컬 planner integration의
+  **21 tests OK, 0.389 s**, failures/errors/skips 0. fake 모델/clock 또는 tiny synthetic script만 사용,
+  실제 모델/provider/GMS/network/공식 V3 실행 0. 새 테스트는 AC-11/12 traceability에 연결했다.
+- Claude 검토 dispatch `ctx_aa136c42a92b`, task `task_feaca027201d`, run `run_e1ccd974efd7`.
+  별도 workspace `C:/Users/SSAFY/orca/workspaces/baton_ai/CI-OPT-001-CLAUDE-REVIEW-20261113`에서
+  수정 전 `6a37bb3`을 고정하고 `2cc905f..6a37bb3`을 검토한다. 먼저 기존 R1/R2 보고서를 읽지 않고
+  자체 지적을 정리한 뒤 R1/R2를 대조하도록 했다. 결과는 pending이며 PASS로 기록하지 않는다.
+- V2 checkpoint 및 최종 후보 V3/수정 후 교차-provider 재검토/원격 fixed4 CI는 아직 남아 있다.
+  Task in_progress 유지, push/PR 없음. 수정 전 Claude 결과를 수정 후 후보의 승인으로 재사용하지 않는다.
+
+### R1/R2 수정 V2 checkpoint
+
+- 최종 소스/테스트 고정 후 checkout `.venv/Scripts/python.exe -X utf8 -m unittest
+  tests.test_observability tests.test_ci_plan tests.test_sdd tests.test_ci_workflow tests.test_managed_harness`:
+  **151 tests OK, 109.816 s**, failures/errors/skips/expected failures/unexpected successes 0, exit 0.
+  PYTHONPATH=src, PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME; 실제 모델/provider/GMS/network 호출 0.
+- 앞선 150 tests OK(105.487 s)는 실제 V2 subprocess skip/빈 테스트 경계를 추가하기 전의
+  snapshot이며 최종 후보 검증으로 재사용하지 않았다. 추가 fixture의 빈 unittest는 이 Python에서
+  nonzero로 종료해서 예상 오류 코드를 조정했다. 해당 실제 subprocess 경계 5 tests는 0.832 s에 통과했다.
+- 원래 Task base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` 기준 SDD PASS
+  (documents 48, features 10, tasks 18, ACs 75, changed_paths 57, provider_calls 0), diff check PASS.
+  최종 증거 문구 갱신 뒤 SDD/diff를 다시 확인한다.
+- 허용 변경은 `scripts/ci_plan.py`, `src/baton/orchestrator.py`, `tests/test_ci_plan.py`,
+  `tests/test_managed_harness.py`, `docs/sdd/traceability.json`, 이 Task의 6개 파일이다.
+  V2 checkpoint만 저장하며 최종 V3/수정 후 독립 검토/원격 CI와 전체 Task 완료는 pending이다.
+  Claude의 수정 전 검토에서 나오는 추가 지적을 묶어 반영한 뒤 최종 후보를 확정한다.

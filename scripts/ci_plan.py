@@ -823,6 +823,51 @@ def remote_gate(payload, facts, needs):
     return {"status": "passed", "tier": tier, "matrix_count": 4, "matrix_status_source": "needs.offline.result"}
 
 
+def validate_remote_result(command, returncode, output):
+    """A successful process alone is not nonzero/no-skip test evidence."""
+    need(returncode == 0, "REMOTE_CHECK_FAILED")
+    if command[:2] == ["-m", "unittest"]:
+        counts = re.findall(r"(?m)^Ran (\d+) tests?\b", output)
+        need(bool(counts) and int(counts[-1]) > 0
+             and re.search(r"(?m)^OK\s*$", output) is not None
+             and not re.search(r"skipped[= ]\d+|expected failures[= ]\d+|unexpected successes[= ]\d+", output),
+             "REMOTE_TEST_EVIDENCE_FAILED")
+    else:
+        summaries = []
+        for line in output.splitlines():
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(value, dict):
+                summaries.append(value)
+        if command[0] == "scripts/verify_environment.py":
+            summaries = [s for s in summaries if s.get("scope") == "offline_tests_only"]
+            summary = summaries[-1] if summaries else {}
+            need(summary.get("status") == "PASS" and summary.get("verified_evidence_eligible") is True
+                 and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
+                 and all(type(summary.get(k)) is int and summary[k] == 0
+                         for k in ("failures", "errors", "skipped", "expected_failures")),
+                 "REMOTE_TEST_EVIDENCE_FAILED")
+        else:
+            need(command[0] == "scripts/check_sdd.py" and bool(summaries)
+                 and summaries[-1].get("status") == "PASS", "REMOTE_SDD_EVIDENCE_FAILED")
+
+
+def run_remote_check(root, command):
+    # Keep progress visible while retaining only a bounded tail for the final
+    # unittest/official JSON summary. Never write raw check output to the repo.
+    with subprocess.Popen([sys.executable, "-X", "utf8", *command], cwd=root,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, encoding="utf-8", errors="replace") as process:
+        output = ""
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            output = (output + line)[-LIMIT:]
+        returncode = process.wait()
+    validate_remote_result(command, returncode, output)
+
+
 def remote_main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--remote", choices=("plan", "run", "gate"), required=True)
@@ -862,8 +907,7 @@ def remote_main(argv):
                      "REMOTE_MATRIX_MEMBER")
                 before = freeze(root)
                 for command in commands:
-                    result = subprocess.run([sys.executable, "-X", "utf8", *command], cwd=root)
-                    need(result.returncode == 0, "REMOTE_CHECK_FAILED")
+                    run_remote_check(root, command)
                 need(freeze(root) == before, "REMOTE_CHECK_STATE_CHANGED")
         return 0
     except (PlanError, sdd.SddError, OSError, ValueError, KeyError, TypeError, SyntaxError, RecursionError, subprocess.TimeoutExpired, zlib.error) as exc:

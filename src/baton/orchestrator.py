@@ -334,6 +334,8 @@ class Orchestrator:
                 expected = summary.get("expected_failures", 0) if summary else 0
             if argv[1:3] in (["-m", "unittest"], ["-m", "pytest"]) and (sum(int(n) for n in counts) <= 0 or skipped or expected or unexpected):
                 code = 2
+            if reason and local_plan is not None:
+                code = code or 2
             results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": code,
                             "test_count": int(counts[-1]) if counts else 0, "skipped": skipped, "expected_failures": expected, "unexpected_successes": unexpected,
                             "output": persisted_text(output)[-6000:], "stop_reason": reason})
@@ -361,11 +363,17 @@ class Orchestrator:
             if not declared:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
-            failed = [r for r in feedback if r["exit_code"] != 0]
+            execution_complete = (len(declared) == len(task["validation"])
+                                  and len(feedback) == len(internal) + len(local_plan["direct_checks"])
+                                  and not any(r.get("stop_reason") for r in results))
+            failed = [r for r in feedback if r["exit_code"] != 0 or r.get("stop_reason")]
             if failed and declared[0]["exit_code"] == 0:
                 declared[0]["exit_code"] = failed[0]["exit_code"]
                 declared[0]["stop_reason"] = failed[0]["stop_reason"]
+            if not execution_complete and declared[0]["exit_code"] == 0:
+                declared[0]["exit_code"] = 2
             declared[0]["planner"] = {**local_plan, "executed_checks": feedback,
+                                       "execution_complete": execution_complete,
                                        "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared) else "passed",
                                        "final_evidence_eligible": False}
             results = declared
@@ -399,12 +407,13 @@ class Orchestrator:
         status = details.get("actual_status")
         status = status if status in {"passed", "failed"} else "not_run"
         executed = list(details.get("executed_checks", [])) + [
-            {key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes")}
+            {key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes", "stop_reason")}
             for check in results]
         digest_basis = {"code_identity": local_plan["code_identity"], "target_base": local_plan["target_base"],
                         "task_ids": local_plan["task_ids"], "acs": local_plan["acs"],
                         "selected_ids": local_plan["selected_ids"], "effective_tier": local_plan["effective_tier"],
-                        "checks": [{key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes")}
+                        "execution_complete": details.get("execution_complete", False), "status": status,
+                        "checks": [{key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes", "stop_reason")}
                                    for check in executed]}
         escalations = [f"V{requested}_TO_V{effective}"] if effective > requested else []
         observation = {
@@ -426,7 +435,8 @@ class Orchestrator:
             "reuse_decision": "not_requested", "equality_checks": {},
             "source_evidence": ["task:" + task_id for task_id in local_plan["task_ids"]],
             "v3_only_defects": [], "measurement_kind": "measured",
-            "coverage_state": "complete" if effective == 3 else "partial",
+            "coverage_state": "complete" if effective == 3 and status == "passed"
+                              and details.get("execution_complete") is True else "partial",
         }
         self.store.observe(task["task_id"], "record_ci_validation", observation)
 
