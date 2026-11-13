@@ -34,7 +34,8 @@ class MethodologyDocsTests(unittest.TestCase):
         "통합·충돌 반영", "영향 파일 검사", "최종 증거 갱신",
         "freshness/coverage", "stale incremental index", "graph stale/failed/partial",
         "draft PR=V2 범위, ready/main=V3 전체 4 matrix",
-        "V1/V2 stage는 API-only", "실제 호출자 연결은 pending",
+        "worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다",
+        "V1/V2 결과는 Task 완료 상태를 올리지 않는다",
     )
     NEGATIVE_TERMS = (
         "같은 SHA만으로 검증 재사용을 결정하지 않는다",

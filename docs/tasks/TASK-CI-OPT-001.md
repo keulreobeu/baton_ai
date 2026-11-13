@@ -32,7 +32,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V2 checkpoint 완료; V1/V2 API-only·호출자 연결 pending, 독립 검토 pending |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | V2 checkpoint 완료, draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; 독립 검토·V3·원격 CI pending |
-| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 후속 회귀 증거 진행 중 |
+| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests와 Task-base SDD 통과, 최종 V3·독립 검토·원격 CI pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | 2026-11-11 결정됨. 남은 pending: P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 |
@@ -279,16 +279,6 @@ Base/HEAD: `bb4d270ac7707b24f1bfbf050a971a6d8974dc3f`; index empty; no new candi
 
 | File | Raw SHA256 | Bytes |
 |---|---|---:|
-| `docs/plans/ci-optimization.md` | `5afcc9c790209bf782f990e5c28979c3c80084296d67c1b97e69ee5929da7455` | 7425 |
-| `docs/sdd/traceability.json` | `da7dbdfade40e8ae805b43eb4f712208e9168a57d0fe9c0907eef7f91bcfc34f` | 66307 |
-| `docs/specs/CI-OPT-001.md` | `493df0c76dd89612695c9e6e7030a2dddbedc73efb47cccaee216bbb97f99aa1` | 27345 |
-| `docs/tasks/current.md` | `c973cdfeb060b82bacb2f8efbc73539e5641df9e456918e5bf4e8d391c2fa089` | 8543 |
-| `src/baton/managed_cli.py` | `6091260fa4abd0e2409d6d131ef77efb036a0f8adaa23b8cb7ebd4b1494e21f5` | 11946 |
-| `src/baton/observability.py` | `173dad93fdfbe20e459070ec4b3b82158522d28b9e2d2cbba75d5e7b937352e9` | 46324 |
-| `src/baton/orchestrator.py` | `d4c98c6d715c3f3767fb4e953910c4c96e9314924ccb4379034fef74acf0f127` | 34682 |
-| `tests/test_ci_workflow.py` | `12af7e63b4fc8835d6354e48fc8b9de9b6fbe6a3c10c928343336c353aaf5e76` | 16536 |
-| `tests/test_managed_harness.py` | `70669210145580a2b2eec63e61625acd6809cf77a7131dbf97dc816edef8f240` | 29085 |
-| `tests/test_observability.py` | `293dae66d6014f69e1cf1da162e4b8f9bab003db2d816eefeb82367f342394e3` | 33595 |
 | `.gitignore` | `ff14b8ea65d0867a5107f1adc2409770c8e7dfd80eb69febec7a4a0d92160303` | 93 |
 | `AGENTS.md` | `8d0612f5abea43b88e4bea531b2da929c47cfb9b47aa32dea69984290940aac7` | 9471 |
 | `README.md` | `82c1e5d138808aed63956b0e14a7be389c66840e963beabc334d6b578b2cae1e` | 14117 |
@@ -378,6 +368,16 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 
 | File | Raw SHA256 | Bytes |
 |---|---|---:|
+| `docs/plans/ci-optimization.md` | `5afcc9c790209bf782f990e5c28979c3c80084296d67c1b97e69ee5929da7455` | 7425 |
+| `docs/sdd/traceability.json` | `da7dbdfade40e8ae805b43eb4f712208e9168a57d0fe9c0907eef7f91bcfc34f` | 66307 |
+| `docs/specs/CI-OPT-001.md` | `493df0c76dd89612695c9e6e7030a2dddbedc73efb47cccaee216bbb97f99aa1` | 27345 |
+| `docs/tasks/current.md` | `c973cdfeb060b82bacb2f8efbc73539e5641df9e456918e5bf4e8d391c2fa089` | 8543 |
+| `src/baton/managed_cli.py` | `6091260fa4abd0e2409d6d131ef77efb036a0f8adaa23b8cb7ebd4b1494e21f5` | 11946 |
+| `src/baton/observability.py` | `173dad93fdfbe20e459070ec4b3b82158522d28b9e2d2cbba75d5e7b937352e9` | 46324 |
+| `src/baton/orchestrator.py` | `d4c98c6d715c3f3767fb4e953910c4c96e9314924ccb4379034fef74acf0f127` | 34682 |
+| `tests/test_ci_workflow.py` | `12af7e63b4fc8835d6354e48fc8b9de9b6fbe6a3c10c928343336c353aaf5e76` | 16536 |
+| `tests/test_managed_harness.py` | `70669210145580a2b2eec63e61625acd6809cf77a7131dbf97dc816edef8f240` | 29085 |
+| `tests/test_observability.py` | `293dae66d6014f69e1cf1da162e4b8f9bab003db2d816eefeb82367f342394e3` | 33595 |
 | `docs/plans/ci-optimization.md` | `963797c5bc4b30b4c3aa942c8436c76fc0c5d86c62bd67b2be2e3ef70a863cbb` | 7437 |
 | `docs/sdd/traceability.json` | `2362290c51d189b2448fcda0ab05ac59dcda43051dfaf7d93f16ba2ecf0f27a8` | 65163 |
 | `docs/specs/CI-OPT-001.md` | `77ccb34ffa47b840a5af3d7328044bef0f2a338417d47aadf5b7407c7479be2f` | 26809 |
@@ -387,6 +387,12 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 
 ## T3d 호출자 연결 후속 기록 — 2026-11-13
 
+| `AGENTS.md` | `06210c11a468ec11583d834e60087268081c3a8106467ce010c39cf5b21e5a83` | 9511 |
+| `README.md` | `678a153c093368de9f8d037f043f0aaf60917918e6f5a404015802d5473962c3` | 15350 |
+| `docs/sdd.md` | `b7110d92212b81775e074277cedbfc5b95af2558a8166a8f6ca3441a122e72bc` | 9320 |
+| `docs/plans/ci-optimization.md` | `d59ffe439e57ae9948760a3e9469e5bdfb57cc4f9dabf7a8acf4218f0041b2d7` | 7481 |
+| `docs/tasks/current.md` | `66f0bc855993bdf69f1d3a0c40bc5edc4cdc6df3b0d8b51344d57b30e5e994c9` | 8514 |
+| `tests/test_ci_workflow.py` | `ae8b941bc280988a40c725aec19774191253d36a3adf0cc8b94693f527fee25e` | 16648 |
 이 절이 위 T3d 계측 API 단락의 미완료 caller 상태를 갱신한다. worker 실행은 `in_progress` V1, 명시 `validate --stage checkpoint`는 V2, 기본 validate/verify는 V3를 사용한다. CI 결과는 기존 MetricsStore `ci.validation` event로 기록되고 보고서에 노출된다. 실행된 검사 수가 없는 성공 기록은 허용하지 않으며, L1/L2 검증은 Task를 완료 상태로 전환하지 않는다.
 
 - 관련 회귀: `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_observability tests.test_ci_plan tests.test_sdd tests.test_ci_workflow tests.test_managed_harness` **144 tests OK, 100.994 s**, exit 0; failures/errors/skipped/expected failures/unexpected successes 0. 환경: `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS 임시 `BATON_HOME`, 모델/provider/GMS/network 호출 0.
