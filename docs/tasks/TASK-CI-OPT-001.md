@@ -17,7 +17,7 @@ acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-A
 이전 `SDD-001-AC-06` 임시 Task 연결의 T1 검사는 아래 작성 기록에 보존한다. 현재 verification 증거는 CI-OPT-001 AC 단위로 추가한다.
 
 계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 4, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
-고정 코드 후보 b50ec38의 로컬 수렴 독립 검토는 CONVERGED(새 P1/P2 없음)이며, b50ec38→3e5b1f1은 문서만 바뀌어 코드 검토 범위가 유지된다. 정확한 문서 후보 3e5b1f1의 공식 V3는 692 tests PASS/skip 0이다. 해당 증거는 1721c95 또는 이후 SHA로 자동 승계되지 않는다. 1721c95는 별도 공식 V3 692 tests PASS/skip 0이 있으나 독립 문서 delta 검토는 null이고, c8e7e05 이후 HEAD에는 V3가 없다. 원격 Windows CI/E2E는 NOT_RUN이므로 전체 Task verified는 아니다.
+고정 코드 후보 b50ec38의 로컬 수렴 독립 검토는 CONVERGED(새 P1/P2 없음)이며, b50ec38→3e5b1f1은 문서만 바뀌어 코드 검토 범위가 유지된다. 정확한 문서 후보 3e5b1f1의 공식 V3는 692 tests PASS/skip 0이다. 해당 증거는 후속 SHA로 자동 승계되지 않는다. 1721c95와 c8e7e05도 각각 별도 공식 V3 692 tests PASS/skip 0이며, c8e7e05 문서 delta 검토는 PASS/P1·P2 0이다. 이 문서 갱신 커밋 085e5a2 생성 시점에는 해당 SHA의 V3가 아직 실행되지 않았고, 결과는 exact-SHA 외부 증거로 관리한다. 원격 Windows CI/E2E는 NOT_RUN이므로 전체 Task verified는 아니다.
 
 AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장에 CI-OPT-001 feature와 AC-01~13을 등록했다.
 이 연결과 현재 작업 단위의 통과 검사는 AC의 최종 검증·독립 리뷰·원격 CI 완료를 뜻하지 않는다.
@@ -960,7 +960,7 @@ Evidence-only status files at this checkpoint:
   plan/gate 및 개별 job E2E는 NOT_RUN이며 Task는 in_progress/not verified다.
   push/PR/merge와 V3 재사용을 승인하지 않는다. Q1 재사용 계약 및 실제 원격 게시 범위 결정은 사용자 복귀까지 보류한다.
 
-### 문서 후보 1721c95 V3 및 c8e7e05 문서 delta 검토 기록 — 2026-11-13
+### 문서 후보 1721c95·c8e7e05 V3 및 c8e7e05 문서 delta 검토 기록 — 2026-11-13
 
 - 정확한 후보 `1721c95d1959af19e2d4b50e865a98ad27eef569`, 원래 Task base `5c07aea`에서 공식 순차 V3:
   **692 tests OK, unittest 911.349 s, wall 914.672 s**, exit 0, failures/errors/skips/expected failures 0,
@@ -969,7 +969,11 @@ Evidence-only status files at this checkpoint:
   `76ae5206c6cfb0d01e914f4d22ee754eab01bc5a1934bb5ffea4b6bd052c2d24`. 이 증거의 independent_document_delta는 null이다.
 - 독립 문서 delta 검토(1721c95→c8e7e05, Claude 읽기 전용) `CI-OPT-001-doc-delta-review-c8e7e05.md`
   SHA256 `36d410907948b24e82898a96374e6db352da31132f1018d30c595ad7e0bf3c46`: **PASS**, P1/P2 0,
-  이전 P3 3건 정정 확인, 새 정보성 P3 1건(1721c95 V3 미기재)은 이 기록과 Task 머리말에서 반영했다.
-- Codex 세션 토큰 소진 후 Claude가 이 기록만 이어받아 저장했다. 이 문서 커밋과 c8e7e05에는 V3가 없으며
-  1721c95/3e5b1f1 V3를 자동 재사용하지 않는다. 게시 시점 최종 후보에서 V3를 새로 실행한다.
+  이전 P3 3건 정정 확인, 새 정보성 P3 1건(1721c95 V3 미기재)은 아래 증거를 추가해 해소했다.
+- 정확한 후보 `c8e7e050168eae392f880dd990b45c3c4becbe8f`의 공식 순차 V3는 **692 tests OK,
+  unittest 948.553 s, wall 951.594 s**, exit 0, failures/errors/skips/expected failures 0,
+  pre/post clean 및 전체 상태 stable이다. 증거 `CI-OPT-001-final-local-evidence-c8e7e05.json`
+  SHA256 `dd9e23feeb190a8f9ef1f9dd60ca939b564f7264bc73dc485e25beb35998df78`.
+- 커밋 `085e5a2` 생성 당시 c8 V3는 이미 끝났으며, 이 기록도 exact-SHA evidence 원칙에 따라
+  `085e5a2` 자체의 V3를 주장하지 않는다. 새 후보는 별도 V3로 확인한다.
   Task in_progress/not verified, 원격 Windows CI·plan/gate·job E2E NOT_RUN, Q1·게시 범위 결정은 사용자 복귀까지 보류.
