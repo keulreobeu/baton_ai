@@ -313,7 +313,7 @@ class CbmCLI:
     check_index_coverage, get_graph_schema, detect_changes and query_graph.
     No invented complete=true flag: coverage's best_effort signal is retained.
     """
-    def __init__(self, root, executable=None, runner=subprocess.run, clock=time.monotonic):
+    def __init__(self, root, executable=None, runner=subprocess.run, clock=time.monotonic, should_stop=None):
         self.root = Path(root).resolve()
         self.executable = executable or shutil.which(CBM)
         if not self.executable and os.name == "nt":
@@ -321,12 +321,15 @@ class CbmCLI:
             if candidate.is_file():
                 self.executable = str(candidate)
         self.runner, self.clock = runner, clock
+        self.should_stop = should_stop
 
     def call(self, tool, **args):
+        need(self.should_stop is None or not self.should_stop(), "CBM_STOPPED")
         need(bool(self.executable), "CBM_ABSENT")
         result = self.runner([self.executable, "cli", "--quiet", tool],
                              input=json.dumps(args), text=True, encoding="utf-8",
                              capture_output=True, cwd=self.root, timeout=45)
+        need(self.should_stop is None or not self.should_stop(), "CBM_STOPPED")
         need(result.returncode == 0 and len(result.stdout.encode("utf-8")) <= LIMIT, "CBM_EXECUTION_FAILED")
         try:
             data = sdd.json_object(result.stdout)
@@ -458,10 +461,17 @@ class CbmCLI:
                 if matching:
                     target_files.add(target_file)
                     mapped_targets.add(target_qn)
+        # A test-file node reached by the inbound fixpoint (test method, helper,
+        # class or module) is impacted even when its TESTS edge names another
+        # target. Select every inventory test in that file; V2 then expands the
+        # whole module. This only widens selection and never relaxes completeness.
+        test_files = {test["file"] for test in inv["tests"].values()}
+        impacted_test_files = {n.get("file") for n in impacted if n.get("file") in test_files}
+        mapped.update(key for key, test in inv["tests"].items() if test["file"] in impacted_test_files)
         # Absence of a TESTS edge is not proof of absence of impact.
         complete = (coverage_ok and inv["complete"] and all_mapped == set(inv["tests"])
                     and set(names) <= target_files and bool(mapped)
-                    and {n.get("qn") for n in impacted if n.get("file") not in {test["file"] for test in inv["tests"].values()}} <= mapped_targets
+                    and {n.get("qn") for n in impacted if n.get("file") not in test_files} <= mapped_targets
                     and static_scope(self.root, impacted, names)
                     and audit_static_edges(self.root, inv, impacted, graph_edges))
         after = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
@@ -622,7 +632,7 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
 
 
 def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter=None,
-         required=(), outside_failures=False, current_identity=None, prior_evidence=None):
+         required=(), outside_failures=False, current_identity=None, prior_evidence=None, should_stop=None):
     root = Path(root).resolve()
     need(baton_root(root), "NOT_BATON_DEVELOPMENT_ROOT")
     need(Path(sdd.git(root, "rev-parse", "--show-toplevel").strip()).resolve() == root,
@@ -668,7 +678,7 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
     query_needed &= not any(policy_reason(n) for n in names) and len(names) <= 500 and not outside_failures
     if query_needed and names:
         try:
-            graph = (adapter or CbmCLI(root)).inspect(names, sdd.commit(root, base), inv)
+            graph = (adapter or CbmCLI(root, should_stop=should_stop)).inspect(names, sdd.commit(root, base), inv)
             need(isinstance(graph, dict) and isinstance(graph.get("selected"), list), "CBM_UNKNOWN_SCHEMA")
         except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
             graph = {**graph, "state": "failed", "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA",
@@ -827,6 +837,58 @@ def remote_gate(payload, facts, needs):
     return {"status": "passed", "tier": tier, "matrix_count": len(MATRIX), "matrix_status_source": "needs.offline.result"}
 
 
+def merge_parent_witness(root, facts):
+    """Actual Git parents of the checked HEAD, recorded beside (never instead of) the event base.
+
+    Evidence only: the comparison base and tier policy stay on the event facts.
+    Unknown or non-merge shapes are null, never a fabricated parent.
+    """
+    witness = {"first_parent": None, "second_parent_is_pr_head": None, "source": "not_applicable"}
+    if facts.get("event_name") != "pull_request":
+        return witness
+    try:
+        fields = sdd.git(root, "rev-list", "--parents", "-n", "1", "HEAD").split()
+    except (sdd.SddError, OSError, ValueError, subprocess.TimeoutExpired):
+        return {**witness, "source": "unavailable"}
+    if (len(fields) != 3 or fields[0] != facts.get("sha")
+            or not all(re.fullmatch(r"[0-9a-f]{40}", value) for value in fields)):
+        return {**witness, "source": "unavailable"}
+    head = facts.get("pr_head")
+    return {"first_parent": fields[1],
+            "second_parent_is_pr_head": fields[2] == head if isinstance(head, str) else None,
+            "source": "git_rev_list_parents_of_checked_head"}
+
+
+def remote_log(root, step, facts, payload, digest):
+    """Bounded, non-secret AC-12 projection for plan/gate logs.
+
+    Only validated identifiers and derived booleans: no raw event body, PR
+    text, labels, user identity, refs, environment or secret values.
+    """
+    def hex_or_none(value, size=40):
+        return value if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{%d}" % size, value) else None
+
+    def digits_or_none(value):
+        return value if isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) else None
+
+    kind = facts.get("event_kind")
+    draft = True if kind == "draft" else False if kind == "ready" else None
+    return {"log_schema": 1, "log_step": step,
+            "event_name": facts.get("event_name"), "event_kind": kind,
+            "activity": facts.get("activity") if facts.get("event_name") == "pull_request" else None,
+            "event_time_draft": draft,
+            "full_label_requested": (facts.get("requested_tier") == "V3") if draft is True else None,
+            "checked_sha": hex_or_none(facts.get("sha")), "checked_tree": hex_or_none(payload.get("tree")),
+            "pr_head": hex_or_none(facts.get("pr_head")),
+            "input_base": facts.get("input_base"), "resolved_base": hex_or_none(payload.get("target_base")),
+            "merge_parents": merge_parent_witness(root, facts),
+            "run_id": digits_or_none(facts.get("run_id")), "run_attempt": digits_or_none(facts.get("run_attempt")),
+            "event_digest": hex_or_none(facts.get("event_digest"), 64), "plan_digest": hex_or_none(digest, 64),
+            "requested_tier": facts.get("requested_tier"), "effective_tier": payload.get("effective_tier"),
+            "scope": payload.get("scope"), "matrix": MATRIX, "matrix_count": len(MATRIX),
+            "partial_rerun": "unsupported_plan_attempt_bound", "reasons": payload.get("reasons")}
+
+
 def validate_remote_result(command, returncode, output):
     """A successful process alone is not nonzero/no-skip test evidence."""
     need(returncode == 0, "REMOTE_CHECK_FAILED")
@@ -924,9 +986,11 @@ def remote_main(argv):
                 need(len(encoded) < 30000, "REMOTE_TRANSPORT_LIMIT")
                 stream.write("plan=" + encoded + "\n")
                 stream.write("digest=" + fingerprint(payload) + "\n")
-            print(json.dumps({"status": "PLANNED", "sha": facts["sha"], "input_base": facts["input_base"],
+            print(json.dumps({**remote_log(root, "plan", facts, payload, fingerprint(payload)),
+                              "status": "PLANNED", "sha": facts["sha"], "input_base": facts["input_base"],
                               "target_base": payload["target_base"], "requested_tier": facts["requested_tier"],
-                              "effective_tier": payload["effective_tier"], "reasons": payload["reasons"]}))
+                              "effective_tier": payload["effective_tier"], "reasons": payload["reasons"]},
+                             sort_keys=True))
         else:
             raw = os.environ.get("BATON_CI_PLAN", "")
             need(len(raw.encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")
@@ -936,7 +1000,9 @@ def remote_main(argv):
             payload = sdd.json_object(decoded.decode("utf-8"))
             commands = validate_remote(root, payload, facts, os.environ.get("BATON_CI_DIGEST", ""))
             if args.remote == "gate":
-                print(json.dumps(remote_gate(payload, facts, sdd.json_object(os.environ.get("BATON_CI_NEEDS", "")))))
+                gate = remote_gate(payload, facts, sdd.json_object(os.environ.get("BATON_CI_NEEDS", "")))
+                print(json.dumps({**remote_log(root, "gate", facts, payload, os.environ.get("BATON_CI_DIGEST", "")),
+                                  **gate}, sort_keys=True))
             else:
                 member = {"os": os.environ.get("BATON_MATRIX_OS"), "python": os.environ.get("BATON_MATRIX_PYTHON")}
                 need(member in payload["matrix"] and sys.version_info[:2] == tuple(map(int, member["python"].split("."))),

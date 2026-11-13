@@ -29,13 +29,13 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T1 | — (계약) | CI-OPT 4문서, `docs/proposals/T1-contract-revisions.md`, `docs/sdd/traceability.json`, `docs/tasks/current.md` | 문서 완료, 독립 검토 대기 |
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
-| 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
+| 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 전체 코드 lane에서 공유 선택/PR 회귀 확인, 전체 판정은 추가 지적/보류 목록 참조 |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V1/V2/V3 caller는 T3d에서 연결; 로컬 V2 및 공식 V3 완료, 교차-provider 독립 검토 pending |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix 구현, 후보 6778a02 정책 변경 Claude PASS/공식 V3 658 tests 통과; 원격 Windows CI 및 전체 Task 검토 pending |
 | 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests, Task-base SDD, 공식 V3 통과; 독립 검토·원격 CI pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
-| 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
-| 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | 2026-11-11 결정됨. 남은 pending: P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 |
+| 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 과거 approved 유지 및 revision 4 Windows-first 사용자 결정 반영; 현재 유효 범위는 Spec 최신 승인/처분 표 |
+| 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | P-01 확정/반영; P-02/03/08/09 superseded; P-04/05/06 re-scoped; P-07 기존 CI owner 경계 유지. 새 보류 결정은 아래 전체 검토 목록 |
 
 모든 단계에서 이 Task·traceability·current는 같은 변경 묶음에 갱신한다. 위 목록 밖 파일(제품 `src/`, 다른 계약 문서)은 이 Task로 수정하지 않는다.
 
@@ -741,3 +741,53 @@ Evidence-only status files at this checkpoint:
   기존 상태 고정/중단 계약 내 보강 대상으로 조사한다. F-D(P3) final V3 반복 및 실제 reuse caller 미연결은
   비용/구현 범위 결정 항목으로 분리하며 성능 절감/재사용 완료를 주장하지 않는다.
 - 계약/CI/증거 lane은 아직 pending이다. 전체 Task PASS/verified, 원격 CI, push/PR은 주장하지 않는다.
+
+
+### 전체 검토 병합 및 후속 구현 (사용자 부재 중)
+
+- 계약/CI lane 보고서 `CI-OPT-001-whole-contract-claude-review-20261113.md` SHA256
+  `5476f6d57c103719917ab6e611c69e7f403b9a941460d8b7ada7f7605c56f653` read-back 일치.
+  verdict CONDITIONAL PASS(P0/P1 없음, P2 두 건/P3 여섯 건), focused 64 tests OK 및 rerun repro다.
+- P2 partial rerun: plan attempt와 현재 attempt가 다르면 fail-closed다. attempt 결합 완화는 승인 보류한다.
+  현재 구현의 Re-run all jobs 필요 제약을 문서화하고 mismatch 거부/새 plan 재생성 통과를 테스트한다.
+  이 구현 제약을 새 영구 정책으로 승인했다고 간주하지 않는다.
+- P2 reuse: strict 비교 함수는 있지만 runtime identity producer/store caller는 미연결이며 매 V3를 재실행한다.
+  실제 재사용/절감 완료를 주장하지 않는다. 현 상태를 문서화하고 runtime 재사용 설계는 복귀 결정 목록으로 보류한다.
+- F-A Claude patch SHA256 `15072df6134beb814f7266f49c877c4a7791c7b2ac76f9fd6384361388cd6d7c`를
+  root Codex가 읽고 apply --check 후 적용했다. impacted method/helper/class가 있는 test file의 inventory를
+  선택에 합치며 기존 freshness/coverage/all_mapped/static audit/fallback은 약화하지 않는다.
+  root 별도 확인: ImpactedTestFileTests/AdapterTests/PolicyTests **18 tests OK, 0.214 s**.
+- F-C root 보강: plan code_identity와 실행 직전 freeze가 다르면 검사 실행 전에 validation_state_changed로 거부한다.
+  F-E root 보강: CBM 각 CLI 호출 전후 stop callback을 확인한다. 기존 호출당 timeout 45초는 유지하므로
+  진행 중 단일 호출의 즉시 취소를 주장하지 않으며, 여러 호출을 연속 기다리는 지연을 막는다.
+  controller bounded_stop을 planner/native adapter로 전달한다. 관련 경계 **28 tests OK, 0.320 s**.
+- 계약 담당 Claude patch SHA256 `c6e607664ad4e528fe32ec4eef17cba7ad71a1552b2e9cf11385960a98a20ed9`를
+  root가 읽고 apply --check 후 적용했다. AC-12의 비밀 없는 plan/gate event/tree/base/run/digest 로그와
+  실제 Git merge-parent witness를 추가했다. 비교 base/tier/attempt 결합을 바꾸지 않으며 witness 미상은 null이다.
+  guidance의 직접 worker V1/Orca V3, reuse 미연결, partial-rerun 한계도 명시한다. push bullets는 보존한다.
+  worker evidence SHA256 `bd36f82f0e92252e163bd3c6e7777cd598ca99e31ba9da053b84effea0875d17`.
+  root 통합 경계 확인 **68 tests OK, 0.990 s**. 새 기능/음성 테스트를 기존 AC-09/11/12에 연결했다.
+- F-B 제안은 **NOT_INTEGRATED / APPROVAL_DEFERRED**다. 별도 worktree에서만 준비됐고 root에 적용하지 않았다.
+  제안 patch SHA256 `32efe5e1a9234ab1ec62a7243dec6c7663a65ab73754053e686703a41ad53e9c`,
+  설계/evidence SHA256 `d13d0102ce0afa5d314a3a2eb05b3c4be0e969ba9a01405c15460faacbd3712b`.
+  제안은 controller planner 부재 시 BATON/unknown identity를 BLOCKED로 하고 generic은 유지한다.
+  새 배포 지원/unknown 처리 결정은 사용자 복귀 시 요청한다. 선택지 A fail-closed 도입, B dev-only 문서 제약,
+  C positive BATON만 차단, D scripts 패키징이다. 제안 테스트 5개 OK(0.635 s), 해당 모듈 37개 OK(38.466 s)는
+  **제안 worktree만**의 결과이며 root 현행 동작 증거가 아니다. root 변경 후에는 제안 rebase/검증이 필요하다.
+- Task/current의 오래된 P-0x pending 표시는 Spec disposition에 맞춰 정정했다. 편집 중이며 전체 묶음 V2,
+  고정 통합 후보 재검토와 정확한 후보 V3는 후속 기록한다. 전체 Task PASS/verified와 원격 CI/push/PR은 보류다.
+
+### 전체 검토 지적 묶음 V2 checkpoint
+
+- `tests.test_ci_plan tests.test_sdd tests.test_ci_workflow tests.test_managed_harness tests.test_observability`:
+  **171 tests OK, 92.618 s**, failures/errors/skips/expected failures/unexpected successes 0, exit 0.
+  checkout `.venv/Scripts/python.exe -X utf8`, PYTHONPATH=src, PYTHONDONTWRITEBYTECODE=1,
+  OS-temp BATON_HOME. 실제 프로젝트 provider/GMS/network/Ubuntu/WSL 호출 0.
+- 첫 통합 실행은 171 tests 중 metrics fixture 한 건이 실패했다(95.290 s). fixture가 plan code_identity와
+  freeze에 다른 값을 주고 있어 F-C의 새 검사가 올바르게 BLOCKED로 거부했다. 동일 상태를 표현하도록
+  fixture만 수정했고 상태 결합 검사는 완화하지 않았다. 실패 항목+integration **15 tests OK, 2.159 s** 후 위 전체를 재실행했다.
+- 원래 Task-base SDD PASS(documents 48, features 10, tasks 18, ACs 75, changed_paths 57), diff check PASS.
+  F-B 제안은 현재 working source에도 적용하지 않았다. 해당 patch는 현재 소스에 apply --check만 통과시켰으며
+  적용/실행 승인이나 현행 소스의 테스트로 간주하지 않는다.
+- source checkpoint 후 별도 독립 검토를 고정 통합 후보에 요청한다. 사용자 권한이 필요한 결정은
+  위 보류 목록에 유지하고 최종 공식 V3는 이 묶음 및 새 검토를 반영한 정확한 후보에서 실행한다.

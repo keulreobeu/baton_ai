@@ -72,6 +72,7 @@ CBM 선택 전 freshness/coverage 확인·stale incremental index·재확인을 
 같은 SHA만으로 검증 재사용을 결정하지 않는다. V3 재사용은 코드 상태·commit SHA·target base·Task/AC·정책·테스트 설정·의존성·환경·필수 검사 목록/성공 결과가 모두 엄격히 동일할 때만 허용하며 unknown/partial이면 재실행한다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. CBM 선택과 엄격한 V3 재사용만 허용하며 새 검증 DB·두 번째 정책 엔진은 금지한다. 기존 MetricsStore·Task 증거를 사용하고 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다. merge에는 유효한 V3가 필요하고 미설정 검사는 `not_configured`이며 passed가 아니다.
 worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다. V1/V2 결과는 Task 완료 상태를 올리지 않는다. draft PR=V2 범위, ready/main=V3 Windows 전체 2 matrix이며 로컬 재사용이 필수 원격 CI를 생략하지 않는다. hosted runner에 CBM이 없어 현재 draft도 V3 fallback이다.
+현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 현재 기본 V3로 보수적으로 실행한다. `reuse_v3`는 순수 비교 함수만 있고 runtime 수집/저장 호출자가 없어 현재 모든 V3를 실제 실행하며 재사용 절감을 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
 fast runner 결과는 SDD 검사가 아니며 verified 증거로 쓰지 않는다.
 
 ## Worker 입출력과 묶음 반영 (CI-OPT-001 AC-02)

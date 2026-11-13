@@ -237,6 +237,19 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(graph["seconds"], 1.25)
         self.assertTrue(any(t == "detect_changes" and a["scope"] == "tests" for t, a in self.transcript.calls))
 
+    def test_cancel_before_cbm_call_runs_no_process(self):
+        self.adapter.should_stop = lambda: "cancel"
+        with self.assertRaisesRegex(cp.PlanError, "CBM_STOPPED"):
+            self.inspect()
+        self.assertEqual(self.transcript.calls, [])
+
+    def test_cancel_after_cbm_call_prevents_remaining_queries(self):
+        checks = iter([None, "cancel"])
+        self.adapter.should_stop = lambda: next(checks, "cancel")
+        with self.assertRaisesRegex(cp.PlanError, "CBM_STOPPED"):
+            self.inspect()
+        self.assertEqual([tool for tool, args in self.transcript.calls], ["list_projects"])
+
     def test_root_generation_pages_schema_and_committed_diff_gaps_reject(self):
         mutations = [
             ("index_status", lambda v: {**v, "root_path": str(self.root / "wrong")}),
@@ -311,6 +324,141 @@ class AdapterTests(unittest.TestCase):
             with self.assertRaises(cp.PlanError): self.adapter.call("index_status")
         self.adapter.runner = lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired("fake", 1))
         with self.assertRaises(subprocess.TimeoutExpired): self.adapter.call("index_status")
+
+
+class ImpactTranscript(CLITranscript):
+    """Two test modules; tests.test_other reaches the changed value() only by CALLS."""
+    PREFIX = "fixture."
+
+    def __init__(self, root, impacted, rows):
+        super().__init__(root)
+        self.impacted, self.rows = impacted, rows
+
+    def __call__(self, argv, **kw):
+        tool = argv[-1]; args = json.loads(kw["input"])
+        if tool == "detect_changes" and args["scope"] == "impact":
+            self.calls.append((tool, args))
+            value = {"base": "a" * 40, "merge_base": "a" * 40, "edge_types": list(cp.EDGES), "fixpoint": True,
+                     "changed_files": ["src/value.py"], "changed_total": 1, "changed_returned": 1,
+                     "seeds": [{"qn": self.PREFIX + "src.value.value", "file": "src/value.py"}],
+                     "seed_returned": 1, "seed_total": 1, "impacted": self.impacted,
+                     "impacted_shown": len(self.impacted), "impacted_total": len(self.impacted),
+                     "impacted_total_relation": "eq", "truncated": False,
+                     **{k: False for k in ("changed_has_more", "seed_has_more", "impacted_has_more", "module_has_more")}}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(self.mutate(tool, value)), "")
+        if tool == "query_graph":
+            self.calls.append((tool, args))
+            edge = args["query"].split("[r:", 1)[1].split("]", 1)[0]
+            rows = self.rows.get(edge, [])
+            value = {"columns": ["a.qualified_name", "a.file_path", "b.qualified_name", "b.file_path"], "rows": rows,
+                     "returned": len(rows), "total": len(rows), "total_relation": "eq", "has_more": False, "truncated": False}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(self.mutate(tool, value)), "")
+        return super().__call__(argv, **kw)
+
+
+class ImpactedTestFileTests(unittest.TestCase):
+    """CI-OPT-001-AC-09: a missing TESTS edge never hides an impacted test module."""
+    P = ImpactTranscript.PREFIX
+    VALUE_TEST = ("import unittest\nfrom src.value import value\nclass T(unittest.TestCase):\n"
+                  " def test_one(self): self.assertEqual(value(), 1)\n")
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        for directory in ("src", "tests"): (self.root / directory).mkdir()
+        self.write("src/value.py", "def value(): return 1\n")
+        self.write("src/other.py", "def other(): return 2\n")
+        self.write("tests/test_value.py", self.VALUE_TEST)
+
+    def write(self, name, text):
+        (self.root / name).write_text(text, encoding="utf-8")
+
+    def rows(self, other_calls, other_imports=("unittest", "src.other", "src.value")):
+        p = self.P
+        return {
+            # test_x's only TESTS edge names other(); it reaches value() by CALLS alone.
+            "TESTS": [[p + "tests.test_value.T.test_one", "tests/test_value.py", p + "src.value.value", "src/value.py"],
+                      [p + "tests.test_other.U.test_x", "tests/test_other.py", p + "src.other.other", "src/other.py"]],
+            "CALLS": [[p + "tests.test_value.T.test_one", "tests/test_value.py", p + "src.value.value", "src/value.py"],
+                      [p + "tests.test_value.T.test_one", "tests/test_value.py", "unittest.TestCase.assertEqual", "<external>"],
+                      *other_calls],
+            "IMPORTS": [[p + "tests.test_value", "tests/test_value.py", m, "<external>"] for m in ("unittest", "src.value")]
+                       + [[p + "tests.test_other", "tests/test_other.py", m, "<external>"] for m in other_imports],
+            "INHERITS": [[p + "tests.test_value.T", "tests/test_value.py", "unittest.TestCase", "<external>"],
+                         [p + "tests.test_other.U", "tests/test_other.py", "unittest.TestCase", "<external>"]]}
+
+    def inspect(self, impacted, rows):
+        inv = cp.inventory(self.root)
+        self.assertTrue(inv["complete"])
+        adapter = cp.CbmCLI(self.root, executable="fake-cbm", runner=ImpactTranscript(self.root, impacted, rows),
+                            clock=lambda: 0.0)
+        return inv, adapter.inspect(["src/value.py"], "a" * 40, inv)
+
+    def direct_call_case(self):
+        self.write("tests/test_other.py", "import unittest\nfrom src.other import other\nfrom src.value import value\n"
+                   "class U(unittest.TestCase):\n def test_x(self): self.assertEqual(other() + value(), 3)\n")
+        p = self.P
+        calls = [[p + "tests.test_other.U.test_x", "tests/test_other.py", p + target, file]
+                 for target, file in (("src.other.other", "src/other.py"), ("src.value.value", "src/value.py"))]
+        calls.append([p + "tests.test_other.U.test_x", "tests/test_other.py", "unittest.TestCase.assertEqual", "<external>"])
+        return self.rows(calls)
+
+    def assert_other_module_selected(self, inv, graph):
+        self.assertTrue(graph["complete"])
+        self.assertIn("tests.test_other.U.test_x", graph["selected"])
+        choice = cp.choose("checkpoint", ["src/value.py"], inv, graph)
+        self.assertEqual(choice["effective_tier"], "V2")
+        self.assertEqual(choice["selected_modules"], ["tests.test_other", "tests.test_value"])
+        fast = cp.choose("in_progress", ["src/value.py"], inv, graph)
+        self.assertEqual(fast["effective_tier"], "V1")
+        self.assertIn("tests.test_other.U.test_x", fast["selected_ids"])
+
+    def test_impacted_test_method_with_unrelated_tests_edge_is_selected(self):
+        rows = self.direct_call_case()
+        impacted = [{"qn": self.P + "tests.test_other.U.test_x", "file": "tests/test_other.py"},
+                    {"qn": self.P + "tests.test_value.T.test_one", "file": "tests/test_value.py"}]
+        self.assert_other_module_selected(*self.inspect(impacted, rows))
+
+    def test_impacted_test_file_helper_selects_whole_test_module(self):
+        self.write("tests/test_other.py", "import unittest\nfrom src.other import other\nfrom src.value import value\n"
+                   "def check(): return value()\n"
+                   "class U(unittest.TestCase):\n def test_x(self): self.assertEqual(other() + check(), 3)\n")
+        p = self.P
+        calls = [[p + "tests.test_other.check", "tests/test_other.py", p + "src.value.value", "src/value.py"],
+                 [p + "tests.test_other.U.test_x", "tests/test_other.py", p + "src.other.other", "src/other.py"],
+                 [p + "tests.test_other.U.test_x", "tests/test_other.py", p + "tests.test_other.check", "tests/test_other.py"],
+                 [p + "tests.test_other.U.test_x", "tests/test_other.py", "unittest.TestCase.assertEqual", "<external>"]]
+        # Only the helper is reported as impacted; the test method is not.
+        impacted = [{"qn": p + "tests.test_other.check", "file": "tests/test_other.py"}]
+        self.assert_other_module_selected(*self.inspect(impacted, self.rows(calls)))
+
+    def test_impacted_test_class_selects_whole_test_module(self):
+        rows = self.direct_call_case()
+        impacted = [{"qn": self.P + "tests.test_other.U", "file": "tests/test_other.py"}]
+        self.assert_other_module_selected(*self.inspect(impacted, rows))
+
+    def test_impacted_unmapped_support_file_stays_incomplete_and_v2_falls_full(self):
+        rows = self.direct_call_case()
+        self.write("tests/support.py", "def fixture(): return 1\n")
+        impacted = [{"qn": self.P + "tests.support.fixture", "file": "tests/support.py"}]
+        inv, graph = self.inspect(impacted, rows)
+        self.assertFalse(graph["complete"])
+        choice = cp.choose("checkpoint", ["src/value.py"], inv, graph)
+        self.assertEqual(choice["effective_tier"], "V3")
+        self.assertIn("INCOMPLETE_IMPACT_SCOPE", choice["reasons"])
+
+    def test_no_impacted_test_file_keeps_original_narrow_selection(self):
+        rows = self.direct_call_case()
+        inv, graph = self.inspect([], rows)
+        self.assertTrue(graph["complete"])
+        self.assertEqual(graph["selected"], ["tests.test_value.T.test_one"])
+        self.assertEqual(cp.choose("checkpoint", ["src/value.py"], inv, graph)["selected_modules"], ["tests.test_value"])
+
+    def test_impacted_test_file_widening_does_not_bypass_audits(self):
+        rows = self.direct_call_case()
+        rows["CALLS"] = [row for row in rows["CALLS"] if not row[0].endswith("test_x")]
+        impacted = [{"qn": self.P + "tests.test_other.U.test_x", "file": "tests/test_other.py"}]
+        self.assertFalse(self.inspect(impacted, rows)[1]["complete"])
 
 
 class SyntheticGitTests(unittest.TestCase):
@@ -640,6 +788,134 @@ class RemoteTests(unittest.TestCase):
                 with patch.dict(os.environ, env): self.assertEqual(cp.main(["--remote", "gate"]), 1)
             with self.context(), patch.dict(os.environ, dict(env, BATON_CI_PLAN="")), redirect_stdout(io.StringIO()):
                 self.assertEqual(cp.main(["--remote", "gate"]), 1)
+
+    def remote_env(self, directory, name, event, attempt="1", ref="refs/pull/1/merge"):
+        event_path = Path(directory) / ("event-" + name + ".json")
+        event_path.write_text(json.dumps(event), encoding="utf-8")
+        return {"GITHUB_EVENT_PATH": str(event_path), "GITHUB_EVENT_NAME": name, "GITHUB_REF": ref,
+                "GITHUB_SHA": self.sha, "GITHUB_RUN_ID": "4242", "GITHUB_RUN_ATTEMPT": attempt,
+                "GITHUB_OUTPUT": str(Path(directory) / ("output-" + attempt + ".txt")),
+                "BATON_MATRIX_OS": "windows-latest", "BATON_MATRIX_PYTHON": "3.11",
+                "SECRET_TOKEN_FOR_TEST": "s3cr3t-value"}
+
+    def remote_step(self, step, env):
+        """Run the actual remote_main and return (exit code, last emitted JSON object, raw stdout)."""
+        import os
+        out = io.StringIO()
+        with self.context(), patch.dict(os.environ, env), redirect_stdout(out):
+            code = cp.main(["--remote", step])
+        lines = [line for line in out.getvalue().splitlines() if line.strip()]
+        return code, json.loads(lines[-1]) if lines else None, out.getvalue()
+
+    def planned(self, env):
+        code, emitted, _ = self.remote_step("plan", env)
+        self.assertEqual(code, 0, emitted)
+        outputs = dict(line.split("=", 1) for line in Path(env["GITHUB_OUTPUT"]).read_text(encoding="utf-8").splitlines())
+        return emitted, dict(env, BATON_CI_PLAN=outputs["plan"], BATON_CI_DIGEST=outputs["digest"])
+
+    def test_remote_main_logs_ac12_identity_for_every_event_without_raw_event_data(self):
+        needs = json.dumps({"plan": {"result": "success"}, "offline": {"result": "success"}})
+        private = {"title": "private PR title", "body": "private PR body",
+                   "user": {"login": "someone-private", "email": "private@example.invalid"}}
+        draft = deepcopy(self.event); draft["pull_request"].update(private, head={"sha": "d" * 40, "ref": "private-branch"})
+        draft["pull_request"]["labels"] = [{"name": "private-label"}]
+        ready = deepcopy(draft); ready["action"] = "ready_for_review"; ready["pull_request"]["draft"] = False
+        full = deepcopy(draft); full["pull_request"]["labels"] = [{"name": "ci:full"}]
+        cases = [("pull_request", draft, "refs/pull/1/merge", "draft", True, False, "V2", "opened"),
+                 ("pull_request", full, "refs/pull/1/merge", "draft", True, True, "V3", "opened"),
+                 ("pull_request", ready, "refs/pull/1/merge", "ready", False, None, "V3", "ready_for_review"),
+                 ("push", {"before": self.base, "after": self.sha, "pusher": private["user"]}, "refs/heads/main",
+                  "main", None, None, "V3", None),
+                 ("workflow_dispatch", {"inputs": {"base": "main", "tier": "full"}, "sender": private["user"]},
+                  "refs/heads/private-branch", "dispatch", None, None, "V3", None)]
+        for name, event, ref, kind, is_draft, label, requested, activity in cases:
+            with self.subTest(event=kind, label=label), tempfile.TemporaryDirectory() as directory:
+                plan_log, env = self.planned(self.remote_env(directory, name, event, ref=ref))
+                code, gate_log, raw = self.remote_step("gate", dict(env, BATON_CI_NEEDS=needs))
+                self.assertEqual(code, 0, gate_log)
+                payload = json.loads(cp.zlib.decompress(cp.base64.b64decode(env["BATON_CI_PLAN"])))
+                for step, emitted in (("plan", plan_log), ("gate", gate_log)):
+                    self.assertEqual(emitted["log_step"], step)
+                    self.assertEqual((emitted["event_name"], emitted["event_kind"], emitted["activity"]),
+                                     (name, kind, activity))
+                    self.assertIs(emitted["event_time_draft"], is_draft)
+                    self.assertIs(emitted["full_label_requested"], label)
+                    self.assertEqual(emitted["checked_sha"], self.sha)
+                    self.assertEqual(emitted["checked_tree"], payload["tree"])
+                    self.assertEqual(emitted["pr_head"], "d" * 40 if name == "pull_request" else None)
+                    self.assertEqual(emitted["input_base"], "main" if kind == "dispatch" else self.base)
+                    self.assertEqual(emitted["resolved_base"], self.base)
+                    self.assertEqual((emitted["run_id"], emitted["run_attempt"]), ("4242", "1"))
+                    self.assertEqual(emitted["event_digest"], payload["facts"]["event_digest"])
+                    self.assertEqual(emitted["plan_digest"], env["BATON_CI_DIGEST"])
+                    self.assertEqual(emitted["plan_digest"], cp.fingerprint(payload))
+                    self.assertEqual((emitted["requested_tier"], emitted["effective_tier"]), (requested, "V3"))
+                    self.assertEqual((emitted["matrix"], emitted["matrix_count"]), (cp.MATRIX, 2))
+                    self.assertEqual(emitted["partial_rerun"], "unsupported_plan_attempt_bound")
+                    # The checked HEAD in this fixture is not a merge shape: no fabricated parent.
+                    self.assertIsNone(emitted["merge_parents"]["first_parent"])
+                    self.assertEqual(emitted["merge_parents"]["source"],
+                                     "unavailable" if name == "pull_request" else "not_applicable")
+                self.assertEqual((gate_log["status"], gate_log["tier"]), ("passed", "V3"))
+                self.assertEqual(plan_log["status"], "PLANNED")
+                text = json.dumps([plan_log, gate_log]) + raw
+                for secret in ("private PR", "someone-private", "private@example.invalid", "private-label",
+                               "private-branch", "s3cr3t-value", "refs/pull"):
+                    self.assertNotIn(secret, text)
+
+    def test_merge_parent_witness_is_actual_git_tied_to_checked_head(self):
+        event = deepcopy(self.event); event["pull_request"]["head"] = {"sha": "d" * 40}
+        facts = cp.remote_facts("pull_request", event, "refs/pull/1/merge", self.sha)
+        def git(parents):
+            return lambda root, *args: parents if args[:2] == ("rev-list", "--parents") else "c" * 40
+        with patch.object(cp.sdd, "git", side_effect=git(f"{self.sha} {'e' * 40} {'d' * 40}\n")):
+            self.assertEqual(cp.merge_parent_witness(self.root, facts),
+                             {"first_parent": "e" * 40, "second_parent_is_pr_head": True,
+                              "source": "git_rev_list_parents_of_checked_head"})
+        with patch.object(cp.sdd, "git", side_effect=git(f"{self.sha} {'e' * 40} {'f' * 40}\n")):
+            self.assertIs(cp.merge_parent_witness(self.root, facts)["second_parent_is_pr_head"], False)
+        for parents in (f"{'9' * 40} {'e' * 40} {'d' * 40}", f"{self.sha} {'e' * 40}", self.sha, "", "x y z"):
+            with self.subTest(parents=parents), patch.object(cp.sdd, "git", side_effect=git(parents)):
+                self.assertEqual(cp.merge_parent_witness(self.root, facts),
+                                 {"first_parent": None, "second_parent_is_pr_head": None, "source": "unavailable"})
+        with patch.object(cp.sdd, "git", side_effect=sdd.SddError("GIT_CHECK_FAILED")):
+            self.assertEqual(cp.merge_parent_witness(self.root, facts)["source"], "unavailable")
+        push = cp.remote_facts("push", {"before": self.base, "after": self.sha}, "refs/heads/main", self.sha)
+        with patch.object(cp.sdd, "git", side_effect=AssertionError("no Git call for non-PR")):
+            self.assertEqual(cp.merge_parent_witness(self.root, push)["source"], "not_applicable")
+        # The witness is log-only evidence: it never enters the digested plan or its comparisons.
+        payload = self.payload()
+        self.assertNotIn("merge_parents", payload)
+        self.assertNotIn("merge_parents", payload["facts"])
+        with tempfile.TemporaryDirectory() as directory:
+            plan_log, _ = self.planned(self.remote_env(directory, "pull_request", event))
+        self.assertEqual(plan_log["resolved_base"], self.base)
+
+    def test_partial_rerun_attempt_mismatch_fails_closed_and_regenerated_plan_passes(self):
+        # Current limitation (pending a safe partial re-run design): a plan from attempt 1
+        # must not validate in a re-run job of attempt 2; "Re-run all jobs" regenerates it.
+        needs = json.dumps({"plan": {"result": "success"}, "offline": {"result": "success"}})
+        with tempfile.TemporaryDirectory() as directory:
+            _, first = self.planned(self.remote_env(directory, "pull_request", self.event, attempt="1"))
+            rerun = dict(first, GITHUB_RUN_ATTEMPT="2")
+            with patch.object(cp, "freeze", return_value={"fixed": True}), \
+                 patch.object(cp, "run_remote_check") as runner, patch.object(cp.sys, "version_info", (3, 11)):
+                code, emitted, _ = self.remote_step("run", rerun)
+                self.assertEqual((code, emitted["error_code"]), (1, "REMOTE_PLAN_EVENT"))
+                runner.assert_not_called()
+                code, emitted, _ = self.remote_step("gate", dict(rerun, BATON_CI_NEEDS=needs))
+                self.assertEqual((code, emitted["error_code"]), (1, "REMOTE_PLAN_EVENT"))
+                # Regenerated plan for the same attempt 2 ("Re-run all jobs").
+                plan_log, second = self.planned(self.remote_env(directory, "pull_request", self.event, attempt="2"))
+                self.assertEqual(plan_log["run_attempt"], "2")
+                self.assertEqual(self.remote_step("run", second)[0], 0)
+                self.assertEqual(runner.call_count, 1)
+                code, gate_log, _ = self.remote_step("gate", dict(second, BATON_CI_NEEDS=needs))
+                self.assertEqual((code, gate_log["status"], gate_log["run_attempt"]), (0, "passed", "2"))
+                # Gate needs success is still required for the regenerated plan.
+                failed = json.dumps({"plan": {"result": "success"}, "offline": {"result": "failure"}})
+                code, emitted, _ = self.remote_step("gate", dict(second, BATON_CI_NEEDS=failed))
+                self.assertEqual((code, emitted["error_code"]), (1, "GATE_JOB_NOT_SUCCESS"))
 
     def test_windows_pair_required_for_every_event_and_non_windows_rejected(self):
         self.assertEqual(cp.MATRIX, [{"os": "windows-latest", "python": version}

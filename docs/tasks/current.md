@@ -2,6 +2,8 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
+- 사용자 부재 중 후속: P3 두 건은 c0ed6ab(V2 90 tests)으로 저장했다. Claude 전체 코드/계약 검토의 F-A 영향 테스트 누락, F-C 상태 결합, F-E 취소 확인, AC-12 로그/문서를 통합했고 V2 **171 tests OK, 92.618 s**와 Task-base SDD를 통과했다. F-B planner 부재 배포 정책, partial rerun 완화, runtime V3 reuse 연결은 제안/결정 보류이며 F-B patch는 현행 소스에 미적용이다. 고정 통합 후보 재검토/최종 V3는 후속 진행, 원격 CI/push/PR은 승인 대기다. 아래 6778a02 V3는 과거 후보 증거다.
+
 - [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 사용자 결정에 따라 Spec revision 4 Windows-first 구현 후보 `6778a02`를 저장했다. windows-latest × Python 3.11/3.12 두 필수 조합, plan/gate도 Windows이며 Linux 검증은 후속 확장이다. V2 119 tests(78.312 s), Claude 정책 변경 PASS/47 focused tests, 같은 후보/원래 Task base `5c07aea`의 공식 V3 **658 tests OK, 919.557 s, 실패/오류/skip 0**을 확인했다. 문서 시점/개수 표현 네 곳을 후속 정리했으며 V3를 후속 문서 SHA에 자동 재사용하지 않는다. no-skip은 유지하고 Ubuntu skip 질문은 superseded다. 원격 Windows CI는 NOT_RUN, 전체 Task 검토/verified는 pending, Task in_progress/GIT-CALL DEFERRED다.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기

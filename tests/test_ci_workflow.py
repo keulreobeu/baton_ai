@@ -63,13 +63,27 @@ class MethodologyDocsTests(unittest.TestCase):
                 with self.subTest(doc=name, term=term):
                     self.assertIn(term, text)
 
-    def test_docs_do_not_advertise_dispatch_or_ci_full(self):
-        # Historical symbol retained until T3d registry migration.
+    def test_readme_documents_implemented_dispatch_ci_full_and_unproven_savings(self):
+        # Renamed from the inverted historical name; not AC-mapped. Dispatch/ci:full are implemented.
         text = read("README.md")
         self.assertIn("workflow_dispatch", text)
         self.assertIn("ci:full", text)
         self.assertIn("CBM", text)
         self.assertIn("절감", text)
+
+    def test_guidance_qualifies_current_wiring_reuse_and_partial_rerun_limits(self):
+        # Truthfulness: current implementation limits, not a newly approved permanent policy.
+        for name in GUIDANCE_DOCS + ("docs/plans/ci-optimization.md",):
+            text = read(name)
+            for term in ("worker V1은 `Orchestrator._run` 직접 실행 피드백",
+                         "Orca author settle 경로는 현재 기본 V3로 보수적으로 실행",
+                         "`reuse_v3`는 순수 비교 함수만 있고 runtime 수집/저장 호출자가 없어",
+                         "현재 모든 V3를 실제 실행하며 재사용 절감을 주장하지 않는다",
+                         "부분 재실행(Re-run failed jobs)은 fail-closed", "Re-run all jobs가 필요",
+                         "승인된 영구 정책이 아니라", "run id/attempt", "첫 merge parent", "null이다"):
+                with self.subTest(doc=name, term=term):
+                    self.assertIn(term, text)
+            self.assertNotIn("부분 재실행 지원", text)
 
     def test_docs_do_not_add_pending_draft_first_practice(self):
         # Revision 2 supersedes P-02: event-based stages do not mandate PR creation practice.

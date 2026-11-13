@@ -39,7 +39,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.plan = {"effective_tier": "V1", "selected_ids": ["tests.test_value.T.test_value"],
                      "direct_checks": [{"kind": "python_ast", "file": "value.py"}],
                      "final_evidence_eligible": False, "execution_status": "NOT_RUN"}
-        self.state = {"tracked": "same"}
+        self.state = {"tracked": "same", "head": "a" * 40}
         self.calls = []
         self.observations = []
         self.planner = SimpleNamespace(
@@ -58,7 +58,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         stage = kwargs.get("stage", "task_complete")
         requested = {"in_progress": "V1", "debugging": "V1", "checkpoint": "V2"}.get(stage, "V3")
         return {**deepcopy(self.plan), "requested_tier": requested, "stage": stage,
-                "target_base": kwargs["base"], "code_identity": {"head": "a" * 40},
+                "target_base": kwargs["base"], "code_identity": dict(self.state),
                 "task_ids": ["TASK-OFFLINE"], "acs": ["AC1"], "reasons": ["FAST_GRAPH_LIMITATION"],
                 "graph": {"state": "best_effort", "index_id": None, "generation": None,
                           "freshness": "unknown", "coverage": "partial", "seconds": None},
@@ -72,7 +72,10 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
 
     def test_v1_direct_and_selected_checks_preserve_declared_ac_checks(self):
         result, process = self.run_validation(stage="in_progress", target_base="b" * 40)
-        self.assertEqual(self.calls[0], (self.root, {"base": "b" * 40, "stage": "in_progress"}))
+        self.assertEqual(self.calls[0][0], self.root)
+        self.assertEqual({key: value for key, value in self.calls[0][1].items() if key != "should_stop"},
+                         {"base": "b" * 40, "stage": "in_progress"})
+        self.assertTrue(callable(self.calls[0][1]["should_stop"]))
         self.assertEqual(len(result), len(self.task["validation"]))
         feedback = result[0]["planner"]["executed_checks"]
         self.assertEqual(len(feedback), 2)
@@ -193,6 +196,18 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertEqual(result[0]["acs"], ["AC1"])
         self.assertEqual(process.call_args.args[3], 300)
 
+    def test_plan_identity_changed_before_execution_runs_no_checks(self):
+        def changed_plan(*args, **kwargs):
+            result = self.make_plan(*args, **kwargs)
+            self.state["tracked"] = "changed-between-plan-and-execution"
+            return result
+        self.planner.plan = changed_plan
+        with patch("baton.execution.run_process") as process:
+            with self.assertRaisesRegex(HarnessError, "validation_state_changed"):
+                self.orchestrator.validate(self.task, self.root, lambda: None, stage="in_progress")
+        process.assert_not_called()
+        self.assertEqual(self.observations, [])
+
     def test_evidence_checks_keep_one_result_per_declared_check_and_nonzero_acs(self):
         from baton.evidence import _checks
         self.plan.update(effective_tier="V3", direct_checks=[])
@@ -293,10 +308,11 @@ class ManagedHarnessTests(unittest.TestCase):
 
     def test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task(self):
         from scripts import ci_plan
+        identity = {"state": "fixed", "head": git(self.root, "rev-parse", "HEAD").strip()}
         plan = {"requested_tier": "V1", "effective_tier": "V1", "selected_ids": ["tests.test_value.ValueTest.test_value"],
                 "direct_checks": [], "final_evidence_eligible": False, "execution_status": "NOT_RUN",
                 "stage": "in_progress", "target_base": git(self.root, "rev-parse", "HEAD").strip(),
-                "code_identity": {"head": git(self.root, "rev-parse", "HEAD").strip()},
+                "code_identity": dict(identity),
                 "task_ids": ["TASK-ONE"], "acs": ["AC1"], "reasons": ["FAST_GRAPH_LIMITATION"],
                 "graph": {"state": "best_effort", "index_id": None, "generation": None,
                           "freshness": "unknown", "coverage": "partial", "seconds": None},
@@ -304,7 +320,7 @@ class ManagedHarnessTests(unittest.TestCase):
         planner = type("FakePlanner", (), {"baton_root": staticmethod(lambda root: True),
                                             "plan": staticmethod(lambda root, **kwargs: {**plan, "stage": kwargs["stage"],
                                                                                          "target_base": kwargs["base"]}),
-                                            "freeze": staticmethod(lambda root: {"state": "fixed"}),
+                                            "freeze": staticmethod(lambda root: dict(identity)),
                                             "fingerprint": staticmethod(ci_plan.fingerprint)})
         with patch("baton.orchestrator.validation_planner", return_value=planner):
             result = self.runner().run("TASK-ONE")

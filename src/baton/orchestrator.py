@@ -238,12 +238,14 @@ class Orchestrator:
                 target_base = target_base or self.store.get(task["task_id"])["result"].get("base_commit")
                 if not target_base:
                     raise HarnessError("validation_base_required")
-                local_plan = planner.plan(tree, base=target_base, stage=stage)
+                local_plan = planner.plan(tree, base=target_base, stage=stage, should_stop=bounded_stop)
                 target_base = local_plan["target_base"]
                 execution_state = planner.freeze(tree)
             except Exception:
                 # Bootstrap/SDD failure must not turn into a successful full plan.
                 raise HarnessError("validation_planner_failed") from None
+            if execution_state != local_plan["code_identity"]:
+                raise HarnessError("validation_state_changed")
         checks = list(task["validation"])
         internal = []
         if local_plan is not None:
