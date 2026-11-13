@@ -854,3 +854,66 @@ Evidence-only status files at this checkpoint:
   PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME. 원래 Task-base SDD/diff check PASS.
   소스 checkpoint를 저장해 새로운 독립 reviewer에게 CBM+parser 통합 delta를 고정 후보로 요청한다.
   최종 공식 V3와 원격 CI는 pending이며 F-B/runtime reuse/partial rerun 결정은 계속 보류다.
+
+### 1c73f2d 정확한 V3 및 F-B 권한 감사 후속
+
+- 고정 후보 `1c73f2d21d2c710cc9a4e1f0482fa05bc267f8c7`, 원래 base `5c07aea`에서 공식 순차
+  `verify_environment.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` 1회:
+  **684 tests OK, 952.238 s**, exit 0, failures/errors/skipped/expected failures 0,
+  status=PASS, verified_evidence_eligible=true, scope=offline_tests_only,
+  live_provider_validation=NOT_RUN. 실행 전후 HEAD/index/worktree clean 일치. checkout venv,
+  PYTHONPATH=src/PYTHONDONTWRITEBYTECODE=1/OS-temp BATON_HOME, 실제 프로젝트 model/GMS/원격/Ubuntu/WSL 0.
+  Task-base SDD PASS(48 docs/10 features/18 Tasks/75 AC/57 paths). 이 증거를 후속 F-B 변경에 재사용하지 않는다.
+- `CI-OPT-001-integration-delta-review-1c73f2d.md` SHA256
+  `a8fda061b8b870d222798f5c66ba8b43cd511d8f9dae6b6e9a3383c05da37aa4`: 독립 delta PASS,
+  P1/P2 0, 43 focused OK(2.203 s), 61 module OK(33.609 s). 의도적 test의 fake summary+os._exit(0)
+  위조 P3는 기존 한계다. structured runner 설계 없이 악성 테스트까지 증거 신뢰를 보장한다고 하지 않는다.
+- 게시 내용 감사 rev2는 미게시 27개(CI-OPT 17/타 Task 10), 수동 11/부분 7/heuristic 9개다.
+  보고서 SHA256 `a0560055ac3a2fad77b620fc49fe58fb97a35df661a5d64e312cd14596aed847`.
+  초기 '7 missing objects'는 **7 ref entries / 5 unique SHA objects**로 정정한다. 참조된 원격 snapshot은
+  갱신하지 않았고 도달성은 partial이다. 타 Task 10개 게시 범위, 최신 refs/모든 내용 점검/권한은 별도다.
+- 권한 감사 `CI-OPT-001-authorization-design-audit-1c73f2d.md` SHA256
+  `696ed8045bfc92b4470a84b4a20146e15c127d93b4ad7e1a9be12148bfe67d66`의 근거를 root가 확인했다.
+  F-B A는 AC-08 필수 V3·AC-09 bootstrap 실패·ADR F5 안의 승인된 결함 수정이며 사용자 추가 승인을
+  요구할 근거가 없다. 위 APPROVAL_DEFERRED는 스스로 더한 경계였으므로 해제했다. Spec revision은 바꾸지 않는다.
+  패키징 D는 별도 확장이다. 부분 rerun 지원은 선택 기능/우선순위 보류이며 자격 검증의 원격 권한은 필요하다.
+  runtime reuse 구현도 승인 범위지만 현재 필수 검사에 not_configured review/remote가 있어 재사용은 불가하다.
+  로컬 재사용 단위를 official_sequential만으로 바꾸는 AC-12 해석/개정(Q1-a)은 복귀 결정으로 보류한다.
+- 정확한 1c73 V3가 끝난 뒤 F-B patch `4c494d4d...`를 read/apply --check 후 root에 통합했다.
+  absent/broken planner를 차단하고 generic 계약은 유지한다. 독립 검토에서 같은 범주의 present planner +
+  unknown/disagreeing BATON identity 우회(P2)와 import BaseException의 half-module cache(P3)를 확인해 묶어 수정했다.
+  planner_root를 한 번 계산하고 detector가 True/None이면 선언 검사로 내려가지 않는다. import 중단도 cache를
+  지우되 KeyboardInterrupt/SystemExit 의미는 보존한다. 새 지원/두 번째 정책 엔진/DB는 추가하지 않는다.
+  PROPOSAL 라벨을 제거하고 `PlannerUnavailableTests` 7개를 AC-08/09에 연결했다.
+- V1 `PlannerUnavailableTests` + `ValidationPlannerIntegrationTests` **21 tests OK, 0.814 s**, zero skips.
+  묶음 patch SHA256 `c6bac24bf48bf0d7cd67355bcb90d1825eccc0b9f5802caab410ff2b546c0ee4`를 별도 독립
+  delta 재검토에 배정했다. 최신 working source의 grouped V2/고정 후보 V3는 pending이다.
+- F-B 통합 patch 독립 재검토 `CI-OPT-001-FB-integrated-delta-review-1c73f2d.md` SHA256
+  `bdca8b859dc063781a09396b664fbe4fa19f87f5217d711222d82ea27f318fe1`: PASS,
+  21 tests OK(0.817 s), P2-1/P3-1 닫힘. 이어 root의 영향 모듈 8개(managed_harness,
+  flow_evidence, flow_runtime, ci_plan, git_lifecycle, observability, sdd, ci_workflow)는
+  **284 tests OK, 618.174 s**, failures/errors/skips 0, Task-base SDD/diff check PASS다.
+  이 검사 중 소스를 고정했고 종료 후에만 아래 두 보강을 반영했다.
+- 실제 CBM e2e 읽기 전용 qualification 보고서 SHA256
+  `80aac7db60f855aec4bee7e9eb26230d9f5bb748795a667761eb9282e7c108a5`를 확인했다.
+  기존 어댑터의 seed_limit=5000은 설치 CLI의 1000 상한을 위반했고 module_limit=500도 schema 256을
+  넘었다. root는 각각 1000/256으로 맞추고 같은 상한을 집행하는 fake-runner 회귀를 AC-09에 연결했다.
+  기존 seed/module paging/truncation fail-closed는 유지한다. qualification harness에서 이 값만 맞췄을 때
+  original Task base 57/57 changes, impact/coverage/generation/query predicates가 실제 CLI와 일치했고
+  inspect는 complete=false/coverage=partial로 끝났다. 조회 결과를 실행/범위 축소에 쓰지 않았다.
+  증거는 HEAD 1c73 + 당시 F-B dirty worktree + watcher generation 06:17:57Z에 결합되며 clean 후보 증거가 아니다.
+  scope=tests receipt persistence와 since가 uncommitted를 포함하는지는 unknown이다. index/reindex 호출 0.
+- 같은 리뷰의 P3-2(깊은 TOML의 RecursionError)도 unknown identity로 처리하도록 한 줄 보강했다.
+  4018-byte/2000-level TOML 회귀가 실제 tomllib에서 RecursionError를 일으킴을 먼저 확인했다.
+  새 서비스/DB/cache/지원 계약은 없다. current source + 두 보강의 combined patch SHA256
+  `bae99c1f804d8fdf2f3055d70c93c5d45cd2986bc16d7140c17f9390177eece7`를 독립 검토에 배정했다.
+  284-test 증거는 보강 전 상태이며, 보강 후 관련 모듈 V2와 새 고정 후보 V3를 따로 기록한다.
+- 최종 combined patch 독립 검토 보고서 `CI-OPT-001-FB-final-followup-review-1c73f2d.md`
+  SHA256 `083c08e270a97c20d26c23dcdef7e00fed1e490ea961b88d440c4368d8fcf5ac` read-back 일치:
+  **PASS, 새 P1/P2/P3 0, 36 tests OK, 1.742 s, skip 0**. old 5000/500으로 복원하면 새 bounds
+  테스트가 실패함도 reviewer가 확인했다. P3-2 deep TOML은 unknown으로 처리돼 checks 0으로 차단한다.
+- 보강 후 관련 모듈 checkpoint(`ci_plan`, `managed_harness`, `observability`, `sdd`, `ci_workflow`):
+  **189 tests OK, 106.622 s**, exit 0, failures/errors/skips/expected failures/unexpected successes 0.
+  원래 Task-base SDD와 diff check를 다시 확인해 작업 단위를 로컬 저장한다. flow/git 상호작용은
+  앞선 284-test 실행으로 확인했지만 그 전후 소스 차이는 명시했고, 정확한 새 후보 공식 V3로 다시 덮는다.
+  전체 Task verified·원격 Windows CI·push/PR/main은 계속 NOT_RUN/pending이다.

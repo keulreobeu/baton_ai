@@ -367,6 +367,22 @@ class AdapterTests(unittest.TestCase):
         self.adapter.runner = lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired("fake", 1))
         with self.assertRaises(subprocess.TimeoutExpired): self.adapter.call("index_status")
 
+    def test_detect_changes_arguments_obey_installed_cli_bounds(self):
+        seen = []
+        original = self.adapter.runner
+        def bounded(argv, **kw):
+            tool, args = read_args_file(argv, kw, [])
+            if tool == "detect_changes" and args.get("scope") == "impact":
+                if not (type(args.get("seed_limit")) is int and 0 <= args["seed_limit"] <= 1000
+                        and type(args.get("module_limit")) is int and 0 <= args["module_limit"] <= 256):
+                    return subprocess.CompletedProcess(argv, 1, "", "argument outside CLI bounds")
+                seen.append(args)
+            return original(argv, **kw)
+        self.adapter.runner = bounded
+        self.assertTrue(self.inspect()["complete"])
+        self.assertEqual(len(seen), 1)
+        self.assertEqual((seen[0]["seed_limit"], seen[0]["module_limit"]), (1000, 256))
+
     def test_args_file_transport_utf8_closed_and_removed(self):
         self.assertTrue(self.inspect()["complete"])
         self.assertEqual(len(self.transcript.files), len(self.transcript.calls))

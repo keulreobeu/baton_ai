@@ -476,8 +476,8 @@ class CbmCLI:
         self.call("detect_changes", project=project, scope="tests", since=base, format="json")
         impact = self.call("detect_changes", project=project, scope="impact", since=base,
                            direction="inbound", edge_types=list(EDGES), fixpoint=True,
-                           seeds="list", seed_limit=5000, limit=5000, changed_limit=500,
-                           module_limit=500, max_output_tokens=250000, format="json")
+                           seeds="list", seed_limit=1000, limit=5000, changed_limit=500,
+                           module_limit=256, max_output_tokens=250000, format="json")
         need(impact.get("base") == base and impact.get("merge_base") == base
              and impact.get("edge_types") == list(EDGES) and impact.get("fixpoint") is True,
              "CBM_UNKNOWN_IMPACT_SCHEMA")

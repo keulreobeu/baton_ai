@@ -247,6 +247,155 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertEqual((event["freshness"], event["coverage"]), ("not_run", "not_run"))
 
 
+class PlannerUnavailableTests(unittest.TestCase):
+    """Absent, broken or disagreeing controller policy fails closed for BATON.
+
+    Fake/synthetic trees and a copied package layout only; no official verifier,
+    no model, CBM or network.
+    """
+    MARKERS = ("src/baton/orchestrator.py", "scripts/verify_environment.py",
+               "scripts/check_sdd.py", "docs/sdd/traceability.json")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name).resolve()
+        self.task = {"task_id": "TASK-OFFLINE", "acceptance_criteria": ["AC1"],
+                     "validation": [{"argv": ["python", "-m", "unittest", "tests.test_value"], "acs": ["AC1"]}],
+                     "execution": {"timeout_seconds": 60, "total_timeout_seconds": 120}}
+        store = type("Store", (), {"get": lambda self, task: {"result": {"base_commit": "a" * 40}}})()
+        self.orchestrator = Orchestrator(store, providers={})
+
+    def tree(self, name, *, markers=MARKERS, project='[project]\nname = "baton-ai"\n'):
+        root = self.base / name
+        for marker in markers:
+            (root / marker).parent.mkdir(parents=True, exist_ok=True)
+            (root / marker).write_text("# marker\n", encoding="utf-8")
+        root.mkdir(parents=True, exist_ok=True)
+        if project is not None:
+            (root / "pyproject.toml").write_text(project, encoding="utf-8")
+        return root
+
+    def validate(self, root, planner=None):
+        with patch("baton.orchestrator.validation_planner", return_value=planner), \
+             patch("baton.execution.run_process", return_value=(0, "", "Ran 1 test in 0.1s\nOK", None)) as process:
+            return self.orchestrator.validate(self.task, root, lambda: None), process
+
+    def test_identity_detector_is_positive_bounded_and_marks_unknown(self):
+        from baton.orchestrator import baton_development_root as detect
+        self.assertIs(detect(self.tree("baton")), True)
+        self.assertIs(detect(self.tree("generic", markers=(), project='[project]\nname = "jipdam"\n')), False)
+        self.assertIs(detect(self.tree("other-name", project='[project]\nname = "jipdam"\n')), False)
+        self.assertIs(detect(self.tree("partial", markers=self.MARKERS[:2])), False)
+        for name, project in (("missing", None), ("invalid", "[project\n"), ("nonstring", "[project]\nname = 3\n"),
+                              ("noname", "[tool.x]\ny = 1\n")):
+            with self.subTest(name=name):
+                self.assertIsNone(detect(self.tree(name, project=project)))
+        big = self.tree("big", project="#" * (256 * 1024 + 1))
+        self.assertIsNone(detect(big))
+        deep = self.tree("deep", project='[project]\nname = ' + '[' * 2000 + '0' + ']' * 2000)
+        self.assertIsNone(detect(deep))
+
+    def test_absent_planner_blocks_baton_and_unknown_identity_without_running_checks(self):
+        for root in (self.tree("baton"), self.tree("unknown", project="[project\n")):
+            with self.subTest(root=root.name):
+                with self.assertRaisesRegex(HarnessError, "validation_planner_unavailable"):
+                    self.validate(root)
+
+    def test_absent_planner_keeps_generic_declared_only_validation(self):
+        for root in (self.tree("generic", markers=(), project=None),
+                     self.tree("named-other", project='[project]\nname = "jipdam"\n'),
+                     self.tree("partial", markers=self.MARKERS[:1])):
+            rejecting = type("Planner", (), {"baton_root": lambda self, tree: False})()
+            for planner in (None, rejecting):
+                with self.subTest(root=root.name, planner_present=planner is not None):
+                    result, process = self.validate(root, planner)
+                    self.assertEqual(process.call_count, 1)
+                    self.assertEqual([r["exit_code"] for r in result], [0])
+                    self.assertNotIn("planner", result[0])
+
+    def test_present_planner_blocks_unknown_or_disagreeing_baton_identity(self):
+        rejecting = type("Planner", (), {"baton_root": lambda self, tree: False})()
+        for name, project in (("invalid", "[project\n"), ("missing", None),
+                              ("disagreeing", '[project]\nname = "baton-ai"\n')):
+            root = self.tree(name, project=project)
+            with self.subTest(name=name), \
+                 patch("baton.orchestrator.validation_planner", return_value=rejecting), \
+                 patch("baton.execution.run_process") as process:
+                with self.assertRaisesRegex(HarnessError, "validation_planner_failed"):
+                    self.orchestrator.validate(self.task, root, lambda: None)
+                process.assert_not_called()
+
+    def test_interrupted_policy_import_is_not_cached_and_next_load_can_succeed(self):
+        import baton.orchestrator as controller
+        directory = self.base / "lib" / "scripts"
+        directory.mkdir(parents=True)
+        fake_source = self.base / "lib" / "site-packages" / "baton" / "orchestrator.py"
+        name = "_baton_validation_" + controller.digest(str(directory))[:12] + ".ci_plan"
+        self.addCleanup(sys.modules.pop, name, None)
+        for exception in (KeyboardInterrupt, SystemExit):
+            with self.subTest(exception=exception.__name__), patch.object(controller, "__file__", str(fake_source)):
+                (directory / "ci_plan.py").write_text(
+                    "baton_root = lambda root: False\nraise " + exception.__name__ + "\n", encoding="utf-8")
+                with self.assertRaises(exception):
+                    controller.validation_planner()
+                self.assertNotIn(name, sys.modules)
+                (directory / "ci_plan.py").write_text("loaded = True\n", encoding="utf-8")
+                self.assertTrue(controller.validation_planner().loaded)
+                sys.modules.pop(name)
+
+    def test_final_evidence_rejects_baton_candidate_when_planner_absent(self):
+        from baton.evidence import _checks
+        root = self.tree("baton")
+        with patch("baton.orchestrator.validation_planner", return_value=None), \
+             patch("baton.execution.run_process", return_value=(0, "", "Ran 1 test in 0.1s\nOK", None)) as process:
+            with self.assertRaisesRegex(HarnessError, "validation_planner_unavailable"):
+                _checks(self.orchestrator.store, {"task": self.task}, root)
+        self.assertEqual(process.call_count, 0)
+
+    def test_packaged_layout_absent_and_broken_controller_in_real_process(self):
+        # Copy the package as a non-editable install would: no repository scripts/.
+        import shutil
+        source = Path(__file__).resolve().parents[1] / "src" / "baton"
+        site = self.base / "lib" / "site-packages"
+        shutil.copytree(source, site / "baton", ignore=shutil.ignore_patterns("__pycache__"))
+        baton_root, generic = self.tree("baton"), self.tree("generic", markers=(), project=None)
+        program = (
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "import baton.orchestrator as o\n"
+            "from baton.contracts import HarnessError\n"
+            "store = type('S', (), {'get': lambda self, t: {'result': {'base_commit': 'a' * 40}}})()\n"
+            "task = {'task_id': 'T', 'validation': [{'argv': [sys.executable, '-c', 'pass'], 'acs': []}],\n"
+            "        'execution': {'timeout_seconds': 30, 'total_timeout_seconds': 60}}\n"
+            "out = {}\n"
+            "for label in sys.argv[1:]:\n"
+            "    tree = Path(label)\n"
+            "    try:\n"
+            "        out[tree.name] = [r['exit_code'] for r in o.Orchestrator(store, providers={}).validate(task, tree, lambda: None)]\n"
+            "    except HarnessError as exc:\n"
+            "        out[tree.name] = str(exc)\n"
+            "out['cached'] = any(n.endswith('.ci_plan') for n in sys.modules)\n"
+            "print(json.dumps(out))\n")
+        env = {**os.environ, "PYTHONPATH": str(site), "PYTHONDONTWRITEBYTECODE": "1"}
+
+        def run():
+            completed = subprocess.run([sys.executable, "-X", "utf8", "-c", program, str(baton_root), str(generic)],
+                                       capture_output=True, text=True, env=env, cwd=self.base, timeout=60)
+            self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
+            return json.loads(completed.stdout.strip().splitlines()[-1])
+
+        absent = run()
+        self.assertEqual(absent["baton"], "validation_planner_unavailable")
+        self.assertEqual(absent["generic"], [0])
+        # Broken/unloadable controller policy: fail closed for every target, never cached.
+        (self.base / "lib" / "scripts").mkdir()
+        (self.base / "lib" / "scripts" / "ci_plan.py").write_text("raise RuntimeError('broken policy')\n", encoding="utf-8")
+        broken = run()
+        self.assertEqual(broken["baton"], "validation_planner_unavailable")
+        self.assertEqual(broken["generic"], "validation_planner_unavailable")
+        self.assertFalse(broken["cached"])
+
+
 class ManagedHarnessTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -40,8 +40,43 @@ def validation_planner():
         spec = importlib.util.spec_from_file_location(name, directory / "ci_plan.py")
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
-        spec.loader.exec_module(module)
+        try:
+            spec.loader.exec_module(module)
+        except BaseException as exc:
+            # Never reuse a partially initialised policy, including after an
+            # interrupted import. Preserve cancellation/exit exceptions.
+            sys.modules.pop(name, None)
+            if not isinstance(exc, Exception):
+                raise
+            raise HarnessError("validation_planner_unavailable") from None
     return sys.modules[name]
+
+
+BATON_MARKERS = ("src/baton/orchestrator.py", "scripts/verify_environment.py",
+                 "scripts/check_sdd.py", "docs/sdd/traceability.json")
+
+
+def baton_development_root(root):
+    """Bounded development-root identity, independent of planner bootstrap.
+
+    Reads only pyproject metadata and marker existence; never imports or executes
+    candidate code. True = BATON development root, False = generic project,
+    None = BATON markers present but the project name cannot be established.
+    """
+    import tomllib
+    root = Path(root)
+    try:
+        if not all((root / marker).is_file() for marker in BATON_MARKERS):
+            return False
+        project = root / "pyproject.toml"
+        if project.is_symlink() or not project.is_file() or project.stat().st_size > 256 * 1024:
+            return None
+        name = tomllib.loads(project.read_text(encoding="utf-8-sig")).get("project", {}).get("name")
+    except (OSError, ValueError, UnicodeError, AttributeError, RecursionError):
+        return None
+    if not isinstance(name, str):
+        return None
+    return name == "baton-ai"
 
 
 class Orchestrator:
@@ -228,12 +263,22 @@ class Orchestrator:
         # The optional API exposes fast/checkpoint validation; current completion
         # callers retain task_complete. No public validation-command relaxation.
         planner = validation_planner()
+        try:
+            planner_root = planner is not None and planner.baton_root(tree)
+        except Exception:
+            raise HarnessError("validation_planner_failed") from None
+        if not planner_root and baton_development_root(tree) is not False:
+            # Missing policy or unknown/disagreeing BATON identity cannot
+            # silently degrade to declared-only checks. Generic roots retain
+            # their own validation contract.
+            raise HarnessError("validation_planner_unavailable" if planner is None
+                               else "validation_planner_failed")
         local_plan = None
         started = time.monotonic()
         total = task["execution"]["total_timeout_seconds"]
         def bounded_stop():
             return stop() or ("timeout" if time.monotonic() - started >= total else None)
-        if planner is not None and planner.baton_root(tree):
+        if planner_root:
             try:
                 target_base = target_base or self.store.get(task["task_id"])["result"].get("base_commit")
                 if not target_base:

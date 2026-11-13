@@ -2,6 +2,10 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
+- F-B fail-closed 및 실제 CBM seed/module 상한 수정 묶음이 독립 검토 PASS(새 지적 0, 36 focused tests), 보강 후 V2 **189 tests OK, 106.622 s**를 통과했다. 앞선 flow/git 포함 8개 모듈 284 tests도 OK. F-B의 별도 승인 보류는 기존 AC-08/09 안의 결함 수정으로 해제했고 deep TOML/import 중단도 차단한다. 작업 단위를 저장한 뒤 정확한 새 후보 공식 V3를 진행한다. 원격 Windows 두 matrix와 게시·Task verified는 여전히 pending이다.
+
+- 정확한 `1c73f2d`의 공식 순차 V3 **684 tests OK, 952.238 s, failures/errors/skip 0**와 독립 통합 delta PASS를 확인했다. 실행 전후 clean/HEAD 일치. 권한 감사로 F-B fail-closed 수정은 기존 AC-08/09 승인 범위임을 확인해 별도 승인 보류를 해제하고 root에 통합 중이다. absent/broken/present-unknown 우회와 import 중단 cache를 묶었고 V1 21 tests OK. 최신 working source의 V2·독립 delta·새 후보 V3는 pending이며 1c73 증거를 재사용하지 않는다. 로컬 V3 재사용 단위 개정·원격 게시 권한만 복귀 결정으로 남기며 packaging/부분 rerun은 선택 확장이다.
+
 - 추가 검토 후 no-skip parser의 trailing-summary/큰 출력/tail 절단 경계 회귀를 수정했고 실제 CBM 0.12.1 args-file/pagination 어댑터를 통합했다. 최신 묶음 V2 **181 tests OK, 96.618 s**, Task-base SDD/diff check PASS. 실제 읽기 전용 CALLS 4,875행 회수도 확인했으나 index parse_partial/unmapped/inventory incomplete로 V2 fallback은 유지한다. 새 독립 통합 delta 검토와 정확한 후보 공식 V3는 pending이며 과거 V3를 재사용하지 않는다. F-B 배포 제안·부분 CI 재실행·runtime V3 재사용·원격 게시 결정은 별도 복귀용 초안에 보류했다.
 
 - 사용자 부재 중 후속: P3 두 건은 c0ed6ab(V2 90 tests)으로 저장했다. Claude 전체 코드/계약 검토의 F-A 영향 테스트 누락, F-C 상태 결합, F-E 취소 확인, AC-12 로그/문서를 통합했고 V2 **171 tests OK, 92.618 s**와 Task-base SDD를 통과했다. F-B planner 부재 배포 정책, partial rerun 완화, runtime V3 reuse 연결은 제안/결정 보류이며 F-B patch는 현행 소스에 미적용이다. 고정 통합 후보 재검토/최종 V3는 후속 진행, 원격 CI/push/PR은 승인 대기다. 아래 6778a02 V3는 과거 후보 증거다.
