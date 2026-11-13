@@ -392,6 +392,29 @@ class SyntheticGitTests(unittest.TestCase):
         self.assertEqual(len(partial["selected_ids"]), 2)
         self.assertEqual(self.planner("checkpoint", Partial())["effective_tier"], "V3")
 
+    def test_remote_actual_planner_absent_cbm_falls_back_and_checks_base(self):
+        self.write("scripts/ci_plan.py", "# synthetic policy\n")
+        self.git("add", "."); self.git("commit", "-m", "fixture policy")
+        self.base = self.git("rev-parse", "HEAD")
+        self.write("docs/tasks/TASK-F-001.md", self.task + "\nRemote fixture update.\n")
+        self.write("src/value.py", "def value(): return 2\n")
+        self.git("add", "."); self.git("commit", "-m", "fixture remote candidate")
+        event = {"action": "opened", "pull_request": {"draft": True, "base": {"sha": self.base}}}
+        facts = cp.remote_facts("pull_request", event, "refs/pull/1/merge", self.git("rev-parse", "HEAD"))
+        original = cp.CbmCLI(self.root)
+        original.executable = None  # deterministic hosted runner without the binary
+        with patch.object(cp, "CbmCLI", return_value=original):
+            payload = cp.remote_plan(self.root, facts)
+        self.assertEqual(payload["facts"]["requested_tier"], "V2")
+        self.assertEqual(payload["effective_tier"], "V3")
+        self.assertIn("CBM_ABSENT", payload["reasons"])
+        self.assertEqual(cp.validate_remote(self.root, payload, facts, cp.fingerprint(payload)),
+                         [["scripts/verify_environment.py", "--ci"]])
+        facts["input_base"] = "missing-ref"
+        with self.assertRaises(sdd.SddError): cp.remote_plan(self.root, facts)
+        self.write("src/value.py", "def value(): return 3\n")
+        with self.assertRaisesRegex(cp.PlanError, "DIRTY_REMOTE_CHECKOUT"): cp.remote_plan(self.root, facts)
+
     def test_task_minimum_only_raises_and_inventory_unknown_is_not_zero(self):
         self.write("docs/tasks/TASK-F-001.md", self.task.replace('level=1', 'level=1\nvalidation_minimum=2') + "Updated\n")
         self.assertEqual(self.planner()["effective_tier"], "V2")
@@ -447,6 +470,151 @@ class SyntheticGitTests(unittest.TestCase):
         self.write("pyproject.toml", '[project]\nname="connected-product"\n')
         self.assertFalse(cp.baton_root(self.root))
         with self.assertRaisesRegex(cp.PlanError, "NOT_BATON_DEVELOPMENT_ROOT"): self.planner()
+
+
+class RemoteTests(unittest.TestCase):
+    def setUp(self):
+        self.sha, self.base = "a" * 40, "b" * 40
+        self.event = {"action": "opened", "pull_request": {"draft": True,
+                      "base": {"sha": self.base}, "labels": []}}
+        self.facts = cp.remote_facts("pull_request", self.event, "refs/pull/1/merge", self.sha)
+        inv = fake_inventory()
+        self.full = {"status": "PLANNED", "state_stable": True, "effective_tier": "V3", "scope": "full",
+                     "selected_ids": sorted(inv["tests"]), "selected_modules": sorted(inv["modules"]),
+                     "required_ids": ["tests.test_value.T.test_one"], "task_ids": ["TASK-ONE"], "acs": ["AC1"],
+                     "changed_paths": ["src/value.py"], "target_base": self.base, "reasons": [], "minimum_tier": "V2",
+                     "graph": {"complete": False, "freshness": "unknown", "coverage": "partial"}}
+        self.root = Path(".")
+
+    def context(self):
+        from contextlib import ExitStack
+        stack = ExitStack()
+        stack.enter_context(patch.object(cp.sdd, "commit", return_value=self.sha))
+        stack.enter_context(patch.object(cp.sdd, "git", side_effect=lambda root, *args:
+                                        "" if args[0] == "status" else "c" * 40))
+        stack.enter_context(patch.object(cp.sdd, "read", return_value="policy"))
+        stack.enter_context(patch.object(cp, "plan", return_value=deepcopy(self.full)))
+        stack.enter_context(patch.object(cp, "inventory", return_value=fake_inventory()))
+        return stack
+
+    def payload(self, tier="V3", facts=None):
+        facts = facts or self.facts
+        with self.context():
+            payload = cp.remote_plan(self.root, facts)
+        if tier == "V2":
+            payload.update(effective_tier="V2", scope="affected_modules",
+                           graph={"complete": True, "freshness": "checked", "coverage": "mapped"})
+            payload["commands"] = cp.remote_commands("V2", payload["selected_modules"], facts, self.base)
+        return payload
+
+    def validate(self, payload, facts=None, digest=None):
+        with self.context():
+            return cp.validate_remote(self.root, payload, facts or self.facts, digest or cp.fingerprint(payload))
+
+    def test_pr_activities_draft_ready_transition_and_full_label(self):
+        for action in ("opened", "synchronize", "reopened", "ready_for_review"):
+            for draft in (True, False):
+                event = deepcopy(self.event); event["action"] = action; event["pull_request"]["draft"] = draft
+                facts = cp.remote_facts("pull_request", event, "refs/pull/1/merge", self.sha)
+                self.assertEqual(facts["requested_tier"], "V2" if draft else "V3")
+                payload = self.payload(facts=facts)
+                self.validate(payload, facts)
+                if not draft:
+                    with self.assertRaises(cp.PlanError): self.validate(self.payload("V2"), facts)
+        event = deepcopy(self.event); event["pull_request"]["labels"] = [{"name": "ci:full"}]
+        self.assertEqual(cp.remote_facts("pull_request", event, "ref", self.sha)["requested_tier"], "V3")
+        event["action"] = "labeled"
+        with self.assertRaises(cp.PlanError): cp.remote_facts("pull_request", event, "ref", self.sha)
+
+    def test_main_dispatch_full_explicit_base_and_missing_invalid_base(self):
+        facts = cp.remote_facts("push", {"before": self.base, "after": self.sha}, "refs/heads/main", self.sha)
+        self.assertEqual(facts["requested_tier"], "V3")
+        self.assertEqual(self.validate(self.payload(facts=facts), facts), [["scripts/verify_environment.py", "--ci"]])
+        first = cp.remote_facts("push", {"before": "0" * 40, "after": self.sha}, "refs/heads/main", self.sha)
+        with patch.object(cp.sdd, "read", return_value=json.dumps({"baseline_commit": self.base})):
+            self.assertEqual(cp.remote_base(self.root, first), self.base)
+        for base in (self.base, "main", "refs/heads/release"):
+            facts = cp.remote_facts("workflow_dispatch", {"inputs": {"base": base, "tier": "full"}}, "ref", self.sha)
+            commands = self.validate(self.payload(facts=facts), facts)
+            self.assertEqual(commands, [["scripts/verify_environment.py", "--base", self.base]])
+            self.assertEqual(facts["input_base"], base)
+        for inputs in ({}, {"tier": "full"}, {"tier": "full", "base": ""},
+                       {"tier": "full", "base": "--evil"}, {"tier": "full", "base": "x; echo bad"},
+                       {"tier": "V2", "base": self.base}):
+            with self.assertRaises(cp.PlanError): cp.remote_facts("workflow_dispatch", {"inputs": inputs}, "ref", self.sha)
+        with self.context(), patch.object(cp.sdd, "commit", side_effect=sdd.SddError("INVALID_BASE")):
+            with self.assertRaises(sdd.SddError): cp.remote_plan(self.root, self.facts)
+
+    def test_v2_entire_module_required_union_and_exact_commands(self):
+        payload = self.payload("V2")
+        commands = self.validate(payload)
+        self.assertEqual(commands, [["-m", "unittest", "tests.test_value"], ["scripts/check_sdd.py", "--base", self.base]])
+        for change in ({"selected_ids": ["tests.test_value.T.test_one"]}, {"required_ids": []},
+                       {"graph": {"complete": False}}, {"effective_tier": "V1"},
+                       {"commands": []}, {"scope": "full"}, {"remote_ci_skippable": True}):
+            bad = deepcopy(payload); bad.update(change)
+            with self.assertRaises(cp.PlanError): self.validate(bad)
+
+    def test_sha_base_event_tree_policy_and_empty_tamper_fail(self):
+        payload = self.payload()
+        self.assertEqual(len(payload["matrix"]), 4)
+        for change in ({"target_base": "d" * 40}, {"facts": {}}, {"tree": "e" * 40},
+                       {"selected_ids": []}, {"selected_modules": []}, {"policy": "f" * 64},
+                       {"matrix": cp.MATRIX[:3]}, {"changed_paths": []}):
+            bad = deepcopy(payload); bad.update(change)
+            with self.assertRaises(cp.PlanError): self.validate(bad)
+        with self.assertRaises(cp.PlanError): self.validate({})
+        with self.assertRaises(cp.PlanError): self.validate(payload, digest="0" * 64)
+        with self.context(), patch.object(cp.sdd, "commit", return_value="d" * 40):
+            with self.assertRaises(cp.PlanError): cp.validate_remote(self.root, payload, self.facts, cp.fingerprint(payload))
+
+    def test_gate_requires_plan_and_matrix_aggregate_success_without_reuse(self):
+        payload = self.payload()
+        needs = {"plan": {"result": "success"}, "offline": {"result": "success"}}
+        self.assertEqual(cp.remote_gate(payload, self.facts, needs)["matrix_count"], 4)
+        self.assertEqual(cp.remote_gate(payload, self.facts, needs)["matrix_status_source"], "needs.offline.result")
+        for job in needs:
+            for result in (None, "skipped", "cancelled", "failure", "not_configured", ""):
+                bad = deepcopy(needs); bad[job]["result"] = result
+                with self.assertRaises(cp.PlanError): cp.remote_gate(payload, self.facts, bad)
+            bad = deepcopy(needs); del bad[job]
+            with self.assertRaises(cp.PlanError): cp.remote_gate(payload, self.facts, bad)
+        for change in ({"commands": []}, {"selected_ids": []}, {"matrix": []}, {"effective_tier": "V1"}):
+            bad = deepcopy(payload); bad.update(change)
+            with self.assertRaises(cp.PlanError): cp.remote_gate(bad, self.facts, needs)
+        ready = deepcopy(self.facts); ready["requested_tier"] = "V3"
+        bad = self.payload("V2"); bad["facts"] = ready
+        with self.assertRaises(cp.PlanError): cp.remote_gate(bad, ready, needs)
+
+    def test_remote_cli_runs_exact_plan_never_reuses_and_propagates_failure(self):
+        import base64
+        import os
+        import zlib
+        with tempfile.TemporaryDirectory() as directory:
+            event_path = Path(directory) / "event.json"; event_path.write_text(json.dumps(self.event), encoding="utf-8")
+            output_path = Path(directory) / "output.txt"
+            env = {"GITHUB_EVENT_PATH": str(event_path), "GITHUB_EVENT_NAME": "pull_request",
+                   "GITHUB_REF": "refs/pull/1/merge", "GITHUB_SHA": self.sha, "GITHUB_RUN_ID": "1",
+                   "GITHUB_RUN_ATTEMPT": "2", "GITHUB_OUTPUT": str(output_path),
+                   "BATON_MATRIX_OS": "ubuntu-latest", "BATON_MATRIX_PYTHON": "3.11"}
+            with self.context(), patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+                self.assertEqual(cp.main(["--remote", "plan"]), 0)
+            outputs = dict(line.split("=", 1) for line in output_path.read_text(encoding="utf-8").splitlines())
+            payload = json.loads(zlib.decompress(base64.b64decode(outputs["plan"])))
+            self.assertEqual(payload["facts"]["run_attempt"], "2")
+            env.update(BATON_CI_PLAN=outputs["plan"], BATON_CI_DIGEST=outputs["digest"])
+            with self.context(), patch.dict(os.environ, env), patch.object(cp.sys, "version_info", (3, 11)), \
+                 patch.object(cp, "freeze", return_value={"fixed": True}), \
+                 patch.object(cp.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as runner, \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(cp.main(["--remote", "run"]), 0)
+                self.assertEqual(runner.call_args.args[0][3:], ["scripts/verify_environment.py", "--ci"])
+                runner.return_value.returncode = 1
+                self.assertEqual(cp.main(["--remote", "run"]), 1)
+                env["BATON_CI_NEEDS"] = json.dumps({"plan": {"result": "failure"}, "offline": {"result": "skipped"}})
+                with patch.dict(os.environ, env): self.assertEqual(cp.main(["--remote", "gate"]), 1)
+            with self.context(), patch.dict(os.environ, dict(env, BATON_CI_PLAN="")), redirect_stdout(io.StringIO()):
+                self.assertEqual(cp.main(["--remote", "gate"]), 1)
 
 
 if __name__ == "__main__":

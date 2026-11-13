@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import ast
 import builtins
+import base64
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import time
 import tomllib
+import zlib
 
 try:
     from . import check_sdd as sdd
@@ -680,6 +682,7 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
     required_checks = ["official_sequential", "independent_review", "remote_ci"] if tier == "V3" else (
         ["selected_unittest", "sdd"] if tier == "V2" else ["direct_files"] + (["selected_unittest"] if result["selected_ids"] else []))
     result.update(status="PLANNED", stage=stage if stage in STAGES else "unknown", base=basis, target_base=sdd.commit(root, base), code_identity=before,
+                  changed_paths=names, required_ids=sorted(required),
                   state_stable=stable, task_ids=sorted(t["id"] for t in selected_tasks.values()), acs=sorted(acs),
                   direct_checks=checks if tier == "V1" else [], unverified_scope=unverified if tier == "V1" else [],
                   required_checks=required_checks, graph={k: v for k, v in graph.items() if k != "selected"},
@@ -697,7 +700,182 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
     return result
 
 
+MATRIX = [{"os": system, "python": version} for system in ("ubuntu-latest", "windows-latest")
+          for version in ("3.11", "3.12")]
+
+
+def remote_facts(event_name, event, ref, sha):
+    """Derive policy from GitHub facts, independently of any bootstrap output."""
+    need(isinstance(event, dict) and isinstance(sha, str)
+         and re.fullmatch(r"[0-9a-f]{40}", sha), "INVALID_REMOTE_EVENT")
+    if event_name == "pull_request":
+        pr = event.get("pull_request", {})
+        need(isinstance(pr, dict) and isinstance(pr.get("base"), dict)
+             and event.get("action") in {"opened", "synchronize", "reopened", "ready_for_review"}
+             and type(pr.get("draft")) is bool, "INVALID_REMOTE_PR")
+        base = pr.get("base", {}).get("sha")
+        kind = "draft" if pr["draft"] else "ready"
+        labels = pr.get("labels", [])
+        need(isinstance(labels, list) and all(isinstance(x, dict) and isinstance(x.get("name"), str)
+                                           for x in labels), "INVALID_REMOTE_LABELS")
+        full = kind == "ready" or any(x["name"] == "ci:full" for x in labels)
+    elif event_name == "push":
+        need(ref == "refs/heads/main" and event.get("after") == sha, "INVALID_REMOTE_PUSH")
+        base, kind, full = event.get("before"), "main", True
+    elif event_name == "workflow_dispatch":
+        inputs = event.get("inputs", {})
+        need(isinstance(inputs, dict) and inputs.get("tier") == "full", "INVALID_DISPATCH_TIER")
+        base, kind, full = inputs.get("base"), "dispatch", True
+        need(isinstance(base, str) and re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,199}", base),
+             "INVALID_DISPATCH_BASE")
+    else:
+        raise PlanError("UNSUPPORTED_REMOTE_EVENT")
+    if kind != "dispatch":
+        need(isinstance(base, str) and re.fullmatch(r"[0-9a-f]{40}", base)
+             and (kind == "main" or base != "0" * 40), "INVALID_REMOTE_BASE")
+    return {"event_name": event_name, "event_kind": kind, "event_digest": fingerprint(event),
+            "activity": event.get("action"),
+            "pr_head": event.get("pull_request", {}).get("head", {}).get("sha"),
+            "ref": ref, "sha": sha, "input_base": base, "requested_tier": "V3" if full else "V2"}
+
+
+def remote_commands(tier, modules, facts, base):
+    if tier == "V3":
+        return [["scripts/verify_environment.py", *(["--base", base] if facts["event_kind"] == "dispatch" else ["--ci"])]]
+    return [["-m", "unittest", *modules], ["scripts/check_sdd.py", "--base", base]]
+
+
+def remote_base(root, facts):
+    # Preserve check_sdd --ci's first-main-push adoption baseline behavior.
+    if facts["event_kind"] == "main" and facts["input_base"] == "0" * 40:
+        return sdd.json_object(sdd.read(root, "docs/sdd/traceability.json"))["baseline_commit"]
+    return facts["input_base"]
+
+
+def remote_plan(root, facts):
+    """One bootstrap; reuse the existing planner, never invent a reduced scope."""
+    need(sdd.commit(root, "HEAD") == facts["sha"], "STALE_REMOTE_HEAD")
+    need(not sdd.git(root, "status", "--porcelain", "--untracked-files=no").strip(), "DIRTY_REMOTE_CHECKOUT")
+    result = plan(root, base=remote_base(root, facts), stage="checkpoint",
+                  minimum=3 if facts["requested_tier"] == "V3" else 2, event=facts["event_kind"])
+    payload = {k: result[k] for k in ("effective_tier", "scope", "selected_ids", "selected_modules",
+               "required_ids", "task_ids", "acs", "changed_paths", "target_base", "reasons", "graph")}
+    payload.update(schema=1, facts=facts, matrix=MATRIX, remote_ci_skippable=False,
+                   tree=sdd.git(root, "rev-parse", "HEAD^{tree}").strip(),
+                   policy=fingerprint(sdd.read(root, "scripts/ci_plan.py")),
+                   commands=remote_commands(result["effective_tier"], result["selected_modules"], facts, result["target_base"]))
+    need(result["status"] == "PLANNED" and result["state_stable"], "UNSTABLE_REMOTE_PLAN")
+    need(len(json.dumps(payload).encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")
+    return payload
+
+
+def validate_remote(root, payload, facts, digest):
+    """Check checkout/base/event, fixed matrix and entire-module/required scope."""
+    need(isinstance(payload, dict) and bool(payload) and fingerprint(payload) == digest, "REMOTE_PLAN_DIGEST")
+    need(payload.get("schema") == 1 and payload.get("facts") == facts, "REMOTE_PLAN_EVENT")
+    need(payload.get("matrix") == MATRIX and payload.get("remote_ci_skippable") is False, "REMOTE_PLAN_MATRIX")
+    need(sdd.commit(root, "HEAD") == facts["sha"], "STALE_REMOTE_HEAD")
+    need(not sdd.git(root, "status", "--porcelain", "--untracked-files=no").strip(), "DIRTY_REMOTE_CHECKOUT")
+    need(payload.get("tree") == sdd.git(root, "rev-parse", "HEAD^{tree}").strip(), "REMOTE_PLAN_TREE")
+    need(payload.get("policy") == fingerprint(sdd.read(root, "scripts/ci_plan.py")), "REMOTE_PLAN_POLICY")
+    # This graph-free full plan rechecks SDD, Task/AC required tests and the
+    # complete base diff on each checkout; platform-specific code hashes differ.
+    full = plan(root, base=remote_base(root, facts), stage="checkpoint", minimum=3, event=facts["event_kind"])
+    need(full["state_stable"], "UNSTABLE_REMOTE_PLAN")
+    for key in ("target_base", "task_ids", "acs", "required_ids", "changed_paths"):
+        need(payload.get(key) == full[key], "REMOTE_PLAN_REQUIRED_SCOPE")
+    tier = payload.get("effective_tier")
+    need(tier in {"V2", "V3"} and (facts["requested_tier"] != "V3" or tier == "V3"), "REMOTE_PLAN_TIER")
+    need(payload.get("scope") == ("full" if tier == "V3" else "affected_modules"), "REMOTE_PLAN_SCOPE")
+    ids, modules = payload.get("selected_ids"), payload.get("selected_modules")
+    need(isinstance(ids, list) and bool(ids) and isinstance(modules, list) and bool(modules), "EMPTY_REMOTE_SELECTION")
+    inv = inventory(root)
+    need(all(isinstance(x, str) for x in ids + modules), "REMOTE_PLAN_SELECTION")
+    need(ids == sorted(set(ids)) and modules == sorted(set(modules))
+         and set(modules) <= inv["modules"].keys(), "REMOTE_PLAN_SELECTION")
+    expected = sorted(test for module in modules for test in inv["modules"][module])
+    need(ids == expected and set(full["required_ids"]) <= set(ids), "REMOTE_PLAN_REQUIRED_SCOPE")
+    if tier == "V3":
+        need(ids == full["selected_ids"] and modules == full["selected_modules"], "REMOTE_PLAN_FULL_SCOPE")
+    else:
+        graph = payload.get("graph", {})
+        need(inv["complete"] and isinstance(graph, dict) and graph.get("complete") is True and graph.get("freshness") == "checked"
+             and graph.get("coverage") == "mapped"
+             and not any(policy_reason(n) for n in full["changed_paths"])
+             and full["minimum_tier"] != "V3", "REMOTE_PLAN_INCOMPLETE_IMPACT")
+    need(payload.get("commands") == remote_commands(tier, modules, facts, full["target_base"]), "REMOTE_PLAN_COMMANDS")
+    return payload["commands"]
+
+
+def remote_gate(payload, facts, needs):
+    """Actions exposes the matrix aggregate, not independent child receipts.
+
+    Require that aggregate success with the exact four-member declared matrix;
+    never claim to have queried per-child status or a live current PR state.
+    """
+    need(isinstance(needs, dict) and set(needs) == {"plan", "offline"}, "GATE_MISSING_JOBS")
+    need(all(isinstance(job, dict) and job.get("result") == "success" for job in needs.values()), "GATE_JOB_NOT_SUCCESS")
+    need(payload.get("facts") == facts and payload.get("matrix") == MATRIX, "GATE_PLAN_MISMATCH")
+    tier = payload.get("effective_tier")
+    need(tier in {"V2", "V3"} and (facts["requested_tier"] != "V3" or tier == "V3"), "GATE_TIER")
+    need(payload.get("scope") == ("full" if tier == "V3" else "affected_modules")
+         and bool(payload.get("commands")) and bool(payload.get("selected_ids")), "GATE_EMPTY_CHECKS")
+    return {"status": "passed", "tier": tier, "matrix_count": 4, "matrix_status_source": "needs.offline.result"}
+
+
+def remote_main(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--remote", choices=("plan", "run", "gate"), required=True)
+    args = parser.parse_args(argv)
+    root = Path(__file__).resolve().parents[1]
+    try:
+        event_path = Path(os.environ["GITHUB_EVENT_PATH"])
+        need(event_path.stat().st_size <= LIMIT, "EVENT_LIMIT")
+        event = sdd.json_object(event_path.read_text(encoding="utf-8"))
+        facts = remote_facts(os.environ["GITHUB_EVENT_NAME"], event, os.environ["GITHUB_REF"], os.environ["GITHUB_SHA"])
+        facts.update(run_id=os.environ["GITHUB_RUN_ID"], run_attempt=os.environ["GITHUB_RUN_ATTEMPT"])
+        if args.remote == "plan":
+            payload = remote_plan(root, facts)
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+                # Compact transport keeps the full exact selection below Windows'
+                # per-environment-variable limit, without artifact actions/downloads.
+                encoded = base64.b64encode(zlib.compress(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())).decode()
+                need(len(encoded) < 30000, "REMOTE_TRANSPORT_LIMIT")
+                stream.write("plan=" + encoded + "\n")
+                stream.write("digest=" + fingerprint(payload) + "\n")
+            print(json.dumps({"status": "PLANNED", "sha": facts["sha"], "input_base": facts["input_base"],
+                              "target_base": payload["target_base"], "requested_tier": facts["requested_tier"],
+                              "effective_tier": payload["effective_tier"], "reasons": payload["reasons"]}))
+        else:
+            raw = os.environ.get("BATON_CI_PLAN", "")
+            need(len(raw.encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")
+            inflater = zlib.decompressobj()
+            decoded = inflater.decompress(base64.b64decode(raw, validate=True), LIMIT + 1)
+            need(len(decoded) <= LIMIT and inflater.eof and not inflater.unused_data, "REMOTE_TRANSPORT_LIMIT")
+            payload = sdd.json_object(decoded.decode("utf-8"))
+            commands = validate_remote(root, payload, facts, os.environ.get("BATON_CI_DIGEST", ""))
+            if args.remote == "gate":
+                print(json.dumps(remote_gate(payload, facts, sdd.json_object(os.environ.get("BATON_CI_NEEDS", "")))))
+            else:
+                member = {"os": os.environ.get("BATON_MATRIX_OS"), "python": os.environ.get("BATON_MATRIX_PYTHON")}
+                need(member in payload["matrix"] and sys.version_info[:2] == tuple(map(int, member["python"].split("."))),
+                     "REMOTE_MATRIX_MEMBER")
+                before = freeze(root)
+                for command in commands:
+                    result = subprocess.run([sys.executable, "-X", "utf8", *command], cwd=root)
+                    need(result.returncode == 0, "REMOTE_CHECK_FAILED")
+                need(freeze(root) == before, "REMOTE_CHECK_STATE_CHANGED")
+        return 0
+    except (PlanError, sdd.SddError, OSError, ValueError, KeyError, TypeError, SyntaxError, RecursionError, subprocess.TimeoutExpired, zlib.error) as exc:
+        print(json.dumps({"status": "FAIL", "error_code": str(exc) if isinstance(exc, (PlanError, sdd.SddError))
+                          else "INVALID_REMOTE_INPUT"}))
+        return 1
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if "--remote" in argv:
+        return remote_main(argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--base", required=True)

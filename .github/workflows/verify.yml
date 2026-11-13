@@ -4,13 +4,45 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Explicit comparison base (commit or ref)
+        required: true
+        type: string
+      tier:
+        description: Full validation only
+        required: true
+        type: choice
+        options: [full]
+        default: full
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('verify-pr-{0}', github.event.pull_request.number) || format('verify-main-{0}', github.sha) }}
+  group: ${{ github.event_name == 'pull_request' && format('verify-pr-{0}', github.event.pull_request.number) || github.event_name == 'workflow_dispatch' && format('verify-dispatch-{0}-{1}', github.ref, github.run_id) || format('verify-main-{0}', github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      digest: ${{ steps.plan.outputs.digest }}
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Plan actual event and checkout (CBM absent or partial falls back to full)
+        id: plan
+        run: python -X utf8 scripts/ci_plan.py --remote plan
   offline:
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
@@ -21,6 +53,10 @@ jobs:
     env:
       PYTHONPATH: src
       PYTHONDONTWRITEBYTECODE: '1'
+      BATON_CI_PLAN: ${{ needs.plan.outputs.plan }}
+      BATON_CI_DIGEST: ${{ needs.plan.outputs.digest }}
+      BATON_MATRIX_OS: ${{ matrix.os }}
+      BATON_MATRIX_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,5 +68,25 @@ jobs:
         run: python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers
       - name: Install the optional gms extra dependency
         run: python -m pip install "cryptography>=42"
-      - name: Offline SDD and existing regression (no provider calls)
-        run: python -X utf8 scripts/verify_environment.py --ci
+      - name: Validate exact plan and execute offline checks (no provider calls)
+        run: python -X utf8 scripts/ci_plan.py --remote run
+  gate:
+    if: always()
+    needs: [plan, offline]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+      BATON_CI_PLAN: ${{ needs.plan.outputs.plan }}
+      BATON_CI_DIGEST: ${{ needs.plan.outputs.digest }}
+      BATON_CI_NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Independently validate event tier, plan, fixed matrix and aggregate success
+        run: python -X utf8 scripts/ci_plan.py --remote gate

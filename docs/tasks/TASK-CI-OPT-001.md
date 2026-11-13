@@ -36,7 +36,7 @@ AC가 검증됐다는 뜻이 아니다.
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 완료, 로컬 checkpoint 대상; 독립 검토 pending |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | 작성·V2 테스트 99개 PASS, 로컬 저장/독립 검토 대기; V1/V2 API-only·호출자 연결 pending |
-| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | 미구현, draft V2 / ready-main V3 full 4 |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | 작성 중, draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; V2·검토·V3·CI 증거는 아래 기록 |
 | 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability | 미구현, 전용 필드와 13 AC 일괄 등록 |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
@@ -296,3 +296,55 @@ Base/HEAD: `bb4d270ac7707b24f1bfbf050a971a6d8974dc3f`; index empty; no new candi
 | `tests/test_ci_plan.py` | `f03d936d4eb7c0705d1e7b98021b5e32e290ad8e8100aa9d122cf8d79aa9981d` | 26368 |
 | `tests/test_ci_workflow.py` | `6368423bf6f8a6173cead992852798f27f03d8dbfec3bf5fa62e17002388a25c` | 16414 |
 | `tests/test_managed_harness.py` | `76c819c8c2fe37f52886f247b6fb12300435e20668303adac542c10a590cce22` | 24397 |
+
+## T3c workflow·dispatch·gate — 2026-11-13
+
+- 시작 branch `codex/ci-opt-001`, HEAD/Task base `2cc905f25f5c5350908ca2d3fa56124351b4049b`; 실제 clean/index empty 확인.
+  sole source writer이며 stage/commit/merge/push는 하지 않는다. GIT-CALL은 DEFERRED다. 이 절이 과거 T3c 미구현 기록보다 우선한다.
+- 기존 단일 `ci_plan.py`에 remote plan/run/gate 진입점을 추가했다. bootstrap은 실제 checkout SHA/tree, 입력/해결 base,
+  event/activity·draft/ready 구분·PR head·run ID/attempt, Task/AC 필수 검사, 전체 base diff, 선택 모듈/ID·고정 matrix·실행 명령을 담은 계획을 만든다.
+  exact plan과 digest를 job output으로 전달한다. 전체 선택을 Windows 환경 변수 한도 안에 전달하도록 stdlib zlib/base64로 압축하고 크기/해제 한도를 검사한다.
+  각 matrix와 gate는 SHA/tree·clean tracked checkout·base·event/run·planner source·Task/AC/필수 ID·diff·matrix·전체 모듈 확장·명령을 다시 확인한다.
+  matrix 실행 전후 source/index 지문이 달라지거나 명령이 nonzero면 실패한다. 원격 reuse/cache 생략은 없다.
+- draft는 V2 요청이며 complete CBM 영향·정적 inventory가 있어야 모듈 전체+필수 테스트와 Task-base SDD를 실행한다.
+  CBM absent/partial/매핑 불가 또는 정책/설정 경로는 기존 planner의 V3 fallback이다. ready/main/dispatch 및 다음 지원 PR 이벤트의 `ci:full`은 V3 full이다.
+  hosted runner에 CBM을 설치하지 않으므로 현재 일반 hosted 환경은 draft도 V3 공식 순차 검증을 실행한다. draft 절감·실제 CI 시간은 unknown이며 입증하지 않았다.
+- 기존 PR activity 4종/main trigger·PR 취소/main SHA 그룹·contents read·고정 Ubuntu/Windows × Python 3.11/3.12·fail-fast false·fetch-depth 0·timeout 25와
+  base optional-GMS 검사/cryptography 설치를 보존했다. 외부 action은 기존 checkout/setup-python뿐이다. 새로운 CI 병렬화/권한/API/CBM 설치가 없다.
+  dispatch는 필수 base와 full choice만 받고 ref+run ID 그룹으로 취소하지 않는다. PR/main V3는 `verify_environment.py --ci`, dispatch V3는 명시 해결 base의 `--base`다.
+- always gate는 별도 event 사실에서 draft≥V2, ready/main/dispatch=V3를 도출하고 정확한 계획·필수 범위·matrix 및 plan/offline needs result=success를 요구한다.
+  bootstrap/검사 누락·skip/cancel/fail·빈 계획/검사·SHA/base 불일치는 실패다. Actions needs는 matrix aggregate만 제공하므로 child별 결과를 독립 열거했다는 주장은 하지 않는다.
+  과거 draft rerun의 payload는 현재 ready PR의 V3 증거가 아니다. 원격 ruleset 등록/강제 차단은 범위 밖이다.
+- V1 편집 검사: remote helpers/실제 synthetic Git CBM 부재 fallback/정적 workflow 27 tests OK (4.462 s), 이후 clean checkout 보강 7 tests OK (4.666 s), failures/errors/skips 0.
+  초기 테스트 오류는 fixture Task 갱신 내용이 base와 동일했던 점과 PowerShell→Python 한글 문자열 전송으로 생긴 assertion 손상이며 모두 수정했다.
+  실제 model/GMS/provider/network 호출 0; fake CLI/clock/process와 synthetic Git만 사용한다. 공식 V3/원격 CI는 실행하지 않았다.
+- V2 checkpoint 결과와 raw 파일 manifest는 아래에 기록한다. Task in_progress 유지, independent review·최종 V3·원격 CI/E2E pending,
+  T3d MetricsStore 전용 필드/13 AC feature 등록 pending이다. AGENTS/SDD/ADR/traceability/current/HANDOFF와 GIT-CALL은 수정하지 않는다.
+
+### T3c V2 checkpoint
+
+- checkout `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_ci_plan tests.test_sdd tests.test_ci_workflow`:
+  **80 tests OK, 44.374 s**, exit 0; failures/errors/skipped/expected failures/unexpected successes 0.
+  `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS-temp `BATON_HOME`; completed V2 suite 1회다.
+- `scripts/check_sdd.py --base 2cc905f25f5c5350908ca2d3fa56124351b4049b` PASS, exit 0:
+  documents 48, features 9, tasks 18, ACs 62, changed paths 6, provider_calls 0; requested/effective base 일치.
+  `git diff --check` PASS, exit 0. 최종 Task 증거/manifest 갱신 뒤 같은 SDD/diff만 read-back한다.
+- synthetic event×activity/draft→ready/main/dispatch full, missing/invalid/unresolved base, 실제 planner의 CBM absent→V3,
+  V2 전체 모듈/필수 union/Task-base SDD 명령, V3 공식 순차 명령·dispatch --base, 정확한 4 matrix,
+  SHA/base/tree/policy/event/빈 선택/계획/명령/digest 변조, 실패·취소·skip·누락 plan/offline aggregate gate 거부,
+  실패한 선행 job에도 always gate 실행, GMS 단계 보존을 검사했다. 진짜 모델/CBM/network/GMS 실행 0이며 원격 E2E 증거가 아니다.
+- 후보 commit은 아직 없고 HEAD는 시작 SHA 그대로다. 다음 단계는 별도 Git 담당자의 고정 checkpoint, 필수 독립 검토,
+  T3d 및 정확한 최종 후보의 공식 V3/필수 CI다. 로컬 재사용 여부와 무관하게 원격 fixed4는 실행한다.
+
+### T3c raw SHA256 checkpoint manifest
+
+Base/HEAD: `2cc905f25f5c5350908ca2d3fa56124351b4049b`. Raw worktree bytes; Task excludes itself to avoid self-reference.
+Task final hash is in the completion receipt. Index remains empty; no source candidate commit was created by this worker.
+
+| File | Raw SHA256 | Bytes |
+|---|---|---:|
+| `.github/workflows/verify.yml` | `6da352d8028be5855eec709ba45eff08b05a61866db325f742a7e194ed4b47ff` | 3156 |
+| `README.md` | `bc74809961b078fb40422fa90a0df1aea36b7e41d6a29b3bfc45f74165cc1951` | 15243 |
+| `scripts/ci_plan.py` | `ba7f5fb1745c8e2e32d599a6ed3910daf82ed43466c390cfa08c9c98f108872d` | 52803 |
+| `tests/test_ci_plan.py` | `e52cf5a0db4dc03e542f16f1931d2a8225103754073540a8f81dc0ff5d9c9709` | 38633 |
+| `tests/test_ci_workflow.py` | `2b5a942437db21dc596c685a43f63dd953ab41a0055e749b7bedc45f8bfc5693` | 16521 |

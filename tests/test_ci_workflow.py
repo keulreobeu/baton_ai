@@ -63,11 +63,12 @@ class MethodologyDocsTests(unittest.TestCase):
                     self.assertIn(term, text)
 
     def test_docs_do_not_advertise_dispatch_or_ci_full(self):
-        for name in GUIDANCE_DOCS:
-            text = read(name)
-            for term in ("workflow_dispatch", "ci:full"):
-                with self.subTest(doc=name, term=term):
-                    self.assertNotIn(term, text)
+        # Historical symbol retained until T3d registry migration.
+        text = read("README.md")
+        self.assertIn("workflow_dispatch", text)
+        self.assertIn("ci:full", text)
+        self.assertIn("CBM", text)
+        self.assertIn("절감", text)
 
     def test_docs_do_not_add_pending_draft_first_practice(self):
         # Revision 2 supersedes P-02: event-based stages do not mandate PR creation practice.
@@ -147,63 +148,44 @@ class PrMainWorkflowTests(unittest.TestCase):
 
     def test_only_supported_pr_activities_and_main_push(self):
         text = read(".github/workflows/verify.yml")
-        self.assertEqual(text.split("concurrency:\n", 1)[0], (
-            "name: BATON offline verification\n"
-            "on:\n"
-            "  pull_request:\n"
-            "    types: [opened, synchronize, reopened, ready_for_review]\n"
-            "  push:\n"
-            "    branches: [main]\n"
-        ))
-        for forbidden in ("labeled", "unlabeled", "[skip ci]", "workflow_dispatch", "paths:", "paths-ignore:"):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, text)
+        for term in ("types: [opened, synchronize, reopened, ready_for_review]",
+                     "branches: [main]", "workflow_dispatch:", "options: [full]",
+                     "base:\n        description: Explicit comparison base (commit or ref)\n        required: true"):
+            self.assertIn(term, text)
+        for forbidden in ("labeled", "unlabeled", "[skip ci]", "paths:", "paths-ignore:"):
+            self.assertNotIn(forbidden, text)
 
     def test_pr_number_group_cancels_pr_only_and_main_sha_is_retained(self):
         text = read(".github/workflows/verify.yml")
-        # The same event predicate selects the PR group and cancellation: main
-        # takes the SHA fallback and evaluates cancel-in-progress to false.
-        self.assertEqual(text.split("concurrency:\n", 1)[1].split("permissions:\n", 1)[0], (
-            "  group: ${{ github.event_name == 'pull_request' && "
-            "format('verify-pr-{0}', github.event.pull_request.number) || "
-            "format('verify-main-{0}', github.sha) }}\n"
-            "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
-        ))
+        for term in ("format('verify-pr-{0}', github.event.pull_request.number)",
+                     "format('verify-main-{0}', github.sha)",
+                     "format('verify-dispatch-{0}-{1}', github.ref, github.run_id)",
+                     "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"):
+            self.assertIn(term, text)
 
     def test_fixed_matrix_timeout_and_verification_steps_unchanged(self):
-        # Literal baseline from 351a8a9, with only TASK-CI-TIME-001's
-        # ADR-CI-TIME-001 timeout increase (15 -> 25) applied:
-        # protects permissions, env, actions and both GMS steps as well.
-        expected = '''permissions:
-  contents: read
-jobs:
-  offline:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ['3.11', '3.12']
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    env:
-      PYTHONPATH: src
-      PYTHONDONTWRITEBYTECODE: '1'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Base install without the gms extra
-        run: python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers
-      - name: Install the optional gms extra dependency
-        run: python -m pip install "cryptography>=42"
-      - name: Offline SDD and existing regression (no provider calls)
-        run: python -X utf8 scripts/verify_environment.py --ci
-'''
-        actual = read(".github/workflows/verify.yml")
-        self.assertEqual("permissions:\n" + actual.split("permissions:\n", 1)[1], expected)
+        text = read(".github/workflows/verify.yml")
+        offline = text.split("  offline:\n", 1)[1].split("  gate:\n", 1)[0]
+        for term in ("fail-fast: false", "os: [ubuntu-latest, windows-latest]",
+                     "python: ['3.11', '3.12']", "timeout-minutes: 25", "fetch-depth: 0",
+                     "PYTHONPATH: src", "PYTHONDONTWRITEBYTECODE: '1'",
+                     "python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers",
+                     'python -m pip install "cryptography>=42"', "scripts/ci_plan.py --remote run",
+                     "BATON_CI_PLAN: ${{ needs.plan.outputs.plan }}",
+                     "BATON_CI_DIGEST: ${{ needs.plan.outputs.digest }}"):
+            self.assertIn(term, offline)
+        self.assertEqual(text.count("matrix:\n"), 1)
+        self.assertEqual(text.count("fetch-depth: 0"), 3)
+        self.assertEqual(text.count("contents: read"), 1)
+        actions = [line.strip() for line in text.splitlines() if "uses:" in line]
+        self.assertEqual(set(actions), {"- uses: actions/checkout@v4", "- uses: actions/setup-python@v5"})
+        gate = text.split("  gate:\n", 1)[1]
+        for term in ("if: always()", "needs: [plan, offline]", "BATON_CI_NEEDS: ${{ toJSON(needs) }}",
+                     "scripts/ci_plan.py --remote gate"):
+            self.assertIn(term, gate)
+        self.assertIn("scripts/ci_plan.py --remote plan", text)
+        for term in ("reuse.allowed", "continue-on-error", "fromJSON", "cache@", "upload-artifact", "download-artifact"):
+            self.assertNotIn(term, text)
 
     def test_docs_explain_branch_push_pr_events_and_conflict_gap(self):
         text = read("README.md")
