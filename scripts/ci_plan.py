@@ -21,6 +21,7 @@ import sys
 import time
 import tomllib
 import zlib
+from collections import deque
 
 try:
     from . import check_sdd as sdd
@@ -830,10 +831,12 @@ def validate_remote_result(command, returncode, output):
     """A successful process alone is not nonzero/no-skip test evidence."""
     need(returncode == 0, "REMOTE_CHECK_FAILED")
     if command[:2] == ["-m", "unittest"]:
-        counts = re.findall(r"(?m)^Ran (\d+) tests?\b", output)
-        need(bool(counts) and int(counts[-1]) > 0
-             and re.search(r"(?m)^OK\s*$", output) is not None
-             and not re.search(r"skipped[= ]\d+|expected failures[= ]\d+|unexpected successes[= ]\d+", output),
+        summaries = list(re.finditer(r"(?m)^Ran (\d+) tests?(?: in [^\r\n]+)?\r?$", output))
+        # Only the result line following the final unittest summary is evidence.
+        # Test-body/atexit output such as 'cache skipped 3 entries' is not a skip.
+        tail = output[summaries[-1].end():].strip().splitlines() if summaries else []
+        need(bool(summaries) and int(summaries[-1].group(1)) > 0
+             and bool(tail) and tail[0].strip() == "OK",
              "REMOTE_TEST_EVIDENCE_FAILED")
     else:
         summaries = []
@@ -857,18 +860,48 @@ def validate_remote_result(command, returncode, output):
                  and summaries[-1].get("status") == "PASS", "REMOTE_SDD_EVIDENCE_FAILED")
 
 
+class _OutputTail:
+    """Bounded character suffix; discard with an offset, join only at the end."""
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.chunks = deque()
+        self.size = 0
+        self.start = 0
+
+    def append(self, text):
+        if not text:
+            return
+        text = text[-self.limit:]
+        self.chunks.append(text)
+        self.size += len(text)
+        while self.size > self.limit:
+            discard = min(self.size - self.limit, len(self.chunks[0]) - self.start)
+            self.start += discard
+            self.size -= discard
+            if self.start == len(self.chunks[0]):
+                self.chunks.popleft()
+                self.start = 0
+
+    def getvalue(self):
+        if not self.chunks:
+            return ""
+        chunks = iter(self.chunks)
+        return next(chunks)[self.start:] + "".join(chunks)
+
+
 def run_remote_check(root, command):
     # Keep progress visible while retaining only a bounded tail for the final
     # unittest/official JSON summary. Never write raw check output to the repo.
     with subprocess.Popen([sys.executable, "-X", "utf8", *command], cwd=root,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True, encoding="utf-8", errors="replace") as process:
-        output = ""
+        output = _OutputTail(LIMIT)
         for line in process.stdout:
             print(line, end="", flush=True)
-            output = (output + line)[-LIMIT:]
+            output.append(line)
         returncode = process.wait()
-    validate_remote_result(command, returncode, output)
+    validate_remote_result(command, returncode, output.getvalue())
 
 
 def remote_main(argv):

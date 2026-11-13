@@ -700,3 +700,44 @@ Evidence-only status files at this checkpoint:
 - 후속 문서 정리 확인: `tests.test_sdd tests.test_ci_workflow` **50 tests OK, 7.657 s**,
   실패/오류/skip 0, 원래 Task-base SDD PASS(documents 48/features 10/tasks 18/ACs 75/changed_paths 57),
   diff check PASS. Spec revision/승인/필수 matrix 정책은 바꾸지 않고 오래된 현황 문구만 정정했다.
+
+## 사용자 부재 중 후속 진행 — 2026-11-13
+
+- 사용자 목표: 약 3시간 부재 중 최대한 진행하되 권한/승인 작업은 보류하고 복귀 보고 때 묻는다.
+  추가로 Claude 활용을 요청했다. push/PR/원격 CI/실제 프로젝트 모델·GMS/전원·등록/집담 원본 변경은
+  이 포괄 지시만으로 승인되지 않으며 보류한다. Windows-first/no-skip은 확정된 범위다.
+- 시작 후보 `90809b4e577b6c46828ba89d4d0cbfd20acfd4ca`, branch `codex/ci-opt-001`, clean/index empty.
+  원래 Task base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`를 유지한다.
+- Claude 전체 Task 검토를 두 개의 별도 읽기 전용 worktree로 병렬 요청했다. 두 검토 모두
+  고정 후보 `90809b4`와 전체 Task-base diff를 사용하고, 통합된 타 Task 변경은 별도로 분류한다.
+  코드/안전 lane: dispatch `ctx_c3444cff28f7`, task `task_ee2b7113f339`.
+  계약/CI/증거 lane: dispatch `ctx_7b3fec3775c0`, task `task_e80d226ac926`.
+  run은 `run_e1ccd974efd7`이며 결과 pending이다. 앞선 scoped PASS를 전체 Task PASS로 간주하지 않는다.
+- root는 알려진 P3 두 건을 수정한다. V2는 마지막 'Ran N tests' 뒤 첫 결과 줄의 OK만 인정해
+  일반 test-body/atexit 출력의 'skipped 3' 문구를 skip 수로 오인하지 않는다. 실제 skip/expectedFailure/
+  unexpectedSuccess/empty/failure 요약은 계속 거부한다. remote V3/SDD JSON 및 no-skip 정책은 그대로다.
+- 출력 suffix는 deque와 첫 chunk offset으로 제한 길이를 유지하고 검증 직전에만 합친다.
+  전체 tail을 매 줄 복사하지 않으며 기존 진행 출력과 최종 JSON/문자 suffix는 보존한다.
+  새 영구 cache/DB/정책 엔진이 아니라 기존 subprocess 출력의 일시적 bounded buffer다.
+- V1: `RemoteResultTests` + `RemoteTests` **16 tests OK, 0.655 s**, failures/errors/skips 0.
+  일반 출력/atexit 문구, 마지막 실패 요약, 여러 chunk/긴 행/한글/큰 출력 뒤 공식 JSON을 검사했다.
+  실제 프로젝트 provider/GMS/network/Ubuntu/WSL 호출 0. V2와 고정 수정 후보 재검토/V3는 후속 기록한다.
+
+### P3 수정 V2 checkpoint 및 전체 코드 검토 수신
+
+- `tests.test_ci_plan tests.test_sdd tests.test_ci_workflow` **90 tests OK, 43.760 s**,
+  failures/errors/skips/expected failures/unexpected successes 0. 원래 Task-base SDD PASS,
+  diff check PASS. 이 P3 checkpoint를 저장하고 추가 전체 검토 지적은 묶어 후속 반영한다.
+- 전체 코드 lane 보고서 SHA256
+  `86dfc7ff53bc48599ba30b7dc138381b12601b83019b57b39e1b44e2e7e678b0`,
+  `D:/baton_ai/.local_runtime/handoffs/CI-OPT-001-whole-code-claude-review-20261113.md` read-back 일치.
+  verdict FAIL(P1 없음, P2 두 건/P3 세 건), focused 53 tests OK(36.275 s) 및 5개 offline repro다.
+- F-A(P2): impacted test/test-file node가 TESTS edge target에 없으면 V2 선택에서 빠져도 complete=true가
+  될 수 있다. 해당 CBM transcript 경계를 Claude 구현 후 root 검토/통합으로 수정한다.
+- F-B(P2): 컨트롤러에 ci_plan.py가 없을 때 BATON root도 declared-only 경로를 통과할 수 있다.
+  reviewer가 non-editable/old-controller 지원·fail-closed 배포 정책 결정을 지적했다. 사용자 부재 중
+  이 지원 계약을 확장하지 않고 재현/수정안과 결정 필요 목록을 준비한다. 현재 개발 checkout의 planner는 존재한다.
+- F-C(P3) plan identity와 실행 직전 freeze 미결합, F-E(P3) CBM 계획 중 cancel 확인 지연은
+  기존 상태 고정/중단 계약 내 보강 대상으로 조사한다. F-D(P3) final V3 반복 및 실제 reuse caller 미연결은
+  비용/구현 범위 결정 항목으로 분리하며 성능 절감/재사용 완료를 주장하지 않는다.
+- 계약/CI/증거 lane은 아직 pending이다. 전체 Task PASS/verified, 원격 CI, push/PR은 주장하지 않는다.

@@ -701,6 +701,43 @@ class RemoteResultTests(unittest.TestCase):
             with self.assertRaises(cp.PlanError):
                 cp.validate_remote_result(command, 0, output)
 
+    def test_v2_test_body_and_atexit_skip_words_are_not_result_counts(self):
+        command = ["-m", "unittest", "tests.test_value"]
+        cp.validate_remote_result(command, 0,
+            "cache skipped 3 entries\nexpected failures 2 examples\nunexpected successes 1 label\n"
+            "Ran 2 tests in 0.1s\n\nOK\ncache skipped 3 entries at exit\n")
+        for output in (
+            "OK\nRan 0 tests\nOK\n",
+            "Ran 2 tests\nOK (skipped=1)\ncache completed\n",
+            "Ran 2 tests\nOK (expected failures=1)\n",
+            "Ran 2 tests\nFAILED (unexpected successes=1)\n",
+            "Ran 2 tests\nOK\nRan 1 test\nFAILED (errors=1)\n",
+            "Ran 2 tests\ncache skipped 3 entries\nOK\n",
+        ):
+            with self.subTest(output=output), self.assertRaises(cp.PlanError):
+                cp.validate_remote_result(command, 0, output)
+
+    def test_output_tail_retains_exact_bounded_suffix_across_chunks(self):
+        import random
+        rng = random.Random(20261113)
+        tail = cp._OutputTail(31)
+        expected = ""
+        for text in ["", "a" * 1000, "\r\n", "한글", *[
+                "x" * rng.randrange(0, 70) + "\n" for _ in range(200)]]:
+            tail.append(text)
+            expected = (expected + text)[-31:]
+            self.assertEqual(tail.getvalue(), expected)
+            self.assertLessEqual(len(tail.getvalue()), 31)
+
+    def test_output_tail_preserves_final_official_summary_after_large_output(self):
+        summary = self.summary()
+        tail = cp._OutputTail(512)
+        tail.append("progress\n" * 10000)
+        for line in ("Ran 2 tests in 0.1s\n", "OK\n", summary + "\n"):
+            tail.append(line)
+        cp.validate_remote_result(["scripts/verify_environment.py", "--ci"], 0, tail.getvalue())
+        self.assertTrue(tail.getvalue().endswith(summary + "\n"))
+
     def test_real_remote_process_streams_output_and_rejects_exit_zero_skip(self):
         # A tiny synthetic official script exercises the actual subprocess and
         # summary boundary; never runs the repository's official full verifier.
