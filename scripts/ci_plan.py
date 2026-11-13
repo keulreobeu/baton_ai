@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import zlib
@@ -33,6 +34,9 @@ STAGES = {"in_progress": 1, "debugging": 1, "checkpoint": 2,
 SCOPES = {1: "graph_affected", 2: "affected_modules", 3: "full"}
 LIMIT = 2 * 1024 * 1024
 MAX_TESTS = 10000
+# query_graph cursor paging bounds; each page is also capped by LIMIT bytes.
+MAX_QUERY_PAGES, MAX_QUERY_ROWS, MAX_QUERY_BYTES = 64, 200000, 64 * 1024 * 1024
+CURSOR = re.compile(r"q1\.[A-Za-z0-9.]{1,509}")  # observed 0.12.1 snapshot cursor charset
 CBM = "codebase-memory-mcp"
 EDGES = ("CALLS", "IMPORTS", "INHERITS")
 
@@ -307,10 +311,13 @@ def audit_static_edges(root, inv, nodes, edges):
 
 
 class CbmCLI:
-    """Actual local CLI, JSON stdin avoids Windows shell JSON quote stripping.
+    """Actual local CLI; arguments go through a closed temporary --args-file.
 
     Provenance: installed 0.12.1 --help and each tool --help, index_status,
     check_index_coverage, get_graph_schema, detect_changes and query_graph.
+    The 2026-11-13 read-only qualification observed that 0.12.1 ignores JSON
+    on stdin (default tree output) while --args-file is honoured, and that
+    query_graph truncates on output_budget with a q1.* next_cursor snapshot.
     No invented complete=true flag: coverage's best_effort signal is retained.
     """
     def __init__(self, root, executable=None, runner=subprocess.run, clock=time.monotonic, should_stop=None):
@@ -326,9 +333,20 @@ class CbmCLI:
     def call(self, tool, **args):
         need(self.should_stop is None or not self.should_stop(), "CBM_STOPPED")
         need(bool(self.executable), "CBM_ABSENT")
-        result = self.runner([self.executable, "cli", "--quiet", tool],
-                             input=json.dumps(args), text=True, encoding="utf-8",
-                             capture_output=True, cwd=self.root, timeout=45)
+        # Written and closed before the run (Windows sharing), outside the
+        # checkout, and removed on success, error, timeout or stop.
+        fd, name = tempfile.mkstemp(prefix="baton-cbm-", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(args, handle)
+            result = self.runner([self.executable, "cli", "--quiet", tool, "--args-file", name],
+                                 stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                 capture_output=True, cwd=self.root, timeout=45)
+        finally:
+            try:
+                os.unlink(name)
+            except FileNotFoundError:
+                pass
         need(self.should_stop is None or not self.should_stop(), "CBM_STOPPED")
         need(result.returncode == 0 and len(result.stdout.encode("utf-8")) <= LIMIT, "CBM_EXECUTION_FAILED")
         try:
@@ -339,12 +357,60 @@ class CbmCLI:
         return data
 
     def query(self, project, query):
-        result = self.call("query_graph", project=project, query=query,
-                           format="json", max_rows=99998, max_output_tokens=250000)
-        need(result.get("total_relation") == "eq" and result.get("has_more") is False
-             and result.get("truncated") is False and result.get("returned") == len(result.get("rows", []))
-             and result.get("total") == result.get("returned"), "CBM_MISSING_PAGE")
-        return result
+        """All rows of one query, following only the observed cursor envelope.
+
+        A continuation keeps project/query/format/budget and adds the opaque
+        next_cursor; its page reports offset == rows already read and the same
+        eq total. Anything else (drift, repeat, no progress, bounds) is a
+        missing page, never a partial result reported as complete.
+        """
+        def count(value):
+            return type(value) is int and value >= 0
+
+        args = {"project": project, "query": query, "format": "json",
+                "max_rows": 99998, "max_output_tokens": 250000}
+        rows, seen_rows, cursors, columns, total, size = [], set(), set(), None, None, 0
+        cursor = None
+        for page in range(MAX_QUERY_PAGES + 1):
+            need(page < MAX_QUERY_PAGES, "CBM_MISSING_PAGE")
+            result = self.call("query_graph", **(args if cursor is None else {**args, "cursor": cursor}))
+            page_rows, page_columns = result.get("rows"), result.get("columns")
+            need(isinstance(page_columns, list) and page_columns and all(isinstance(c, str) for c in page_columns)
+                 and (columns is None or page_columns == columns), "CBM_UNKNOWN_QUERY_SCHEMA")
+            columns = page_columns
+            need(isinstance(page_rows, list) and all(isinstance(r, list) and len(r) == len(columns)
+                                                     for r in page_rows), "CBM_UNKNOWN_QUERY_SCHEMA")
+            has_more, truncated = result.get("has_more"), result.get("truncated")
+            need(result.get("total_relation") == "eq" and count(result.get("total"))
+                 and (total is None or result.get("total") == total)
+                 and count(result.get("returned")) and result.get("returned") == len(page_rows)
+                 and type(has_more) is bool and type(truncated) is bool, "CBM_MISSING_PAGE")
+            total = result["total"]
+            offset = result.get("offset", 0) if cursor is None else result.get("offset")
+            need(count(offset) and offset == len(rows), "CBM_MISSING_PAGE")
+            size += len(json.dumps(page_rows).encode("utf-8"))
+            if cursor is not None:
+                if page == 1:
+                    seen_rows.update(json.dumps(row) for row in rows)
+                for row in page_rows:
+                    key = json.dumps(row)
+                    need(key not in seen_rows, "CBM_MISSING_PAGE")
+                    seen_rows.add(key)
+            rows.extend(page_rows)
+            need(len(rows) <= total and len(rows) <= MAX_QUERY_ROWS and size <= MAX_QUERY_BYTES, "CBM_MISSING_PAGE")
+            if has_more is False:
+                need(truncated is False and len(rows) == total and not {
+                    "next_cursor", "next_offset", "truncation_reason"} & result.keys(), "CBM_MISSING_PAGE")
+                break
+            cursor = result.get("next_cursor")
+            need(truncated is True and result.get("truncation_reason") == "output_budget"
+                 and page_rows and len(rows) < total
+                 and count(result.get("next_offset")) and result.get("next_offset") == len(rows)
+                 and isinstance(cursor, str) and len(cursor) <= 512 and CURSOR.fullmatch(cursor)
+                 and cursor not in cursors, "CBM_MISSING_PAGE")
+            cursors.add(cursor)
+        return {"columns": columns, "rows": rows, "returned": len(rows), "total": total,
+                "total_relation": "eq", "has_more": False, "truncated": False}
 
     def inspect(self, names, base, inv):
         started = self.clock()
@@ -889,15 +955,20 @@ def remote_log(root, step, facts, payload, digest):
             "partial_rerun": "unsupported_plan_attempt_bound", "reasons": payload.get("reasons")}
 
 
+UNITTEST_SUMMARY = re.compile(r"(?m)^Ran (\d+) tests?(?: in [^\r\n]+)?\r?$")
+
+
 def validate_remote_result(command, returncode, output):
     """A successful process alone is not nonzero/no-skip test evidence."""
     need(returncode == 0, "REMOTE_CHECK_FAILED")
     if command[:2] == ["-m", "unittest"]:
-        summaries = list(re.finditer(r"(?m)^Ran (\d+) tests?(?: in [^\r\n]+)?\r?$", output))
-        # Only the result line following the final unittest summary is evidence.
-        # Test-body/atexit output such as 'cache skipped 3 entries' is not a skip.
-        tail = output[summaries[-1].end():].strip().splitlines() if summaries else []
-        need(bool(summaries) and int(summaries[-1].group(1)) > 0
+        summaries = list(UNITTEST_SUMMARY.finditer(output))
+        # Multiple summary blocks are ambiguous: buffered test output can follow
+        # the real runner summary and otherwise hide a skipped/empty run.
+        # Ordinary test-body/atexit skip words remain unrelated to result counts.
+        need(len(summaries) == 1, "REMOTE_TEST_EVIDENCE_FAILED")
+        tail = output[summaries[0].end():].strip().splitlines()
+        need(int(summaries[0].group(1)) > 0
              and bool(tail) and tail[0].strip() == "OK",
              "REMOTE_TEST_EVIDENCE_FAILED")
     else:
@@ -955,15 +1026,30 @@ class _OutputTail:
 def run_remote_check(root, command):
     # Keep progress visible while retaining only a bounded tail for the final
     # unittest/official JSON summary. Never write raw check output to the repo.
-    with subprocess.Popen([sys.executable, "-X", "utf8", *command], cwd=root,
+    with subprocess.Popen([sys.executable, "-u", "-X", "utf8", *command], cwd=root,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True, encoding="utf-8", errors="replace") as process:
         output = _OutputTail(LIMIT)
+        summary_count = 0
+        streamed_summary, streamed_status = "", None
         for line in process.stdout:
             print(line, end="", flush=True)
             output.append(line)
+            if command[:2] == ["-m", "unittest"]:
+                # Evidence comes from actual line boundaries in the whole
+                # stream, never from a suffix cut through a test-output line.
+                found = list(UNITTEST_SUMMARY.finditer(line))
+                if found:
+                    summary_count = min(2, summary_count + len(found))
+                    streamed_summary = line if len(line) <= 512 else ""
+                elif summary_count == 1 and streamed_status is None and line.strip():
+                    streamed_status = line if len(line) <= 512 else ""
         returncode = process.wait()
-    validate_remote_result(command, returncode, output.getvalue())
+    if command[:2] == ["-m", "unittest"]:
+        need(summary_count == 1, "REMOTE_TEST_EVIDENCE_FAILED")
+        validate_remote_result(command, returncode, streamed_summary + (streamed_status or ""))
+    else:
+        validate_remote_result(command, returncode, output.getvalue())
 
 
 def remote_main(argv):

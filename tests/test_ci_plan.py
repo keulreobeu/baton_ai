@@ -162,15 +162,55 @@ class ReuseTests(unittest.TestCase):
         self.assertFalse(cp.reuse_v3(current, prior)["allowed"])
 
 
+# Real 0.12.1 (2026-11-13 read-only qualification): stdin JSON args are ignored and
+# the default tree view is printed; flags, raw JSON and --args-file are honoured.
+REAL_TREE_OUTPUT = "projects: 1  (cols: name root_path branch)\n  fixture <root> main\ntotal: 1\nreturned: 1\nhas_more: false\n"
+QUERY_COLUMNS = ["a.qualified_name", "a.file_path", "b.qualified_name", "b.file_path"]
+
+
+def read_args_file(argv, kw, files):
+    """Read the adapter's --args-file while the call runs; None mimics ignored stdin."""
+    if len(argv) != 6 or argv[1:3] != ["cli", "--quiet"] or argv[4] != "--args-file":
+        return None
+    path = Path(argv[5])
+    assert kw.get("input") is None and kw.get("stdin") == subprocess.DEVNULL and kw.get("timeout") == 45
+    assert path.is_file(), "args file must exist and be closed before the call"
+    files.append(path)
+    return argv[3], json.loads(path.read_text(encoding="utf-8"))
+
+
 class CLITranscript:
     """Actual 0.12.1 field shapes with deterministic synthetic graph contents."""
     def __init__(self, root):
-        self.root, self.calls = root, []
+        self.root, self.calls, self.files = root, [], []
         self.generation = "2026-11-12T08:32:40Z"
         self.mutate = lambda tool, value: value
+        self.page_limit, self.cursors = None, {}
+
+    def page(self, args, value):
+        """Observed query_graph cursor envelope (output_budget truncation, q1.* cursor)."""
+        rows, offset = value["rows"], 0
+        if "cursor" in args:
+            query, offset = self.cursors[args["cursor"]]
+            assert query == {k: args[k] for k in ("project", "query", "format")}
+        size = self.page_limit
+        chunk = rows[offset:offset + size]
+        out = {"columns": value["columns"], "rows": chunk, "returned": len(chunk), "total": len(rows),
+               "total_relation": "eq", "has_more": offset + len(chunk) < len(rows),
+               "truncated": offset + len(chunk) < len(rows)}
+        if offset:
+            out["offset"] = offset
+        if out["has_more"]:
+            cursor = "q1.%s.%d" % ("u84" + "A" * 40, len(self.cursors))
+            self.cursors[cursor] = ({k: args[k] for k in ("project", "query", "format")}, offset + len(chunk))
+            out.update(next_cursor=cursor, next_offset=offset + len(chunk), truncation_reason="output_budget")
+        return out
 
     def __call__(self, argv, **kw):
-        tool = argv[-1]; args = json.loads(kw["input"])
+        parsed = read_args_file(argv, kw, self.files)
+        if parsed is None:
+            return subprocess.CompletedProcess(argv, 0, REAL_TREE_OUTPUT, "")
+        tool, args = parsed
         self.calls.append((tool, args))
         if tool == "list_projects":
             value = {"projects": [{"name": "fixture", "root_path": str(self.root)}], "has_more": False}
@@ -207,6 +247,8 @@ class CLITranscript:
                 rows = [["fixture.tests.test_value.T", "tests/test_value.py", "unittest.TestCase", "<external>"]]
             value = {"columns": ["a.qualified_name", "a.file_path", "b.qualified_name", "b.file_path"],
                      "rows": rows, "returned": len(rows), "total": len(rows), "total_relation": "eq", "has_more": False, "truncated": False}
+            if self.page_limit:
+                value = self.page(args, value)
         elif tool == "index_repository":
             value = {"status": "indexed"}
         else:
@@ -325,6 +367,138 @@ class AdapterTests(unittest.TestCase):
         self.adapter.runner = lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired("fake", 1))
         with self.assertRaises(subprocess.TimeoutExpired): self.adapter.call("index_status")
 
+    def test_args_file_transport_utf8_closed_and_removed(self):
+        self.assertTrue(self.inspect()["complete"])
+        self.assertEqual(len(self.transcript.files), len(self.transcript.calls))
+        self.assertTrue(self.transcript.files and not any(path.exists() for path in self.transcript.files))
+        self.assertFalse(any(self.root in path.parents for path in self.transcript.files))
+        seen, name = {}, "프로젝트 \"q\" \\x"
+        def runner(argv, **kw):
+            seen["args"], seen["path"] = read_args_file(argv, kw, [])[1], Path(argv[5])
+            seen["raw"] = seen["path"].read_bytes()
+            return subprocess.CompletedProcess(argv, 0, '{"status": "ready"}', "")
+        self.adapter.runner = runner
+        self.assertEqual(self.adapter.call("index_status", project=name, verbose=True), {"status": "ready"})
+        self.assertEqual(seen["args"], {"project": name, "verbose": True})
+        self.assertEqual(json.loads(seen["raw"].decode("utf-8")), seen["args"])
+        self.assertFalse(seen["path"].exists())
+
+    def test_real_ignored_stdin_tree_output_is_rejected_not_parsed(self):
+        self.adapter.runner = lambda argv, **kw: subprocess.CompletedProcess(argv, 0, REAL_TREE_OUTPUT, "")
+        with self.assertRaisesRegex(cp.PlanError, "CBM_INVALID_JSON"):
+            self.adapter.call("list_projects", format="json", limit=500)
+
+    def test_args_file_removed_on_error_timeout_and_stop(self):
+        paths = []
+        def make(effect):
+            def runner(argv, **kw):
+                read_args_file(argv, kw, paths)
+                return effect(argv)
+            return runner
+        def timeout(argv): raise subprocess.TimeoutExpired(argv, 45)
+        def interrupt(argv): raise KeyboardInterrupt
+        cases = [(lambda argv: subprocess.CompletedProcess(argv, 1, "{}", "secret-diagnostic"), cp.PlanError),
+                 (lambda argv: subprocess.CompletedProcess(argv, 0, "not json", ""), cp.PlanError),
+                 (lambda argv: subprocess.CompletedProcess(argv, 0, '{"isError": true}', ""), cp.PlanError),
+                 (timeout, subprocess.TimeoutExpired), (interrupt, KeyboardInterrupt)]
+        for effect, error in cases:
+            with self.subTest(error=error.__name__):
+                self.adapter.runner = make(effect)
+                with self.assertRaises(error): self.adapter.call("index_status", project="fixture")
+                self.assertFalse(paths[-1].exists())
+        checks = iter([None, "cancel"])
+        self.adapter.should_stop = lambda: next(checks, "cancel")
+        self.adapter.runner = make(lambda argv: subprocess.CompletedProcess(argv, 0, "{}", ""))
+        with self.assertRaisesRegex(cp.PlanError, "CBM_STOPPED"): self.adapter.call("index_status", project="fixture")
+        self.assertFalse(paths[-1].exists())
+        self.assertEqual(len(paths), len(cases) + 1)
+
+    def test_observed_query_cursor_pages_assemble_without_changing_completeness(self):
+        self.transcript.page_limit = 1
+        graph = self.inspect()
+        self.assertTrue(graph["complete"])
+        self.assertEqual(len(graph["selected"]), 2)
+        continued = [a for t, a in self.transcript.calls if t == "query_graph" and "cursor" in a]
+        self.assertTrue(continued and all(a["cursor"].startswith("q1.") for a in continued))
+        self.assertTrue(all(a["max_output_tokens"] == 250000 and a["format"] == "json" for a in continued))
+        self.assertFalse(any(path.exists() for path in self.transcript.files))
+        result = self.adapter.query("fixture", CALLS_QUERY)
+        self.assertEqual((result["total"], result["returned"], len(result["rows"]), result["has_more"]), (4, 4, 4, False))
+        self.setUp(); self.transcript.page_limit = 1
+        def partial(tool, value):
+            if tool == "index_status": value["parse_partial"]["count"] = 1
+            return value
+        self.transcript.mutate = partial
+        self.assertFalse(self.inspect()["complete"])
+
+    def test_cursor_page_mutations_fail_closed(self):
+        first_rows = []
+        def on_page(page, change):
+            def mutate(tool, value):
+                if tool != "query_graph": return value
+                if not value.get("offset"): first_rows[:] = [list(r) for r in value["rows"]]
+                return change(value) if (page == "first") == (not value.get("offset")) else value
+            return mutate
+        drop = lambda key: (lambda v: {k: x for k, x in v.items() if k != key})
+        final = lambda v: {k: x for k, x in v.items() if k not in ("next_cursor", "next_offset", "truncation_reason")}
+        cases = {
+            "missing_cursor": ("first", drop("next_cursor")),
+            "missing_next_offset": ("first", drop("next_offset")),
+            "non_string_cursor": ("first", lambda v: {**v, "next_cursor": 7}),
+            "unobserved_cursor": ("first", lambda v: {**v, "next_cursor": "z9/" + v["next_cursor"]}),
+            "long_cursor": ("first", lambda v: {**v, "next_cursor": "q1." + "A" * 600}),
+            "next_offset_drift": ("first", lambda v: {**v, "next_offset": v["next_offset"] + 1}),
+            "next_offset_bool": ("first", lambda v: {**v, "next_offset": True}),
+            "has_more_untruncated": ("first", lambda v: {**v, "truncated": False}),
+            "other_truncation_reason": ("first", lambda v: {**v, "truncation_reason": "max_rows"}),
+            "no_progress": ("first", lambda v: {**v, "rows": [], "returned": 0, "next_offset": 0}),
+            "first_page_offset": ("first", lambda v: {**v, "offset": 3}),
+            "total_bool": ("first", lambda v: {**v, "total": True}),
+            "total_drift": ("next", lambda v: {**v, "total": v["total"] + 1}),
+            "relation_not_eq": ("next", lambda v: {**v, "total_relation": "gte"}),
+            "column_drift": ("next", lambda v: {**v, "columns": list(reversed(v["columns"]))}),
+            "offset_drift": ("next", lambda v: {**v, "offset": v["offset"] + 1}),
+            "offset_missing": ("next", drop("offset")),
+            "returned_mismatch": ("next", lambda v: {**v, "returned": v["returned"] + 1}),
+            "returned_bool": ("next", lambda v: {**v, "returned": True}),
+            "has_more_int": ("next", lambda v: {**v, "has_more": int(v["has_more"])}),
+            "duplicate_row": ("next", lambda v: {**v, "rows": [list(first_rows[0])]}),
+            "row_shape": ("next", lambda v: {**v, "rows": [v["rows"][0][:3]]}),
+            "partial_reported_complete": ("next", lambda v: {**final(v), "has_more": False, "truncated": False}),
+            "final_truncated": ("next", lambda v: {**v, "truncated": True} if v["has_more"] is False else v),
+            "final_has_cursor": ("next", lambda v: {**v, "next_cursor": "q1.extra"} if v["has_more"] is False else v)}
+        for name, (page, change) in cases.items():
+            with self.subTest(name):
+                self.setUp(); self.transcript.page_limit = 1
+                self.transcript.mutate = on_page(page, change)
+                with self.assertRaises(cp.PlanError) as caught: self.adapter.query("fixture", CALLS_QUERY)
+                self.assertIn(str(caught.exception), {"CBM_MISSING_PAGE", "CBM_UNKNOWN_QUERY_SCHEMA"})
+                self.assertFalse(any(path.exists() for path in self.transcript.files))
+                with self.assertRaises(cp.PlanError): self.inspect()
+
+    def test_repeated_cursor_and_page_row_byte_bounds_fail_closed(self):
+        self.transcript.page_limit = 1
+        original = self.transcript.page
+        def repeated(args, value):
+            out = original(args, value)
+            if "cursor" in args and out["has_more"]:
+                self.transcript.cursors[args["cursor"]] = (self.transcript.cursors[args["cursor"]][0], out["next_offset"])
+                out["next_cursor"] = args["cursor"]
+            return out
+        self.transcript.page = repeated
+        with self.assertRaisesRegex(cp.PlanError, "CBM_MISSING_PAGE"): self.adapter.query("fixture", CALLS_QUERY)
+        for limit, value in (("MAX_QUERY_PAGES", 3), ("MAX_QUERY_ROWS", 3), ("MAX_QUERY_BYTES", 300)):
+            with self.subTest(limit):
+                self.setUp(); self.transcript.page_limit = 1
+                with patch.object(cp, limit, value), self.assertRaisesRegex(cp.PlanError, "CBM_MISSING_PAGE"):
+                    self.adapter.query("fixture", CALLS_QUERY)
+                self.setUp(); self.transcript.page_limit = 1
+                with patch.object(cp, limit, value * 10):
+                    self.assertEqual(len(self.adapter.query("fixture", CALLS_QUERY)["rows"]), 4)
+
+
+CALLS_QUERY = "MATCH (a)-[r:CALLS]->(b) RETURN a.qualified_name, a.file_path, b.qualified_name, b.file_path"
+
 
 class ImpactTranscript(CLITranscript):
     """Two test modules; tests.test_other reaches the changed value() only by CALLS."""
@@ -335,7 +509,10 @@ class ImpactTranscript(CLITranscript):
         self.impacted, self.rows = impacted, rows
 
     def __call__(self, argv, **kw):
-        tool = argv[-1]; args = json.loads(kw["input"])
+        parsed = read_args_file(argv, kw, self.files)
+        if parsed is None:
+            return subprocess.CompletedProcess(argv, 0, REAL_TREE_OUTPUT, "")
+        tool, args = parsed
         if tool == "detect_changes" and args["scope"] == "impact":
             self.calls.append((tool, args))
             value = {"base": "a" * 40, "merge_base": "a" * 40, "edge_types": list(cp.EDGES), "fixpoint": True,
@@ -992,6 +1169,65 @@ class RemoteResultTests(unittest.TestCase):
         ):
             with self.subTest(output=output), self.assertRaises(cp.PlanError):
                 cp.validate_remote_result(command, 0, output)
+
+    def test_v2_rejects_multiple_summaries_in_either_order(self):
+        command = ["-m", "unittest", "tests.test_value"]
+        good = "Ran 7 tests in 0.010s\n\nOK\n"
+        for status in ("OK (skipped=1)", "OK (expected failures=1)",
+                       "FAILED (unexpected successes=1)", "OK"):
+            summary = "Ran 2 tests in 0.001s\n\n" + status + "\n"
+            for output in (summary + good, good + summary):
+                with self.subTest(status=status, output=output), self.assertRaises(cp.PlanError):
+                    cp.validate_remote_result(command, 0, output)
+        with self.assertRaises(cp.PlanError):
+            cp.validate_remote_result(command, 0, "Ran 0 tests\nOK\n" + good)
+
+    def test_real_v2_rejects_summary_shaped_atexit_output_after_skip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "test_summary_noise.py").write_text(
+                "import unittest, atexit\n"
+                "atexit.register(lambda: print('Ran 7 tests in 0.010s\\n\\nOK'))\n"
+                "class T(unittest.TestCase):\n"
+                " @unittest.skip('offline fixture')\n"
+                " def test_skip(self): pass\n", encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                cp.run_remote_check(root, ["-m", "unittest", "test_summary_noise"])
+            self.assertIn("OK (skipped=1)", output.getvalue())
+            self.assertIn("Ran 7 tests", output.getvalue())
+
+    def test_real_v2_rejects_fake_summary_after_real_summary_evicted_from_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "test_large_summary_noise.py").write_text(
+                "import unittest, atexit, sys\n"
+                "atexit.register(lambda: sys.stdout.write('x' * " + str(cp.LIMIT + 100)
+                + " + '\\nRan 7 tests in 0.010s\\n\\nOK\\n'))\n"
+                "class T(unittest.TestCase):\n"
+                " @unittest.skip('offline fixture')\n"
+                " def test_skip(self): pass\n", encoding="utf-8")
+            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                cp.run_remote_check(root, ["-m", "unittest", "test_large_summary_noise"])
+
+    def test_real_v2_uses_stream_boundaries_when_tail_starts_midline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake = "Ran 7 tests in 0.010s\n\nOK\n"
+            suffix = "zzzz" + fake + "x" * (cp.LIMIT - len(fake))
+            (root / "test_cut_summary.py").write_text(
+                "import unittest, atexit, sys\n"
+                "atexit.register(lambda: sys.stdout.write(" + repr(suffix) + "))\n"
+                "class T(unittest.TestCase):\n"
+                " @unittest.skip('offline fixture')\n"
+                " def test_skip(self): pass\n", encoding="utf-8")
+            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                cp.run_remote_check(root, ["-m", "unittest", "test_cut_summary"])
+            (root / "test_large_valid.py").write_text(
+                "import unittest\nclass T(unittest.TestCase):\n"
+                " def test_ok(self): print('x' * " + str(cp.LIMIT + 128) + ")\n", encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                cp.run_remote_check(root, ["-m", "unittest", "test_large_valid"])
 
     def test_output_tail_retains_exact_bounded_suffix_across_chunks(self):
         import random

@@ -17,7 +17,7 @@ acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-A
 이전 `SDD-001-AC-06` 임시 Task 연결의 T1 검사는 아래 작성 기록에 보존한다. 현재 verification 증거는 CI-OPT-001 AC 단위로 추가한다.
 
 계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 4, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
-독립 검토(`independent_review`)는 아직 없다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
+여러 독립 검토를 수신했으며 whole-Task 독립 PASS는 아직 pending이다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
 
 AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장에 CI-OPT-001 feature와 AC-01~13을 등록했다.
 이 연결과 현재 작업 단위의 통과 검사는 AC의 최종 검증·독립 리뷰·원격 CI 완료를 뜻하지 않는다.
@@ -791,3 +791,66 @@ Evidence-only status files at this checkpoint:
   적용/실행 승인이나 현행 소스의 테스트로 간주하지 않는다.
 - source checkpoint 후 별도 독립 검토를 고정 통합 후보에 요청한다. 사용자 권한이 필요한 결정은
   위 보류 목록에 유지하고 최종 공식 V3는 이 묶음 및 새 검토를 반영한 정확한 후보에서 실행한다.
+
+### 고정 후보 독립 재검토와 실제 CBM qualification 후속
+
+- 고정 `12a1619` 독립 검토 보고서 `CI-OPT-001-final-independent-review-12a1619.md`, SHA256
+  `eab64bf470161233bf91406014cee06d861e60e4f7558159f8fae841a0f51393`를 수신했다.
+  86 focused tests OK(33.393 s), verdict NOT CONVERGED다. F-A/F-C/F-E는 닫혔지만 새 N-1(P2)이 있다.
+  실제 skip 요약 뒤 stdout/atexit의 가짜 `Ran N tests / OK`가 붙으면 마지막 요약만 읽어 통과한다.
+- root도 수정 전 false PASS를 재현했다. 여러 unittest 요약은 모호한 증거로 거부하고 child Python은
+  `-u`로 실행하도록 수정했다. 일반 본문/atexit의 skip 단어는 여전히 결과 수로 해석하지 않는다.
+  AC-11에 요약 순서/중복/zero 사례와 실제 subprocess의 skipped+atexit 가짜 요약 회귀를 연결했다.
+  V1 `RemoteResultTests` **10 tests OK, 0.686 s**, failures/errors/skips 0. V2/독립 delta/V3는 pending이다.
+  N-2 local parser 보수적 false failure와 N-3 cancel 시 graph failed 관측 표시는 비차단 한계로 남긴다.
+  N-4 Task header의 '검토 없음'은 'whole-Task 독립 PASS pending'으로 정정했다.
+- 별도 Claude의 실제 설치 CBM 0.12.1 읽기 전용 qualification 보고서
+  `CI-OPT-001-real-cbm-readonly-qualification-20261113.md`, SHA256
+  `9b801624f44b1ab3d3679a60971292a6df2c8b5bbd0c0cb3da4bad92cf97cfb7` read-back 일치.
+  기존 root index의 root/worktree/HEAD와 coverage envelope는 일치했지만 stdin JSON 인자가 무시돼
+  어댑터가 첫 호출에서 실패하고 CALLS 조회에는 cursor continuation이 필요함을 확인했다.
+  두 fail-closed 가용성 결함은 같은 고정 base의 별도 Claude 수정 작업으로 배정했다.
+  실제 index는 parse_partial=1, inventory 674 중 unmapped 151, static inventory incomplete이므로
+  transport/paging을 고쳐도 V2는 V3 fallback이며 실제 narrowing/절감/AC-09 완료 근거가 아니다.
+  index/reindex/detect_changes/설정 변경/원격 CI/실제 프로젝트 provider 호출은 실행하지 않았다.
+- 게시 준비의 읽기 전용 실제 원격 refs snapshot은 외부 handoff JSON에 보관했다. 원격 refs 35개 중
+  7개 object가 로컬에 없어 도달성은 partial이다. 알려진 원격 refs 기준 현재 후보 미게시 26개 커밋의
+  파일 목록을 얻었지만 전체 내용/민감정보/승인 범위 점검은 미완료다. push 승인·fetch·게시를 하지 않았다.
+  새 후보/원격 상태에서는 이 snapshot을 다시 확인해야 하며 push gate 통과 증거로 쓰지 않는다.
+- N-1 parser delta 독립 검토는 FIXED, **21 tests OK, 0.845 s**다. 보고서 SHA256
+  `0d30472c436ae65aea8b457c96e2edfabceba44758fc80900b3710b1cdc48ccb`.
+  reviewer는 별도로 기존 P3 R-1(2MiB 초과 atexit 출력이 real summary를 tail 밖으로 밀어낸 뒤
+  fake summary만 남기는 경우)을 재현했다. root는 전체 streamed line의 summary 개수를 2에서
+  포화시키며 세고 정확히 1개인 경우에만 tail 검사를 허용하도록 보강했다. tail 크기는 늘리지 않는다.
+  실제 >LIMIT subprocess 음성 회귀를 AC-11에 연결했고 관련 **22 tests OK, 1.043 s**다.
+  N-1+R-1 묶음 patch SHA256 `21078f030668a3a0d7c5406528d540aebe4f78d27f39dc9363fa9f1ced05dd5a`를
+  별도 독립 delta 검토에 배정했다. 이 변경 후 grouped V2/최종 V3는 아직 pending이다.
+- 복귀용 결정 초안은 root 밖 `CI-OPT-001-return-decisions-20261113.md`에 작성했다. F-B 배포 처리,
+  일부 job 재실행, 엄격 재사용 runtime/schema와 원격 게시 권한을 실제 코드 제약/선택지와 연결했다.
+  승인·구현·계약 개정 근거가 아니며 root tracked 정책은 바꾸지 않았다.
+- CBM 어댑터 patch SHA256 `d4fc42affaa1d506ace1488ad717916f10500413f567e80076204d382ff715b2`를
+  읽고 apply --check 후 통합했다. 임시 UTF-8 args-file은 Windows에서 닫은 뒤 전달하고 모든 종료
+  경로에서 지운다. 관측된 cursor envelope만 bounded paging으로 합치며 unknown/drift/중복/누락은 거부한다.
+  completeness/freshness/static audit/정책은 완화하지 않았다. root 통합 focused **31 tests OK, 2.016 s**.
+  그 뒤 실제 root adapter의 list_projects/index_status/query_graph(CALLS)/index_status만 읽기 전용
+  실행했다: **4875 rows 완전 회수**, has_more=false, generation stable, parse_partial=1.
+  실행 소스 SHA256 `868ae90e7f00cf8df33857d972608fd64fa5ae737e80506bc62a519120b015b0`이며 외부
+  `CI-OPT-001-cbm-adapter-root-readonly-postfix-20261113.json`에 기록했다. inspect/detect_changes/
+  index/reindex/선택은 0. 이는 transport/query paging 증거만이며 end-to-end 선택/AC-09 완료가 아니다.
+- N-1/R-1+CBM 통합 V2 **180 tests OK, 99.281 s**, zero failures/errors/skips. 실행 종료 후 받은
+  추가 독립 검토에서 R-2(P3: mid-line fake가 tail 절단으로 줄 시작이 되는 기존 false pass)를 확인했다.
+  root는 unittest 판정에 tail을 쓰지 않고 전체 stream에서 관측한 실제 summary line과 첫 status line을
+  각각 512자 이내로 보존해 판정하도록 바꿨다. summary 개수는 전체 stream에서 계속 세며 2에 포화한다.
+  R-2 음성 및 >LIMIT 정상 본문 양성 실제 subprocess 회귀를 AC-11에 연결했다.
+  변경 후 focused **26 tests OK, 1.908 s**. 이 추가 수정으로 위 180-test V2는 최종 증거가 아니며
+  새 묶음 V2와 독립 통합 delta/정확한 후보 V3를 실행한다.
+- F-B 제안은 고정 `12a1619`에서도 준비됐지만 NOT_INTEGRATED/APPROVAL_DEFERRED다.
+  새 patch SHA256 `4c494d4d903c7bf6c69fe265c436eddb52141c12a0775993fe3f761c50c4328a`,
+  보고서 SHA256 `b42bb942c5813390f63310d043315559b08cc8728afc143d070ed3934725b0c6`.
+  제안 worktree만 5 proposal/38 managed-harness/183 affected tests OK이며 root 증거가 아니다.
+- R-2 보강 후 최종 묶음 V2: `tests.test_ci_plan tests.test_sdd tests.test_ci_workflow
+  tests.test_managed_harness tests.test_observability` **181 tests OK, 96.618 s**, exit 0,
+  failures/errors/skips/expected failures/unexpected successes 0. checkout venv, PYTHONPATH=src,
+  PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME. 원래 Task-base SDD/diff check PASS.
+  소스 checkpoint를 저장해 새로운 독립 reviewer에게 CBM+parser 통합 delta를 고정 후보로 요청한다.
+  최종 공식 V3와 원격 CI는 pending이며 F-B/runtime reuse/partial rerun 결정은 계속 보류다.
