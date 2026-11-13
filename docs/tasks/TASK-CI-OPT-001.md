@@ -17,7 +17,7 @@ acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-A
 이전 `SDD-001-AC-06` 임시 Task 연결의 T1 검사는 아래 작성 기록에 보존한다. 현재 verification 증거는 CI-OPT-001 AC 단위로 추가한다.
 
 계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 4, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
-여러 독립 검토를 수신했으며 whole-Task 독립 PASS는 아직 pending이다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
+고정 소스 후보 b50ec38의 로컬 수렴 독립 검토는 CONVERGED(새 P1/P2 없음)이며 독립 Task-base SDD도 PASS다. 원격 Windows CI/E2E는 NOT_RUN이므로 전체 Task verified는 아니다.
 
 AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장에 CI-OPT-001 feature와 AC-01~13을 등록했다.
 이 연결과 현재 작업 단위의 통과 검사는 AC의 최종 검증·독립 리뷰·원격 CI 완료를 뜻하지 않는다.
@@ -30,9 +30,9 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 전체 코드 lane에서 공유 선택/PR 회귀 확인, 전체 판정은 추가 지적/보류 목록 참조 |
-| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V1/V2/V3 caller는 T3d에서 연결; 로컬 V2 및 공식 V3 완료, 교차-provider 독립 검토 pending |
-| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix 구현, 후보 6778a02 정책 변경 Claude PASS/공식 V3 658 tests 통과; 원격 Windows CI 및 전체 Task 검토 pending |
-| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests, Task-base SDD, 공식 V3 통과; 독립 검토·원격 CI pending |
+| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | b50ec38 adapter/상태 결합/중단/F-B 보강, 로컬 수렴·공식 V3 692 tests PASS; graph/inventory partial로 실제 narrowing 미자격 |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix·plan/gate 구현, b50ec38 로컬 수렴·공식 V3 PASS; 원격 두 matrix·개별 job E2E NOT_RUN |
+| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3/기존 MetricsStore 구현, b50ec38 공식 V3 692 tests·로컬 수렴 확인; runtime reuse caller 미연결·원격 CI pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 과거 approved 유지 및 revision 4 Windows-first 사용자 결정 반영; 현재 유효 범위는 Spec 최신 승인/처분 표 |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | P-01 확정/반영; P-02/03/08/09 superseded; P-04/05/06 re-scoped; P-07 기존 CI owner 경계 유지. 새 보류 결정은 아래 전체 검토 목록 |
@@ -917,3 +917,25 @@ Evidence-only status files at this checkpoint:
   원래 Task-base SDD와 diff check를 다시 확인해 작업 단위를 로컬 저장한다. flow/git 상호작용은
   앞선 284-test 실행으로 확인했지만 그 전후 소스 차이는 명시했고, 정확한 새 후보 공식 V3로 다시 덮는다.
   전체 Task verified·원격 Windows CI·push/PR/main은 계속 NOT_RUN/pending이다.
+
+### 고정 소스 b50ec38 최종 로컬 수렴 및 공식 V3 — 2026-11-13
+
+- 후보 `b50ec384b275886e6691f430182d51591d531445`, Task base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`에서
+  공식 순차 `verify_environment.py --base` 1회: **692 tests OK, 931.580 s**, exit 0,
+  failures/errors/skipped/expected failures 0. JSON status=PASS, verified_evidence_eligible=true,
+  scope=offline_tests_only, live_provider_validation=NOT_RUN. 실행 전후 정확한 HEAD/index/worktree clean 일치.
+  checkout `.venv/Scripts/python.exe -X utf8`, PYTHONPATH=src/PYTHONDONTWRITEBYTECODE=1/OS-temp BATON_HOME.
+  Task-base SDD PASS(48 docs/10 features/18 Tasks/75 AC/57 paths), 실제 프로젝트 provider/GMS/원격/Ubuntu/WSL 0.
+- 별도 Claude의 전체 로컬 수렴 검토 `CI-OPT-001-final-local-convergence-b50ec38.md` SHA256
+  `52ba9bd9fb59070e99ed77b83601084fdae2bd6cece041c5699d506b32e337c8` read-back 일치.
+  판정 **CONVERGED locally, 새 P1/P2 0**. 기존 주요 결함의 닫힘과 4개 source blob이 검토된
+  combined patch와 동일함을 독립 확인했다. 같은 원래 Task-base의 독립 SDD/diff check도 PASS다.
+  whole Task verified/원격 green/게시 승인은 아니다. 실제 graph/inventory partial과 receipt/since unknown은 유지한다.
+- 비차단 문서 지적 N-A(current의 superseded 미표시), N-B(T3b/c/d 상태 표의 과거 후보 표현)는
+  이 결과 기록과 함께 정정했다. 제품 코드/검증 정책/Task AC/의존성은 바꾸지 않는다.
+- 이후 문서 기록 커밋은 SHA/manifest가 다르므로 이 b50 V3를 자동 재사용하지 않는다.
+  최종 문서 포함 후보의 정확한 SHA 검증은 로컬 후속 실행 증거에 별도 기록한다.
+  이 Task는 in_progress이며 원격 Windows 3.11/3.12 두 matrix·plan/gate와 개별 job E2E는 NOT_RUN이다.
+- 사용자 부재 중 유지한 결정: Q1(로컬 재사용 단위를 official_sequential로 한정하는 AC-12 해석/개정),
+  실제 remote/branch·타 Task 10개를 포함하는 게시 범위와 원격 실행 권한. F-B 수정은 추가 승인 대상이 아니다.
+  partial rerun/runtime caller/packaging은 선택 확장으로 구별한다. 모델·GMS·전원·등록·집담 원본 경계는 유지했다.

@@ -2,6 +2,10 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
+- 고정 소스 `b50ec38`은 공식 순차 V3 **692 tests OK, 931.580 s, failures/errors/skip 0**, 독립 전체 로컬 수렴 CONVERGED(새 P1/P2 0), 독립 Task-base SDD를 통과했다. 실행 전후 정확한 HEAD/clean 일치. F-B·CBM 상한·상태 결합·중단·no-skip 판정 보강은 완료했다. 실제 graph/inventory partial로 narrowing은 미자격이며 전체 Task는 in_progress다. 원격 Windows 두 matrix·plan/gate·개별 job E2E와 게시 승인은 NOT_RUN/pending이다. 아래는 이전 후보/편집 중 기록으로 현행 상태가 아니다. 후속 문서 SHA에 b50 V3를 자동 재사용하지 않는다.
+
+### 이전 후보와 편집 중 기록 (위 현행 요약이 우선)
+
 - F-B fail-closed 및 실제 CBM seed/module 상한 수정 묶음이 독립 검토 PASS(새 지적 0, 36 focused tests), 보강 후 V2 **189 tests OK, 106.622 s**를 통과했다. 앞선 flow/git 포함 8개 모듈 284 tests도 OK. F-B의 별도 승인 보류는 기존 AC-08/09 안의 결함 수정으로 해제했고 deep TOML/import 중단도 차단한다. 작업 단위를 저장한 뒤 정확한 새 후보 공식 V3를 진행한다. 원격 Windows 두 matrix와 게시·Task verified는 여전히 pending이다.
 
 - 정확한 `1c73f2d`의 공식 순차 V3 **684 tests OK, 952.238 s, failures/errors/skip 0**와 독립 통합 delta PASS를 확인했다. 실행 전후 clean/HEAD 일치. 권한 감사로 F-B fail-closed 수정은 기존 AC-08/09 승인 범위임을 확인해 별도 승인 보류를 해제하고 root에 통합 중이다. absent/broken/present-unknown 우회와 import 중단 cache를 묶었고 V1 21 tests OK. 최신 working source의 V2·독립 delta·새 후보 V3는 pending이며 1c73 증거를 재사용하지 않는다. 로컬 V3 재사용 단위 개정·원격 게시 권한만 복귀 결정으로 남기며 packaging/부분 rerun은 선택 확장이다.
