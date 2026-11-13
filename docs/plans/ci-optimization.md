@@ -18,15 +18,15 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 2. 작업 T2a — 방법론(AC-01·02). AGENTS/README/sdd에 검증 사다리·짧은 Worker 입출력·회차 묶기. 관측 기록 시작.
    P-01(AGENTS push 문구)은 사용자 확인 뒤에만 고친다.
 3. 작업 T2b — 트리거·concurrency(AC-03·04). `verify.yml`에 PR activity 4종 + main push, PR 번호 그룹 취소, main SHA 그룹.
-   고정 4 matrix·`fetch-depth: 0`·GMS optional 검사 유지, `timeout-minutes` 미변경(P-07 결정). 정적 텍스트 테스트는 `tests/test_ci_workflow.py`(P-06 결정).
+   Windows 고정 2 matrix·`fetch-depth: 0`·GMS optional 검사 유지, `timeout-minutes` 미변경(P-07 결정). 정적 텍스트 테스트는 `tests/test_ci_workflow.py`(P-06 결정).
    dispatch·`ci:full` 즉시 실행을 안내하지 않는다.
 4. 작업 T3a — `eligible_tasks()` 추출(AC-05) + PR 정상·필드 누락 회귀(AC-06). 기존 checker CLI/JSON 의미는 불변.
 5. 작업 T3b — 단일 `scripts/ci_plan.py` V-planner + 같은 파일의 CBM CLI adapter(AC-07/09/12). 별도 엔진 없음.
    stage 기본값, 전체 base diff·변경 상태 고정, root/generation/freshness/coverage, stale incremental 재색인, Python test inventory/TESTS 매핑,
    V3 상향/fallback과 strict equality 재사용 판단을 순수 함수/가짜 CLI·clock으로 검증한다. BATON 로컬 validation 연결도 이 planner를 호출한다.
    필요한 실제 src 연결 경로가 추가 발견되면 영구 Task scope에 먼저 연결한다. `.gitignore`에 `.codebase-memory/` 추가, persistence off.
-6. 작업 T3c — workflow draft=V2 affected_modules / ready-main=V3 full 4 + gate + V3 dispatch(AC-08/10/11/12).
-   draft도 기존 고정 4 matrix에서 범위만 축소하며 `ci:full`은 다음 지원 이벤트에서 V3로만 상향한다.
+6. 작업 T3c — workflow draft=V2 affected_modules / ready-main=V3 full Windows 2 + gate + V3 dispatch(AC-08/10/11/12).
+   draft도 기존 Windows 고정 2 matrix에서 범위만 축소하며 `ci:full`은 다음 지원 이벤트에서 V3로만 상향한다.
    공식 순차 검증·GMS optional 검사·fetch-depth·concurrency 보존. 구현 뒤에만 dispatch 실행 안내.
 7. 작업 T3d — 기존 MetricsStore/Task 증거 필드 확장(AC-02/12/13), 새 DB/table 없음.
    task/commit/worktree/base·index id/freshness·V 단계·선택/전체 테스트/이유·graph/CI 시간·상향·재사용 결정·V3-only defects를 기록한다.
@@ -34,7 +34,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
    13 AC 모두 실제 테스트 symbol이 생기는 이 묶음에서 feature를 일괄 원장 등록하고 임시 SDD-001-AC-06 연결을 끝낸다.
    AC-12/13 정적 검사는 계약 경계만 증명하며 원격 E2E와 대체하지 않는다. 미승인/미실행 원격 E2E는 not_run, verified 금지.
 8. 최종 후보 — 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 독립 검토(`check_sdd.py` 포함) + 필수 CI.
-   엄격히 동일한 기존 V3만 AC-12대로 재사용할 수 있으며 로컬 재사용으로 ready/main CI 4 job은 생략하지 않는다.
+   엄격히 동일한 기존 V3만 AC-12대로 재사용할 수 있으며 로컬 재사용으로 ready/main CI Windows 2 job은 생략하지 않는다.
 
 ## 단계별 검증
 
@@ -47,7 +47,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 | T3d | tests.test_observability + planner/SDD/정적 테스트 | 누락 계측≠0, 새 DB 없음, payload/민감정보 경계, 13 AC 원장 연결 |
 | 최종 V3 | 공식 순차 1회·독립 검토·CI | 모든 AC·nonzero·no-skip 유지; 원격 not_run을 passed로 승격 금지 |
 
-원격 E2E는 승인 시 draft 선택 범위·ready/main 실제 4 job 이름별 성공·gate 실패 전파·옛 draft 재실행을 확인한다.
+원격 E2E는 승인 시 draft 선택 범위·ready/main 실제 Windows 2 job 이름별 성공·gate 실패 전파·옛 draft 재실행을 확인한다.
 충돌 PR은 CI가 없으므로 검증된 것으로 보지 않는다. 결과를 안전하게 만들지 못하면 실패하며 SDD FAIL은 fallback으로 지워지지 않는다.
 
 ## 결정과 경계 — 2026-11-12
@@ -69,3 +69,12 @@ T3a~T3c V2 checkpoint는 로컬 커밋됐다. T3d caller/event 통합·회귀·A
 Orchestrator worker 결과는 stage=in_progress(V1), `validate --stage checkpoint`는 V2, 기본 validate/verify는 stage=task_complete(V3)다. CLI stage는 API를 호출하지만 L1/L2로 Task 완료를 선언할 수 없도록 검증했다.
 공식 V3 명령은 실제 target tree/base 및 전체 budget을 사용하고 일반 검사의 300초 cap과 공공 명령 allowlist는 유지한다.
 T3b 중 실제 공식 full은 실행하지 않고 fake CLI/clock/process 및 synthetic Git으로 검증한다. 최종 V3/독립 검토/원격 CI pending.
+
+
+## Eng Review Amendments — 2026-11-13 Windows 우선 안정화
+
+사용자 결정으로 Linux 검증은 후속 확장이다. Spec revision 4에 따라 현재 검증 matrix를
+windows-latest × Python 3.11/3.12의 두 조합으로 고정하고 plan/gate도 Windows로 맞춘다.
+기존 필수 검사/no-skip/V3/독립 검토/원격 승인 경계를 보존한다. 정책/구현/정적 및 실행 경계 테스트를
+같은 Task로 갱신하고 V2 checkpoint 뒤 고정 후보 독립 검토와 정확한 후보 V3를 수행한다.
+과거 fixed4 CI 및 플랫폼 skip 미결정 기록은 이 범위 결정으로 superseded이며 원격 Windows CI는 여전히 NOT_RUN이다.

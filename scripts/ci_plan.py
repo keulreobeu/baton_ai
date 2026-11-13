@@ -700,8 +700,7 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
     return result
 
 
-MATRIX = [{"os": system, "python": version} for system in ("ubuntu-latest", "windows-latest")
-          for version in ("3.11", "3.12")]
+MATRIX = [{"os": "windows-latest", "python": version} for version in ("3.11", "3.12")]
 
 
 def remote_facts(event_name, event, ref, sha):
@@ -779,7 +778,7 @@ def validate_remote(root, payload, facts, digest):
     need(payload.get("tree") == sdd.git(root, "rev-parse", "HEAD^{tree}").strip(), "REMOTE_PLAN_TREE")
     # The checkout is tracked-clean and tree-bound above. Use the committed
     # policy blob identity: Git's CRLF checkout conversion must not make an
-    # unchanged Windows checkout disagree with the Ubuntu bootstrap.
+    # unchanged checkouts disagree about the same policy.
     need(payload.get("policy") == fingerprint(sdd.git(root, "rev-parse", "HEAD:scripts/ci_plan.py").strip()),
          "REMOTE_PLAN_POLICY")
     # This graph-free full plan rechecks SDD, Task/AC required tests and the
@@ -814,7 +813,7 @@ def validate_remote(root, payload, facts, digest):
 def remote_gate(payload, facts, needs):
     """Actions exposes the matrix aggregate, not independent child receipts.
 
-    Require that aggregate success with the exact four-member declared matrix;
+    Require that aggregate success with the exact Windows two-member matrix;
     never claim to have queried per-child status or a live current PR state.
     """
     need(isinstance(needs, dict) and set(needs) == {"plan", "offline"}, "GATE_MISSING_JOBS")
@@ -824,7 +823,7 @@ def remote_gate(payload, facts, needs):
     need(tier in {"V2", "V3"} and (facts["requested_tier"] != "V3" or tier == "V3"), "GATE_TIER")
     need(payload.get("scope") == ("full" if tier == "V3" else "affected_modules")
          and bool(payload.get("commands")) and bool(payload.get("selected_ids")), "GATE_EMPTY_CHECKS")
-    return {"status": "passed", "tier": tier, "matrix_count": 4, "matrix_status_source": "needs.offline.result"}
+    return {"status": "passed", "tier": tier, "matrix_count": len(MATRIX), "matrix_status_source": "needs.offline.result"}
 
 
 def validate_remote_result(command, returncode, output):

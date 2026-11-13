@@ -33,7 +33,7 @@ class MethodologyDocsTests(unittest.TestCase):
         "공식 순차 `verify_environment.py` 1회", "필수 독립 검토·CI",
         "통합·충돌 반영", "영향 파일 검사", "최종 증거 갱신",
         "freshness/coverage", "stale incremental index", "graph stale/failed/partial",
-        "draft PR=V2 범위, ready/main=V3 전체 4 matrix",
+        "draft PR=V2 범위, ready/main=V3 Windows 전체 2 matrix",
         "worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다",
         "V1/V2 결과는 Task 완료 상태를 올리지 않는다",
     )
@@ -167,7 +167,7 @@ class PrMainWorkflowTests(unittest.TestCase):
     def test_fixed_matrix_timeout_and_verification_steps_unchanged(self):
         text = read(".github/workflows/verify.yml")
         offline = text.split("  offline:\n", 1)[1].split("  gate:\n", 1)[0]
-        for term in ("fail-fast: false", "os: [ubuntu-latest, windows-latest]",
+        for term in ("fail-fast: false", "os: [windows-latest]",
                      "python: ['3.11', '3.12']", "timeout-minutes: 25", "fetch-depth: 0",
                      "PYTHONPATH: src", "PYTHONDONTWRITEBYTECODE: '1'",
                      "python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers",
@@ -178,6 +178,9 @@ class PrMainWorkflowTests(unittest.TestCase):
         self.assertEqual(text.count("matrix:\n"), 1)
         self.assertEqual(text.count("fetch-depth: 0"), 3)
         self.assertEqual(text.count("contents: read"), 1)
+        self.assertNotIn("ubuntu", text.lower())
+        self.assertNotIn("linux", text.lower())
+        self.assertEqual(text.count("runs-on: windows-latest"), 2)
         actions = [line.strip() for line in text.splitlines() if "uses:" in line]
         self.assertEqual(set(actions), {"- uses: actions/checkout@v4", "- uses: actions/setup-python@v5"})
         gate = text.split("  gate:\n", 1)[1]
@@ -210,8 +213,8 @@ class VStageContractTests(unittest.TestCase):
 
     def test_single_planner_keeps_shared_task_selection_and_pr_regressions(self):
         spec = read("docs/specs/CI-OPT-001.md")
-        self.assertIn("revision = 3", spec)
-        self.assertIn('approved_at = "2026-11-12"', spec)
+        self.assertIn("revision = 4", spec)
+        self.assertIn('approved_at = "2026-11-13"', spec)
         for term in ("ci_plan.py", "두 번째 정책 엔진은 두지 않는다", "T3a~T3c는 로컬 V2 checkpoint"):
             self.assertIn(term, spec)
         self.assertIn("eligible_tasks(item, tasks, changed)", self.ac(5))
@@ -228,13 +231,16 @@ class VStageContractTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term, ac)
 
-    def test_draft_v2_and_ready_main_full_four_are_contractual(self):
+    def test_draft_v2_and_ready_main_windows_pair_are_contractual(self):
         ac = self.ac(8)
         for term in ("draft PR은 V2", "ready PR·병합 후보·main push는 V3 full",
-                     "ready/main은 항상 전체 4 matrix", "어떤 입력도 4 미만으로 낮추지 않는다",
-                     "기존 4 matrix에서 테스트 범위만 V2", "V3 fallback", "draft-T0 전용 job은 만들지 않는다"):
+                     "ready/main은 항상 Windows 전체 2 matrix", "어떤 입력도 2 미만으로 낮추지 않는다",
+                     "Windows 2 matrix에서 테스트 범위만 V2", "V3 fallback", "draft-T0 전용 job은 만들지 않는다"):
             with self.subTest(term=term):
                 self.assertIn(term, ac)
+        spec = read("docs/specs/CI-OPT-001.md")
+        self.assertIn("Linux/Ubuntu 검증은 후속 확장", spec)
+        self.assertIn("plan과 gate도 windows-latest", spec)
 
     def test_graph_freshness_mapping_and_fallback_fail_closed(self):
         ac = self.ac(9)
@@ -263,13 +269,13 @@ class VStageContractTests(unittest.TestCase):
                 self.assertIn(term, text)
 
     def test_v3_gate_and_reuse_require_complete_matching_evidence(self):
-        for term in ("if: always()", "draft=V2 이상", "ready/main/dispatch=V3 full 4",
+        for term in ("if: always()", "draft=V2 이상", "ready/main/dispatch=V3 full Windows 2",
                      "skip/cancel/fail", "not_configured", "passed로 취급하지 않는다", "유효한 V3"):
             self.assertIn(term, self.ac(11))
         ac = self.ac(12)
         for term in ("코드 상태", "commit SHA", "target base", "Task/AC와 정책", "테스트 설정/명령",
                      "실제 의존성 버전", "환경(OS·Python", "필수 검사 목록/결과", "unknown/partial/누락",
-                     "같은 SHA만으로", "tests_run=0", "검사 전후", "CI full 4 job을 재사용으로 생략하지 않는다",
+                     "같은 SHA만으로", "tests_run=0", "검사 전후", "CI full Windows 2 job을 재사용으로 생략하지 않는다",
                      "merge-ref SHA/tree", "옛 draft 재실행", "not_run", "원격 E2E passed 근거가 아니다"):
             self.assertIn(term, ac)
 

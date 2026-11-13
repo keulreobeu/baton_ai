@@ -570,10 +570,10 @@ class RemoteTests(unittest.TestCase):
 
     def test_sha_base_event_tree_policy_and_empty_tamper_fail(self):
         payload = self.payload()
-        self.assertEqual(len(payload["matrix"]), 4)
+        self.assertEqual(len(payload["matrix"]), 2)
         for change in ({"target_base": "d" * 40}, {"facts": {}}, {"tree": "e" * 40},
                        {"selected_ids": []}, {"selected_modules": []}, {"policy": "f" * 64},
-                       {"matrix": cp.MATRIX[:3]}, {"changed_paths": []}):
+                       {"matrix": cp.MATRIX[:1]}, {"changed_paths": []}):
             bad = deepcopy(payload); bad.update(change)
             with self.assertRaises(cp.PlanError): self.validate(bad)
         with self.assertRaises(cp.PlanError): self.validate({})
@@ -596,7 +596,7 @@ class RemoteTests(unittest.TestCase):
     def test_gate_requires_plan_and_matrix_aggregate_success_without_reuse(self):
         payload = self.payload()
         needs = {"plan": {"result": "success"}, "offline": {"result": "success"}}
-        self.assertEqual(cp.remote_gate(payload, self.facts, needs)["matrix_count"], 4)
+        self.assertEqual(cp.remote_gate(payload, self.facts, needs)["matrix_count"], 2)
         self.assertEqual(cp.remote_gate(payload, self.facts, needs)["matrix_status_source"], "needs.offline.result")
         for job in needs:
             for result in (None, "skipped", "cancelled", "failure", "not_configured", ""):
@@ -621,7 +621,7 @@ class RemoteTests(unittest.TestCase):
             env = {"GITHUB_EVENT_PATH": str(event_path), "GITHUB_EVENT_NAME": "pull_request",
                    "GITHUB_REF": "refs/pull/1/merge", "GITHUB_SHA": self.sha, "GITHUB_RUN_ID": "1",
                    "GITHUB_RUN_ATTEMPT": "2", "GITHUB_OUTPUT": str(output_path),
-                   "BATON_MATRIX_OS": "ubuntu-latest", "BATON_MATRIX_PYTHON": "3.11"}
+                   "BATON_MATRIX_OS": "windows-latest", "BATON_MATRIX_PYTHON": "3.11"}
             with self.context(), patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
                 self.assertEqual(cp.main(["--remote", "plan"]), 0)
             outputs = dict(line.split("=", 1) for line in output_path.read_text(encoding="utf-8").splitlines())
@@ -640,6 +640,28 @@ class RemoteTests(unittest.TestCase):
                 with patch.dict(os.environ, env): self.assertEqual(cp.main(["--remote", "gate"]), 1)
             with self.context(), patch.dict(os.environ, dict(env, BATON_CI_PLAN="")), redirect_stdout(io.StringIO()):
                 self.assertEqual(cp.main(["--remote", "gate"]), 1)
+
+    def test_windows_pair_required_for_every_event_and_non_windows_rejected(self):
+        self.assertEqual(cp.MATRIX, [{"os": "windows-latest", "python": version}
+                                     for version in ("3.11", "3.12")])
+        ready = deepcopy(self.event); ready["pull_request"]["draft"] = False
+        facts_set = [self.facts, cp.remote_facts("pull_request", ready, "refs/pull/1/merge", self.sha),
+                     cp.remote_facts("push", {"before": self.base, "after": self.sha}, "refs/heads/main", self.sha),
+                     cp.remote_facts("workflow_dispatch", {"inputs": {"base": self.base, "tier": "full"}}, "ref", self.sha)]
+        needs = {"plan": {"result": "success"}, "offline": {"result": "success"}}
+        invalid = [cp.MATRIX[:1], cp.MATRIX[1:], [cp.MATRIX[0], cp.MATRIX[0]],
+                   [{"os": "ubuntu-latest", "python": version} for version in ("3.11", "3.12")],
+                   [{"os": "ubuntu-latest", "python": "3.11"}, *cp.MATRIX],
+                   [*cp.MATRIX, {"os": "windows-latest", "python": "3.13"}]]
+        for facts in facts_set:
+            payload = self.payload(facts=facts)
+            self.validate(payload, facts)
+            self.assertEqual(cp.remote_gate(payload, facts, needs)["matrix_count"], 2)
+            for matrix in invalid:
+                with self.subTest(event=facts["event_kind"], matrix=matrix):
+                    bad = deepcopy(payload); bad["matrix"] = matrix
+                    with self.assertRaises(cp.PlanError): self.validate(bad, facts)
+                    with self.assertRaises(cp.PlanError): cp.remote_gate(bad, facts, needs)
 
 
 class RemoteResultTests(unittest.TestCase):

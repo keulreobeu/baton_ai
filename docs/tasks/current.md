@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 수정 전 `6a37bb3`의 Claude 검토는 FAIL, 수정 후보 `3f6ab1b`의 P1 세 건 및 계측 보강은 Claude scoped PASS(26 tests)다. 동일 후보/원래 Task base `5c07aea`의 공식 순차 V3는 **657 tests OK, 955.900 s, 실패/오류/skip 0**, 전후 SHA 동일/clean이다. V2 154 tests도 통과했다. 비차단 P3 두 건은 기록했으며 전체 Task 교차-provider PASS/원격 fixed4 CI는 아직 없다. Ubuntu의 기존 Windows 전용 skip은 현재 no-skip 계약에서 실패 조건이며 정책 결정 대기다. hosted draft는 CBM 부재 시 V3 fallback, CI 절감 미입증. Task in_progress, GIT-CALL DEFERRED. 이 후속 증거 문서 커밋을 `3f6ab1b` V3와 자동 동등 취급하지 않는다.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 2026-11-13 사용자 '리눅스는 나중에 확장하고 윈도우부터 안정화 해야지'에 따라 Spec revision 4 Windows-first를 구현했다. 현재 검증은 windows-latest × Python 3.11/3.12 두 조합, plan/gate도 Windows다. Linux 검증은 후속 확장으로 미루며 no-skip은 유지한다. Ubuntu skip 정책 질문은 superseded다. V2 119 tests OK(78.312 s)와 원래 Task-base SDD를 통과했다. 앞선 `3f6ab1b`의 P1 수정/Claude scoped PASS/657-test V3는 과거 후보 증거로 보존하며 새 후보에 재사용하지 않는다. 새 후보 독립 검토/V3 및 원격 Windows CI는 pending, Task in_progress, GIT-CALL DEFERRED다.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
 

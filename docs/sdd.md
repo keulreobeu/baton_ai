@@ -71,7 +71,7 @@ CI 파일은 준비할 수 있지만 원격 push/PR/merge는 현재 별도 승�
 CBM 선택 전 freshness/coverage 확인·stale incremental index·재확인을 요구한다. L3 경로·workflow/검증 진입점·의존성/설정 변경·이전 범위 밖 실패는 V3로 상향한다. graph stale/failed/partial·테스트 매핑 불가는 V2에서 V3로 fallback한다. V1은 가용 CBM 영향 범위와 전체 Task-base Git diff의 직접 변경 파일 검사를 합친다. 그래프 불완전/조회 실패만으로 V1을 full로 올리거나 실패시키지 않는다. 잘못된 root/generation/schema 결과는 폐기하고 직접 파일 검사를 실행한다. 실행 검사 실패는 V1 실패, 검사 없음은 NOT_RUN이며 passed가 아니다. graph 실패가 검사를 생략하지 않는다. V1=L1 Fast Feedback, V2=L2 Impact Validation, V3=L3 Full Validation은 SDD 변경 위험 등급 L1/L2/L3와 구별한다. 기존 fast runner는 보조 피드백이며 공식 V3를 대체하지 않는다.
 같은 SHA만으로 검증 재사용을 결정하지 않는다. V3 재사용은 코드 상태·commit SHA·target base·Task/AC·정책·테스트 설정·의존성·환경·필수 검사 목록/성공 결과가 모두 엄격히 동일할 때만 허용하며 unknown/partial이면 재실행한다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. CBM 선택과 엄격한 V3 재사용만 허용하며 새 검증 DB·두 번째 정책 엔진은 금지한다. 기존 MetricsStore·Task 증거를 사용하고 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다. merge에는 유효한 V3가 필요하고 미설정 검사는 `not_configured`이며 passed가 아니다.
-worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다. V1/V2 결과는 Task 완료 상태를 올리지 않는다. draft PR=V2 범위, ready/main=V3 전체 4 matrix이며 로컬 재사용이 필수 원격 CI를 생략하지 않는다. hosted runner에 CBM이 없어 현재 draft도 V3 fallback이다.
+worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다. V1/V2 결과는 Task 완료 상태를 올리지 않는다. draft PR=V2 범위, ready/main=V3 Windows 전체 2 matrix이며 로컬 재사용이 필수 원격 CI를 생략하지 않는다. hosted runner에 CBM이 없어 현재 draft도 V3 fallback이다.
 fast runner 결과는 SDD 검사가 아니며 verified 증거로 쓰지 않는다.
 
 ## Worker 입출력과 묶음 반영 (CI-OPT-001 AC-02)
@@ -88,3 +88,5 @@ SDD 고급 기능보다 P0를 우선한다. P0는 quota-window(구현됨)이고,
 포함하며 quota-window의 핑 타이밍 제어와 혼동하지 않는다. 작업 자동 실행·분배는 P1이다. 이후
 Provider, Backup, 외부 Policy 발견, 조건부 Review 순서다. 실제 핑/등록/종료·유료 API는 금지다. GMS는 GMS-001 범위에서 사용자가 직접 실행할 때만 허용한다.
 이 문서는 연결 프로젝트를 온보딩하거나 규칙/host 등록본을 수정하는 명령을 만들지 않는다.
+
+Windows 우선 안정화(2026-11-13 사용자 결정): 현재 CI는 windows-latest × Python 3.11/3.12 두 검증 조합이며 plan/gate도 Windows다. Linux/Ubuntu 검증은 후속 확장이고 로컬 Git 가속용 Ubuntu/WSL은 띄우지 않는다. 필수 Windows 검사의 nonzero/no-skip 규칙은 유지한다.

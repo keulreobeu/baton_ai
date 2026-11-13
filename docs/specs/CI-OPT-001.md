@@ -5,10 +5,11 @@ kind = "spec"
 id = "CI-OPT-001"
 status = "approved"
 owner = "Claude"
-revision = 3
+revision = 4
 approved_by = "사용자"
-approved_at = "2026-11-12"
-approval_ref = "2026-11-12 user-approved V1 Fast Feedback amendment relayed by coordinator msg_beb3d53cbede: union available CBM impact with full Task-base Git direct-file checks; graph partial/failure alone does not force full or fail V1; executed failures fail, no checks NOT_RUN; preserve conservative V2 and independent full V3/final safeguards. Prior revision2 approval retained below."
+approved_at = "2026-11-13"
+approval_ref = "2026-11-13 user: 리눅스는 나중에 확장하고 윈도우부터 안정화 해야지. Windows-first CI: windows-latest x Python 3.11/3.12, two required validation members; plan/gate also Windows. Linux validation deferred. Existing nonzero/no-skip, V1/V2/V3, evidence, independent-review and push boundaries remain."
+prior_revision3_approval_ref = "2026-11-12 user-approved V1 Fast Feedback amendment relayed by coordinator msg_beb3d53cbede: union available CBM impact with full Task-base Git direct-file checks; graph partial/failure alone does not force full or fail V1; executed failures fail, no checks NOT_RUN; preserve conservative V2 and independent full V3/final safeguards. Prior revision2 approval retained below."
 prior_revision2_approval_ref = "2026-11-12 사용자 결정: A = '1': rewrite CI-OPT T3 (T3a-T3c, AC-05..AC-12, still unimplemented; scripts/ci_plan.py does not exist) into the V1/V2/V3 design; ci_plan.py becomes the single policy planner (no second engine). | B = '제안대로': V1 and V2 run as local BATON validation (task validation / work-unit checks with local commits); GitHub CI: draft PR = V2 scope, ready PR and main push = V3 full (fixed 4 matrix, AC-08 'ready/main always full 4' kept). Push rules in AGENTS stay unchanged (push still needs its own approval). | C = '변경 허용': amend CI-OPT-001 AC-01 (the ban on a new impact-analysis engine/cache) and AC-13 (verification cache out of scope) and the AGENTS verification ladder, only as needed for: CBM graph-based selection for V1/V2, and V3 result reuse under strict equality of code state/commit SHA/target base/test config/dependencies/environment/required check list (same SHA alone never suffices). No new verification DB: record in existing MetricsStore/Task evidence. | E: CBM installed binary-only (codebase-memory-mcp 0.12.1, C:/Users/SSAFY/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes. | F: CBM defaults kept (watcher_enabled true, auto_watch true, watch_non_git false, auto_index false); before any V1/V2 selection BATON checks freshness (index_status / check_index_coverage), runs an incremental index_repository if stale, and falls back to V3 on any failure; resource caps decided after measurement. Trial measurement: index of this worktree 7.5 s, 16 MB SQLite in %USERPROFILE%/.cache/codebase-memory-mcp, repository untouched."
 ```
 
@@ -17,7 +18,7 @@ T2의 방법론·트리거 구현은 보존한다. T3a~T3c는 로컬 V2 checkpoi
 worker 결과의 편집 피드백은 V1, 명시 checkpoint는 V2, 기본 완료 검증은 V3이며 세 단계의 상태는 서로 대체하지 않는다. 실제 CBM 없는 hosted draft는 V3 fallback이다.
 
 재사용: `check_sdd.changes()`·`required_level()`·공유 `eligible_tasks()`, 공식 순차 `verify_environment.py`, 기존 fast runner,
-`verify.yml`의 고정 4 matrix·`fetch-depth: 0`·GMS optional 검사. `scripts/ci_plan.py` 하나만 정책 planner로 둔다.
+`verify.yml`의 Windows 고정 2 matrix·`fetch-depth: 0`·GMS optional 검사. `scripts/ci_plan.py` 하나만 정책 planner로 둔다.
 CBM은 그래프 조회/인덱싱 도구이며 BATON Python 테스트 선택 정책은 planner 내부 adapter가 담당한다. 두 번째 정책 엔진은 두지 않는다.
 새 서비스·오케스트레이터·외부 action·검증 DB·Base+Delta overlay는 만들지 않는다. CBM 자체 전역 cache와 검증 결과 재사용은 구분한다.
 
@@ -46,7 +47,7 @@ Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한�
 
 ## CI-OPT-001-REQ-02 PR/main 트리거와 동시 실행 제어
 
-작업 T2의 둘째 묶음이다. 같은 SHA의 push+pull_request 중복 실행을 없앤다. 분류기 없이 고정 4 matrix를 유지할 수 있다.
+작업 T2의 둘째 묶음이다. 같은 SHA의 push+pull_request 중복 실행을 없앤다. 분류기 없이 Windows 고정 2 matrix를 유지할 수 있다.
 
 ### CI-OPT-001-AC-03
 
@@ -57,8 +58,8 @@ PR 없는 branch push는 CI를 부르지 않는다. `labeled`/`unlabeled`를 추
 ### CI-OPT-001-AC-04
 
 PR은 PR 번호별 그룹 + `cancel-in-progress: true`로 오래된 PR 실행을 취소한다. main push는 SHA별 그룹
-(`verify-main-<sha>`) + `cancel-in-progress: false`로 커밋마다 증거를 남긴다(R1). 첫 묶음은 ubuntu/windows × 3.11/3.12
-고정 4 matrix를 유지한다. 모든 checkout은 `fetch-depth: 0`, 모든 전체 회귀 job은 "gms extra 없이 기본 설치" 검사와
+(`verify-main-<sha>`) + `cancel-in-progress: false`로 커밋마다 증거를 남긴다(R1). 현재 안정화 범위는 windows-latest × Python 3.11/3.12
+Windows 고정 2 matrix를 유지한다. 모든 checkout은 `fetch-depth: 0`, 모든 전체 회귀 job은 "gms extra 없이 기본 설치" 검사와
 `cryptography` extra 설치 검사를 유지한다. 음성: 작업 T2 단계 문서·안내는 아직 없는 `workflow_dispatch`나 `ci:full` 즉시 실행을
 안내하지 않는다.
 
@@ -112,10 +113,10 @@ Task의 선택 TOML `validation_minimum = 1|2|3`과 planner API/CLI minimum은 s
 로컬 BATON validation은 worker 결과 후 편집 피드백 V1, `baton task validate --stage checkpoint`의 작업 단위 V2, 기본 `baton task validate` 완료 V3를 사용하며 커밋·push 승인 규칙은 AGENTS를 그대로 따른다.
 V1/V2 확인은 Task를 `REVIEW_REQUIRED`보다 높은 완료 상태로 승격하지 않으며 최종 review/integration evidence는 별도 V3 검사 뒤에만 기록된다.
 GitHub draft PR은 V2 affected_modules 범위, ready PR·병합 후보·main push는 V3 full이다.
-ready/main은 항상 전체 4 matrix(ubuntu/windows × Python 3.11/3.12)이며 어떤 입력도 4 미만으로 낮추지 않는다.
-이 계약은 draft도 기존 4 matrix에서 테스트 범위만 V2로 줄인다(새 2/3 matrix 정책 없음). V3 fallback이면 전체 테스트를 4개 모두 실행한다.
+ready/main은 항상 Windows 전체 2 matrix(windows-latest × Python 3.11/3.12)이며 어떤 입력도 2 미만으로 낮추지 않는다.
+이 계약은 draft도 Windows 2 matrix에서 테스트 범위만 V2로 줄인다(변경 등급별 OS/Python 조합 축소 없음). V3 fallback이면 전체 테스트를 2개 모두 실행한다.
 `ci:full` 라벨은 다음 지원 PR 이벤트에서 V3로 올리기만 한다. labeled/unlabeled 이벤트는 추가하지 않는다.
-고정 4 matrix·fetch-depth: 0·기본 설치/GMS extra 검사는 유지한다. draft-T0 전용 job은 만들지 않는다.
+Windows 고정 2 matrix·fetch-depth: 0·기본 설치/GMS extra 검사는 유지한다. draft-T0 전용 job은 만들지 않는다.
 아직 workflow는 T2의 전체 4 회귀이며 T3 구현 전 draft 축소를 실행 중이라고 안내하지 않는다.
 
 ### CI-OPT-001-AC-09
@@ -139,7 +140,7 @@ repository persistence(`.codebase-memory/graph.db.zst`)는 끈다. 구현 묶음
 
 ### CI-OPT-001-AC-10
 
-`workflow_dispatch` 입력은 필수 `base`, `tier=full`만 허용(choice)한다. V3 full 4 matrix이며 명시 base에 기존 `--base` 경로를 쓴다.
+`workflow_dispatch` 입력은 필수 `base`, `tier=full`만 허용(choice)한다. V3 full Windows 2 matrix이며 명시 base에 기존 `--base` 경로를 쓴다.
 PR/push 필드가 없는 dispatch에는 `--ci`를 적용하지 않는다. 그룹은 PR/main과 분리한 ref + run id, cancel-in-progress=false다.
 실제 head SHA와 입력 base를 기록한다. 구현·테스트 뒤에만 즉시 전체 실행을 안내한다.
 음성: 진단용 dispatch는 현재 ready PR merge-ref나 main 증거를 대체하지 않고 PR/main 실행을 취소하지 않는다.
@@ -148,7 +149,7 @@ PR/push 필드가 없는 dispatch에는 `--ci`를 적용하지 않는다. 그룹
 
 ### CI-OPT-001-AC-11
 
-`if: always()` 종료 gate가 이벤트 사실에서 요구 단계를 독립 확인한다: draft=V2 이상, ready/main/dispatch=V3 full 4.
+`if: always()` 종료 gate가 이벤트 사실에서 요구 단계를 독립 확인한다: draft=V2 이상, ready/main/dispatch=V3 full Windows 2.
 요구 단계·planner 검사 목록·계획 matrix 집합이 일치하고 선택 job의 집계 결과가 success여야 한다.
 plan 실패·필수 job skip/cancel/fail·빈 검사 목록·필수 검사 누락·일치하지 않는 코드 상태는 gate 실패다.
 미설정 검사는 `not_configured`로 기록하고 passed로 취급하지 않는다. 필수 검사라면 merge/완료를 차단한다.
@@ -164,10 +165,10 @@ V3 결과 재사용은 기존 MetricsStore·Task 증거에 있는 성공한 V3�
 항목이 unknown/partial/누락이거나 변경되면 재사용하지 않고 V3를 실행한다. 같은 SHA만으로 검증 재사용을 결정하지 않는다.
 실패·취소·skip·not_configured 필수 검사·tests_run=0 증거는 재사용 불가이며 기존 nonzero/no-skip·독립 검토 조건을 보존한다.
 코드 상태는 검사 전후 고정해서 비교하고, 달라지면 해당 증거를 무효화한다. 재사용 결정과 각 비교 사유를 남긴다.
-로컬 V3 재사용은 필수 원격 CI를 대신하지 않는다. ready/main CI full 4 job을 재사용으로 생략하지 않는다. V1/V2 partial/fast pass는 V3 재사용·최종 완료/merge 요건을 충족하지 않는다.
+로컬 V3 재사용은 필수 원격 CI를 대신하지 않는다. ready/main CI full Windows 2 job을 재사용으로 생략하지 않는다. V1/V2 partial/fast pass는 V3 재사용·최종 완료/merge 요건을 충족하지 않는다.
 PR 증거는 실제 merge-ref SHA/tree·base(PR head/이후 main과 구분), event/activity·이벤트 시점 draft·run id/attempt를 기록한다.
 같은 head의 옛 draft 재실행은 ready 증거가 아니며 이전 head/base ready 성공도 현재 증거가 아니다.
-ready/main 실제 4 job 성공은 별도 승인된 원격 E2E에서 개별 job으로 확인하고 그 전에는 `not_run`이다.
+ready/main 실제 Windows 2 job 성공은 별도 승인된 원격 E2E에서 개별 job으로 확인하고 그 전에는 `not_run`이다.
 정적 계약 테스트·오프라인 planner 테스트는 원격 E2E passed 근거가 아니다.
 
 기존 MetricsStore append-only event/profile과 Task 증거에 아래 필드를 기록한다. T3d는 제한된 `ci.validation` event API와 Orchestrator caller를 연결하며 `status`는 `passed`/`failed`/`not_run`을 구분한다. event는 기존 원장과 report에 추가되고 provider/token 회계나 Task 완료 상태를 바꾸지 않는다.
@@ -253,3 +254,14 @@ V1의 그래프 불완전/실패는 직접 파일 검사와 가용 영향 범위
 별도 정책/위험 경로·미상 stage/event·상태 변경·이전 범위 밖 실패 상향 규칙은 유지한다.
 worker는 V1, 명시 checkpoint CLI는 V2, 기본 완료 검증은 V3 호출자로 연결한다. V1/V2 결과는 Task 완료 상태를 올리지 않는다.
 최종 전체 AC/nonzero/no-skip/독립 검토/CI와 push/model/GMS/GIT-CALL 경계는 불변이다.
+
+
+## Eng Review Amendments — 2026-11-13 Windows 우선 안정화
+
+사용자 원문: '리눅스는 나중에 확장하고 윈도우부터 안정화 해야지'. revision 4 승인 근거다.
+과거 Ubuntu/Windows full 4 결정은 현재 검증 범위에서 superseded다. 현재 draft/ready/main/dispatch의
+필수 matrix는 windows-latest × Python 3.11/3.12 두 조합이며, plan과 gate도 windows-latest에서 실행한다.
+Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아니며 현재 필수 Windows 검사에는
+기존 nonzero/no-skip과 V3 전체 검증/독립 검토/CI를 그대로 적용한다. 로컬 Git 가속용 Ubuntu/WSL도 띄우지 않는다.
+기존 event/concurrency/timeout/권한/GMS optional 검사/base와 evidence 결합은 보존한다.
+원격 실행은 별도 승인 전 NOT_RUN이며 Windows 안정화나 비용/시간 절감을 이미 입증했다고 주장하지 않는다.

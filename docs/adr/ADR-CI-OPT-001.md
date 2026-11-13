@@ -1,4 +1,4 @@
-# ADR-CI-OPT-001 — draft만 축소하고 최종 후보는 항상 전체 4 matrix
+# ADR-CI-OPT-001 — Windows 우선 안정화와 단계별 검증
 
 ```toml
 kind = "adr"
@@ -69,3 +69,14 @@ partial/failed graph만으로 full fallback/실패하지 않으며 잘못된 roo
 V2=L2 Impact Validation은 completeness/fallback을 유지하고 V3=L3 Full Validation은 graph 독립 full이다.
 별칭은 SDD 위험 등급과 다르며 allAC/nonzero/no-skip/독립 검토/CI 및 별도 위험 경로 상향은 유지한다.
 내부 stage API만 노출하며 호출자 연결 pending을 명시한다. 독립 검토·최종 V3·원격 CI는 pending이다.
+
+
+## Eng Review Amendments — 2026-11-13 Windows 우선 안정화
+
+사용자 원문 '리눅스는 나중에 확장하고 윈도우부터 안정화 해야지'에 따라 이전 full 4의 OS 범위를 개정한다.
+이 문서 위의 3-A/full 4는 과거 결정 이력이며 현재는 Spec revision 4가 우선한다.
+현재 필수 검증은 Windows × Python 3.11/3.12 두 조합, plan/gate도 Windows에서 실행한다.
+Linux/Ubuntu qualification은 후속 확장이다. 로컬 Git 조회 가속을 위한 Ubuntu/WSL 기동도 하지 않는다.
+필수 Windows 검사에 skip 예외를 만들지 않고 nonzero/no-skip/V3/독립 검토/원격 CI를 유지한다.
+대가: 현재 Linux 호환성은 CI로 검증하지 않으며 두 Python 검증 외 plan/gate 두 job의 준비 비용도 남는다.
+이 결정은 원격 실행/push/PR/모델 smoke를 승인하지 않는다.

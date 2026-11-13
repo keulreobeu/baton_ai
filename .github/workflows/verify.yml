@@ -23,7 +23,7 @@ permissions:
   contents: read
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 25
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest]
         python: ['3.11', '3.12']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -73,7 +73,7 @@ jobs:
   gate:
     if: always()
     needs: [plan, offline]
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 25
     env:
       PYTHONPATH: src

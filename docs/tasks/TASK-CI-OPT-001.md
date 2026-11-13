@@ -16,7 +16,7 @@ acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-A
 
 이전 `SDD-001-AC-06` 임시 Task 연결의 T1 검사는 아래 작성 기록에 보존한다. 현재 verification 증거는 CI-OPT-001 AC 단위로 추가한다.
 
-계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 3, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
+계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 4, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
 독립 검토(`independent_review`)는 아직 없다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
 
 AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장에 CI-OPT-001 feature와 AC-01~13을 등록했다.
@@ -31,7 +31,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V1/V2/V3 caller는 T3d에서 연결; 로컬 V2 및 공식 V3 완료, 교차-provider 독립 검토 pending |
-| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; 로컬 공식 V3 완료, 원격 fixed4 CI·독립 검토 pending |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix로 변경 중; draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full; 새 후보 검증·독립 검토·원격 Windows CI pending |
 | 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests, Task-base SDD, 공식 V3 통과; 독립 검토·원격 CI pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
@@ -623,3 +623,44 @@ Evidence-only status files at this checkpoint:
 - 이 결과는 위 정확한 후보/base/환경의 V3다. 뒤따르는 Task/current 증거 문구 커밋이나
   이후 소스/정책/Task/환경 변경에 자동 재사용하지 않는다. strict equality가 unknown이면 재검증한다.
   이번 후속 저장은 증거 문구뿐이며 Task를 verified로 올리거나 후보를 merge 가능하다고 선언하지 않는다.
+
+## Windows 우선 안정화 — 2026-11-13 사용자 결정
+
+- 사용자 원문: '리눅스는 나중에 확장하고 윈도우부터 안정화 해야지'. 기존 Ubuntu/Windows 4 matrix를
+  현재 필수 범위로 유지하던 결정을 변경한다. Linux/Ubuntu qualification은 후속 확장으로 미룬다.
+- 시작 branch `codex/ci-opt-001`, HEAD `2b25d8b17a9ce7069f735762f4813abcfe6336e8`, index/worktree clean.
+  원래 전체 Task base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`도 유지한다.
+- Spec revision 4 approval_ref, Plan/ADR Eng Review Amendments, AGENTS/README/sdd 지침 및
+  workflow/planner/gate/테스트/traceability를 함께 변경한다. 새 Task/정책 엔진/DB는 만들지 않는다.
+- 현재 matrix는 windows-latest × Python 3.11/3.12 두 필수 조합이다. plan과 gate도 Windows에서 실행한다.
+  전체 job 수는 plan 1 + validation 2 + gate 1 = 4이며 테스트 matrix는 2다.
+  draft/ready/main/dispatch 모두 같은 두 조합을 요구하고 Linux 추가/한 조합 누락/중복/미지원 Python을 거부한다.
+- 필수 Windows 검사의 nonzero/no-skip, V3 full, 기존 event/concurrency/base/SHA/evidence,
+  permissions/timeout/GMS optional 단계와 독립 검토/원격 CI 조건을 유지한다.
+  Ubuntu skip 예외를 허용한 것이 아니며 해당 Ubuntu job 자체를 현재 필수 범위에서 제외한다.
+  로컬 Git 조회 가속용 Ubuntu/WSL은 띄우지 않는다. Windows 호환성 외 OS 검증과 속도/비용 절감을 주장하지 않는다.
+- 이전 Ubuntu skip 정책 질문/차단은 이번 범위 결정으로 superseded다. 과거 fixed4 및 `3f6ab1b`의
+  657-test V3는 그 당시 후보의 이력이며 새 정책 후보에 자동 재사용하지 않는다.
+- 현재 편집 중이며 V1/V2, 고정 후보의 독립 검토와 공식 V3는 후속 증거로 기록한다.
+  원격 Windows matrix 실행은 NOT_RUN이며 push/PR/GIT-CALL은 계속 보류다. Task in_progress 유지.
+
+### Windows-first V1 확인
+
+- `tests.test_ci_plan.RemoteTests` + `tests.test_ci_workflow`: **28 tests OK, 0.084 s**, 실패/오류/skip 0.
+  모든 지원 이벤트의 두 Windows 조합, 누락/중복/Linux/미지원 Python 거부, plan/gate Windows 실행,
+  Spec revision 4 승인 및 기존 이벤트/timeout/GMS/no-skip 경계를 검사했다.
+  실제 모델/provider/원격 CI/Ubuntu/WSL 실행 0. 새 matrix 음성 테스트는 AC-08에 연결했다.
+
+### Windows-first V2 checkpoint
+
+- checkout `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_ci_plan tests.test_sdd
+  tests.test_ci_workflow tests.test_managed_harness`: **119 tests OK, 78.312 s**, exit 0,
+  failures/errors/skips/expected failures/unexpected successes 0. PYTHONPATH=src,
+  PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME, 검증 대상 실제 provider/GMS/network 호출 0.
+- 원래 Task base `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` 기준 SDD PASS
+  (documents 48, features 10, tasks 18, ACs 75, changed_paths 57, provider_calls 0), diff check PASS.
+  최종 증거 문구를 갱신한 뒤 같은 SDD/diff를 read-back한다.
+- 소유 scope는 workflow, ci_plan, 관련 두 테스트, AGENTS/README/sdd,
+  CI-OPT Spec/Plan/ADR/Task/current 및 traceability의 13개 파일이다. 그 밖의 제품/자격 증명 코드는 수정하지 않았다.
+- 다음은 고정 후보의 교차-provider 검토와 공식 V3다. 원격 Windows CI는 NOT_RUN,
+  GIT-CALL/push/PR은 실행하지 않는다. Task in_progress 유지.
