@@ -10,22 +10,17 @@ specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
 scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "tests/test_managed_harness.py"]
-acs = ["SDD-001-AC-06"]
+acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
 
-[[verification]]
-command = "python -X utf8 scripts/check_sdd.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26"
-result = "passed"
-evidence = "docs/tasks/TASK-CI-OPT-001.md#작업-t1-기록--2026-11-11"
-acs = ["SDD-001-AC-06"]
 ```
+
+이전 `SDD-001-AC-06` 임시 Task 연결의 T1 검사는 아래 작성 기록에 보존한다. 현재 verification 증거는 CI-OPT-001 AC 단위로 추가한다.
 
 계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 3, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
 독립 검토(`independent_review`)는 아직 없다. L3이므로 verified 전에 `check_sdd.py`를 포함한 독립 검토가 필요하다.
 
-AC 연결: 검사기는 원장 feature의 AC마다 실제 테스트 symbol을 요구한다. CI-OPT-001 AC의 테스트는 작업 T2/T3에서 생기므로 지금은
-원장 feature로 등록하지 않았고(Spec 미결정 P-06), 이 Task는 CI-OPT가 실제로 바꾸는 SDD-001-AC-06(활성 Task scope·CI SHA)에만 임시로
-연결한다. 테스트가 생기는 변경 묶음에서 CI-OPT-001 feature를 등록하고 `acs`를 CI-OPT-001-AC-01~13으로 바꾼다. 이 연결은 CI-OPT
-AC가 검증됐다는 뜻이 아니다.
+AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장에 CI-OPT-001 feature와 AC-01~13을 등록했다.
+이 연결과 현재 작업 단위의 통과 검사는 AC의 최종 검증·독립 리뷰·원격 CI 완료를 뜻하지 않는다.
 
 ## 단계와 소유 파일
 
@@ -34,10 +29,10 @@ AC가 검증됐다는 뜻이 아니다.
 | 작업 T1 | — (계약) | CI-OPT 4문서, `docs/proposals/T1-contract-revisions.md`, `docs/sdd/traceability.json`, `docs/tasks/current.md` | 문서 완료, 독립 검토 대기 |
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
-| 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 완료, 로컬 checkpoint 대상; 독립 검토 pending |
-| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | 작성·V2 테스트 99개 PASS, 로컬 저장/독립 검토 대기; V1/V2 API-only·호출자 연결 pending |
-| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | 작성 중, draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; V2·검토·V3·CI 증거는 아래 기록 |
-| 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability | 미구현, 전용 필드와 13 AC 일괄 등록 |
+| 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
+| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V2 checkpoint 완료; V1/V2 API-only·호출자 연결 pending, 독립 검토 pending |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | V2 checkpoint 완료, draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; 독립 검토·V3·원격 CI pending |
+| 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability/current | 구현·V2 검증 완료, 로컬 checkpoint 대기; planner/workflow 호출자 연동 pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | 2026-11-11 결정됨. 남은 pending: P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 |
@@ -348,3 +343,34 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 | `scripts/ci_plan.py` | `ba7f5fb1745c8e2e32d599a6ed3910daf82ed43466c390cfa08c9c98f108872d` | 52803 |
 | `tests/test_ci_plan.py` | `e52cf5a0db4dc03e542f16f1931d2a8225103754073540a8f81dc0ff5d9c9709` | 38633 |
 | `tests/test_ci_workflow.py` | `2b5a942437db21dc596c685a43f63dd953ab41a0055e749b7bedc45f8bfc5693` | 16521 |
+
+## T3d MetricsStore CI 증거 원장 — 2026-11-13
+
+- 기존 append-only `MetricsStore.events`에 `ci.validation` event writer와 report projection을 추가했다. 신규 DB/table/cache는 없다.
+  고정 필드 계약은 Task/commit/worktree/base, CBM index/generation/freshness/coverage, requested/effective level/stage/status,
+  test selection/count/reasons, nullable timings, escalation/fallback, reuse/equality, evidence/defect references,
+  measurement kind와 coverage state를 저장한다. `passed`/`failed`/`not_run`을 분리하고 unknown duration은 null로 보존한다.
+- 경계: event에는 caller가 넘긴 임의 키를 허용하지 않고 hash·SHA·level·enum·count·duration·식별자 형식을 검사한다.
+  reason은 machine code만 받고 test identifier 경로 traversal을 거부한다. event는 기존 provider/token 회계와 run/task 완료 상태에 영향을 주지 않는다.
+  실제 `ci_plan.py`/workflow 호출자 연결과 자동 계측은 미완료이므로 CI 축소 효과·시간은 주장하지 않는다.
+- 기존 테스트와 함께 CI-OPT-001 feature 및 AC-01~13의 테스트 symbol을 `traceability.json`에 일괄 등록하고 Task를 해당 AC들로 연결했다.
+  임시 `SDD-001-AC-06` 연결을 종료했으며, 이전 T1 검증 결과는 이 문서의 작성 이력에 남아 있다.
+- V2: checkout `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_observability tests.test_ci_plan tests.test_sdd tests.test_ci_workflow`
+  **115 tests OK, 84.193 s**, failures/errors/skips 0, exit 0. 마지막 선택 ID 형식 강화 뒤 추가 경계 테스트 3개 재실행 **3 tests OK, 0.392 s**.
+  전체 모델/provider/network/GMS 호출 0. 앞선 개발 실행에서는 새 경계 fixture 3개가 실패했고, traversal·reason validation 및 fixture 수정 후 위 결과로 재검증했다.
+- `scripts/check_sdd.py --base 644eef27e4da9411cf48b31f10840373c5bb2eff` PASS:
+  documents 48, features 10, tasks 18, ACs 75, changed_paths 5, provider_calls 0.
+  `git diff --check`와 최종 Task 증거 갱신 후 SDD read-back은 checkpoint 직전 다시 실행한다.
+- Task는 in_progress다. 독립 검토, 정확한 최종 후보의 공식 V3, required remote fixed4 CI/E2E, 실제 planner/workflow 호출자 계측은 pending.
+  Hosted draft CBM 부재 시 V3 fallback하며 절감 증거가 없다. GIT-CALL은 DEFERRED이고 push/PR 실행하지 않았다.
+- 고정 후보: branch `codex/ci-opt-001`, parent/base `644eef27e4da9411cf48b31f10840373c5bb2eff`, 시작 시 index 비어 있었음.
+  아래 raw SHA256은 Task를 제외한 6개 허용 파일의 고정 snapshot이다. Task 최종 SHA256은 별도 Git 담당자가 read-back한다.
+
+| File | Raw SHA256 | Bytes |
+|---|---|---:|
+| `docs/plans/ci-optimization.md` | `963797c5bc4b30b4c3aa942c8436c76fc0c5d86c62bd67b2be2e3ef70a863cbb` | 7437 |
+| `docs/sdd/traceability.json` | `2362290c51d189b2448fcda0ab05ac59dcda43051dfaf7d93f16ba2ecf0f27a8` | 65163 |
+| `docs/specs/CI-OPT-001.md` | `77ccb34ffa47b840a5af3d7328044bef0f2a338417d47aadf5b7407c7479be2f` | 26809 |
+| `docs/tasks/current.md` | `b3dc1d6075df8c5fea352a26199e3efa3536db337d1033bbc530f71bf8bb71b5` | 8587 |
+| `src/baton/observability.py` | `a8a2e125b00e1feaba2870e4dfeba23f1ed738e4e623ba31849bd5c884064e8d` | 45416 |
+| `tests/test_observability.py` | `efd3f0cea259ae9af16c8bf0722a816d11b201446cbf01851feb6257413ccc47` | 32162 |

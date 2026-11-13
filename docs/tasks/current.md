@@ -1,8 +1,8 @@
 # BATON 현재 개발
 
-## 현재 작업 — 2026-11-12 CI 단계 분할 T3 재개
+## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 사용자 지시로 T3a 공유 Task 선택·PR 회귀부터 재개했다. T3b planner → T3c workflow/gate → T3d 계측 순서이며 아직 CI 축소는 활성화하지 않았다. GIT-CALL은 별도 작업 공간에 미커밋 보존하고 검증·리뷰·통합 보류다. 최종 V3/독립 검토/원격 CI pending.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: T3a~T3c는 V2 checkpoint를 로컬 저장했고 T3d MetricsStore API·115개 회귀 및 13 AC traceability를 로컬 검증했다. 로컬 checkpoint 대기. CI 호출 축소는 실제 caller·CBM runner 준비와 검증 전까지 활성/절감으로 주장하지 않는다. hosted draft는 CBM 부재 시 V3 fallback이다. GIT-CALL은 DEFERRED 유지. 독립 검토·최종 V3·원격 fixed4 CI pending.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
 
@@ -30,13 +30,9 @@
   task scope가 `.github/workflows/`를 받음, ignored `__pycache__` bytecode는 snapshot에서 제외, 시작 전 실패한 재사용 재배정이 소유 binding을 유지,
   검토 프롬프트가 JSON 단일 본문·PASS `findings == []`·`notes`·Windows 전송 규칙을 알림(AC-04, 작성 단위 R3). R3 `ba694431`·EVID `05e1113`은 integrated locally at `529e93c`, approve/push pending.
 
-## 현재 작업 — 2026-11-12 CI 호출 축소 V1/V2/V3 계약
+## 이전 상태 기록 — 2026-11-12 CI 호출 축소 계약 (위 2026-11-13 상태가 우선)
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) in_progress L3: [CI-OPT-001](../specs/CI-OPT-001.md) revision 2는 사용자 A/B/C/E/F(2026-11-12)로 승인된 단계 기반 설계다.
-  T2 구현/증거는 보존한다. 미구현 T3a eligible_tasks+PR 회귀 → T3b 단일 ci_plan.py/CBM CLI adapter → T3c draft V2·ready/main V3 full 4+gate → T3d MetricsStore 필드/원장 등록 순서다.
-  편집 V1·checkpoint V2는 로컬 validation, 완료/pre_merge V3는 공식 순차 검증·독립 검토·CI다. CBM 실패/부분/미상은 V3이고 V3 재사용은 SHA 외 코드/base/설정/의존성/환경/필수 검사까지 엄격 동일해야 한다.
-  이번 단위는 문서·정적 테스트뿐이며 src/scripts/workflow 구현 없음. 이전 T3 pending은 Spec 처분 표로 대체, hooks는 T4 복귀까지 ON HOLD.
-  계약 독립 검토·T3 구현·공식 검증·원격 CI pending, verified 아님. AGENTS push 절과 별도 push 승인 경계는 유지한다.
+- 당시 revision 2 승인 직후의 미구현 상태 요약이다. T3a~T3d의 후속 구현·검증 상태는 위 2026-11-13 항목과 [Task 기록](TASK-CI-OPT-001.md)을 따른다.
 
 ## 현재 작업 — 2026-11-10 저장소 busy
 

@@ -13,7 +13,7 @@ prior_revision2_approval_ref = "2026-11-12 사용자 결정: A = '1': rewrite CI
 ```
 
 용어: **V1/V2/V3**는 검증 단계이며 작업 **T1~T4**는 구현 순서다. V1=L1 Fast Feedback / V2=L2 Impact Validation / V3=L3 Full Validation은 SDD 위험 등급 L1/L2/L3와 다르다. revision 1의 변경 분류 T0~T3와 draft별 2/3/4 matrix 표는 폐기한다.
-T2의 방법론·트리거 구현은 보존한다. T3a는 로컬 저장됐으며 독립 검토 pending이다. T3b는 작성·V2 테스트 완료(독립 검토 pending), T3c/T3d는 아직 미구현이다.
+T2의 방법론·트리거 구현은 보존한다. T3a~T3c는 로컬 V2 checkpoint와 독립 검토 pending이다. T3d는 MetricsStore CI validation append-only API와 traceability AC 연결까지 로컬 구현했으며 호출자 연결·실사용 계측은 pending이다.
 V1/V2는 내부 API-only이며 실제 호출자 연결과 원격 선택은 pending이다. 기존 완료 호출은 V3를 유지한다.
 
 재사용: `check_sdd.changes()`·`required_level()`·공유 `eligible_tasks()`, 공식 순차 `verify_environment.py`, 기존 fast runner,
@@ -169,8 +169,8 @@ PR 증거는 실제 merge-ref SHA/tree·base(PR head/이후 main과 구분), eve
 ready/main 실제 4 job 성공은 별도 승인된 원격 E2E에서 개별 job으로 확인하고 그 전에는 `not_run`이다.
 정적 계약 테스트·오프라인 planner 테스트는 원격 E2E passed 근거가 아니다.
 
-기존 MetricsStore의 append-only event/profile과 Task 증거에 다음 필드를 기록한다(아직 해당 전용 필드/API는 미구현).
-새 verification DB/table·별도 결과 cache 서비스를 만들지 않는다. 기존 payload 허용 목록/크기·개인정보 경계를 지키며 필요한 확장은 T3d에서 검증한다.
+기존 MetricsStore append-only event/profile과 Task 증거에 아래 필드를 기록한다. T3d는 제한된 `ci.validation` event API를 제공하며 `status`는 `passed`/`failed`/`not_run`을 구분한다. event는 기존 원장과 report에 추가되고 provider/token 회계나 Task 완료 상태를 바꾸지 않는다. 실제 호출자 연결은 pending이다.
+새 verification DB/table·별도 결과 cache 서비스를 만들지 않는다. 전용 event API는 필드 allowlist, identifier/hash/duration 경계, 기존 payload 크기 제한을 지키며 미수집 값은 null/unknown으로 둔다.
 
 | 필드 | 의미 |
 |---|---|

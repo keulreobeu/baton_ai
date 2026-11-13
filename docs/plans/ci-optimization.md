@@ -53,7 +53,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 ## 결정과 경계 — 2026-11-12
 
 사용자 A/B/C/E/F 원문과 Graph scope·D 보류는 Spec revision 2의 승인/환경 절을 따른다.
-T3a는 로컬 저장됐으며 T3b는 작성·V2 테스트 완료(로컬 저장/독립 검토 대기), T3c/T3d는 아직 미구현이다. 현재 workflow는 T2 고정 4 전체 회귀다. 훅 통합은 T4 Codex 복귀까지 ON HOLD.
+T3a~T3c는 V2 checkpoint를 로컬 저장했으며 독립 검토는 pending이다. T3d는 MetricsStore `ci.validation` append-only event API·보고 필드 및 13 AC traceability 연결을 로컬 구현했다. ci_plan/workflow에서 MetricsStore 호출자 연결과 실사용 계측은 pending이므로 CI 축소 효과는 미입증이다. hosted draft는 CBM 미설치로 V3 fallback이다. 훅 통합은 T4 Codex 복귀까지 ON HOLD.
 CBM은 프로젝트/worktree별 graph, 전역 cache/config만 공유한다. watcher 기본값 유지·선택 전 freshness 확인·실패 V3.
 resource cap은 측정 뒤 결정하며 trial 7.5 s/16 MB를 절감률로 일반화하지 않는다.
 범위 밖: main tree만 같은 생략·merge_group·공식 검증 병렬화·새 verification DB/서비스·Base+Delta overlay·원격 보호설정.
@@ -65,7 +65,7 @@ timeout은 CI-TIME-001 소유다. push/PR/model/GMS 승인과 설치/설정 변�
 V1=L1 Fast Feedback은 가용 CBM 영향 + 전체 Task-base 직접 파일 검사이고 partial/failed graph만으로 V3/실패하지 않는다.
 잘못된 root/generation/schema 결과는 폐기하며 실제 실행 실패는 실패, 검사 없음은 NOT_RUN이다.
 V2=L2 Impact Validation은 completeness/full fallback, V3=L3 Full Validation은 graph 독립 full이며 SDD 위험 등급과 구분한다.
-T3a 로컬 저장, T3b 작성·V2 테스트 99개 PASS(52.987초, skip 0), T3c/T3d 미구현이다. 현재 workflow는 T2 고정 4 전체 회귀다.
+T3a~T3c V2 checkpoint는 로컬 커밋됐다. T3d MetricsStore API·테스트·AC 원장은 로컬 구현됐으나 checkpoint/독립 검토/최종 검증이 남았다. 실제 호출자 연결과 hosted runner의 CBM 제공도 pending이므로 실행 시간 절감을 주장하지 않는다.
 내부 API는 stage=task_complete 및 target_base를 받으며 기존 완료 호출은 V3다. V1/V2 API-only 노출과 실제 호출자 연결 pending을 구분한다.
 공식 V3 명령은 실제 target tree/base 및 전체 budget을 사용하고 일반 검사의 300초 cap과 공공 명령 allowlist는 유지한다.
 T3b 중 실제 공식 full은 실행하지 않고 fake CLI/clock/process 및 synthetic Git으로 검증한다. 최종 V3/독립 검토/원격 CI pending.

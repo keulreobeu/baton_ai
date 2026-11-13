@@ -27,6 +27,19 @@ GATES = ("ac", "regression", "security", "scope", "review", "approval")
 PURPOSES = {"initial", "repair", "retry", "fallback", "unknown"}
 FAILURES = {"quota", "quota_exhausted", "rate_limit", "timeout", "auth", "network", "permission",
             "pause", "cancel", "interrupted", "uncertain", "budget", "DEFERRED_GMS", "unknown"}
+CI_EVENT_FIELDS = {
+    "task_id", "commit_sha", "worktree", "target_base", "index_id", "generation", "freshness", "coverage",
+    "requested_level", "effective_level", "stage", "status", "selected_tests", "total_tests",
+    "selection_reasons", "graph_seconds", "ci_seconds", "validation_seconds", "escalations", "fallback_reasons",
+    "reuse_decision", "equality_checks", "source_evidence", "v3_only_defects", "measurement_kind", "coverage_state",
+}
+CI_LEVELS = {1, 2, 3}
+CI_FRESHNESS = {"fresh", "stale", "failed", "partial", "unknown", "not_run"}
+CI_COVERAGE = {"complete", "partial", "unknown", "unavailable", "not_run"}
+CI_STAGES = {"editing", "checkpoint", "task_complete", "pre_merge", "pull_request", "main", "dispatch"}
+CI_STATUSES = {"passed", "failed", "not_run"}
+CI_REUSE = {"accepted", "rejected", "not_requested", "unknown"}
+CI_MEASUREMENTS = {"measured", "measured_calculation", "assumed", "unknown"}
 
 
 def encoded(value):
@@ -318,6 +331,104 @@ class MetricsStore:
             raise ValueError("invalid_phase")
         return self._append(ids["run_id"], "phase.finished", {"phase": phase, "duration_seconds": max(0, duration)}, attempt_id=ids["attempt_id"])
 
+    def record_ci_validation(self, request):
+        """Append a bounded, sanitized CI observation to the existing metrics ledger."""
+        from .contracts import relative_path
+        if not isinstance(request, dict):
+            raise ValueError("invalid_ci_observation")
+        allowed = {"run_id", "event_id", "evidence_sha256"} | CI_EVENT_FIELDS
+        if set(request) != allowed:
+            raise ValueError("invalid_ci_fields")
+        run_id, event_id = identity(request["run_id"]), identity(request["event_id"])
+        evidence_hash = sha(request["evidence_sha256"])
+        task_id = identity(request["task_id"])
+        commit_sha = request["commit_sha"]
+        target_base = request["target_base"]
+        if not isinstance(commit_sha, str) or not re.fullmatch(r"[a-f0-9]{40}", commit_sha):
+            raise ValueError("invalid_ci_commit")
+        if target_base is not None and (not isinstance(target_base, str) or not re.fullmatch(r"[a-f0-9]{40}", target_base)):
+            raise ValueError("invalid_ci_target_base")
+        worktree = relative_path(request["worktree"])
+        if any(type(request[field]) is not int or request[field] not in CI_LEVELS
+               for field in ("requested_level", "effective_level")):
+            raise ValueError("invalid_ci_level")
+        enums = (("freshness", CI_FRESHNESS), ("coverage", CI_COVERAGE), ("stage", CI_STAGES),
+                 ("status", CI_STATUSES), ("reuse_decision", CI_REUSE),
+                 ("measurement_kind", CI_MEASUREMENTS), ("coverage_state", CI_COVERAGE))
+        for field, choices in enums:
+            if not isinstance(request[field], str) or request[field] not in choices:
+                raise ValueError("invalid_ci_" + field)
+        def identifiers(field, *, maximum=256):
+            value = request[field]
+            if not isinstance(value, list) or len(value) > maximum:
+                raise ValueError("invalid_ci_" + field)
+            result = []
+            for item in value:
+                if not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9_.:/\\-]{1,400}", item):
+                    raise ValueError("invalid_ci_" + field)
+                if ".." in item.split("/"):
+                    raise ValueError("invalid_ci_" + field)
+                result.append(item)
+            if len(set(result)) != len(result):
+                raise ValueError("invalid_ci_" + field)
+            return result
+        selected = identifiers("selected_tests", maximum=10000)
+        if any(not re.fullmatch(r"[A-Za-z0-9_.:-]{1,400}", item) for item in selected):
+            raise ValueError("invalid_ci_selected_tests")
+        def reason_codes(field):
+            value = request[field]
+            if not isinstance(value, list) or len(value) > 256 or any(
+                    not isinstance(item, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", item) for item in value):
+                raise ValueError("invalid_ci_" + field)
+            if len(set(value)) != len(value):
+                raise ValueError("invalid_ci_" + field)
+            return value
+        reasons = reason_codes("selection_reasons")
+        escalations = reason_codes("escalations")
+        fallback_reasons = reason_codes("fallback_reasons")
+        source_evidence = identifiers("source_evidence")
+        defects = identifiers("v3_only_defects")
+        total_tests = request["total_tests"]
+        if total_tests is not None and (type(total_tests) is not int or not 0 <= total_tests <= 1000000):
+            raise ValueError("invalid_ci_total_tests")
+        if total_tests is not None and len(selected) > total_tests:
+            raise ValueError("invalid_ci_test_counts")
+        if request["status"] == "passed" and (not selected or total_tests == 0):
+            raise ValueError("invalid_ci_empty_success")
+        equality = request["equality_checks"]
+        if not isinstance(equality, dict) or len(equality) > 32 or any(
+                not isinstance(k, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", k)
+                or not isinstance(v, str) or v not in {"equal", "different", "unknown", "missing"}
+                for k, v in equality.items()):
+            raise ValueError("invalid_ci_equality_checks")
+        durations = {}
+        for field in ("graph_seconds", "ci_seconds", "validation_seconds"):
+            value = request[field]
+            if value is not None and (type(value) not in {int, float} or not 0 <= value <= 86400):
+                raise ValueError("invalid_ci_duration")
+            durations[field] = value
+        index_id = request["index_id"]
+        generation = request["generation"]
+        for field, value in (("index_id", index_id), ("generation", generation)):
+            if value is not None:
+                identity(value)
+        body = {"task_id": task_id, "commit_sha": commit_sha, "worktree": worktree, "target_base": target_base,
+                "index_id": index_id, "generation": generation, "freshness": request["freshness"],
+                "coverage": request["coverage"], "requested_level": request["requested_level"],
+                "effective_level": request["effective_level"], "stage": request["stage"], "status": request["status"],
+                "selected_tests": selected, "selected_count": len(selected), "total_tests": total_tests,
+                "selection_reasons": reasons, **durations, "escalations": escalations,
+                "fallback_reasons": fallback_reasons, "reuse_decision": request["reuse_decision"],
+                "equality_checks": dict(sorted(equality.items())), "source_evidence": source_evidence,
+                "v3_only_defects": defects, "measurement_kind": request["measurement_kind"],
+                "coverage_state": request["coverage_state"], "evidence_sha256": evidence_hash}
+        with self.tx() as c:
+            if not c.execute("SELECT 1 FROM runs WHERE run_id=?", (run_id,)).fetchone():
+                raise ValueError("unknown_metrics_run")
+        self._append(run_id, "ci.validation", body, event_id=event_id)
+        return {"event_id": event_id, "run_id": run_id, "kind": "ci.validation", "status": body["status"],
+                "selected_count": len(selected), "total_tests": total_tests, "coverage_state": body["coverage_state"]}
+
     def _manual(self, request, kind):
         from .contracts import relative_path, safe
         if not isinstance(request, dict): raise ValueError("invalid_manual_observation")
@@ -444,6 +555,7 @@ class MetricsStore:
         purposes_known = bool(invocations) and all(i.get("purpose", "unknown") != "unknown" for i in invocations.values())
         reviews = [e["body"] for e in events if e["kind"] == "review.recorded"]
         quota_reports = [e["body"] for e in events if e["kind"] == "quota.user_reported"]
+        ci_validations = [{"event_id": e["event_id"], **e["body"]} for e in events if e["kind"] == "ci.validation"]
         return {"schema_version": VERSION, "run_id": run_id, "task_id": run["task_id"], "profile": json.loads(run["profile"]),
                 "accounting_version": "lean-p0-v1", "provider_invocations_observed": len(invocations),
                 "provider_invocations": len(invocations) if collector_health == "ok" else None,
@@ -456,7 +568,8 @@ class MetricsStore:
                 "quota_block_events": {"provider_result": failures.get("quota", 0) + failures.get("quota_exhausted", 0),
                                        "user_reported": len(quota_reports), "account_ui_coverage": "not_integrated",
                                        "failure_coverage": "partial" if failures.get("unknown") else "observed"},
-                "review_observations": reviews, "chat_tokens": None, "quality_approval_granted_by_observer": False,
+                "review_observations": reviews, "ci_validations": ci_validations,
+                "chat_tokens": None, "quality_approval_granted_by_observer": False,
                 "profile_hash": run["profile_hash"], "run_revision": hashed([(e["event_id"], e["body"]) for e in events]),
                 "state": lifecycle_state if lifecycle_state is not None else state, "coverage_state": coverage, "known_observed_tokens": known,
                 "collector_health": collector_health,

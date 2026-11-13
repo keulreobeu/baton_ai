@@ -165,6 +165,56 @@ class LedgerTests(unittest.TestCase):
         request["evidence_sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
         return self.metrics.outcome(request)
 
+    def ci_observation(self, **changes):
+        run_id = changes.pop("run_id", None)
+        if run_id is None:
+            run_id = self.begin()["run_id"]
+        request = {"run_id": run_id, "event_id": "CI-EVENT-1", "evidence_sha256": "f" * 64,
+                   "task_id": "TASK-CI-OPT-001", "commit_sha": "a" * 40, "worktree": "src/baton",
+                   "target_base": "b" * 40, "index_id": "cbm-index-1", "generation": "gen-1",
+                   "freshness": "fresh", "coverage": "partial", "requested_level": 1, "effective_level": 1,
+                   "stage": "editing", "status": "not_run", "selected_tests": [], "total_tests": 10,
+                   "selection_reasons": ["DIRECT_CHANGE"], "graph_seconds": None, "ci_seconds": None,
+                   "validation_seconds": None, "escalations": [], "fallback_reasons": [],
+                   "reuse_decision": "not_requested", "equality_checks": {}, "source_evidence": ["EVID-1"],
+                   "v3_only_defects": [], "measurement_kind": "unknown", "coverage_state": "partial"}
+        request.update(changes)
+        return request
+
+    def test_ci_validation_events_preserve_status_unknowns_and_existing_report(self):
+        run_id = self.begin()["run_id"]
+        request = self.ci_observation(run_id=run_id)
+        self.metrics.record_ci_validation(request)
+        request = self.ci_observation(run_id=run_id, event_id="CI-EVENT-2", status="passed", selected_tests=["tests.test_a.T.test_one"],
+                                      graph_seconds=0.25, validation_seconds=3.5, measurement_kind="measured",
+                                      coverage_state="complete", coverage="complete")
+        self.metrics.record_ci_validation(request)
+        report = self.metrics.report(request["run_id"])
+        self.assertEqual([event["status"] for event in report["ci_validations"]], ["not_run", "passed"])
+        self.assertEqual(report["ci_validations"][0]["graph_seconds"], None)
+        self.assertEqual(report["ci_validations"][1]["selected_count"], 1)
+        self.assertEqual(report["provider_invocations_observed"], 0)
+
+    def test_ci_validation_rejects_untrusted_fields_and_invalid_values(self):
+        request = self.ci_observation()
+        with self.assertRaisesRegex(ValueError, "invalid_ci_fields"):
+            self.metrics.record_ci_validation({**request, "raw_log": "PRIVATE"})
+        for changes in ({"requested_level": 0}, {"requested_level": True}, {"status": "success"},
+                        {"status": "passed"},
+                        {"status": []}, {"graph_seconds": -1},
+                        {"selected_tests": ["../outside"]}, {"equality_checks": {"sha": "yes"}},
+                        {"equality_checks": {"sha": []}},
+                        {"commit_sha": "not-a-sha"},
+                        {"total_tests": 0, "selected_tests": ["tests.test_a.T.test_one"]}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.metrics.record_ci_validation(self.ci_observation(**changes))
+
+    def test_ci_validation_event_contains_only_allowlisted_values(self):
+        request = self.ci_observation()
+        request["selection_reasons"] = ["PRIVATE-OBJECTIVE"]
+        with self.assertRaisesRegex(ValueError, "invalid_ci_selection_reasons"):
+            self.metrics.record_ci_validation(request)
+
     def test_retry_keeps_failed_attempt_cost_and_same_run(self):
         self.suite()
         first, _ = self.completed(tokens=5, state="RETRYING")

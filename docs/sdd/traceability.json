@@ -41,7 +41,15 @@
     "docs/tasks/TASK-SCOPE-PATH-001.md",
     "docs/tasks/TASK-CI-TIME-001.md",
     "docs/plans/ci-windows-time.md",
-    "docs/adr/ADR-CI-TIME-001.md"
+    "docs/adr/ADR-CI-TIME-001.md",
+    "docs/specs/REVIEW-READ-001.md",
+    "docs/plans/review-read.md",
+    "docs/adr/ADR-REVIEW-READ-001.md",
+    "docs/tasks/TASK-REVIEW-READ-001.md",
+    "docs/tasks/TASK-BATON-T4-PREP-001.md",
+    "docs/tasks/TASK-FLOW-002.md",
+    "docs/tasks/TASK-HOOK-QUAL-001.md",
+    "docs/tasks/TASK-JIPDAM-SKIP-001.md"
   ],
   "features": [
     {
@@ -419,6 +427,20 @@
             "FLOW-001-AC-07",
             "FLOW-001-AC-08"
           ]
+        },
+        {
+          "id": "FLOW-001-REQ-05",
+          "acs": [
+            "FLOW-001-AC-09",
+            "FLOW-001-AC-10"
+          ]
+        },
+        {
+          "id": "FLOW-001-REQ-06",
+          "acs": [
+            "FLOW-001-AC-11",
+            "FLOW-001-AC-12"
+          ]
         }
       ],
       "acs": [
@@ -697,6 +719,58 @@
               "symbol": "FlowRuntimeTests.test_settled_scope_violation_blocks_and_releases_external_lease"
             }
           ]
+        },
+        {
+          "id": "FLOW-001-AC-09",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_task_and_worktree_exclusion_across_state_directories"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unknown_start_retains_lease_then_reconciles_without_resubmit"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-10",
+          "tests": [
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_changed_source_candidate_and_contract_invalidate_proof"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_changed_base_and_profile_require_revalidation"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-11",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unknown_cancellation_is_not_exit_and_partial_work_is_preserved"
+            },
+            {
+              "file": "tests/test_flow_evidence.py",
+              "symbol": "FlowEvidenceTests.test_failed_skipped_zero_and_semantic_tests_cannot_complete"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_hook_hints_preserve_real_wip_index_and_last_complete_card"
+            }
+          ]
+        },
+        {
+          "id": "FLOW-001-AC-12",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_unknown_start_retains_lease_then_reconciles_without_resubmit"
+            }
+          ]
         }
       ]
     },
@@ -915,6 +989,14 @@
           "acs": [
             "HANDOFF-001-AC-04"
           ]
+        },
+        {
+          "id": "HANDOFF-001-REQ-05",
+          "acs": [
+            "HANDOFF-001-AC-05",
+            "HANDOFF-001-AC-06",
+            "HANDOFF-001-AC-07"
+          ]
         }
       ],
       "acs": [
@@ -966,6 +1048,69 @@
             {
               "file": "tests/test_handoff.py",
               "symbol": "HandoffTests.test_wip_inventory_idempotency_index_and_no_models"
+            }
+          ]
+        },
+        {
+          "id": "HANDOFF-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_valid_terminal_notices_never_claim_actual_qualification"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_cli_help_manual_and_legacy_parser_compatibility"
+            }
+          ]
+        },
+        {
+          "id": "HANDOFF-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_trusted_manual_pointers_are_bounded_and_detached"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_unknown_writer_and_source_card_binding_drift"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_duplicate_reordered_missing_order_is_advisory_only"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_missing_context_and_boolean_ownership_claims_remain_unknown"
+            }
+          ]
+        },
+        {
+          "id": "HANDOFF-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_wire_rejects_malformed_utf8_json_duplicates_and_depth"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_wire_rejects_nested_arrays_raw_secret_extra_fields_and_types"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_identifier_reference_time_and_exact_bounds"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_no_files_db_state_control_shell_network_model_or_backup"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_notice_cannot_override_binding_or_pointer_facts"
+            },
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HostHookTests.test_output_deterministic_bounded_and_no_reflected_prose"
             }
           ]
         }
@@ -1513,6 +1658,131 @@
             }
           ]
         }
+      ]
+    },
+    {
+      "id": "REVIEW-READ-001",
+      "spec": "docs/specs/REVIEW-READ-001.md",
+      "requirements": [
+        {
+          "id": "REVIEW-READ-001-REQ-01",
+          "acs": [
+            "REVIEW-READ-001-AC-01"
+          ]
+        },
+        {
+          "id": "REVIEW-READ-001-REQ-02",
+          "acs": [
+            "REVIEW-READ-001-AC-02"
+          ]
+        },
+        {
+          "id": "REVIEW-READ-001-REQ-03",
+          "acs": [
+            "REVIEW-READ-001-AC-03"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "REVIEW-READ-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_large_older_unrelated_message_no_longer_blocks_the_report"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_exact_argv_sequence_is_listing_then_bounded_full_read"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_missing_report_reads_no_full_bodies"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_two_reports_for_the_dispatch_conflict"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_inbox_change_between_the_reads_is_rejected"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_payload_as_json_string_or_object"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_body_longer_than_the_preview_is_read_whole_and_checked"
+            }
+          ]
+        },
+        {
+          "id": "REVIEW-READ-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_bounded_full_read_over_the_cap_still_fails"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_large_older_unrelated_message_no_longer_blocks_the_report"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_other_dispatch_rows_with_matching_text_never_decide"
+            },
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_inbox_change_between_the_reads_is_rejected"
+            }
+          ]
+        },
+        {
+          "id": "REVIEW-READ-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_review_read.py",
+              "symbol": "ReviewReadTests.test_exact_argv_sequence_is_listing_then_bounded_full_read"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_review_prompt_states_the_json_findings_notes_and_windows_rules"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_pass_report_with_notes_and_empty_findings_is_accepted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CI-OPT-001",
+      "spec": "docs/specs/CI-OPT-001.md",
+      "requirements": [
+        {"id": "CI-OPT-001-REQ-01", "acs": ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02"]},
+        {"id": "CI-OPT-001-REQ-02", "acs": ["CI-OPT-001-AC-03", "CI-OPT-001-AC-04"]},
+        {"id": "CI-OPT-001-REQ-03", "acs": ["CI-OPT-001-AC-05", "CI-OPT-001-AC-06"]},
+        {"id": "CI-OPT-001-REQ-04", "acs": ["CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09"]},
+        {"id": "CI-OPT-001-REQ-05", "acs": ["CI-OPT-001-AC-10"]},
+        {"id": "CI-OPT-001-REQ-06", "acs": ["CI-OPT-001-AC-11", "CI-OPT-001-AC-12"]},
+        {"id": "CI-OPT-001-REQ-07", "acs": ["CI-OPT-001-AC-13"]}
+      ],
+      "acs": [
+        {"id": "CI-OPT-001-AC-01", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "MethodologyDocsTests.test_ladder_terms_present_in_all_docs"}]},
+        {"id": "CI-OPT-001-AC-02", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "WorkerIoDocsTests.test_worker_io_terms_present_in_all_docs"}]},
+        {"id": "CI-OPT-001-AC-03", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "PrMainWorkflowTests.test_only_supported_pr_activities_and_main_push"}]},
+        {"id": "CI-OPT-001-AC-04", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "PrMainWorkflowTests.test_pr_number_group_cancels_pr_only_and_main_sha_is_retained"}]},
+        {"id": "CI-OPT-001-AC-05", "tests": [{"file": "tests/test_sdd.py", "symbol": "SddTests.test_shared_task_selection_preserves_status_level_and_path_boundaries"}]},
+        {"id": "CI-OPT-001-AC-06", "tests": [{"file": "tests/test_sdd.py", "symbol": "SddTests.test_pull_request_uses_base_sha_and_only_post_base_changes"}, {"file": "tests/test_sdd.py", "symbol": "SddTests.test_pull_request_missing_base_fails_cli"}]},
+        {"id": "CI-OPT-001-AC-07", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "PolicyTests.test_v1_partial_failure_does_not_full_fallback_v2_does"}, {"file": "tests/test_ci_plan.py", "symbol": "SyntheticGitTests.test_failed_graph_v1_direct_checks_and_v2_full"}]},
+        {"id": "CI-OPT-001-AC-08", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_draft_v2_and_ready_main_full_four_are_contractual"}]},
+        {"id": "CI-OPT-001-AC-09", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_stale_incremental_rechecks_and_persistence_disabled"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_partial_or_missing_test_edge_is_not_complete"}]},
+        {"id": "CI-OPT-001-AC-10", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_main_dispatch_full_explicit_base_and_missing_invalid_base"}]},
+        {"id": "CI-OPT-001-AC-11", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_gate_requires_plan_and_matrix_aggregate_success_without_reuse"}]},
+        {"id": "CI-OPT-001-AC-12", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_exact_complete_v3_only_and_never_remote"}, {"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_every_identity_field_changed_unknown_partial_missing"}]},
+        {"id": "CI-OPT-001-AC-13", "tests": [{"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_events_preserve_status_unknowns_and_existing_report"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_rejects_untrusted_fields_and_invalid_values"}, {"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_measurements_preserve_unknowns_and_no_new_database"}]}
       ]
     }
   ]
