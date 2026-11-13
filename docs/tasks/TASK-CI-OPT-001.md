@@ -17,7 +17,7 @@ acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-A
 이전 `SDD-001-AC-06` 임시 Task 연결의 T1 검사는 아래 작성 기록에 보존한다. 현재 verification 증거는 CI-OPT-001 AC 단위로 추가한다.
 
 계약: [CI-OPT-001](../specs/CI-OPT-001.md) revision 4, [Plan](../plans/ci-optimization.md), [ADR](../adr/ADR-CI-OPT-001.md).
-고정 소스 후보 b50ec38의 로컬 수렴 독립 검토는 CONVERGED(새 P1/P2 없음)이며 독립 Task-base SDD도 PASS다. 원격 Windows CI/E2E는 NOT_RUN이므로 전체 Task verified는 아니다.
+고정 코드 후보 b50ec38의 로컬 수렴 독립 검토는 CONVERGED(새 P1/P2 없음)이며, b50ec38→3e5b1f1은 문서만 바뀌어 코드 검토 범위가 유지된다. 정확한 문서 후보 3e5b1f1의 공식 V3는 692 tests PASS/skip 0이다. 해당 증거는 1721c95 또는 이후 SHA로 자동 승계되지 않는다. 원격 Windows CI/E2E는 NOT_RUN이므로 전체 Task verified는 아니다.
 
 AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장에 CI-OPT-001 feature와 AC-01~13을 등록했다.
 이 연결과 현재 작업 단위의 통과 검사는 AC의 최종 검증·독립 리뷰·원격 CI 완료를 뜻하지 않는다.
@@ -951,9 +951,10 @@ Evidence-only status files at this checkpoint:
 - 실행 전후 HEAD/index/worktree/untracked의 전체 상태 digest가 같고 clean이었다.
   Task-base SDD PASS(48 docs/10 features/18 Tasks/75 AC/57 changed paths), provider calls 0.
   정확한 실행 증거는 외부 handoff `CI-OPT-001-final-local-evidence-3e5b1f1.json`이다.
-- 독립 전체 코드 수렴 검토 PASS/CONVERGED, 새 P1/P2 0:
+- 독립 전체 코드 수렴 검토는 정확히 `b50ec38` 대상, PASS/CONVERGED, 새 P1/P2 0:
   `52ba9bd9fb59070e99ed77b83601084fdae2bd6cece041c5699d506b32e337c8`.
-  독립 문서 delta 검토 PASS/불일치 0:
+  `b50ec38..3e5b1f1`은 문서 2개만 달라 코드 내용은 동일하다. 독립 문서 delta 검토는
+  정확히 이 구간을 대상으로 PASS/불일치 0:
   `dc8c887045a274b18db34200b1ca2c4a28f067700ac3a38d912a9cd25b9e49be`.
 - 이 증거는 해당 SHA에서의 오프라인 로컬 검증만 증명한다. 원격 Windows 3.11/3.12 matrix,
   plan/gate 및 개별 job E2E는 NOT_RUN이며 Task는 in_progress/not verified다.
