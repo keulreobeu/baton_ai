@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- 고정 소스 `b50ec38`은 공식 순차 V3 **692 tests OK, 931.580 s, failures/errors/skip 0**, 독립 전체 로컬 수렴 CONVERGED(새 P1/P2 0), 독립 Task-base SDD를 통과했다. 실행 전후 정확한 HEAD/clean 일치. F-B·CBM 상한·상태 결합·중단·no-skip 판정 보강은 완료했다. 실제 graph/inventory partial로 narrowing은 미자격이며 전체 Task는 in_progress다. 원격 Windows 두 matrix·plan/gate·개별 job E2E와 게시 승인은 NOT_RUN/pending이다. 아래는 이전 후보/편집 중 기록으로 현행 상태가 아니다. 후속 문서 SHA에 b50 V3를 자동 재사용하지 않는다.
+- Current exact candidate `3e5b1f1a8ea216030caaa86f604f65c1b49bc3d1` passed official sequential V3 on the original Task base: **692 tests OK, 923.476 s, failures/errors/skips/expected failures 0**, exit 0. Independent local code convergence and document-delta reviews passed. Exact candidate pre/post state was clean and stable. The Task remains in_progress: graph/inventory is partial; remote Windows matrices, plan/gate, job E2E, and publication are NOT_RUN/pending. This section supersedes older candidate summaries below; evidence is `CI-OPT-001-final-local-evidence-3e5b1f1.json` outside the checkout.
 
 ### 이전 후보와 편집 중 기록 (위 현행 요약이 우선)
 

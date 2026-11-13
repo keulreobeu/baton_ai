@@ -939,3 +939,22 @@ Evidence-only status files at this checkpoint:
 - 사용자 부재 중 유지한 결정: Q1(로컬 재사용 단위를 official_sequential로 한정하는 AC-12 해석/개정),
   실제 remote/branch·타 Task 10개를 포함하는 게시 범위와 원격 실행 권한. F-B 수정은 추가 승인 대상이 아니다.
   partial rerun/runtime caller/packaging은 선택 확장으로 구별한다. 모델·GMS·전원·등록·집담 원본 경계는 유지했다.
+
+### 최종 문서 후보 3e5b1f1 공식 로컬 V3 — 2026-11-13
+
+- 정확한 후보 `3e5b1f1a8ea216030caaa86f604f65c1b49bc3d1`, 원래 Task base
+  `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`에서 공식 순차
+  `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`
+  실행을 완료했다. **692 tests OK, unittest 923.476 s, wall 926.844 s**, exit 0;
+  failures/errors/skips/expected failures 0. `status=PASS`, `verified_evidence_eligible=true`,
+  `scope=offline_tests_only`, `live_provider_validation=NOT_RUN`.
+- 실행 전후 HEAD/index/worktree/untracked의 전체 상태 digest가 같고 clean이었다.
+  Task-base SDD PASS(48 docs/10 features/18 Tasks/75 AC/57 changed paths), provider calls 0.
+  정확한 실행 증거는 외부 handoff `CI-OPT-001-final-local-evidence-3e5b1f1.json`이다.
+- 독립 전체 코드 수렴 검토 PASS/CONVERGED, 새 P1/P2 0:
+  `52ba9bd9fb59070e99ed77b83601084fdae2bd6cece041c5699d506b32e337c8`.
+  독립 문서 delta 검토 PASS/불일치 0:
+  `dc8c887045a274b18db34200b1ca2c4a28f067700ac3a38d912a9cd25b9e49be`.
+- 이 증거는 해당 SHA에서의 오프라인 로컬 검증만 증명한다. 원격 Windows 3.11/3.12 matrix,
+  plan/gate 및 개별 job E2E는 NOT_RUN이며 Task는 in_progress/not verified다.
+  push/PR/merge와 V3 재사용을 승인하지 않는다. Q1 재사용 계약 및 실제 원격 게시 범위 결정은 사용자 복귀까지 보류한다.
