@@ -117,7 +117,7 @@ ready/main은 항상 Windows 전체 2 matrix(windows-latest × Python 3.11/3.12)
 이 계약은 draft도 Windows 2 matrix에서 테스트 범위만 V2로 줄인다(변경 등급별 OS/Python 조합 축소 없음). V3 fallback이면 전체 테스트를 2개 모두 실행한다.
 `ci:full` 라벨은 다음 지원 PR 이벤트에서 V3로 올리기만 한다. labeled/unlabeled 이벤트는 추가하지 않는다.
 Windows 고정 2 matrix·fetch-depth: 0·기본 설치/GMS extra 검사는 유지한다. draft-T0 전용 job은 만들지 않는다.
-아직 workflow는 T2의 전체 4 회귀이며 T3 구현 전 draft 축소를 실행 중이라고 안내하지 않는다.
+현재 workflow는 Windows 2 matrix에서 단일 planner를 실행한다. hosted runner에 CBM이 없어 draft V2 요청도 현재는 V3 full로 fallback하며 실제 원격 범위 축소나 시간 절감을 입증했다고 안내하지 않는다.
 
 ### CI-OPT-001-AC-09
 
@@ -155,7 +155,7 @@ plan 실패·필수 job skip/cancel/fail·빈 검사 목록·필수 검사 누�
 미설정 검사는 `not_configured`로 기록하고 passed로 취급하지 않는다. 필수 검사라면 merge/완료를 차단한다.
 merge에는 유효한 V3가 필요하고 validation은 검사한 코드 상태와 일치해야 한다. V1/V2는 merge 증거가 아니다.
 비교는 `ci_plan.py` 순수 함수 + `tests/test_ci_plan.py`로 검증한다. 별도 policy engine·새 GitHub API 권한·외부 action은 없다.
-한계: needs 집계 결과는 실제 4개 job의 개별 완료를 독립 열거하지 않는다. 원격 ruleset 등록/강제 차단은 범위 밖이다.
+한계: needs 집계 결과는 실제 Windows 2 matrix job의 개별 완료를 독립 열거하지 않는다. 원격 ruleset 등록/강제 차단은 범위 밖이다.
 
 ### CI-OPT-001-AC-12
 

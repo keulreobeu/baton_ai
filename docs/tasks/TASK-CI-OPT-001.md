@@ -31,7 +31,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V1/V2/V3 caller는 T3d에서 연결; 로컬 V2 및 공식 V3 완료, 교차-provider 독립 검토 pending |
-| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix로 변경 중; draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full; 새 후보 검증·독립 검토·원격 Windows CI pending |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix 구현, 후보 6778a02 정책 변경 Claude PASS/공식 V3 658 tests 통과; 원격 Windows CI 및 전체 Task 검토 pending |
 | 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests, Task-base SDD, 공식 V3 통과; 독립 검토·원격 CI pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
@@ -641,7 +641,7 @@ Evidence-only status files at this checkpoint:
   로컬 Git 조회 가속용 Ubuntu/WSL은 띄우지 않는다. Windows 호환성 외 OS 검증과 속도/비용 절감을 주장하지 않는다.
 - 이전 Ubuntu skip 정책 질문/차단은 이번 범위 결정으로 superseded다. 과거 fixed4 및 `3f6ab1b`의
   657-test V3는 그 당시 후보의 이력이며 새 정책 후보에 자동 재사용하지 않는다.
-- 현재 편집 중이며 V1/V2, 고정 후보의 독립 검토와 공식 V3는 후속 증거로 기록한다.
+- 이 절은 편집 당시 기록이다. V1/V2와 고정 후보의 독립 검토/공식 V3 결과는 아래 후속 증거를 따른다.
   원격 Windows matrix 실행은 NOT_RUN이며 push/PR/GIT-CALL은 계속 보류다. Task in_progress 유지.
 
 ### Windows-first V1 확인
@@ -664,3 +664,39 @@ Evidence-only status files at this checkpoint:
   CI-OPT Spec/Plan/ADR/Task/current 및 traceability의 13개 파일이다. 그 밖의 제품/자격 증명 코드는 수정하지 않았다.
 - 다음은 고정 후보의 교차-provider 검토와 공식 V3다. 원격 Windows CI는 NOT_RUN,
   GIT-CALL/push/PR은 실행하지 않는다. Task in_progress 유지.
+
+## Windows-first 독립 검토 및 공식 V3 — 2026-11-13
+
+- 고정 변경 후보 `6778a023bc37b180226b9dbfa65dd1443b122dff`, 변경 단위 base
+  `2b25d8b17a9ce7069f735762f4813abcfe6336e8`, 원래 전체 Task base
+  `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`이다.
+- Claude(Opus 5.5), dispatch `ctx_b176afd614ff`, task `task_a710dc8fa819`,
+  run `run_e1ccd974efd7`가 해당 13개 경로 변경을 별도 worktree에서 독립 검토했다.
+  정책 변경 범위 verdict **PASS**, 차단 지적 없음. **47 focused tests OK, 9.220 s**이며
+  실제 Windows checkout의 remote_plan/validate_remote 및 기존 F1/F2 repro도 통과했다.
+  Linux/누락/중복/미지원 Python 거부, 기존 no-skip/V3/blob/evidence 경계 보존을 확인했다.
+- 보고서 `D:/baton_ai/.local_runtime/handoffs/CI-OPT-001-windows-first-claude-review-20261113.md`,
+  SHA256 `b1cad82e3458e6bc2a1b830606feb2e041cef6f66d3b9151adee5cd9a2ad9a9c` read-back 일치.
+  검토 후 정확한 reviewer terminal만 release했으며 원래 보고서/검토 worktree는 삭제하지 않았다.
+- 공식 순차 V3를 위 후보에서 1회 실행했다:
+  checkout `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py
+  --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`.
+  SDD PASS(documents 48, features 10, tasks 18, ACs 75, changed_paths 57, provider_calls 0),
+  **658 tests OK, 919.557 s**, exit 0, failures/errors/skipped/expected failures 0.
+  JSON status=PASS, verified_evidence_eligible=true, scope=offline_tests_only,
+  live_provider_validation=NOT_RUN. 검증 대상 프로젝트의 실제 provider/GMS/network 호출 0,
+  로컬 Ubuntu/WSL 실행 0. checkout Python/PYTHONPATH=src/PYTHONDONTWRITEBYTECODE=1/OS-temp BATON_HOME.
+  실행 전후 HEAD는 정확히 `6778a023bc37b180226b9dbfa65dd1443b122dff`, index/worktree clean이다.
+- reviewer의 비차단 문서 지적 네 곳(Spec의 과거 T2/full4 문장, matrix job 개수 표현,
+  Plan 과거 상태, Task 편집 중 표현)은 이 후속 문서 정리에서 바로잡았다.
+  정책/소스/테스트는 바꾸지 않았고 문서/SDD 검사로 따로 확인한다. 이전부터 알려진 V2 출력 regex
+  false-reject/긴 출력 복사 비용 P3 두 건은 이번 OS 범위 변경과 무관하며 별도 기록을 유지한다.
+- 원격 Windows CI(plan + 두 검증 + gate)는 NOT_RUN이며 push/PR/GIT-CALL은 실행하지 않았다.
+  전체 Task 교차-provider PASS/verified는 아직 아니다. Linux는 후속 확장이므로 Ubuntu skip 예외
+  정책을 기다리지 않는다. 현재 필수 Windows 검사에는 no-skip을 그대로 적용한다.
+- 이 V3/검토는 정확한 `6778a02` 후보의 증거다. 뒤따르는 문구 정리/증거 문서 커밋이나 이후
+  코드/정책/base/Task/환경 변화에 자동 재사용하지 않는다. Task in_progress 유지.
+
+- 후속 문서 정리 확인: `tests.test_sdd tests.test_ci_workflow` **50 tests OK, 7.657 s**,
+  실패/오류/skip 0, 원래 Task-base SDD PASS(documents 48/features 10/tasks 18/ACs 75/changed_paths 57),
+  diff check PASS. Spec revision/승인/필수 matrix 정책은 바꾸지 않고 오래된 현황 문구만 정정했다.

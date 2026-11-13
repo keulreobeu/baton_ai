@@ -53,7 +53,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 ## 결정과 경계 — 2026-11-12
 
 사용자 A/B/C/E/F 원문과 Graph scope·D 보류는 Spec revision 2의 승인/환경 절을 따른다.
-T3a~T3c는 V2 checkpoint를 로컬 저장했으며 독립 검토는 pending이다. T3d MetricsStore `ci.validation` API·AC traceability와 Orchestrator/CLI V1/V2/V3 caller event 연결을 구현했고, 144개 관련 회귀·Task-base SDD·공식 V3(647 tests, 996.240 s)를 통과했다. 교차-provider 독립 검토와 원격 fixed4 CI는 pending이며 hosted draft는 CBM 미설치로 V3 fallback이라 CI 축소 효과는 미입증이다. 훅 통합은 T4 Codex 복귀까지 ON HOLD.
+과거 T3 구현 시점 기록: T3a~T3c V2 checkpoint, 144개 관련 회귀와 공식 V3(647 tests, 996.240 s)는 당시 후보의 증거다. 당시 교차-provider 검토/원격 fixed4 CI pending 기록은 현재 Windows-first 상태가 아니다. 현재 범위는 아래 2026-11-13 amendment의 Windows 2 matrix이며 최신 후보의 검토/V3/원격 미실행 상태는 Task/current를 따른다. hosted draft는 CBM 미설치로 V3 fallback이며 CI 축소 효과는 미입증이다. 훅 통합은 T4 Codex 복귀까지 ON HOLD.
 CBM은 프로젝트/worktree별 graph, 전역 cache/config만 공유한다. watcher 기본값 유지·선택 전 freshness 확인·실패 V3.
 resource cap은 측정 뒤 결정하며 trial 7.5 s/16 MB를 절감률로 일반화하지 않는다.
 범위 밖: main tree만 같은 생략·merge_group·공식 검증 병렬화·새 verification DB/서비스·Base+Delta overlay·원격 보호설정.

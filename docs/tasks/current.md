@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 2026-11-13 사용자 '리눅스는 나중에 확장하고 윈도우부터 안정화 해야지'에 따라 Spec revision 4 Windows-first를 구현했다. 현재 검증은 windows-latest × Python 3.11/3.12 두 조합, plan/gate도 Windows다. Linux 검증은 후속 확장으로 미루며 no-skip은 유지한다. Ubuntu skip 정책 질문은 superseded다. V2 119 tests OK(78.312 s)와 원래 Task-base SDD를 통과했다. 앞선 `3f6ab1b`의 P1 수정/Claude scoped PASS/657-test V3는 과거 후보 증거로 보존하며 새 후보에 재사용하지 않는다. 새 후보 독립 검토/V3 및 원격 Windows CI는 pending, Task in_progress, GIT-CALL DEFERRED다.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: 사용자 결정에 따라 Spec revision 4 Windows-first 구현 후보 `6778a02`를 저장했다. windows-latest × Python 3.11/3.12 두 필수 조합, plan/gate도 Windows이며 Linux 검증은 후속 확장이다. V2 119 tests(78.312 s), Claude 정책 변경 PASS/47 focused tests, 같은 후보/원래 Task base `5c07aea`의 공식 V3 **658 tests OK, 919.557 s, 실패/오류/skip 0**을 확인했다. 문서 시점/개수 표현 네 곳을 후속 정리했으며 V3를 후속 문서 SHA에 자동 재사용하지 않는다. no-skip은 유지하고 Ubuntu skip 질문은 superseded다. 원격 Windows CI는 NOT_RUN, 전체 Task 검토/verified는 pending, Task in_progress/GIT-CALL DEFERRED다.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
 
