@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- Exact candidate `3e5b1f1a8ea216030caaa86f604f65c1b49bc3d1` passed official sequential V3 on the original Task base: **692 tests OK, 923.476 s, failures/errors/skips/expected failures 0**, exit 0; exact candidate pre/post state was clean and stable. The code convergence review is against `b50ec38` (code unchanged through 3e); the document-delta review covers b50→3e. These reviews and V3 evidence do not cover documentation commit `1721c95` or later HEAD. The Task remains in_progress: graph/inventory is partial; remote Windows matrices, plan/gate, job E2E, and publication are NOT_RUN/pending. This section supersedes older candidate summaries below; evidence is `CI-OPT-001-final-local-evidence-3e5b1f1.json` outside the checkout.
+- Exact candidate `3e5b1f1a8ea216030caaa86f604f65c1b49bc3d1` passed official sequential V3 on the original Task base: **692 tests OK, 923.476 s, failures/errors/skips/expected failures 0**, exit 0; exact candidate pre/post state was clean and stable. The code convergence review is against `b50ec38` (code unchanged through 3e); the document-delta review covers b50→3e. These reviews and V3 evidence do not cover documentation commit `1721c95` or later HEAD. `1721c95` has its own V3 (692 OK, skip 0) without a doc-delta review; `c8e7e05` doc-delta review PASS (P1/P2 0); `c8e7e05` and later HEAD have no V3. The Task remains in_progress: graph/inventory is partial; remote Windows matrices, plan/gate, job E2E, and publication are NOT_RUN/pending. This section supersedes older candidate summaries below; evidence is `CI-OPT-001-final-local-evidence-3e5b1f1.json` outside the checkout.
 
 ### 이전 후보와 편집 중 기록 (위 현행 요약이 우선)
 
