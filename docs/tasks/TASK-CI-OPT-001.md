@@ -589,3 +589,37 @@ Evidence-only status files at this checkpoint:
   나머지는 이 Task/current의 검토 결과 기록이다. 원격 skip 규칙은 현재 계약대로 유지한다.
   수정 전 FAIL은 수정 후보 PASS가 아니므로 같은 Claude에게 고정 수정 후보 재검토를 요청한다.
   최종 공식 V3/수정 후 독립 검토/원격 CI와 플랫폼 skip 결정은 아직 완료되지 않았다.
+
+## 수정 후보 Claude 재검토 및 공식 V3 최종 증거 — 2026-11-13
+
+이 절이 위 수정 작업의 pending 기록보다 우선한다. 전체 Task는 in_progress다.
+
+- 소스 수정 후보: `3f6ab1b9b9be98f75cc446d572968527c06cbb76` (`5659db3` 후속).
+  검증 base는 원래 Task 시작점 `5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`이다.
+- Claude follow-up dispatch `ctx_a273d678c933`, task `task_90a302812992`,
+  run `run_e1ccd974efd7`가 같은 고정 후보를 독립 검토했다.
+  수정 범위 verdict는 **PASS (F1/F2/F3/F5 scoped)**, 새 P1/P2 없음이다.
+  이는 원래 `6a37bb3`의 FAIL 보고서를 덮어쓰거나 전체 Task PASS로 바꾸지 않는다.
+- 수정 후 보고서: `D:/baton_ai/.local_runtime/handoffs/CI-OPT-001-claude-fixed-review-20261113.md`,
+  SHA256 `d461daaf342d0306cdb5eaf9217f5f72b2f9d3b31f00be74be37b7f03ac1908e` read-back 일치.
+  Claude는 원래 timeout/final evidence repro, 실제 skip/zero-test subprocess, 실제 두 clone의
+  LF/CRLF 같은 blob 비교, 실제 SDD JSON 판정과 focused **26 tests OK, 10.073 s**를 확인했다.
+  review source/worktree는 읽기 전용이었고 완료 후 정확한 reviewer terminal만 release했다.
+- 공식 순차 V3: checkout `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py
+  --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26`를 위 후보에서 1회 실행했다.
+  SDD PASS(documents 48, features 10, tasks 18, ACs 75, changed_paths 57, provider_calls 0),
+  **657 tests OK, 955.900 s**, exit 0, failures/errors/skipped/expected failures 0.
+  JSON status=PASS, verified_evidence_eligible=true, scope=offline_tests_only,
+  live_provider_validation=NOT_RUN. 검증 대상 프로젝트의 실제 provider/GMS/network 호출은 0이다.
+  환경은 checkout Python, PYTHONPATH=src, PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME이다.
+  실행 전후 HEAD가 정확히 `3f6ab1b9b9be98f75cc446d572968527c06cbb76`이며 worktree/index clean이다.
+- 잔여 비차단 P3: V2 summary regex가 일반 출력의 'skipped 3' 같은 문구를 false-reject하는 경계,
+  bounded tail의 많은 문자열 복사 비용이다. fail-open은 아니며 이 고정 후보에서 추가 수정하지 않았다.
+  reviewer의 세 번째 P3(current.md 시점 지연)는 이번 증거 문구에서 갱신한다.
+- 전체 Task/원격 게이트: Ubuntu native Windows Credential Manager skip과 no-skip 정책의 충돌은
+  사용자 결정 대기다. 선택이 없다는 이유로 예외를 허용하지 않고 기존 계약을 유지한다.
+  required remote fixed4 CI/E2E는 NOT_RUN, 전체 Task 범위 교차-provider PASS는 아직 없으며
+  hosted CI 절감도 미입증이다. GIT-CALL/push/PR을 실행하지 않았다.
+- 이 결과는 위 정확한 후보/base/환경의 V3다. 뒤따르는 Task/current 증거 문구 커밋이나
+  이후 소스/정책/Task/환경 변경에 자동 재사용하지 않는다. strict equality가 unknown이면 재검증한다.
+  이번 후속 저장은 증거 문구뿐이며 Task를 verified로 올리거나 후보를 merge 가능하다고 선언하지 않는다.
