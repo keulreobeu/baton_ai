@@ -410,6 +410,19 @@ class SyntheticGitTests(unittest.TestCase):
         self.assertIn("CBM_ABSENT", payload["reasons"])
         self.assertEqual(cp.validate_remote(self.root, payload, facts, cp.fingerprint(payload)),
                          [["scripts/verify_environment.py", "--ci"]])
+        self.git("config", "core.autocrlf", "true")
+        policy_file = self.root / "scripts/ci_plan.py"
+        lf = policy_file.read_bytes().replace(b"\r\n", b"\n")
+        policy_file.write_bytes(lf)
+        self.git("add", "--", "scripts/ci_plan.py")  # refresh fixture stat cache; same blob
+        with patch.object(cp, "CbmCLI", return_value=original):
+            lf_payload = cp.remote_plan(self.root, facts)
+        policy_file.write_bytes(lf.replace(b"\n", b"\r\n"))
+        self.git("add", "--", "scripts/ci_plan.py")
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=no"), "")
+        self.assertEqual(cp.validate_remote(self.root, lf_payload, facts, cp.fingerprint(lf_payload)),
+                         [["scripts/verify_environment.py", "--ci"]])
         facts["input_base"] = "missing-ref"
         with self.assertRaises(sdd.SddError): cp.remote_plan(self.root, facts)
         self.write("src/value.py", "def value(): return 3\n")
@@ -567,6 +580,18 @@ class RemoteTests(unittest.TestCase):
         with self.assertRaises(cp.PlanError): self.validate(payload, digest="0" * 64)
         with self.context(), patch.object(cp.sdd, "commit", return_value="d" * 40):
             with self.assertRaises(cp.PlanError): cp.validate_remote(self.root, payload, self.facts, cp.fingerprint(payload))
+
+    def test_policy_identity_uses_same_git_blob_with_lf_or_crlf_checkout(self):
+        # Identical committed content and clean tree; raw checkout bytes differ
+        # with Git for Windows autocrlf. Policy must bind to the same blob.
+        with self.context(), patch.object(cp.sdd, "read", return_value="policy\nline\n"):
+            payload = cp.remote_plan(self.root, self.facts)
+        with self.context(), patch.object(cp.sdd, "read", return_value="policy\r\nline\r\n"):
+            cp.validate_remote(self.root, payload, self.facts, cp.fingerprint(payload))
+        with self.context(), patch.object(cp.sdd, "git", side_effect=lambda root, *args:
+                "" if args[0] == "status" else "d" * 40 if args == ("rev-parse", "HEAD:scripts/ci_plan.py") else "c" * 40):
+            with self.assertRaisesRegex(cp.PlanError, "REMOTE_PLAN_POLICY"):
+                cp.validate_remote(self.root, payload, self.facts, cp.fingerprint(payload))
 
     def test_gate_requires_plan_and_matrix_aggregate_success_without_reuse(self):
         payload = self.payload()

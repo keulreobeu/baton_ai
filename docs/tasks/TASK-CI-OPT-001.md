@@ -387,6 +387,14 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 
 ## T3d 호출자 연결 후속 기록 — 2026-11-13
 
+위 T3d raw manifest는 여러 작성 시점의 행이 섞여 같은 경로의 해시가 중복된다.
+단일 후보의 확정 manifest로 사용하지 않는다. 작성 이력 보존용이며 실제 후보 파일 식별에는
+`git ls-tree -r 2abcd40`(계측 API), `git ls-tree -r 30a8b36`(호출자 연결),
+`git ls-tree -r 50417d7`(계약 동기화)의 committed blob ID를 각각 사용한다.
+아래 표도 과거 작성 시점의 raw bytes이며 현재 후보 manifest가 아니다.
+
+| File | Raw SHA256 | Bytes |
+|---|---|---:|
 | `AGENTS.md` | `06210c11a468ec11583d834e60087268081c3a8106467ce010c39cf5b21e5a83` | 9511 |
 | `README.md` | `678a153c093368de9f8d037f043f0aaf60917918e6f5a404015802d5473962c3` | 15350 |
 | `docs/sdd.md` | `b7110d92212b81775e074277cedbfc5b95af2558a8166a8f6ca3441a122e72bc` | 9320 |
@@ -408,10 +416,6 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 - Task 시작 base `2abcd4072bfd76a1cfc8b58f34a8be9526120585` 기준 `scripts/check_sdd.py --base ...` PASS: documents 48, features 10, tasks 18, ACs 75, changed_paths 11, provider_calls 0. `git diff --check` PASS. SDD는 정적 계약 검사이며 공식 V3나 원격 CI 결과가 아니다.
 - Task 상태 `in_progress` 유지. 독립 검토, 최종 공식 V3, 원격 fixed4 CI/E2E와 실제 hosted CI 축소 효과는 pending/NOT_RUN이다. GIT-CALL은 계속 DEFERRED: 이 증거 갱신은 push/PR이나 커밋을 승인하지 않는다.
 - 후보는 branch `codex/ci-opt-001`, base/HEAD `2abcd4072bfd76a1cfc8b58f34a8be9526120585`, 시작 index 비어 있었음. 아래 manifest는 이 작성 단위에서 허용된 나머지 파일의 raw bytes다. Task 파일 자체는 self-reference를 피하기 위해 표에서 제외한다.
-
-| File | Raw SHA256 | Bytes |
-|---|---|---:|
-
 
 ## Final local CI checkpoint before GIT-CALL - 2026-11-13
 
@@ -535,3 +539,53 @@ Evidence-only status files at this checkpoint:
   `tests/test_managed_harness.py`, `docs/sdd/traceability.json`, 이 Task의 6개 파일이다.
   V2 checkpoint만 저장하며 최종 V3/수정 후 독립 검토/원격 CI와 전체 Task 완료는 pending이다.
   Claude의 수정 전 검토에서 나오는 추가 지적을 묶어 반영한 뒤 최종 후보를 확정한다.
+
+## Claude 독립 검토 결과 및 묶음 반영 — 2026-11-13
+
+- 수정 전 `6a37bb3` 검토는 **FAIL**이다. Claude(Opus 5.5), dispatch `ctx_aa136c42a92b`가
+  관련 144 tests OK(120.645 s)와 fake repro를 수행했다. 보고서
+  `D:/baton_ai/.local_runtime/handoffs/CI-OPT-001-claude-review-20261113.md`, SHA256
+  `8f2d2a2c22c6ef4599967405aa2567b6823be9b0bc263b3030cf4969f4aab737`를 read-back 확인했다.
+- F1/R2: 동일 결함을 독립 확인했고 **P1으로 상향**했다. `evidence._checks`는 stop callback이
+  None이어도 process 자체 timeout이 가능하므로 final review/integration evidence까지 우회할 수 있었다.
+  이전 재검토의 'Task 완료 우회는 아님' 판단은 불완전했다. `5659db3`의 중단/완료 검사에 더해
+  `_checks`가 rc0+timeout/공식 V3 미실행을 거부하는 직접 음성 테스트를 추가했다.
+- F2/R1: 독립 확인했다. `5659db3`의 엄격한 실제 summary 판정은 유지한다.
+  추가 제약: `tests/test_credentials.py`의 Windows Credential Manager native round-trip은
+  non-Windows에서 skip이므로 Ubuntu의 full CI는 현재 no-skip 계약에서 실패한다.
+  기존 skip 제거/예외 허용/eligible=false를 passed로 바꾸는 정책 완화는 하지 않았다.
+  원격 CI 정책 결정과 실제 fixed4 E2E는 pending이며 수정 후 remote green을 주장하지 않는다.
+- F3: raw checkout 정책 해시를 committed `HEAD:scripts/ci_plan.py` blob ID fingerprint로 바꿨다.
+  tracked-clean/tree/SHA 검사는 그대로 유지한다. 실제 synthetic Git에서 autocrlf=true,
+  동일 blob의 LF bootstrap/CRLF checkout이 통과함을 확인했다. 다른 정책 blob은 거부한다.
+  fixture stat cache를 같은 blob으로 갱신한 뒤 검사하며 실제 hosted Windows 실행은 NOT_RUN이다.
+- F4: 이전 혼합 raw manifest를 단일 후보 증거로 사용하지 않도록 명시하고
+  후보별 committed blob 조회 방법을 기록했다. header-less/empty table도 정리했다.
+- F5: 테스트 증거가 없는 direct-only 피드백은 event를 유실시키는 passed/tests0 대신
+  not_run/partial로 보존하고, 조회하지 않은 graph는 freshness/coverage=not_run이다.
+  executed_test_count는 중복 실행을 포함한 실행 케이스 합이며 unique 테스트 수/절감률이 아니다.
+- F6: 취소/오래된 draft payload/원격 ruleset 한계는 기존 계약에 공개된 잔여 조건이다.
+  원격 권한/트리거/보호 설정을 확장하지 않았다.
+- F7: V1 worker 연결은 `Orchestrator._run` 직접 실행 경로다. Orca author settle 경로의
+  기존 `runtime.py` validate 호출은 기본 V3를 유지한다. 문서의 일괄 worker V1 설명보다
+  보수적으로 실행되는 구현 한계이며, 모든 runtime에 V1이 연결됐다고 주장하지 않는다.
+  SDD planner 실패를 BLOCKED로 만드는 기존 정책도 이 결함 수정에서 완화하지 않는다.
+- V1 확인: remote/로컬 경계 25 tests OK(0.757 s); 실제 Git LF/CRLF 사례 1 test OK(8.347 s).
+  fixture의 내용 동일 stat cache 차이로 발생한 초기 실패는 임시 저장소 index를 같은 blob으로
+  갱신해 해소했다. 제품 source/index에는 해당 fixture Git 작업을 적용하지 않았다.
+  다음은 묶음 V2, 고정 수정 후보의 Claude 재검토와 정확한 후보 V3다.
+
+### Claude 지적 묶음 V2 checkpoint
+
+- `5659db3` 후속 후보에서 checkout `.venv/Scripts/python.exe -X utf8 -m unittest
+  tests.test_observability tests.test_ci_plan tests.test_sdd tests.test_ci_workflow tests.test_managed_harness`:
+  **154 tests OK, 123.649 s**, exit 0, failures/errors/skips/expected failures/unexpected successes 0.
+  checkout Python, PYTHONPATH=src, PYTHONDONTWRITEBYTECODE=1, OS-temp BATON_HOME,
+  fake runner/clock 및 synthetic Git/process만 사용했다. 실제 provider/GMS/network 호출 0.
+- `check_sdd.py --base 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26` PASS:
+  documents 48, features 10, tasks 18, ACs 75, changed_paths 57, provider_calls 0.
+  diff check PASS. 최종 Task 문구만 갱신 후 SDD/diff를 다시 확인한다.
+- 소스/테스트 변경은 policy blob 식별, no-test/unqueried graph 계측, CRLF/최종 evidence 경계이며
+  나머지는 이 Task/current의 검토 결과 기록이다. 원격 skip 규칙은 현재 계약대로 유지한다.
+  수정 전 FAIL은 수정 후보 PASS가 아니므로 같은 Claude에게 고정 수정 후보 재검토를 요청한다.
+  최종 공식 V3/수정 후 독립 검토/원격 CI와 플랫폼 skip 결정은 아직 완료되지 않았다.

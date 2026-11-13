@@ -404,11 +404,20 @@ class Orchestrator:
         coverage = {"mapped": "complete"}.get(coverage, coverage)
         if coverage not in {"complete", "partial", "unknown", "unavailable", "not_run"}:
             coverage = "unknown"
+        if graph.get("state") == "not_run":
+            freshness = coverage = "not_run"
         status = details.get("actual_status")
         status = status if status in {"passed", "failed"} else "not_run"
         executed = list(details.get("executed_checks", [])) + [
             {key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes", "stop_reason")}
             for check in results]
+        executed_test_count = sum(check.get("test_count", 0) for check in executed
+                                  if type(check.get("test_count", 0)) is int)
+        # Direct-file checks may succeed without producing test evidence. Keep
+        # the observation instead of sending an invalid passed/tests0 event to
+        # the shadow collector and silently losing it.
+        if status == "passed" and (executed_test_count <= 0 or local_plan.get("inventory_count") == 0):
+            status = "not_run"
         digest_basis = {"code_identity": local_plan["code_identity"], "target_base": local_plan["target_base"],
                         "task_ids": local_plan["task_ids"], "acs": local_plan["acs"],
                         "selected_ids": local_plan["selected_ids"], "effective_tier": local_plan["effective_tier"],
@@ -426,8 +435,7 @@ class Orchestrator:
             "requested_level": requested, "effective_level": effective, "stage": local_plan["stage"],
             "status": status, "selected_tests": local_plan["selected_ids"],
             "total_tests": local_plan.get("inventory_count"),
-            "executed_test_count": sum(check.get("test_count", 0) for check in executed
-                                        if type(check.get("test_count", 0)) is int),
+            "executed_test_count": executed_test_count,
             "selection_reasons": local_plan["reasons"],
             "graph_seconds": graph.get("seconds"), "ci_seconds": None,
             "validation_seconds": round(max(0.0, validation_seconds), 3),

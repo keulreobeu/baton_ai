@@ -206,6 +206,31 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertEqual(checks[0]["test_count"], 2)
         self.assertEqual(checks[0]["acs"], ["AC1"])
 
+    def test_final_evidence_rejects_zero_exit_timeout_before_official_v3(self):
+        from baton.evidence import _checks
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        task = {**self.task, "acceptance_criteria": ["AC1"]}
+        with patch("baton.execution.run_process", return_value=(0, "", "Ran 2 tests\nOK", "timeout")) as process:
+            with self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+                _checks(self.orchestrator.store, {"task": task}, self.root)
+        self.assertEqual(process.call_count, 1)
+        self.assertNotIn("--base", process.call_args.args[0])
+        self.assertEqual(self.observations[-1][2]["status"], "failed")
+
+    def test_direct_only_feedback_keeps_not_run_observation_and_unqueried_graph(self):
+        task = {**self.task, "validation": [{"argv": ["python", "--version"], "acs": []}]}
+        plan = self.make_plan(self.root, base="a" * 40, stage="in_progress")
+        plan["selected_ids"] = []
+        plan["graph"]["state"] = "not_run"
+        results = [{"exit_code": 0, "test_count": 0, "planner": {
+            "actual_status": "passed", "execution_complete": True,
+            "executed_checks": [{"exit_code": 0, "test_count": 0}]}}]
+        self.orchestrator._record_ci_observation(task, self.root, self.planner, plan, results, 0.1)
+        event = self.observations[-1][2]
+        self.assertEqual(event["status"], "not_run")
+        self.assertEqual(event["executed_test_count"], 0)
+        self.assertEqual((event["freshness"], event["coverage"]), ("not_run", "not_run"))
+
 
 class ManagedHarnessTests(unittest.TestCase):
     def setUp(self):

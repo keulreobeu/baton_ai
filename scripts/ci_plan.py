@@ -762,7 +762,7 @@ def remote_plan(root, facts):
                "required_ids", "task_ids", "acs", "changed_paths", "target_base", "reasons", "graph")}
     payload.update(schema=1, facts=facts, matrix=MATRIX, remote_ci_skippable=False,
                    tree=sdd.git(root, "rev-parse", "HEAD^{tree}").strip(),
-                   policy=fingerprint(sdd.read(root, "scripts/ci_plan.py")),
+                   policy=fingerprint(sdd.git(root, "rev-parse", "HEAD:scripts/ci_plan.py").strip()),
                    commands=remote_commands(result["effective_tier"], result["selected_modules"], facts, result["target_base"]))
     need(result["status"] == "PLANNED" and result["state_stable"], "UNSTABLE_REMOTE_PLAN")
     need(len(json.dumps(payload).encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")
@@ -777,7 +777,11 @@ def validate_remote(root, payload, facts, digest):
     need(sdd.commit(root, "HEAD") == facts["sha"], "STALE_REMOTE_HEAD")
     need(not sdd.git(root, "status", "--porcelain", "--untracked-files=no").strip(), "DIRTY_REMOTE_CHECKOUT")
     need(payload.get("tree") == sdd.git(root, "rev-parse", "HEAD^{tree}").strip(), "REMOTE_PLAN_TREE")
-    need(payload.get("policy") == fingerprint(sdd.read(root, "scripts/ci_plan.py")), "REMOTE_PLAN_POLICY")
+    # The checkout is tracked-clean and tree-bound above. Use the committed
+    # policy blob identity: Git's CRLF checkout conversion must not make an
+    # unchanged Windows checkout disagree with the Ubuntu bootstrap.
+    need(payload.get("policy") == fingerprint(sdd.git(root, "rev-parse", "HEAD:scripts/ci_plan.py").strip()),
+         "REMOTE_PLAN_POLICY")
     # This graph-free full plan rechecks SDD, Task/AC required tests and the
     # complete base diff on each checkout; platform-specific code hashes differ.
     full = plan(root, base=remote_base(root, facts), stage="checkpoint", minimum=3, event=facts["event_kind"])

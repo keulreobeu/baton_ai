@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: T3a~T3c V2 checkpoint와 T3d caller/MetricsStore 연결을 로컬 커밋했다. 관련 144 tests, Task-base SDD, 공식 V3(647 tests, 996.240 s, skip 0)는 통과했다. Antigravity CLI 부재와 Claude quota 소진으로 교차-provider 독립 검토는 pending, 원격 fixed4 CI도 GIT-CALL 전이라 NOT_RUN이다. hosted draft는 CBM 부재 시 V3 fallback; CI 절감 미입증. GIT-CALL은 DEFERRED.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: Claude가 수정 전 `6a37bb3`을 독립 검토해 FAIL을 보고했다. R1 원격 no-skip 누락과 R2의 최종 V3 증거 우회(P1)를 확인했고 Windows CRLF 정책 해시 불일치도 지적했다. R1/R2는 `5659db3`(151 tests/Task-base SDD 통과)으로 저장했고 추가 경계 보강 중이다. 수정 후 독립 검토/최종 V3/원격 fixed4 CI는 pending이다. Ubuntu의 기존 Windows 전용 skip은 현재 no-skip 계약에서 실패 조건이며 예외를 승인하지 않았다. hosted draft는 CBM 부재 시 V3 fallback, CI 절감 미입증. Task in_progress, GIT-CALL DEFERRED.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
 
