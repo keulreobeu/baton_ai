@@ -30,9 +30,9 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T2a 방법론 | AC-01, AC-02 | `AGENTS.md`, `README.md`, `docs/sdd.md`, `tests/test_ci_workflow.py`(문서 정적 테스트) | R2 검토 PASS, 후보 `351a8a9`. locally integrated 529e93c, approve pending. Task 전체 verified 아님 |
 | 작업 T2b 트리거 | AC-03, AC-04 | `.github/workflows/verify.yml`, `tests/test_ci_workflow.py`, `README.md`, 이 Task·current | 후보 `e16a8f7`, 검토 PASS. locally integrated 529e93c, approve pending. verified 아님 |
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
-| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V2 checkpoint 완료; V1/V2 API-only·호출자 연결 pending, 독립 검토 pending |
-| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | V2 checkpoint 완료, draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; 독립 검토·V3·원격 CI pending |
-| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests와 Task-base SDD 통과, 최종 V3·독립 검토·원격 CI pending |
+| 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V1/V2/V3 caller는 T3d에서 연결; 로컬 V2 및 공식 V3 완료, 교차-provider 독립 검토 pending |
+| 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; 로컬 공식 V3 완료, 원격 fixed4 CI·독립 검토 pending |
+| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 관련 144 tests, Task-base SDD, 공식 V3 통과; 독립 검토·원격 CI pending |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | 2026-11-11 결정됨. 남은 pending: P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 |
@@ -393,6 +393,14 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 | `docs/plans/ci-optimization.md` | `d59ffe439e57ae9948760a3e9469e5bdfb57cc4f9dabf7a8acf4218f0041b2d7` | 7481 |
 | `docs/tasks/current.md` | `66f0bc855993bdf69f1d3a0c40bc5edc4cdc6df3b0d8b51344d57b30e5e994c9` | 8514 |
 | `tests/test_ci_workflow.py` | `ae8b941bc280988a40c725aec19774191253d36a3adf0cc8b94693f527fee25e` | 16648 |
+
+## T3d 공식 V3 결과와 Git-call 진입 준비 상태 — 2026-11-13
+
+- 정확한 로컬 후보 `50417d720aa0d317fbd1b989166990eb5455d351`, Task base `2abcd4072bfd76a1cfc8b58f34a8be9526120585`에서 `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 2abcd4072bfd76a1cfc8b58f34a8be9526120585`를 순차 실행했다. `check_sdd.py` PASS (documents 48, features 10, tasks 18, ACs 75, changed_paths 14, provider_calls 0), 이어 전체 **647 tests OK, 996.240 s**, failures/errors/skips/expected failures 0, exit 0. JSON: `status=PASS`, `verified_evidence_eligible=true`, `scope=offline_tests_only`, `live_provider_validation=NOT_RUN`. 환경은 checkout `.venv`, `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, 임시 `BATON_HOME`; 모델/provider/GMS/network 호출 0.
+- 전체 순차 검증은 365초를 넘었고, 454.0초 시점에 167개 테스트를 마쳤으며 flow-evidence/runtime/handoff 계열이 가장 오래 걸렸다. 이것은 full V3 측정이며 L1/V2의 실제 시간이나 CI 절감률을 대신하지 않는다.
+- 독립 검토는 아직 수행하지 않았다. Antigravity attempt는 두 번 모두 시작 단계 `agy: command not found`로 실패했고 잔여 terminal은 release했다. Claude는 현재 quota 소진으로 사용하지 않았다. 저장소 PATH에서 Cursor/Muse/OpenCode 실행파일도 확인되지 않아 교차-provider review를 완료했다고 주장하지 않는다. 이 항목은 pre-GIT-CALL 게이트로 남는다.
+- 원격 fixed4 CI/E2E는 push가 있어야 실행되며 `NOT_RUN`. hosted runner에 CBM이 없어 draft V2 요청도 V3 fallback이다. 로컬 V1/V2 단계 동작과 좁은 실제 hosted CI 효과를 혼동하지 않는다.
+- Task는 `in_progress` 유지. 두 로컬 checkpoint `30a8b36455af97e878db2baebfb2445fff578269` 및 `50417d720aa0d317fbd1b989166990eb5455d351`은 확인됐고 현재 원격 작업은 하지 않았다. 현재 HEAD는 공식 V3가 검증한 `50417d7`이다. push/PR을 요구하는 GIT-CALL 직전이며, 위 미완료 게이트가 해소되기 전에는 실행 준비 완료/verified로 승격하지 않는다.
 이 절이 위 T3d 계측 API 단락의 미완료 caller 상태를 갱신한다. worker 실행은 `in_progress` V1, 명시 `validate --stage checkpoint`는 V2, 기본 validate/verify는 V3를 사용한다. CI 결과는 기존 MetricsStore `ci.validation` event로 기록되고 보고서에 노출된다. 실행된 검사 수가 없는 성공 기록은 허용하지 않으며, L1/L2 검증은 Task를 완료 상태로 전환하지 않는다.
 
 - 관련 회귀: `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_observability tests.test_ci_plan tests.test_sdd tests.test_ci_workflow tests.test_managed_harness` **144 tests OK, 100.994 s**, exit 0; failures/errors/skipped/expected failures/unexpected successes 0. 환경: `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS 임시 `BATON_HOME`, 모델/provider/GMS/network 호출 0.
@@ -403,3 +411,22 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 
 | File | Raw SHA256 | Bytes |
 |---|---|---:|
+
+
+## Final local CI checkpoint before GIT-CALL - 2026-11-13
+
+This is the latest task state and supersedes earlier pending summaries above.
+
+- Candidate implementation commit: `50417d720aa0d317fbd1b989166990eb5455d351` (parent `30a8b36455af97e878db2baebfb2445fff578269`), Task base `2abcd4072bfd76a1cfc8b58f34a8be9526120585`.
+- Official sequential V3 at that exact candidate: `scripts/verify_environment.py --base 2abcd4072bfd76a1cfc8b58f34a8be9526120585`; SDD PASS and 647 tests PASS in 996.240 seconds, zero failures/errors/skips/expected failures; provider/GMS/network NOT_RUN and invocation count 0. `verified_evidence_eligible=true` applies to this offline test run, not to the Task as a whole.
+- Stage implementation and local checkpoint results are recorded above. Worker runs V1; explicit checkpoint CLI runs V2; default completion validation runs V3. V1/V2 do not complete the Task. MetricsStore records bounded `ci.validation` events.
+- Cross-provider independent review is still pending. Antigravity failed readiness twice because `agy` is absent; both residual terminals were released. Claude quota is exhausted, and no other reviewer CLI was available. No review PASS is claimed.
+- Required remote fixed4 CI/E2E remains NOT_RUN because it requires the deferred Git call. Hosted draft currently falls back to full V3 without CBM, so hosted CI time reduction is not demonstrated.
+- Task remains `in_progress`; do not mark verified or perform push/PR. GIT-CALL remains deferred until independent review is resolved and the user rechecks the remote operation.
+
+Evidence-only status files at this checkpoint:
+
+| File | Raw SHA256 | Bytes |
+|---|---|---:|
+| `docs/tasks/current.md` | `6b4bf131038159374f52b611605f26e30e020f094c9dc9d032a5cedf77947e28` | 8587 |
+| `docs/plans/ci-optimization.md` | `3436da864dd51192333ece7745746e9e311bdebcbed31e0c812a6e4a916d022c` | 7530 |

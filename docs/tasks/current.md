@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: T3a~T3c V2 checkpoint와 T3d worker V1 / 명시 checkpoint V2 / 기본 완료 V3 caller 및 MetricsStore event 연결을 로컬 커밋했다. 관련 144 tests와 Task-base SDD는 통과했다. hosted draft는 CBM 부재 시 V3 fallback; CI 절감 미입증. GIT-CALL은 DEFERRED. 독립 검토·최종 V3·원격 fixed4 CI pending.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: T3a~T3c V2 checkpoint와 T3d caller/MetricsStore 연결을 로컬 커밋했다. 관련 144 tests, Task-base SDD, 공식 V3(647 tests, 996.240 s, skip 0)는 통과했다. Antigravity CLI 부재와 Claude quota 소진으로 교차-provider 독립 검토는 pending, 원격 fixed4 CI도 GIT-CALL 전이라 NOT_RUN이다. hosted draft는 CBM 부재 시 V3 fallback; CI 절감 미입증. GIT-CALL은 DEFERRED.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
 
