@@ -170,10 +170,12 @@ class LedgerTests(unittest.TestCase):
         if run_id is None:
             run_id = self.begin()["run_id"]
         request = {"run_id": run_id, "event_id": "CI-EVENT-1", "evidence_sha256": "f" * 64,
-                   "task_id": "TASK-CI-OPT-001", "commit_sha": "a" * 40, "worktree": "src/baton",
+                   "task_id": "TASK-A", "commit_sha": "a" * 40,
+                   "worktree": hashlib.sha256(b"fixture-worktree").hexdigest(),
                    "target_base": "b" * 40, "index_id": "cbm-index-1", "generation": "gen-1",
                    "freshness": "fresh", "coverage": "partial", "requested_level": 1, "effective_level": 1,
                    "stage": "editing", "status": "not_run", "selected_tests": [], "total_tests": 10,
+                   "executed_test_count": 0,
                    "selection_reasons": ["DIRECT_CHANGE"], "graph_seconds": None, "ci_seconds": None,
                    "validation_seconds": None, "escalations": [], "fallback_reasons": [],
                    "reuse_decision": "not_requested", "equality_checks": {}, "source_evidence": ["EVID-1"],
@@ -187,12 +189,17 @@ class LedgerTests(unittest.TestCase):
         self.metrics.record_ci_validation(request)
         request = self.ci_observation(run_id=run_id, event_id="CI-EVENT-2", status="passed", selected_tests=["tests.test_a.T.test_one"],
                                       graph_seconds=0.25, validation_seconds=3.5, measurement_kind="measured",
-                                      coverage_state="complete", coverage="complete")
+                                      coverage_state="complete", coverage="complete", executed_test_count=1)
+        self.metrics.record_ci_validation(request)
+        request = self.ci_observation(run_id=run_id, event_id="CI-EVENT-3", status="passed", selected_tests=[],
+                                      total_tests=None, coverage_state="complete", coverage="complete",
+                                      executed_test_count=4)
         self.metrics.record_ci_validation(request)
         report = self.metrics.report(request["run_id"])
-        self.assertEqual([event["status"] for event in report["ci_validations"]], ["not_run", "passed"])
+        self.assertEqual([event["status"] for event in report["ci_validations"]], ["not_run", "passed", "passed"])
         self.assertEqual(report["ci_validations"][0]["graph_seconds"], None)
         self.assertEqual(report["ci_validations"][1]["selected_count"], 1)
+        self.assertEqual(report["ci_validations"][2]["executed_test_count"], 4)
         self.assertEqual(report["provider_invocations_observed"], 0)
 
     def test_ci_validation_rejects_untrusted_fields_and_invalid_values(self):
@@ -204,6 +211,7 @@ class LedgerTests(unittest.TestCase):
                         {"status": []}, {"graph_seconds": -1},
                         {"selected_tests": ["../outside"]}, {"equality_checks": {"sha": "yes"}},
                         {"equality_checks": {"sha": []}},
+                        {"worktree": "C:/private/path"}, {"task_id": "TASK-CI-OPT-001"},
                         {"commit_sha": "not-a-sha"},
                         {"total_tests": 0, "selected_tests": ["tests.test_a.T.test_one"]}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
@@ -214,6 +222,18 @@ class LedgerTests(unittest.TestCase):
         request["selection_reasons"] = ["PRIVATE-OBJECTIVE"]
         with self.assertRaisesRegex(ValueError, "invalid_ci_selection_reasons"):
             self.metrics.record_ci_validation(request)
+
+    def test_large_ci_selection_keeps_full_set_digest_under_existing_payload_cap(self):
+        ids = [f"tests.test_module_{i}.TestCase.test_{i}" for i in range(900)]
+        request = self.ci_observation(status="passed", selected_tests=ids, total_tests=len(ids),
+                                      executed_test_count=len(ids))
+        self.metrics.record_ci_validation(request)
+        event = self.metrics.report(request["run_id"])["ci_validations"][0]
+        self.assertEqual(event["selection_detail"], "digest_only")
+        self.assertLess(len(event["selected_tests"]), len(ids))
+        self.assertEqual(event["selected_count"], len(ids))
+        self.assertEqual(event["selected_tests_sha256"], hashed(ids))
+        self.assertLess(len(json.dumps(event).encode("utf-8")), 24000)
 
     def test_retry_keeps_failed_attempt_cost_and_same_run(self):
         self.suite()

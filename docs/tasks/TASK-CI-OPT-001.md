@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
-scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "tests/test_managed_harness.py"]
+scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py"]
 acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
 
 ```
@@ -32,7 +32,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T3a 공유 선택·PR 회귀 | AC-05, AC-06 | `scripts/check_sdd.py`, `tests/test_sdd.py` | 구현·V1/V2 checkpoint 완료; 독립 검토 pending |
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | V2 checkpoint 완료; V1/V2 API-only·호출자 연결 pending, 독립 검토 pending |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | V2 checkpoint 완료, draft V2 요청 / 보수적 V3 fallback, ready-main-dispatch V3 full 4; 독립 검토·V3·원격 CI pending |
-| 작업 T3d 기존 계측·원장 | AC-02/12/13 | `src/baton/observability.py`, `tests/test_observability.py`, Task/traceability/current | 구현·V2 검증 완료, 로컬 checkpoint 대기; planner/workflow 호출자 연동 pending |
+| 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3 연결과 MetricsStore 기록 구현; 후속 회귀 증거 진행 중 |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 2026-11-11 사용자 'approved 유지' 직접 답변. P-01~P-07은 계속 pending |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | 2026-11-11 결정됨. 남은 pending: P-02~P-05, P-08, P-09, P-06의 AC-12·13 처리 |
@@ -279,6 +279,16 @@ Base/HEAD: `bb4d270ac7707b24f1bfbf050a971a6d8974dc3f`; index empty; no new candi
 
 | File | Raw SHA256 | Bytes |
 |---|---|---:|
+| `docs/plans/ci-optimization.md` | `5afcc9c790209bf782f990e5c28979c3c80084296d67c1b97e69ee5929da7455` | 7425 |
+| `docs/sdd/traceability.json` | `da7dbdfade40e8ae805b43eb4f712208e9168a57d0fe9c0907eef7f91bcfc34f` | 66307 |
+| `docs/specs/CI-OPT-001.md` | `493df0c76dd89612695c9e6e7030a2dddbedc73efb47cccaee216bbb97f99aa1` | 27345 |
+| `docs/tasks/current.md` | `c973cdfeb060b82bacb2f8efbc73539e5641df9e456918e5bf4e8d391c2fa089` | 8543 |
+| `src/baton/managed_cli.py` | `6091260fa4abd0e2409d6d131ef77efb036a0f8adaa23b8cb7ebd4b1494e21f5` | 11946 |
+| `src/baton/observability.py` | `173dad93fdfbe20e459070ec4b3b82158522d28b9e2d2cbba75d5e7b937352e9` | 46324 |
+| `src/baton/orchestrator.py` | `d4c98c6d715c3f3767fb4e953910c4c96e9314924ccb4379034fef74acf0f127` | 34682 |
+| `tests/test_ci_workflow.py` | `12af7e63b4fc8835d6354e48fc8b9de9b6fbe6a3c10c928343336c353aaf5e76` | 16536 |
+| `tests/test_managed_harness.py` | `70669210145580a2b2eec63e61625acd6809cf77a7131dbf97dc816edef8f240` | 29085 |
+| `tests/test_observability.py` | `293dae66d6014f69e1cf1da162e4b8f9bab003db2d816eefeb82367f342394e3` | 33595 |
 | `.gitignore` | `ff14b8ea65d0867a5107f1adc2409770c8e7dfd80eb69febec7a4a0d92160303` | 93 |
 | `AGENTS.md` | `8d0612f5abea43b88e4bea531b2da929c47cfb9b47aa32dea69984290940aac7` | 9471 |
 | `README.md` | `82c1e5d138808aed63956b0e14a7be389c66840e963beabc334d6b578b2cae1e` | 14117 |
@@ -374,3 +384,16 @@ Task final hash is in the completion receipt. Index remains empty; no source can
 | `docs/tasks/current.md` | `b3dc1d6075df8c5fea352a26199e3efa3536db337d1033bbc530f71bf8bb71b5` | 8587 |
 | `src/baton/observability.py` | `a8a2e125b00e1feaba2870e4dfeba23f1ed738e4e623ba31849bd5c884064e8d` | 45416 |
 | `tests/test_observability.py` | `efd3f0cea259ae9af16c8bf0722a816d11b201446cbf01851feb6257413ccc47` | 32162 |
+
+## T3d 호출자 연결 후속 기록 — 2026-11-13
+
+이 절이 위 T3d 계측 API 단락의 미완료 caller 상태를 갱신한다. worker 실행은 `in_progress` V1, 명시 `validate --stage checkpoint`는 V2, 기본 validate/verify는 V3를 사용한다. CI 결과는 기존 MetricsStore `ci.validation` event로 기록되고 보고서에 노출된다. 실행된 검사 수가 없는 성공 기록은 허용하지 않으며, L1/L2 검증은 Task를 완료 상태로 전환하지 않는다.
+
+- 관련 회귀: `.venv/Scripts/python.exe -X utf8 -m unittest tests.test_observability tests.test_ci_plan tests.test_sdd tests.test_ci_workflow tests.test_managed_harness` **144 tests OK, 100.994 s**, exit 0; failures/errors/skipped/expected failures/unexpected successes 0. 환경: `PYTHONPATH=src`, `PYTHONDONTWRITEBYTECODE=1`, OS 임시 `BATON_HOME`, 모델/provider/GMS/network 호출 0.
+- 첫 통합 회귀에서 발견한 stage allowlist 누락(`in_progress`)과 오래된 계약 fixture("아직 미구현")를 수정한 뒤, 그 두 실패와 MetricsStore 기록 테스트를 따로 실행해 **3 tests OK, 2.158 s** 확인 후 전체 모듈을 재실행했다.
+- Task 시작 base `2abcd4072bfd76a1cfc8b58f34a8be9526120585` 기준 `scripts/check_sdd.py --base ...` PASS: documents 48, features 10, tasks 18, ACs 75, changed_paths 11, provider_calls 0. `git diff --check` PASS. SDD는 정적 계약 검사이며 공식 V3나 원격 CI 결과가 아니다.
+- Task 상태 `in_progress` 유지. 독립 검토, 최종 공식 V3, 원격 fixed4 CI/E2E와 실제 hosted CI 축소 효과는 pending/NOT_RUN이다. GIT-CALL은 계속 DEFERRED: 이 증거 갱신은 push/PR이나 커밋을 승인하지 않는다.
+- 후보는 branch `codex/ci-opt-001`, base/HEAD `2abcd4072bfd76a1cfc8b58f34a8be9526120585`, 시작 index 비어 있었음. 아래 manifest는 이 작성 단위에서 허용된 나머지 파일의 raw bytes다. Task 파일 자체는 self-reference를 피하기 위해 표에서 제외한다.
+
+| File | Raw SHA256 | Bytes |
+|---|---|---:|

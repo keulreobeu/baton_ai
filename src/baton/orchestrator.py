@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
 import sys
 import time
+import uuid
 
 from .contracts import HarnessError, safe, digest, encode
 from .isolation import check_scope, git, pack_context, prepare_worktree, repository_lock, snapshot
@@ -187,7 +189,7 @@ class Orchestrator:
                     return self.finish(task_id, lease, "WAITING_FOR_PROVIDER" if provider_name == "gms" else "BLOCKED" if error in {"auth", "permission", "unknown"} else "FAILED", reason=error, **uncertain)
                 self.store.update(task_id, lease, "VALIDATING")
                 validation_started = time.monotonic()
-                validation = self.validate(task, tree, stop)
+                validation = self.validate(task, tree, stop, stage="in_progress", target_base=base)
                 if metrics:
                     self.store.observe(task_id, "phase", metrics, "validation", time.monotonic() - validation_started)
                 reason = stop()
@@ -348,6 +350,7 @@ class Orchestrator:
                     result["exit_code"] = 2
                     result["stop_reason"] = "validation_state_changed"
             if not results:
+                self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
             # evidence.py intentionally requires one result per declared check.
             # Keep planner checks in separate metadata, propagate their failures
@@ -356,6 +359,7 @@ class Orchestrator:
             for result in results:
                 (feedback if result.pop("_planner_internal", False) else declared).append(result)
             if not declared:
+                self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
             failed = [r for r in feedback if r["exit_code"] != 0]
             if failed and declared[0]["exit_code"] == 0:
@@ -365,9 +369,70 @@ class Orchestrator:
                                        "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared) else "passed",
                                        "final_evidence_eligible": False}
             results = declared
+            self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
         return results
 
-    def verify(self, task_id, *, base_sha=None):
+    def _record_ci_observation(self, task, tree, planner, local_plan, results, validation_seconds):
+        """Record execution facts without changing validation or Task outcomes."""
+        if not hasattr(self.store, "observe"):
+            return
+        try:
+            run_id = self.store.get(task["task_id"])["result"].get("metrics_run_id")
+        except (KeyError, TypeError, AttributeError):
+            return
+        if not run_id:
+            return
+        details = results[0].get("planner", {}) if results else {}
+        graph = local_plan.get("graph", {})
+        requested = int(local_plan["requested_tier"][1:])
+        effective = int(local_plan["effective_tier"][1:])
+        freshness = graph.get("freshness", "unknown")
+        freshness = {"checked": "fresh", "metadata_match": "fresh"}.get(freshness, freshness)
+        if graph.get("state") == "failed":
+            freshness = "failed"
+        if freshness not in {"fresh", "stale", "failed", "partial", "unknown", "not_run"}:
+            freshness = "unknown"
+        coverage = graph.get("coverage", "unknown")
+        coverage = {"mapped": "complete"}.get(coverage, coverage)
+        if coverage not in {"complete", "partial", "unknown", "unavailable", "not_run"}:
+            coverage = "unknown"
+        status = details.get("actual_status")
+        status = status if status in {"passed", "failed"} else "not_run"
+        executed = list(details.get("executed_checks", [])) + [
+            {key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes")}
+            for check in results]
+        digest_basis = {"code_identity": local_plan["code_identity"], "target_base": local_plan["target_base"],
+                        "task_ids": local_plan["task_ids"], "acs": local_plan["acs"],
+                        "selected_ids": local_plan["selected_ids"], "effective_tier": local_plan["effective_tier"],
+                        "checks": [{key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes")}
+                                   for check in executed]}
+        escalations = [f"V{requested}_TO_V{effective}"] if effective > requested else []
+        observation = {
+            "run_id": run_id, "event_id": uuid.uuid4().hex,
+            "evidence_sha256": planner.fingerprint(digest_basis),
+            "task_id": task["task_id"], "commit_sha": local_plan["code_identity"]["head"],
+            "worktree": hashlib.sha256(os.fsencode(str(Path(tree).resolve()))).hexdigest(),
+            "target_base": local_plan["target_base"], "index_id": graph.get("index_id"),
+            "generation": graph.get("generation"), "freshness": freshness, "coverage": coverage,
+            "requested_level": requested, "effective_level": effective, "stage": local_plan["stage"],
+            "status": status, "selected_tests": local_plan["selected_ids"],
+            "total_tests": local_plan.get("inventory_count"),
+            "executed_test_count": sum(check.get("test_count", 0) for check in executed
+                                        if type(check.get("test_count", 0)) is int),
+            "selection_reasons": local_plan["reasons"],
+            "graph_seconds": graph.get("seconds"), "ci_seconds": None,
+            "validation_seconds": round(max(0.0, validation_seconds), 3),
+            "escalations": escalations, "fallback_reasons": local_plan["reasons"] if escalations else [],
+            "reuse_decision": "not_requested", "equality_checks": {},
+            "source_evidence": ["task:" + task_id for task_id in local_plan["task_ids"]],
+            "v3_only_defects": [], "measurement_kind": "measured",
+            "coverage_state": "complete" if effective == 3 else "partial",
+        }
+        self.store.observe(task["task_id"], "record_ci_validation", observation)
+
+    def verify(self, task_id, *, base_sha=None, stage="task_complete"):
+        if stage not in {"checkpoint", "task_complete"}:
+            raise HarnessError("invalid_validation_stage")
         from .runtime import execution_lock
         row = self.store.get(task_id)
         if row["lease"]: raise HarnessError("worker_busy")
@@ -376,7 +441,7 @@ class Orchestrator:
             with execution_lock(self.store.root, "worktree", target.resolve()):
                 if base_sha is not None:
                     self._adopt_base(task_id, base_sha)
-                return self._verify(task_id)
+                return self._verify(task_id, stage=stage)
 
     def _adopt_base(self, task_id, base_sha):
         """Accept a Git-owner-prepared source; never checkout/rebase/reset here."""
@@ -414,7 +479,7 @@ class Orchestrator:
             c.execute("UPDATE managed_tasks SET state='FAILED',result=? WHERE id=?", (encode(result), task_id))
             self.store.event(c, task_id, "base_adopted", {"base_sha": base_sha, "previous_base": row["result"].get("base_commit")})
 
-    def _verify(self, task_id):
+    def _verify(self, task_id, *, stage="task_complete"):
         self.store.prepare_validation(task_id)
         row = self.store.claim(task_id, validation_only=True)
         lease, task = row["lease"], row["task"]
@@ -425,7 +490,8 @@ class Orchestrator:
             self.store.update(task_id, lease, "VALIDATING")
             def stop():
                 return self.control(task_id, lease) or ("timeout" if row["elapsed"] + time.monotonic() - started >= task["execution"]["total_timeout_seconds"] else None)
-            checks = self.validate(task, tree, stop)
+            checks = self.validate(task, tree, stop, stage=stage,
+                                   target_base=row["result"].get("base_commit"))
             reason = stop()
             if reason:
                 return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason)

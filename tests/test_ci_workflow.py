@@ -211,7 +211,7 @@ class VStageContractTests(unittest.TestCase):
         spec = read("docs/specs/CI-OPT-001.md")
         self.assertIn("revision = 3", spec)
         self.assertIn('approved_at = "2026-11-12"', spec)
-        for term in ("ci_plan.py", "두 번째 정책 엔진은 두지 않는다", "아직 미구현"):
+        for term in ("ci_plan.py", "두 번째 정책 엔진은 두지 않는다", "T3a~T3c는 로컬 V2 checkpoint"):
             self.assertIn(term, spec)
         self.assertIn("eligible_tasks(item, tasks, changed)", self.ac(5))
         self.assertIn("basis.requested_base == base", self.ac(6))

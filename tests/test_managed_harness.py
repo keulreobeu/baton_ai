@@ -41,17 +41,28 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
                      "final_evidence_eligible": False, "execution_status": "NOT_RUN"}
         self.state = {"tracked": "same"}
         self.calls = []
+        self.observations = []
         self.planner = SimpleNamespace(
             baton_root=lambda root: True, plan=self.make_plan, freeze=lambda tree: dict(self.state),
-            ast=ci_plan.ast, sdd=ci_plan.sdd)
+            ast=ci_plan.ast, sdd=ci_plan.sdd, fingerprint=ci_plan.fingerprint)
         self.task = {"task_id": "TASK-OFFLINE", "validation": [{"argv": ["python", "-m", "unittest", "tests.test_value"], "acs": ["AC1"]}],
                      "execution": {"timeout_seconds": 600, "total_timeout_seconds": 1200}}
-        self.orchestrator = Orchestrator(SimpleNamespace(get=lambda task: {"result": {"base_commit": "a" * 40}}), providers={})
+        fake_store = SimpleNamespace(get=lambda task: {"result": {"base_commit": "a" * 40, "metrics_run_id": "RUN-OFFLINE"}},
+                                     observe=lambda task, action, request: self.observations.append((task, action, request)))
+        self.orchestrator = Orchestrator(fake_store, providers={})
         self.patch = patch("baton.orchestrator.validation_planner", return_value=self.planner)
         self.patch.start(); self.addCleanup(self.patch.stop)
 
     def make_plan(self, root, **kwargs):
-        self.calls.append((root, kwargs)); return {**deepcopy(self.plan), "target_base": kwargs["base"]}
+        self.calls.append((root, kwargs))
+        stage = kwargs.get("stage", "task_complete")
+        requested = {"in_progress": "V1", "debugging": "V1", "checkpoint": "V2"}.get(stage, "V3")
+        return {**deepcopy(self.plan), "requested_tier": requested, "stage": stage,
+                "target_base": kwargs["base"], "code_identity": {"head": "a" * 40},
+                "task_ids": ["TASK-OFFLINE"], "acs": ["AC1"], "reasons": ["FAST_GRAPH_LIMITATION"],
+                "graph": {"state": "best_effort", "index_id": None, "generation": None,
+                          "freshness": "unknown", "coverage": "partial", "seconds": None},
+                "inventory_count": 1}
 
     def run_validation(self, runner=None, stop=lambda: None, **kwargs):
         if runner is None: runner = lambda *a, **k: (0, "", "Ran 2 tests in 0.1s\nOK", None)
@@ -72,6 +83,12 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertTrue(all(not check["planner"]["final_evidence_eligible"] for check in result))
         self.assertEqual(process.call_count, 2)
         self.assertEqual(process.call_args_list[0].args[3], 300)
+        task, action, event = self.observations[-1]
+        self.assertEqual((task, action), ("TASK-OFFLINE", "record_ci_validation"))
+        self.assertEqual((event["stage"], event["status"], event["requested_level"], event["effective_level"]),
+                         ("in_progress", "passed", 1, 1))
+        self.assertEqual(event["coverage_state"], "partial")
+        self.assertIsNone(event["graph_seconds"])
 
     def test_failed_direct_check_or_executed_test_makes_fast_fail(self):
         (self.root / "value.py").write_text("invalid !!!\n", encoding="utf-8")
@@ -85,6 +102,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.plan.update(selected_ids=[], direct_checks=[])
         with self.assertRaisesRegex(HarnessError, "validation_not_run"):
             self.run_validation(stage="in_progress")
+        self.assertEqual(self.observations[-1][2]["status"], "not_run")
 
     def test_v2_uses_same_planner_and_base_sdd_preserving_commands(self):
         self.plan.update(effective_tier="V2", direct_checks=[])
@@ -195,6 +213,54 @@ class ManagedHarnessTests(unittest.TestCase):
         self.assertEqual(reopened.get("TASK-ONE")["state"], "REVIEW_REQUIRED")
         self.assertTrue((self.store.directory / "reports/TASK-ONE.json").exists())
         self.assertTrue((self.store.directory / "events.jsonl").exists())
+
+    def test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task(self):
+        stages = []
+        original = Orchestrator.validate
+        def capture(runner, task, tree, stop, **kwargs):
+            stages.append(kwargs.get("stage", "task_complete"))
+            return original(runner, task, tree, stop, **kwargs)
+        with patch.object(Orchestrator, "validate", capture):
+            result = self.runner().run("TASK-ONE")
+            self.assertEqual(result["state"], "REVIEW_REQUIRED")
+            with redirect_stdout(io.StringIO()) as out:
+                code = main(["--state-dir", ".local_runtime/harness-managed", "validate", "--task", "TASK-ONE",
+                             "--stage", "checkpoint"], workspace=self.root)
+            checkpoint = json.loads(out.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(checkpoint["state"], "REVIEW_REQUIRED")
+            with redirect_stdout(io.StringIO()) as out:
+                code = main(["--state-dir", ".local_runtime/harness-managed", "validate", "--task", "TASK-ONE"],
+                            workspace=self.root)
+            final = json.loads(out.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(final["state"], "REVIEW_REQUIRED")
+        self.assertEqual(stages, ["in_progress", "checkpoint", "task_complete"])
+
+    def test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task(self):
+        from scripts import ci_plan
+        plan = {"requested_tier": "V1", "effective_tier": "V1", "selected_ids": ["tests.test_value.ValueTest.test_value"],
+                "direct_checks": [], "final_evidence_eligible": False, "execution_status": "NOT_RUN",
+                "stage": "in_progress", "target_base": git(self.root, "rev-parse", "HEAD").strip(),
+                "code_identity": {"head": git(self.root, "rev-parse", "HEAD").strip()},
+                "task_ids": ["TASK-ONE"], "acs": ["AC1"], "reasons": ["FAST_GRAPH_LIMITATION"],
+                "graph": {"state": "best_effort", "index_id": None, "generation": None,
+                          "freshness": "unknown", "coverage": "partial", "seconds": None},
+                "inventory_count": 1}
+        planner = type("FakePlanner", (), {"baton_root": staticmethod(lambda root: True),
+                                            "plan": staticmethod(lambda root, **kwargs: {**plan, "stage": kwargs["stage"],
+                                                                                         "target_base": kwargs["base"]}),
+                                            "freeze": staticmethod(lambda root: {"state": "fixed"}),
+                                            "fingerprint": staticmethod(ci_plan.fingerprint)})
+        with patch("baton.orchestrator.validation_planner", return_value=planner):
+            result = self.runner().run("TASK-ONE")
+        self.assertEqual(result["state"], "REVIEW_REQUIRED")
+        events = result["measurement"]["ci_validations"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual((events[0]["stage"], events[0]["status"], events[0]["effective_level"]),
+                         ("in_progress", "passed", 1))
+        self.assertGreater(events[0]["executed_test_count"], 0)
+        self.assertEqual(events[0]["coverage_state"], "partial")
 
     def test_objective_mode_is_explicit_and_existing_defaults_stay_compatible(self):
         self.assertNotIn("objective_mode", self.store.get("TASK-ONE")["task"]["execution"])

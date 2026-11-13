@@ -91,7 +91,10 @@ def main(argv=None, *, workspace=None):
         if name == "provider": s.add_argument("--name", choices=("codex", "claude", "antigravity", "gms", "mock"), required=True)
         if name == "priority": s.add_argument("--value", choices=("high", "normal", "low"), required=True)
         if name == "resume": s.add_argument("--recover-running", action="store_true")
-        if name == "validate": s.add_argument("--base", help="Adopt the exact current target SHA after the Git owner prepares this source; no Git mutation.")
+        if name == "validate":
+            s.add_argument("--base", help="Adopt the exact current target SHA after the Git owner prepares this source; no Git mutation.")
+            s.add_argument("--stage", choices=("checkpoint", "task_complete"), default="task_complete",
+                           help="Use V2 checkpoint feedback or the final V3 validation; checkpoint does not complete the Task.")
     sub.add_parser("providers")
     runtime = sub.add_parser("runtime").add_subparsers(dest="runtime_command", required=True)
     runtime.add_parser("doctor")
@@ -197,7 +200,7 @@ def main(argv=None, *, workspace=None):
                 result = auto_commit_task(store, args.task)
         elif args.command == "provider": result = store.configure(args.task, provider=args.name)
         elif args.command == "priority": result = store.configure(args.task, priority=args.value)
-        elif args.command == "validate": result = runner.verify(args.task, base_sha=args.base)
+        elif args.command == "validate": result = runner.verify(args.task, base_sha=args.base, stage=args.stage)
         print(encode(result))
         if isinstance(result, dict) and result.get("state") in {"FAILED", "BLOCKED", "INTERRUPTED", "WAITING_FOR_PROVIDER"}: return 3
         return 0

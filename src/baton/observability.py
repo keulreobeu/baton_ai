@@ -29,14 +29,14 @@ FAILURES = {"quota", "quota_exhausted", "rate_limit", "timeout", "auth", "networ
             "pause", "cancel", "interrupted", "uncertain", "budget", "DEFERRED_GMS", "unknown"}
 CI_EVENT_FIELDS = {
     "task_id", "commit_sha", "worktree", "target_base", "index_id", "generation", "freshness", "coverage",
-    "requested_level", "effective_level", "stage", "status", "selected_tests", "total_tests",
+    "requested_level", "effective_level", "stage", "status", "selected_tests", "total_tests", "executed_test_count",
     "selection_reasons", "graph_seconds", "ci_seconds", "validation_seconds", "escalations", "fallback_reasons",
     "reuse_decision", "equality_checks", "source_evidence", "v3_only_defects", "measurement_kind", "coverage_state",
 }
 CI_LEVELS = {1, 2, 3}
 CI_FRESHNESS = {"fresh", "stale", "failed", "partial", "unknown", "not_run"}
 CI_COVERAGE = {"complete", "partial", "unknown", "unavailable", "not_run"}
-CI_STAGES = {"editing", "checkpoint", "task_complete", "pre_merge", "pull_request", "main", "dispatch"}
+CI_STAGES = {"editing", "in_progress", "debugging", "checkpoint", "task_complete", "pre_merge", "pull_request", "main", "dispatch"}
 CI_STATUSES = {"passed", "failed", "not_run"}
 CI_REUSE = {"accepted", "rejected", "not_requested", "unknown"}
 CI_MEASUREMENTS = {"measured", "measured_calculation", "assumed", "unknown"}
@@ -333,7 +333,6 @@ class MetricsStore:
 
     def record_ci_validation(self, request):
         """Append a bounded, sanitized CI observation to the existing metrics ledger."""
-        from .contracts import relative_path
         if not isinstance(request, dict):
             raise ValueError("invalid_ci_observation")
         allowed = {"run_id", "event_id", "evidence_sha256"} | CI_EVENT_FIELDS
@@ -348,7 +347,9 @@ class MetricsStore:
             raise ValueError("invalid_ci_commit")
         if target_base is not None and (not isinstance(target_base, str) or not re.fullmatch(r"[a-f0-9]{40}", target_base)):
             raise ValueError("invalid_ci_target_base")
-        worktree = relative_path(request["worktree"])
+        worktree = request["worktree"]
+        if not isinstance(worktree, str) or not re.fullmatch(r"[a-f0-9]{64}", worktree):
+            raise ValueError("invalid_ci_worktree")
         if any(type(request[field]) is not int or request[field] not in CI_LEVELS
                for field in ("requested_level", "effective_level")):
             raise ValueError("invalid_ci_level")
@@ -393,7 +394,10 @@ class MetricsStore:
             raise ValueError("invalid_ci_total_tests")
         if total_tests is not None and len(selected) > total_tests:
             raise ValueError("invalid_ci_test_counts")
-        if request["status"] == "passed" and (not selected or total_tests == 0):
+        executed_test_count = request["executed_test_count"]
+        if type(executed_test_count) is not int or not 0 <= executed_test_count <= 1000000:
+            raise ValueError("invalid_ci_executed_test_count")
+        if request["status"] == "passed" and (executed_test_count <= 0 or total_tests == 0):
             raise ValueError("invalid_ci_empty_success")
         equality = request["equality_checks"]
         if not isinstance(equality, dict) or len(equality) > 32 or any(
@@ -417,14 +421,23 @@ class MetricsStore:
                 "coverage": request["coverage"], "requested_level": request["requested_level"],
                 "effective_level": request["effective_level"], "stage": request["stage"], "status": request["status"],
                 "selected_tests": selected, "selected_count": len(selected), "total_tests": total_tests,
+                "executed_test_count": executed_test_count,
                 "selection_reasons": reasons, **durations, "escalations": escalations,
                 "fallback_reasons": fallback_reasons, "reuse_decision": request["reuse_decision"],
                 "equality_checks": dict(sorted(equality.items())), "source_evidence": source_evidence,
                 "v3_only_defects": defects, "measurement_kind": request["measurement_kind"],
-                "coverage_state": request["coverage_state"], "evidence_sha256": evidence_hash}
+                "coverage_state": request["coverage_state"], "evidence_sha256": evidence_hash,
+                "selected_tests_sha256": hashed(selected), "selection_detail": "full"}
+        while len(encoded(body).encode("utf-8")) > 24000 and body["selected_tests"]:
+            keep = max(0, len(body["selected_tests"]) // 2)
+            body["selected_tests"] = body["selected_tests"][:keep]
+            body["selection_detail"] = "digest_only"
         with self.tx() as c:
-            if not c.execute("SELECT 1 FROM runs WHERE run_id=?", (run_id,)).fetchone():
+            run = c.execute("SELECT task_id FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if not run:
                 raise ValueError("unknown_metrics_run")
+            if run["task_id"] != task_id:
+                raise ValueError("ci_task_mismatch")
         self._append(run_id, "ci.validation", body, event_id=event_id)
         return {"event_id": event_id, "run_id": run_id, "kind": "ci.validation", "status": body["status"],
                 "selected_count": len(selected), "total_tests": total_tests, "coverage_state": body["coverage_state"]}

@@ -13,8 +13,8 @@ prior_revision2_approval_ref = "2026-11-12 사용자 결정: A = '1': rewrite CI
 ```
 
 용어: **V1/V2/V3**는 검증 단계이며 작업 **T1~T4**는 구현 순서다. V1=L1 Fast Feedback / V2=L2 Impact Validation / V3=L3 Full Validation은 SDD 위험 등급 L1/L2/L3와 다르다. revision 1의 변경 분류 T0~T3와 draft별 2/3/4 matrix 표는 폐기한다.
-T2의 방법론·트리거 구현은 보존한다. T3a~T3c는 로컬 V2 checkpoint와 독립 검토 pending이다. T3d는 MetricsStore CI validation append-only API와 traceability AC 연결까지 로컬 구현했으며 호출자 연결·실사용 계측은 pending이다.
-V1/V2는 내부 API-only이며 실제 호출자 연결과 원격 선택은 pending이다. 기존 완료 호출은 V3를 유지한다.
+T2의 방법론·트리거 구현은 보존한다. T3a~T3c는 로컬 V2 checkpoint를 마쳤고 독립 검토 pending이다. T3d는 Orchestrator worker V1, CLI checkpoint V2, 기본 완료 검증 V3 caller와 MetricsStore event 연결을 구현했다.
+worker 결과의 편집 피드백은 V1, 명시 checkpoint는 V2, 기본 완료 검증은 V3이며 세 단계의 상태는 서로 대체하지 않는다. 실제 CBM 없는 hosted draft는 V3 fallback이다.
 
 재사용: `check_sdd.changes()`·`required_level()`·공유 `eligible_tasks()`, 공식 순차 `verify_environment.py`, 기존 fast runner,
 `verify.yml`의 고정 4 matrix·`fetch-depth: 0`·GMS optional 검사. `scripts/ci_plan.py` 하나만 정책 planner로 둔다.
@@ -109,7 +109,8 @@ Task의 선택 TOML `validation_minimum = 1|2|3`과 planner API/CLI minimum은 s
 
 ### CI-OPT-001-AC-08
 
-로컬 BATON validation은 편집 V1·작업 단위/로컬 커밋 V2·완료 V3를 사용하며 커밋·push 승인 규칙은 AGENTS를 그대로 따른다.
+로컬 BATON validation은 worker 결과 후 편집 피드백 V1, `baton task validate --stage checkpoint`의 작업 단위 V2, 기본 `baton task validate` 완료 V3를 사용하며 커밋·push 승인 규칙은 AGENTS를 그대로 따른다.
+V1/V2 확인은 Task를 `REVIEW_REQUIRED`보다 높은 완료 상태로 승격하지 않으며 최종 review/integration evidence는 별도 V3 검사 뒤에만 기록된다.
 GitHub draft PR은 V2 affected_modules 범위, ready PR·병합 후보·main push는 V3 full이다.
 ready/main은 항상 전체 4 matrix(ubuntu/windows × Python 3.11/3.12)이며 어떤 입력도 4 미만으로 낮추지 않는다.
 이 계약은 draft도 기존 4 matrix에서 테스트 범위만 V2로 줄인다(새 2/3 matrix 정책 없음). V3 fallback이면 전체 테스트를 4개 모두 실행한다.
@@ -169,15 +170,15 @@ PR 증거는 실제 merge-ref SHA/tree·base(PR head/이후 main과 구분), eve
 ready/main 실제 4 job 성공은 별도 승인된 원격 E2E에서 개별 job으로 확인하고 그 전에는 `not_run`이다.
 정적 계약 테스트·오프라인 planner 테스트는 원격 E2E passed 근거가 아니다.
 
-기존 MetricsStore append-only event/profile과 Task 증거에 아래 필드를 기록한다. T3d는 제한된 `ci.validation` event API를 제공하며 `status`는 `passed`/`failed`/`not_run`을 구분한다. event는 기존 원장과 report에 추가되고 provider/token 회계나 Task 완료 상태를 바꾸지 않는다. 실제 호출자 연결은 pending이다.
+기존 MetricsStore append-only event/profile과 Task 증거에 아래 필드를 기록한다. T3d는 제한된 `ci.validation` event API와 Orchestrator caller를 연결하며 `status`는 `passed`/`failed`/`not_run`을 구분한다. event는 기존 원장과 report에 추가되고 provider/token 회계나 Task 완료 상태를 바꾸지 않는다.
 새 verification DB/table·별도 결과 cache 서비스를 만들지 않는다. 전용 event API는 필드 allowlist, identifier/hash/duration 경계, 기존 payload 크기 제한을 지키며 미수집 값은 null/unknown으로 둔다.
 
 | 필드 | 의미 |
 |---|---|
-| task / commit / worktree / target_base | Task·후보/통합 코드 상태 식별 및 fingerprint |
+| task / commit / worktree / target_base | Task·후보/통합 코드 상태 식별 및 fingerprint; worktree는 절대 경로 대신 SHA-256 fingerprint |
 | index_id / generation / freshness / coverage | 프로젝트/worktree·검사 시점·갱신 결과, partial 여부 |
 | requested_level / effective_level / stage | 기본/최종 V 단계 |
-| selected_tests / total_tests / selection_reasons | 테스트 ID·수와 선택/누락 이유, 모듈 inventory |
+| selected_tests / total_tests / executed_test_count / selection_reasons | 테스트 ID·선택 수·실제 실행 케이스 수·선택/누락 이유와 모듈 inventory; 기존 event payload 한도에서는 전체 ID digest와 bounded sample로 축약 가능 |
 | graph_seconds / ci_seconds / validation_seconds | 실제 측정 구간별 시간, 미수집 null |
 | escalations / fallback_reasons | 상향 원인·실패 보존 |
 | reuse_decision / equality_checks / source_evidence | 재사용 여부·비교 근거와 원 증거 참조 |
@@ -250,5 +251,5 @@ Base+Delta overlay는 없으며 새로 만들지 않는다. persistence는 off�
 V1=L1 Fast Feedback / V2=L2 Impact Validation / V3=L3 Full Validation 별칭은 SDD 위험 등급과 다르다.
 V1의 그래프 불완전/실패는 직접 파일 검사와 가용 영향 범위로 보완한다. V2 completeness/fallback 및 V3 독립 full은 유지한다.
 별도 정책/위험 경로·미상 stage/event·상태 변경·이전 범위 밖 실패 상향 규칙은 유지한다.
-V1/V2는 내부 API-only이며 사용자 stage CLI 및 완료 호출자의 fast/checkpoint 연결은 pending이다.
+worker는 V1, 명시 checkpoint CLI는 V2, 기본 완료 검증은 V3 호출자로 연결한다. V1/V2 결과는 Task 완료 상태를 올리지 않는다.
 최종 전체 AC/nonzero/no-skip/독립 검토/CI와 push/model/GMS/GIT-CALL 경계는 불변이다.

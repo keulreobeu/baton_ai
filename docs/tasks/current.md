@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: T3a~T3c는 V2 checkpoint를 로컬 저장했고 T3d MetricsStore API·115개 회귀 및 13 AC traceability를 로컬 검증했다. 로컬 checkpoint 대기. CI 호출 축소는 실제 caller·CBM runner 준비와 검증 전까지 활성/절감으로 주장하지 않는다. hosted draft는 CBM 부재 시 V3 fallback이다. GIT-CALL은 DEFERRED 유지. 독립 검토·최종 V3·원격 fixed4 CI pending.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md) owner Codex: T3a~T3c V2 checkpoint와 T3d 계측 API/AC 원장은 로컬 커밋됐다. 후속 worker V1, 명시 checkpoint V2, 완료 V3 caller와 MetricsStore event 연결을 구현했고 현재 회귀/SDD 증거를 갱신 중이다. hosted draft는 CBM 부재 시 V3 fallback; CI 절감 미입증. GIT-CALL은 DEFERRED. 독립 검토·최종 V3·원격 fixed4 CI pending.
 
 ## 현재 작업 — 2026-11-12 검토 보고 inbox 읽기
 
