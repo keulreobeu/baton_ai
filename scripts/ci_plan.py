@@ -750,7 +750,10 @@ def valid_readset(readset):
                         and (_repo_path(r.get("path")) if r["scope"] == "repo" else _abs_path(r.get("path")))
                         for r in readset.get("listings", []))
                 and isinstance(readset.get("added_env", []), list)
-                and set(readset.get("added_env", [])) <= ADDED_ENV_ALLOWED)
+                and set(readset.get("added_env", [])) <= ADDED_ENV_ALLOWED
+                and (not readset["complete"] or all(
+                    isinstance(r.get("sha256"), str)
+                    for key in ("repo_reads", "outside_reads", "env_reads") for r in readset.get(key, []))))
     except (TypeError, AttributeError):
         return False
 
@@ -825,7 +828,23 @@ def git_identity(root):
             files[origin] = "non-file-origin"
         else:
             raise PlanError("GIT_CONFIG_ORIGIN_UNKNOWN")
-    return {"exe_sha256": _sha_file(exe), "version": version, "config": fingerprint(sorted(files.items()))}
+    attributes = {}
+    configured = subprocess.run([exe, "-C", str(root), "config", "--path", "--get", "core.attributesFile"],
+                                capture_output=True, timeout=60)
+    need(configured.returncode in {0, 1}, "GIT_CONFIG_UNAVAILABLE")
+    candidates = []
+    if configured.returncode == 0 and configured.stdout.strip():
+        candidates.append(Path(configured.stdout.decode("utf-8", "replace").strip()))
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    candidates.append((Path(xdg) if xdg else Path.home() / ".config") / "git" / "attributes")
+    info = Path(sdd.git(root, "rev-parse", "--git-path", "info/attributes").strip())
+    candidates.append(info if info.is_absolute() else root / info)
+    for path in candidates:
+        content = _content(path)
+        need(content is not None, "GIT_CONFIG_UNREADABLE")
+        attributes[str(path)] = content
+    return {"exe_sha256": _sha_file(exe), "version": version, "config": fingerprint(sorted(files.items())),
+            "attributes": fingerprint(sorted(attributes.items()))}
 
 
 def policy_identity(root):

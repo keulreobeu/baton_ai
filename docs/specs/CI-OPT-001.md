@@ -306,6 +306,12 @@ staged 내용(`ls-files --stage`, 전체 해시 대상 경로)을 추가, 모든
 manifest·git identity가 같아야 하며 처음 읽을 때 해시한 입력이 끝에 다르면 증거를 무효화(`INPUT_CHANGED_DURING_RUN`), prefix 안에서
 읽힌 파일은 경로·내용을 `env_reads`로 지문에 포함, 저장소(또는 cwd)에 같은 이름이 있는 경로 없는 DLL과 cffi `dlopen`은 partial,
 read set 경로는 정규화된 POSIX 상대경로만 허용.
+재검토 반영(2026-11-16, Codex `104e448` FAIL: P1 3): 모든 세대의 Python 실행은 시작 직후 토큰과 pid를 연결하고, 종료 처리 때 알려진
+모든 프로세스의 종료를 확인한 뒤 로그를 다시 병합하며(새 프로세스가 없을 때까지 반복) 살아 있으면 partial이다. `python_unstarted`는
+pid가 알려지고 이미 종료된 토큰에만 적용한다. prefix 읽기도 관측 시 digest가 없으면 partial이며, complete read set은 모든 읽기의 관측
+digest를 가져야 한다. 저장소 대상 `check-attr`는 `--git-dir`/`--work-tree`/`-c` 등 위치·설정 이동 옵션과 다른 gitdir·설정 파일을
+가리키는 환경 변수(`GIT_DIR`, `GIT_WORK_TREE`, `GIT_CONFIG_GLOBAL` 등) 없이 실행될 때만 허용한다. git identity는 `check-attr`가 읽는
+attribute 파일(`core.attributesFile`, XDG `git/attributes`, `info/attributes`) 내용도 포함한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

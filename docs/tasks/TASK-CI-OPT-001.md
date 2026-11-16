@@ -1041,3 +1041,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   suite 전후 비교·관측 해시 변경 무효화, prefix 읽기 `env_reads`, 저장소 DLL 이름·cffi dlopen partial, POSIX 상대경로 검증.
   E2E 1회차에서 새 증거 흐름 테스트가 실제 저장소에 git을 실행해 partial이 된 것도 임시 저장소 fixture로 고쳤다.
   V2 242 tests OK, Task-base SDD PASS. 재검토와 E2E(실행→문서 변경→재사용)는 진행 중.
+- 2026-11-16 Codex 재검토(`104e448`, `ctx_989705d684fc`): FAIL(P1 3, 이전 10건 중 7 해결). 반영: 토큰-pid 연결·종료 확인 후 반복 병합·
+  생존 자식 partial·`python_unstarted`는 종료 확인된 pid만, prefix 읽기 digest 필수·complete read set의 관측 digest 필수,
+  `check-attr` 위치/설정 이동 옵션·환경 변수 불허, git identity에 attribute 파일 포함. V2 246 tests OK, SDD PASS.
+  E2E 1회차는 실행 중 코드 수정으로 무효가 되어 중단했고 이 커밋 뒤 다시 실행한다.

@@ -834,8 +834,10 @@ SECTION = "## P-01 AGENTS 문안 초안"
 
 def readset(**overrides):
     value = {"schema": "readset/1", "complete": True, "partial_reasons": [],
-             "repo_reads": [{"path": "docs/tasks/TASK-X.md", "via": "open", "section_only": True, "sections": [SECTION]},
-                            {"path": "docs/specs/READ.md", "via": "open", "section_only": False, "sections": []}],
+             "repo_reads": [{"path": "docs/tasks/TASK-X.md", "via": "open", "section_only": True, "sections": [SECTION],
+                             "sha256": "a" * 64},
+                            {"path": "docs/specs/READ.md", "via": "open", "section_only": False, "sections": [],
+                             "sha256": "a" * 64}],
              "outside_reads": [], "listings": [], "added_env": ["BATON_READSET_LOG", "PYTHONPATH"]}
     value.update(overrides)
     return value
@@ -920,9 +922,9 @@ class SuiteReuseTests(unittest.TestCase):
                 self.assertIn("FINGERPRINT_CHANGED", decision["reasons"])
 
     def test_ignored_read_listing_outside_env_manifest_git_invalidate(self):
-        rs = readset(repo_reads=readset()["repo_reads"] + [{"path": "local.cfg", "via": "open"}],
+        rs = readset(repo_reads=readset()["repo_reads"] + [{"path": "local.cfg", "via": "open", "sha256": "a" * 64}],
                      listings=[{"path": "docs/specs", "scope": "repo", "ok": True, "entries": []}],
-                     outside_reads=[{"path": str(self.outside), "via": "open"}])
+                     outside_reads=[{"path": str(self.outside), "via": "open", "sha256": "a" * 64}])
         source = self.evidence(self.fp(rs))
         self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
         mutations = {
@@ -933,9 +935,9 @@ class SuiteReuseTests(unittest.TestCase):
         for component, change in mutations.items():
             with self.subTest(component=component):
                 self.setUp(); self.outside.write_text("v1", encoding="utf-8")
-                rs = readset(repo_reads=readset()["repo_reads"] + [{"path": "local.cfg", "via": "open"}],
+                rs = readset(repo_reads=readset()["repo_reads"] + [{"path": "local.cfg", "via": "open", "sha256": "a" * 64}],
                              listings=[{"path": "docs/specs", "scope": "repo", "ok": True, "entries": []}],
-                             outside_reads=[{"path": str(self.outside), "via": "open"}])
+                             outside_reads=[{"path": str(self.outside), "via": "open", "sha256": "a" * 64}])
                 source = self.evidence(self.fp(rs)); change()
                 decision = self.decide(self.fp(rs), source)
                 self.assertEqual(decision["equality_checks"][component], "different")
@@ -968,7 +970,7 @@ class SuiteReuseTests(unittest.TestCase):
         self.assertIn("FINGERPRINT_CHANGED", self.decide(self.fp(), source)["reasons"])
         self.setUp()
         prefix = Path(self.temp.name) / "pyvenv.cfg"; prefix.write_text("home = a\n", encoding="utf-8")
-        rs = readset(env_reads=[{"path": str(prefix), "sha256": None}])
+        rs = readset(env_reads=[{"path": str(prefix), "sha256": "a" * 64}])
         source = self.evidence(self.fp(rs)); prefix.write_text("home = b\n", encoding="utf-8")
         decision = self.decide(self.fp(rs), source)
         self.assertEqual(decision["equality_checks"]["env_reads"], "different")
@@ -977,6 +979,18 @@ class SuiteReuseTests(unittest.TestCase):
             cp.suite_fingerprint(self.root, observed, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+
+    def test_git_identity_covers_attribute_files_and_complete_reads_need_digests(self):
+        """Review P1 (104e448): check-attr reads attribute files; complete read sets carry read-time digests."""
+        before = cp.git_identity(self.root)
+        info = self.root / ".git" / "info" / "attributes"
+        info.parent.mkdir(parents=True, exist_ok=True)
+        info.write_text("*.md text\n", encoding="utf-8")
+        self.assertNotEqual(cp.git_identity(self.root)["attributes"], before["attributes"])
+        for key in ("repo_reads", "outside_reads", "env_reads"):
+            entry = {"path": "docs/specs/READ.md" if key == "repo_reads" else str(self.outside), "via": "open"}
+            with self.subTest(key=key), self.assertRaises(cp.PlanError):
+                self.fp(readset(**{key: [entry]}))
 
     def test_windows_style_and_escaping_paths_are_rejected(self):
         """Review P2: only normalized POSIX-relative repository paths."""

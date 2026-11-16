@@ -212,12 +212,19 @@ class ReadsetTests(unittest.TestCase):
 
     def test_python_child_ended_before_startup_is_not_partial_but_disabled_hook_is(self):
         """A child with hook-capable options that never reports ended before user code."""
+        exited = readset._ORIGINAL_POPEN([sys.executable, "-c", "pass"])
+        exited.wait()
         rec = self.recorder()
-        rec._child([sys.executable, "-c", "import time;time.sleep(30)"], str(self.root), None)
+        env = rec._child([sys.executable, "-c", "import time;time.sleep(30)"], str(self.root), None)
+        rec._spawned_event(env["BATON_READSET_TOKEN"], exited.pid)  # known pid, already exited
         rec.stop()
         data = rec.as_dict()
         self.assertNotIn("CHILD_HOOK_MISSING", data["partial_reasons"])
         self.assertEqual(len(data["children"]["python_unstarted"]), 1)
+        unknown = self.recorder()
+        unknown._child([sys.executable, "-c", "pass"], str(self.root), None)  # pid never reported
+        unknown.stop()
+        self.assertIn("CHILD_HOOK_MISSING", unknown.as_dict()["partial_reasons"])
         rec2 = self.recorder()
         rec2._child([sys.executable, "-E", "-c", "pass"], str(self.root), None)
         rec2.stop()
@@ -330,6 +337,42 @@ class ReadsetTests(unittest.TestCase):
         finally:
             child.kill(); child.wait()
         self.assertIn("CHILD_ALIVE_AT_STOP", rec.partial_reasons)
+
+    # -- Codex re-review 2026-11-16 (104e448) regressions -------------------
+    def test_unhooked_child_still_alive_is_partial_not_unstarted(self):
+        alive = readset._ORIGINAL_POPEN([sys.executable, "-c", "import time; time.sleep(20)"])
+        try:
+            rec = self.recorder()
+            env = rec._child([sys.executable, "-c", "pass"], str(self.root), None)
+            rec._spawned_event(env["BATON_READSET_TOKEN"], alive.pid)  # stuck before its hook
+            rec.stop()
+        finally:
+            alive.kill(); alive.wait()
+        data = rec.as_dict()
+        self.assertIn("CHILD_ALIVE_AT_STOP", data["partial_reasons"])
+        self.assertEqual(data["children"]["python_unstarted"], [])
+
+    def test_unhashable_prefix_read_is_partial(self):
+        from unittest.mock import patch
+        target = Path(os.__file__)  # always under sys.base_prefix; no skip in the official suite
+        rec = self.recorder()
+        with patch.object(readset, "_sha", return_value=None):
+            rec._record_read(str(target))
+        rec.stop()
+        self.assertIn("INPUT_UNHASHABLE", rec.partial_reasons)
+
+    def test_check_attr_with_gitdir_worktree_or_moving_env_is_refused(self):
+        repo = str(Path(__file__).resolve().parents[1])
+        outer = readset.Recorder(repo)
+        try:
+            outer._child(["git", "--git-dir", "C:/elsewhere/.git", "--work-tree", repo, "check-attr", "text", "--",
+                          "README.md"], repo, None)
+            outer._child(["git", "-C", repo, "check-attr", "text", "--", "README.md"], repo,
+                         {**os.environ, "GIT_DIR": "C:/elsewhere/.git"})
+            self.assertEqual(outer._children["allowed"]["repo_check_attr"], 0)
+            self.assertEqual(outer._children["disallowed_count"], 2)
+        finally:
+            outer.stop()
 
     def test_bare_dll_name_present_in_repo_is_partial(self):
         (self.root / "evil.dll").write_bytes(b"MZ")

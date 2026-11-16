@@ -172,6 +172,8 @@ class Recorder:
         self._launch_tokens = {}
         self._unstarted = []
         self._hooked = {}
+        self._spawned = {}
+        self._log_offset = 0
         self._created = set()
         self._install()
         if _child:
@@ -280,8 +282,11 @@ class Recorder:
         if scope == "env_manifest":
             if canonical not in self._env_reads:
                 with self._quiet():
-                    self._env_reads[canonical] = {"path": _real(path) or canonical,
-                                                  "sha256": digest or _sha(canonical)}
+                    digest = digest or _sha(canonical)
+                self._env_reads[canonical] = {"path": _real(path) or canonical, "sha256": digest}
+                if digest is None:
+                    self._partial("INPUT_UNHASHABLE", path)
+                self._emit({"type": "read", "path": canonical, "via": via, "section_only": False, "sha256": digest})
             return
         item = self._repo if scope == "repo" else self._outside
         entry = item.get(canonical)
@@ -291,7 +296,7 @@ class Recorder:
                     digest = _sha(canonical)
             entry = item[canonical] = {"path": self._display(_real(path) or canonical), "via": via,
                                        "section_only": bool(section_only), "sections": set(), "sha256": digest}
-            if os.path.isfile(canonical) and digest is None:
+            if digest is None:
                 self._partial("INPUT_UNHASHABLE", path)
         if via == "sqlite":
             entry["via"] = "sqlite"
@@ -421,8 +426,20 @@ class Recorder:
             if effective and any(_under(effective, d) for d in git_dirs):
                 allowed = "temp_git"
             subcommand = _git_subcommand(parts[1:])
-            if subcommand == "check-attr" and not any(
-                    p in {"--cached", "--source"} or p.startswith("--source=") for p in parts[1:]):
+            plain = not any(p in {"--cached", "--source", "--git-dir", "--work-tree", "-c", "--namespace",
+                                  "--config-env", "--exec-path", "--super-prefix"}
+                            or p.startswith(("--source=", "--git-dir=", "--work-tree=", "--namespace=",
+                                             "--config-env=", "--exec-path=", "--super-prefix="))
+                            for p in parts[1:])
+            child_env = os.environ if env is None else env
+            # The environment itself is fingerprinted; only variables that move
+            # Git to another gitdir/worktree/config are refused here.
+            # Inline config (GIT_CONFIG_COUNT/KEY/VALUE, GIT_CONFIG_PARAMETERS)
+            # is itself an environment value; variables naming other files are not.
+            moving = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_ATTR_SOURCE", "GIT_NAMESPACE",
+                      "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_INDEX_FILE"}
+            plain = plain and not any(str(k).upper() in moving for k in child_env)
+            if subcommand == "check-attr" and plain:
                 separator = parts.index("--") + 1 if "--" in parts else len(parts)
                 targets = parts[separator:]
                 if effective and _under(effective, self.root) and targets and all(
@@ -456,6 +473,14 @@ class Recorder:
         if len(self._children["disallowed"]) < 20:
             self._children["disallowed"].append(summary[:160])
         return env
+
+    def _spawned_event(self, token, pid):
+        if not token:
+            return
+        if self._is_child:
+            self._emit({"type": "python_spawned", "token": token, "pid": pid})
+        else:
+            self._spawned[token] = pid
 
     def _log_file(self):
         if self._log_path:
@@ -508,9 +533,26 @@ class Recorder:
             pass
         if self._is_child:
             return
-        self._merge_child_log()
+        # Drain: a process can only write the log while alive. Merge, confirm
+        # every known Python process (direct, grandchildren from the log) has
+        # exited, merge again, and repeat until no new process appears.
+        alive = []
+        for _ in range(1000):
+            self._merge_child_log()
+            known = {**{t: p for t, p in self._spawned.items()}, **{"h:" + t: p for t, p in self._hooked.items()}}
+            alive = sorted({p for p in known.values() if _pid_alive(p)})
+            if alive:
+                break
+            count = len(self._spawned) + len(self._hooked)
+            self._merge_child_log()
+            if len(self._spawned) + len(self._hooked) == count:
+                break
+        else:
+            self._partial("CHILD_DRAIN_INCOMPLETE")
+        for pid in alive:
+            self._partial("CHILD_ALIVE_AT_STOP", "pid %s" % pid)
         owned = getattr(self, "_owned_log", None)
-        if owned:
+        if owned and not alive:
             try:
                 os.remove(owned)
             except OSError:
@@ -521,26 +563,34 @@ class Recorder:
         # killed at once by a Job object) and read only interpreter startup
         # files. Launches with disabling options, failed hooks, and processes
         # still alive now are never explained away.
-        missing = [(command, expected) for token, (command, expected) in self._launch_tokens.items()
+        missing = [(token, command, expected) for token, (command, expected) in self._launch_tokens.items()
                    if token not in self._hooked]
-        unstarted = [command for command, expected in missing if expected]
-        for command, expected in missing:
-            if not expected:
+        # "Unstarted" only for a launch whose process is known and has exited.
+        unstarted = [command for token, command, expected in missing
+                     if expected and token in self._spawned and not _pid_alive(self._spawned[token])]
+        for token, command, expected in missing:
+            if not expected or token not in self._spawned:
                 self._partial("CHILD_HOOK_MISSING", command)
         if self._python_launches - self._python_hooks > len(unstarted):
             self._partial("CHILD_HOOK_MISSING", f"launched={self._python_launches} hooked={self._python_hooks}")
         self._unstarted = unstarted
-        for token, pid in self._hooked.items():
-            if _pid_alive(pid):
-                self._partial("CHILD_ALIVE_AT_STOP", self._launch_tokens.get(token, ("pid %s" % pid,))[0])
+
 
     def _merge_child_log(self):
         if not self._log_path:
             return
         try:
-            with self._quiet(), open(self._log_path, encoding="utf-8") as stream:
-                events = [json.loads(line) for line in stream]
-        except (OSError, ValueError) as exc:
+            with self._quiet(), open(self._log_path, "rb") as stream:
+                stream.seek(self._log_offset)
+                data = stream.read()
+        except OSError as exc:
+            self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
+            return
+        complete = data[:data.rfind(b"\n") + 1]  # a partial last line is read on the next pass
+        self._log_offset += len(complete)
+        try:
+            events = [json.loads(line) for line in complete.decode("utf-8").splitlines() if line.strip()]
+        except ValueError as exc:
             self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
             return
         try:
@@ -550,6 +600,9 @@ class Recorder:
                     self._python_hooks += 1
                     if event.get("token"):
                         self._hooked[event["token"]] = event.get("pid")
+                elif kind == "python_spawned":
+                    if event.get("token"):
+                        self._spawned[event["token"]] = event.get("pid")
                 elif kind == "python_launched":
                     self._python_launches += 1
                     if event.get("token"):
@@ -793,6 +846,9 @@ class _TrackedPopen(_ORIGINAL_POPEN):
         elif childenv is not None:
             kwargs["env"] = childenv
         super().__init__(args, *rest, **kwargs)
+        token = childenv.get("BATON_READSET_TOKEN") if isinstance(childenv, dict) else None
+        for r in _innermost():
+            r._spawned_event(token, self.pid)
 
 
 def _tracked_bind(sock, address):
