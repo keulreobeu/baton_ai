@@ -348,6 +348,8 @@ context를 만들어 신뢰 저장소를 읽는 것을 확인해, SSL을 partial
 source 실행 끝에 생겼으면 증거를 무효화한다.
 9차 검토·E2E 반영(2026-11-16, Codex `8118419` FAIL: P1 1): 부재 경로도 관측 경로가 symlink·junction을 거치면 별칭과 관측 대상을 기록하며
 (자식 이벤트 포함) 재지정은 별칭 규칙으로 판정한다. 현재 플랫폼에서 존재할 수 없는 이름(Windows의 `<unknown>` 등)은 입력이 아니다.
+10차 검토 반영(2026-11-16, Codex `e1ca69f` FAIL: P1 1): SQLite `file:` URI(`file:C:/x.db?mode=ro`, `file:///C:/x.db`)는 실제 파일 경로로
+해석해 입력으로 기록하고, 메모리 DB(`:memory:`, `file::memory:`, `mode=memory`)는 제외하며, 원격 authority 등 해석할 수 없는 형식은 partial이다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

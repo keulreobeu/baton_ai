@@ -1073,3 +1073,5 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-16 Codex 8차 재검토(`3a7d63b`, `ctx_40cac46d0be8`): FAIL(P1 1: 없던 파일 열기 시도 미기록). 반영: `absent` 입력(실행 이전 상위 디렉터리만), 끝에 생기면 무효.
 - 2026-11-16 Codex 9차 재검토(`8118419`, `ctx_ade7e0b475b4`): FAIL(P1 1: 부재 경로의 junction 별칭 누락). 반영: 부재 읽기도 별칭 기록(자식 포함), 실제 junction 회귀 테스트.
   E2E(`8118419`) 747 tests OK·stable이나 증거 read set 형식 오류: traceback 계열이 연 `<unknown>`이 부재 입력으로 기록됨 → 플랫폼에서 존재 불가능한 이름은 입력 아님.
+- **2026-11-16 재사용 E2E(`e1ca69f`)**: 1회차 748 tests OK(1145.3 s) read set complete(부재 입력 `checked.py` 기록), 2회차 reused 748·executed 0·8 s. 사본 `CI-OPT-001-e2e-reuse-e1ca69f/`.
+- 2026-11-16 Codex 10차 재검토(`e1ca69f`, `ctx_867f229c3325`): FAIL(P1 1: SQLite `file:` URI 미해석). 반영: URI→경로 해석·메모리 DB 제외·미해석 partial.

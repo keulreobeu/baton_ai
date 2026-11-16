@@ -161,6 +161,25 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(rows[0]["via"], "sqlite")
         self.assertNotIn("PATH_UNNORMALIZABLE", rec.partial_reasons)
 
+    def test_sqlite_uri_forms_resolve_to_the_database_file(self):
+        """Review P1 (e1ca69f): an existing database opened through a file: URI is an input."""
+        import sqlite3
+        db = self.root / "state.db"
+        sqlite3.connect(db).close()
+        time.sleep(0.06)
+        rec = self.recorder()
+        posix = db.as_posix()
+        for target in ("file:%s?mode=ro" % posix, "file:///%s?mode=ro&immutable=1" % posix):
+            sqlite3.connect(target, uri=True).close()
+        sqlite3.connect("file::memory:", uri=True).close()
+        sqlite3.connect("file:memdb1?mode=memory&cache=shared", uri=True).close()
+        rec._sqlite("file://remote-host/share/x.db", uri=True)
+        rec.stop()
+        rows = [x for x in rec.as_dict()["repo_reads"] if x["path"] == "state.db"]
+        self.assertEqual([r["via"] for r in rows], ["sqlite"])
+        self.assertEqual(rec.partial_reasons, {"SQLITE_UNRESOLVED"})
+        self.assertEqual(readset._sqlite_target("C:/x.db", False), ("file", "C:/x.db"))
+
     def test_unhashable_prefix_read_is_partial(self):
         target = Path(os.__file__)  # always under sys.base_prefix; no skip in the official suite
         rec = self.recorder()

@@ -595,15 +595,7 @@ class Recorder:
             self._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
                              args[2] if len(args) > 2 else None)
         elif event == "sqlite3.connect":
-            path = args[0] if args else None
-            if path != ":memory:":
-                canonical = _canonical(path)
-                if canonical is None:
-                    self._partial("PATH_UNNORMALIZABLE", path)
-                elif not os.path.exists(canonical):
-                    self._created.add(canonical)
-                else:
-                    self._open_event(path)
+            self._sqlite(args[0] if args else None, uri=None)
         elif event.startswith("socket."):
             self._socket_event(event, args)
         elif event == "subprocess.Popen":
@@ -634,6 +626,21 @@ class Recorder:
                 self.native_modules.add(str(name))
                 if name.split(".")[0] not in self._native_allowed and not name.startswith("cryptography"):
                     self._partial("NATIVE_MODULE_NOT_ALLOWED", name)
+
+    def _sqlite(self, database, uri):
+        kind, value = _sqlite_target(database, uri)
+        if kind == "memory":
+            return
+        if kind == "unknown":
+            self._partial("SQLITE_UNRESOLVED", value)
+            return
+        canonical = _canonical(value)
+        if canonical is None:
+            self._partial("PATH_UNNORMALIZABLE", value)
+        elif not os.path.exists(canonical):
+            self._created.add(canonical)  # a new database file is an output
+        else:
+            self._record_read(value, via="sqlite")
 
     def _socket_event(self, event, args):
         if event == "socket.bind":
@@ -1257,19 +1264,42 @@ def _tracked_close(sock):
     return _ORIGINAL_SOCKET_CLOSE(sock)
 
 
+def _sqlite_target(database, uri):
+    """('memory', None) | ('file', path) | ('unknown', raw) for a sqlite3.connect database.
+
+    With uri=None (audit event, flag unknown) a 'file:' string is parsed as a URI."""
+    if isinstance(database, (bytes, os.PathLike)) and not isinstance(database, str):
+        database = _path_text(database)
+    if not isinstance(database, str):
+        return "unknown", database
+    if database in {"", ":memory:"}:
+        return "memory", None
+    if database.startswith("file:") and uri is not False:
+        from urllib.parse import parse_qs, unquote, urlsplit
+        try:
+            parts = urlsplit(database)
+            query = parse_qs(parts.query)
+        except ValueError:
+            return "unknown", database
+        if query.get("mode") == ["memory"]:
+            return "memory", None
+        if parts.netloc not in {"", "localhost"}:
+            return "unknown", database  # remote authorities are not local files
+        path = unquote(parts.path)
+        if path in {"", ":memory:"}:
+            return "memory", None
+        if os.name == "nt" and len(path) >= 3 and path[0] == "/" and path[2] == ":":
+            path = path[1:]  # file:///C:/x -> C:/x
+        return "file", path
+    return "file", database
+
+
 def _tracked_sqlite_connect(*args, **kwargs):
-    path = args[0] if args else kwargs.get("database")
-    if path != ":memory:":
-        for r in _active():
-            if r._is_quiet():
-                continue
-            canonical = _canonical(path)
-            if canonical is None:
-                r._partial("PATH_UNNORMALIZABLE", path)
-            elif not os.path.exists(canonical):
-                r._created.add(canonical)
-            else:
-                r._record_read(path, via="sqlite")
+    database = args[0] if args else kwargs.get("database")
+    uri = kwargs.get("uri", args[7] if len(args) > 7 else False)  # connect(database, timeout, detect_types, isolation_level, check_same_thread, factory, cached_statements, uri)
+    for r in _active():
+        if not r._is_quiet():
+            r._sqlite(database, uri=bool(uri))
     return _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
 
 
