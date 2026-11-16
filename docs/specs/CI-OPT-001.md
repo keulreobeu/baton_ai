@@ -289,6 +289,7 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 독립 검토 PASS와 이 절의 status 갱신 전까지 효력이 없고 현행 AC-12가 적용된다.
 초안 2판: 2026-11-16 Codex 독립 검토(f4a26c9, FAIL: P1 4·P2 3) 지적을 모두 반영했다.
 초안 3판: 재검토(27c8993, FAIL: P1 1·P2 1)의 실행 환경 파일 내용·native 입력·기록 검증기 지적을 반영했다.
+초안 4판: 재검토(469cb5e, FAIL: P1 1·P2 1)의 저장소 밖 입력·검증기 조합 지적을 반영했다.
 
 ### 근거 실측 (2026-11-16, `2daa6a2`, 로컬 Windows, Python 3.12.10, 모델 호출 0)
 
@@ -314,17 +315,22 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
      `skills/**`·`.github/**`·`docs/sdd/**`·`docs/templates/**`는 항상 전체 포함한다(확장자만으로 문서 취급하지 않음).
      실행 중 연 ignored 파일은 내용째 포함한다. 예외는 `.venv/**`(R4 실행 환경 manifest로 내용 포함), `**/__pycache__/**`(파생물),
      실행 시작 뒤 생성된 파일(테스트 임시 산출물)뿐이다.
+   - R1b 저장소 밖 입력: 실행 시작 전부터 있던 저장소 밖 파일의 열기(`open`·`sqlite3.connect` 포함)는 정규 경로와 내용 SHA-256을,
+     목록 조회는 정규 경로와 반환 항목 이름·종류 집합을 넣는다. R4 실행 환경 manifest에 이미 든 파일은 중복하지 않는다.
+     실행 시작 뒤 만든 임시 경로는 제외한다. 경로 정규화·내용 읽기에 실패하면 partial이다.
    - R2 절 단위: 문서 후보 파일의 모든 열기가 선언된 절 읽기 helper를 통한 경우에만 그 절 본문 digest로 대신한다.
      helper 밖 열기가 하나라도 있거나 선언 절을 찾지 못하면 파일 전체 digest다.
    - R3 목록 조회: 저장소 안에서 관측된 `listdir`/`scandir`마다 정규화 경로와 반환 항목의 이름·종류(파일/디렉터리/링크) 집합,
      성공/실패를 넣는다. 문서 후보 디렉터리라도 항목이 추가·삭제되면 지문이 바뀐다.
    - R4 실행·환경: suite 명령 argv, `verify_environment.py`·`ci_plan.py` 정책 버전, 테스트 설정, OS·버전, Python 구현/버전,
      설치 배포판 이름==버전 전체와 **실행 환경 manifest**(Python 실행 파일·DLL, `sys.base_prefix`의 stdlib `.py`/`.pyd`/`.dll`,
-     `sys.prefix` site-packages 아래 모든 배포판 파일의 경로와 내용 SHA-256; 버전 번호만으로 대신하지 않음), git 실행 파일 경로·SHA-256·버전, **환경 변수 전체**의 이름과 값 SHA-256(값 원문은 저장하지 않음).
+     `sys.prefix` site-packages 아래 모든 배포판 파일의 경로와 내용 SHA-256; 버전 번호만으로 대신하지 않음), git 실행 파일 경로·SHA-256·버전과 git system/global 설정 파일 내용 SHA-256(git 자식은 in-process hook 밖이므로), **환경 변수 전체**의 이름과 값 SHA-256(값 원문은 저장하지 않음).
      환경 일부만 고르는 허용목록은 쓰지 않는다. 대가로 다른 셸 세션 사이에서는 재사용이 드물다.
    - R5 read set 완전성: 원본 실행은 시작부터 CPython `open` audit event(builtins/io.open_code/os.open과 그 fd로 만든 mmap 포함),
      `os.listdir`/`os.scandir`, `subprocess.Popen`을 기록한다. 아래 중 하나라도 있으면 `partial`이다.
-     - 저장소 안 경로의 열기·목록 중 경로를 정규화할 수 없는 것, 기록 파일 손상·누락.
+     - 열기·목록 중 경로를 정규화할 수 없는 것(저장소 안팎 모두), 기록 파일 손상·누락.
+     - 루프백이 아닌 대상의 `socket.connect`/`socket.getaddrinfo`(네트워크 입력은 지문화할 수 없음). 시계·난수는 입력으로 보지 않으며
+       flaky 테스트 판정에 쓰지 않는다.
      - stdlib와 허용 배포판(`cryptography`) 밖 native 확장 모듈 적재(hook이 직접 파일 읽기를 보지 못함).
      - native API 입력: `sqlite3.connect` audit event의 대상이 저장소 안이고 실행 시작 전부터 있던 파일이면 그 내용을 R1에 넣고,
        경로를 정규화할 수 없으면 partial이다. `:memory:`·실행 중 만든 임시 DB는 제외한다. 저장소 안 경로의 `ctypes.dlopen`은 partial이다.
@@ -346,7 +352,17 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
 `CI_EVENT_FIELDS`에 `suite_execution`(`executed`/`reused`/`not_run`), `suite_fingerprint`(64 hex), `reused_test_count`(int 또는 null)를 추가한다.
 `ci.validation` 검증기는 지금처럼 `status=passed`이면서 `executed_test_count=0`인 event를 `invalid_ci_empty_success`로 거부하되,
 `suite_execution=reused`·`reused_test_count>0`·`source_evidence` 비어 있지 않음·`reuse_decision=accepted`가 모두 성립할 때만 예외로 받는다.
-`suite_execution=executed`이면 `reused_test_count`는 null이어야 한다. 집계·report는 `executed_test_count`만 새 실행 수로 센다.
+검증기의 `suite_execution`별 허용 조합(그 밖의 조합은 모두 `invalid_ci_suite_execution`으로 거부):
+
+| suite_execution | status | executed_test_count | reused_test_count | suite_fingerprint | reuse_decision | source_evidence |
+|---|---|---|---|---|---|---|
+| `executed` | passed | >0 | null | 64 hex | `not_requested` 또는 `rejected` | 비교한 원본 참조 또는 Task 참조 |
+| `executed` | failed | ≥0 | null | 64 hex 또는 null | `not_requested` 또는 `rejected` | 위와 같음 |
+| `reused` | passed | 0 | >0 | 64 hex, 원본과 같음 | `accepted` | 정확히 `run:<id>`·`commit:<40 hex>`·`evidence:<64 hex>` 3개 |
+| `not_run` | not_run | 0 | null | null | `rejected` 또는 `unknown` | Task 참조 |
+
+`reused` event는 기록 전에 caller가 원본 증거 JSON의 SHA-256·schema·지문을 다시 확인한 경우에만 만든다.
+집계·report는 `executed_test_count`만 새 실행 수로 센다.
 재사용 시 `reuse_decision=accepted`, `equality_checks`=R1~R5 구성요소별 일치, `source_evidence`=[원본 실행 id, 원본 commit,
 원본 증거 SHA-256], `executed_test_count`=이번에 실제 실행한 수(재사용이면 0, `sdd_static`은 test 수가 아님),
 `reused_test_count`=원본 tests_run으로 기록한다.
@@ -374,6 +390,8 @@ AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·�
 | 의존성·Python·git·정책 버전 변경 | suite 실행 |
 | 버전 번호는 같고 `.venv`·stdlib·실행 파일 내용만 변경 | suite 실행 |
 | 저장소 안 기존 sqlite DB를 테스트가 연결하고 그 내용 변경 | suite 실행 |
+| 저장소 밖 기존 파일(HOME 설정, 기존 TEMP 파일)·git 전역 설정 내용 변경 | suite 실행 |
+| 루프백 아닌 네트워크 연결 시도 | 원본 partial |
 | 저장소 안 `ctypes.dlopen` / 고정 목록 밖 stdlib native 적재 | 원본 partial |
 | 허용 밖 native 모듈 적재 / 경로 정규화 실패 | 원본 partial |
 | Python 자식·손자 hook 미적재(`-I`, env 교체) | 원본 partial |
@@ -385,4 +403,5 @@ AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·�
 | 같은 지문 동시 요청 / 대기 중 상태 변경 | 1회 실행 후 나머지 판정 / 새 지문으로 재판정 |
 | 재사용 기록 | `suite_execution=reused`, `executed_test_count=0`, `reused_test_count`=원본 수, 원본 참조, 새 실행으로 집계 안 함 |
 | passed·실행 수 0인데 reused 조건 중 하나라도 빠짐 | 검증기가 `invalid_ci_empty_success`로 거부 |
+| 위 표 밖 조합(reused인데 실행 수>0, executed인데 reused_test_count 값, source_evidence 형식 오류 등) | `invalid_ci_suite_execution`으로 거부 |
 | 2026-11-13 b50ec38→2daa6a2 5회 재현(임시 저장소 fixture) | 첫 1회 실행 후 4회 재사용 판정(실측 아닌 재현 판정) |
