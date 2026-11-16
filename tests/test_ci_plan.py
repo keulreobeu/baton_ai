@@ -948,15 +948,43 @@ class SuiteReuseTests(unittest.TestCase):
                               "git": {"git": {**FIXED_GIT, "config": "d" * 64}}}.items():
             with self.subTest(label=label):
                 self.assertFalse(self.decide(self.fp(**kwargs), source)["allowed"])
-        # Variables the recorder itself adds are not inputs.
-        self.assertTrue(self.decide(self.fp(env={**self.env, "BATON_READSET_LOG": "x"}), source)["allowed"])
+        # The fingerprint uses the environment taken before the recorder starts;
+        # nothing is excluded, so any added variable is a change (review P1).
+        self.assertFalse(self.decide(self.fp(env={**self.env, "PYTHONPATH": "x"}), source)["allowed"])
 
-    def test_partial_source_includes_every_doc_candidate(self):
+    def test_partial_source_is_never_reused(self):
+        """Review P1: a partial read set is never a reuse source, even for the exact same state."""
         partial = readset(complete=False, partial_reasons=["CHILD_HOOK_MISSING"])
         source = self.evidence(self.fp(partial))
-        self.assertTrue(self.decide(self.fp(partial), source)["allowed"])
-        self.write("docs/tasks/current.md", "changed\n")
-        self.assertFalse(self.decide(self.fp(partial), source)["allowed"])
+        decision = self.decide(self.fp(partial), source)
+        self.assertFalse(decision["allowed"])
+        self.assertIn("SOURCE_READSET_PARTIAL", decision["reasons"])
+
+    def test_staged_content_and_prefix_reads_and_changed_observed_inputs(self):
+        """Review P1: staged (index) content, prefix reads and inputs changed during the run."""
+        source = self.evidence(self.fp())
+        self.write("src/value.py", "def value(): return 2\n"); self.git("add", "src/value.py")
+        self.write("src/value.py", "def value(): return 1\n")  # worktree back, index differs
+        self.assertIn("FINGERPRINT_CHANGED", self.decide(self.fp(), source)["reasons"])
+        self.setUp()
+        prefix = Path(self.temp.name) / "pyvenv.cfg"; prefix.write_text("home = a\n", encoding="utf-8")
+        rs = readset(env_reads=[{"path": str(prefix), "sha256": None}])
+        source = self.evidence(self.fp(rs)); prefix.write_text("home = b\n", encoding="utf-8")
+        decision = self.decide(self.fp(rs), source)
+        self.assertEqual(decision["equality_checks"]["env_reads"], "different")
+        observed = readset(outside_reads=[{"path": str(self.outside), "sha256": "0" * 64}])
+        with self.assertRaises(cp.PlanError) as caught:
+            cp.suite_fingerprint(self.root, observed, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                 verify_observed=True)
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+
+    def test_windows_style_and_escaping_paths_are_rejected(self):
+        """Review P2: only normalized POSIX-relative repository paths."""
+        for path in ("docs\\a.md", "..\\outside", "C:/x.md", "//server/share/x", "/abs", "a/../b", "./a", "a//b"):
+            with self.subTest(path=path), self.assertRaises(cp.PlanError):
+                self.fp(readset(repo_reads=[{"path": path, "via": "open"}]))
+        with self.assertRaises(cp.PlanError):
+            self.fp(readset(added_env=["PATH"]))
 
     def test_unsuccessful_or_untrusted_sources_reject(self):
         fp = self.fp()

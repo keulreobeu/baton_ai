@@ -659,8 +659,10 @@ SUITE_COMMAND = ["-X", "utf8", "-m", "unittest", "discover", "-s", "tests", "-t"
 # {"test_id": str, "reason": str, "mode": "expires_after_seconds", "seconds": int > 0}.
 NON_REUSABLE_TESTS = []
 ALLOWED_NATIVE_DISTRIBUTIONS = ("cryptography",)
-FP_COMPONENTS = ("files", "sections", "ignored_reads", "listings", "outside_reads",
+FP_COMPONENTS = ("files", "index", "sections", "ignored_reads", "listings", "outside_reads", "env_reads",
                  "environment", "manifest", "git", "policy")
+ADDED_ENV_ALLOWED = {"BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH"}
+_REPO_PATH = re.compile(r"[^\\/:*?\"<>|\x00-\x1f][^\\:*?\"<>|\x00-\x1f]*")
 _ALWAYS_INCLUDED_DOCS = ("docs/sdd/", "docs/templates/")
 
 
@@ -712,6 +714,21 @@ def _listing(path):
         return {"ok": False, "entries": []}
 
 
+def _repo_path(value):
+    """Normalized POSIX path relative to the repository: no backslash, drive,
+    UNC, absolute form, empty or dot segments."""
+    return (isinstance(value, str) and _REPO_PATH.fullmatch(value) is not None
+            and all(part not in {"", ".", ".."} for part in value.split("/")))
+
+
+def _abs_path(value):
+    return isinstance(value, str) and Path(value).is_absolute()
+
+
+def _hash_or_none(value):
+    return value is None or (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None)
+
+
 def valid_readset(readset):
     """Structural check of a readset/1 record; unknown shapes are untrusted."""
     try:
@@ -719,32 +736,31 @@ def valid_readset(readset):
                 and type(readset.get("complete")) is bool
                 and isinstance(readset.get("partial_reasons"), list)
                 and readset["complete"] == (not readset["partial_reasons"])
-                and all(isinstance(r, dict) and isinstance(r.get("path"), str) and r["path"]
-                        and not r["path"].startswith("/") and ".." not in r["path"].split("/")
-                        and ":" not in r["path"]
+                and all(isinstance(r, dict) and _repo_path(r.get("path"))
                         and type(r.get("section_only", False)) is bool
                         and isinstance(r.get("sections", []), list)
                         and all(isinstance(h, str) and h for h in r.get("sections", []))
+                        and _hash_or_none(r.get("sha256"))
                         for r in readset.get("repo_reads", []))
-                and all(isinstance(r, dict) and isinstance(r.get("path"), str) and Path(r["path"]).is_absolute()
+                and all(isinstance(r, dict) and _abs_path(r.get("path")) and _hash_or_none(r.get("sha256"))
                         for r in readset.get("outside_reads", []))
-                and all(isinstance(r, dict) and isinstance(r.get("path"), str) and r.get("scope") in {"repo", "outside"}
-                        and (r["scope"] == "outside" or ".." not in r["path"].split("/"))
+                and all(isinstance(r, dict) and _abs_path(r.get("path")) and _hash_or_none(r.get("sha256"))
+                        for r in readset.get("env_reads", []))
+                and all(isinstance(r, dict) and r.get("scope") in {"repo", "outside"}
+                        and (_repo_path(r.get("path")) if r["scope"] == "repo" else _abs_path(r.get("path")))
                         for r in readset.get("listings", []))
                 and isinstance(readset.get("added_env", []), list)
-                and all(isinstance(n, str) for n in readset.get("added_env", [])))
+                and set(readset.get("added_env", [])) <= ADDED_ENV_ALLOWED)
     except (TypeError, AttributeError):
         return False
 
 
-def environment_digest(environ, added=()):
-    """R4: every variable name and value digest; raw values never leave."""
+def environment_digest(environ):
+    """R4: every variable name and value digest (taken before the recorder
+    starts, so nothing is excluded); raw values never leave."""
     fold = (lambda s: s.upper()) if os.name == "nt" else (lambda s: s)
-    skip = {fold(name) for name in added}
     rows = []
     for name, value in environ.items():
-        if fold(name) in skip:
-            continue
         rows.append([fold(name), hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()])
     return fingerprint(sorted(rows))
 
@@ -822,8 +838,12 @@ def policy_identity(root):
                         "non_reusable": NON_REUSABLE_TESTS, "native": list(ALLOWED_NATIVE_DISTRIBUTIONS)})
 
 
-def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
-    """fp(current state, source readset). Raises PlanError when not computable."""
+def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, verify_observed=False):
+    """fp(current state, source readset). Raises PlanError when not computable.
+
+    verify_observed: at the source run, every input whose content the recorder
+    hashed when it was first read must still have that content (inputs that
+    changed while the suite ran make the evidence unusable)."""
     root = Path(root).resolve()
     need(valid_readset(readset), "READSET_INVALID")
     before = freeze(root)
@@ -855,6 +875,15 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
         content = _content(root / name)
         need(content is not None, "FILE_UNREADABLE")
         files.append([name, content])
+    observed = {fold(r["path"]): r.get("sha256") for r in readset.get("repo_reads", [])}
+
+    def check(key, content):
+        recorded = observed.get(key)
+        if verify_observed and recorded is not None and recorded != content:
+            raise PlanError("INPUT_CHANGED_DURING_RUN")
+
+    for name, content in files:
+        check(fold(name), content)
     ignored = []
     tracked_keys = {fold(n) for n in names}
     for name in sorted(r["path"] for r in readset.get("repo_reads", []) if fold(r["path"]) not in tracked_keys):
@@ -863,6 +892,7 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
             continue
         content = _content(root / name)
         need(content is not None, "FILE_UNREADABLE")
+        check(fold(name), content)
         ignored.append([name, content])
     listings = []
     for record in sorted(readset.get("listings", []), key=lambda r: (r["scope"], r["path"])):
@@ -872,11 +902,26 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
     for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):
         content = _content(Path(record["path"]))
         need(content is not None, "OUTSIDE_UNREADABLE")
+        if verify_observed and record.get("sha256") is not None and record["sha256"] != content:
+            raise PlanError("INPUT_CHANGED_DURING_RUN")
         outside.append([record["path"], content])
+    env_reads = []
+    for record in sorted(readset.get("env_reads", []), key=lambda r: r["path"]):
+        content = _content(Path(record["path"]))
+        need(content is not None, "ENV_INPUT_UNREADABLE")
+        if verify_observed and record.get("sha256") is not None and record["sha256"] != content:
+            raise PlanError("INPUT_CHANGED_DURING_RUN")
+        env_reads.append([record["path"], content])
+    # Staged content (mode, blob, path; no stat data) for Git reads of the
+    # index, limited to the same paths the file component hashes in full.
+    hashed = {name for name, _ in files}
+    index = sorted(entry for entry in sdd.git(root, "ls-files", "--stage", "-z").split("\0")
+                   if entry and entry.split("\t", 1)[-1] in hashed)
     components = {
-        "files": fingerprint(files), "sections": fingerprint(sections), "ignored_reads": fingerprint(ignored),
-        "listings": fingerprint(listings), "outside_reads": fingerprint(outside),
-        "environment": environment_digest(os.environ if environ is None else environ, readset.get("added_env", [])),
+        "files": fingerprint(files), "index": fingerprint(index), "sections": fingerprint(sections),
+        "ignored_reads": fingerprint(ignored), "listings": fingerprint(listings), "outside_reads": fingerprint(outside),
+        "env_reads": fingerprint(env_reads),
+        "environment": environment_digest(os.environ if environ is None else environ),
         "manifest": fingerprint(manifest if manifest is not None else runtime_manifest()),
         "git": fingerprint(git if git is not None else git_identity(root)),
         "policy": policy_identity(root),
@@ -954,6 +999,8 @@ def decide_suite_reuse(current, evidence, evidence_sha256, raw_evidence, *, now_
     if (not valid_readset(evidence.get("readset")) or evidence.get("readset_sha256") != fingerprint(evidence.get("readset"))
             or evidence["readset"].get("complete") is not evidence.get("readset_complete")):
         reasons.append("SOURCE_READSET_INVALID")
+    if evidence.get("readset_complete") is not True:
+        reasons.append("SOURCE_READSET_PARTIAL")
     source_fp = evidence.get("fingerprint")
     if not isinstance(source_fp, dict) or source_fp.get("schema") != SUITE_FP_SCHEMA:
         reasons.append("SOURCE_FINGERPRINT_INVALID")
@@ -965,7 +1012,7 @@ def decide_suite_reuse(current, evidence, evidence_sha256, raw_evidence, *, now_
             equal[name] = ("missing" if not isinstance(cur.get(name), str) or not isinstance(src.get(name), str)
                            else "equal" if cur[name] == src[name] else "different")
         if (current.get("fingerprint") != source_fp.get("fingerprint")
-                or current.get("readset_complete") is not source_fp.get("readset_complete")
+                or current.get("readset_complete") is not True or source_fp.get("readset_complete") is not True
                 or any(v != "equal" for v in equal.values())):
             reasons.append("FINGERPRINT_CHANGED")
     run_tests = []

@@ -1035,3 +1035,9 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   traceability AC-12에 새 테스트 13개 연결. 구현 보완 문구(R5 7곳)는 구현 교차 검토에서 확인한다.
 - 검증: V2 영향 모듈 234 tests OK(test_ci_workflow·sdd·ci_plan·readset·verify_environment·managed_harness·observability), Task-base SDD PASS.
   실제 저장소 재사용 E2E(실행 → 문서만 변경 → 재사용)와 Codex 교차 검토, 격리 branch V3는 다음 단계다. Task in_progress/not verified.
+- 2026-11-16 Codex 구현 교차 검토(`69e8e3b`, `ctx_7d008e5ebb89`): FAIL(P1 9·P2 1). 모두 반영했다(Spec '구현 교차 검토 반영' 문단):
+  partial 원본 재사용 금지, 환경 snapshot 무제외·`added_env` 허용 목록, 종료 시 살아 있는 자식 partial, 같은 호출 목록·실패 partial,
+  socket audit event 전부·비 loopback bind partial, git 순차 `-C`·`check-attr --cached` 불허·index staged 지문, lock 뒤 입력 계산·
+  suite 전후 비교·관측 해시 변경 무효화, prefix 읽기 `env_reads`, 저장소 DLL 이름·cffi dlopen partial, POSIX 상대경로 검증.
+  E2E 1회차에서 새 증거 흐름 테스트가 실제 저장소에 git을 실행해 partial이 된 것도 임시 저장소 fixture로 고쳤다.
+  V2 242 tests OK, Task-base SDD PASS. 재검토와 E2E(실행→문서 변경→재사용)는 진행 중.

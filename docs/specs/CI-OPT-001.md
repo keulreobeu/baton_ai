@@ -162,7 +162,7 @@ merge에는 유효한 V3가 필요하고 validation은 검사한 코드 상태�
 
 revision 5(2026-11-16): V3는 `sdd_static`(매번 실행, 재사용 없음)과 `offline_suite`로 나눈다. `offline_suite` 결과 재사용은
 아래 "revision 5 — AC-12 입력 지문 V3 재사용" 절의 R1~R6 입력 지문(`suite-fp/1`)이 원본과 같고, 원본이 실제 실행된 성공 결과이며
-read set이 complete일 때만 허용한다(partial 원본은 문서 후보 전체를 포함한 정확히 같은 상태만). 코드 상태·테스트 설정/명령·실제
+read set이 complete일 때만 허용한다(partial 원본은 재사용 원본이 될 수 없다). 코드 상태·테스트 설정/명령·실제
 의존성과 실행 환경 파일 내용·환경(OS·Python·실행 도구/버전·환경 변수 전체)·정책은 지문 구성요소다. commit SHA와 target base는
 증거에 기록하되 재사용 동등성 조건이 아니며, 독립 검토와 필수 검사 목록/결과(원격 CI)는 재사용으로 충족되지 않는다.
 항목이 unknown/partial/누락이거나 변경되면 재사용하지 않고 실행한다. 같은 SHA만으로 검증 재사용을 결정하지 않는다.
@@ -297,6 +297,15 @@ Codex 독립 계약 검토 PASS(3cc208c) 뒤 구현 묶음과 함께 효력을 �
 초안 5판: 재검토(ee1f974, FAIL: P1 2·P2 1)의 git 포함 설정·네트워크·시계/난수·SDD 실패 기록 지적과 2026-11-16 사용자 결정(아래 R6)을 반영했다.
 초안 6판: 재검토(70c9294, FAIL: P1 2·P2 1)의 loopback 소유권·R6 정밀도 지적과 외부 상태 잔여 위험 사용자 결정(아래 Risk Acceptance)을 반영했다.
 초안 7판: 재검토(6b599b4, PASS_WITH_FINDINGS: P2 1)의 `reused_test_count` 중복 집계 지적을 반영했다.
+구현 교차 검토 반영(2026-11-16, Codex `69e8e3b` FAIL: P1 9·P2 1): partial 원본은 재사용 불가(조건 1과 R5 문구 일치),
+환경 지문은 기록기 시작 전 snapshot 전체(제외 없음)이며 `added_env`는 기록기가 넣는 4개 이름으로만 제한, 종료 시점에 살아 있는
+Python 자식(pid로 확인)은 partial, 목록 조회는 같은 호출의 결과로 기록하고 실패도 partial, 네트워크는 CPython socket audit event
+(`connect`/`connect_ex`/`sendto`/`sendmsg`/`bind`/이름 조회) 전부로 판정하고 loopback이 아닌 bind도 partial, git은 모든 `-C`와
+`--git-dir`/`--work-tree`를 순서대로 적용한 실효 위치로 판정하고 `check-attr --cached`/`--source`는 불허하며 지문에 index
+staged 내용(`ls-files --stage`, 전체 해시 대상 경로)을 추가, 모든 지문 입력은 lock 획득 뒤 계산하고 suite 전후의 저장소·실행 환경
+manifest·git identity가 같아야 하며 처음 읽을 때 해시한 입력이 끝에 다르면 증거를 무효화(`INPUT_CHANGED_DURING_RUN`), prefix 안에서
+읽힌 파일은 경로·내용을 `env_reads`로 지문에 포함, 저장소(또는 cwd)에 같은 이름이 있는 경로 없는 DLL과 cffi `dlopen`은 partial,
+read set 경로는 정규화된 POSIX 상대경로만 허용.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
@@ -361,7 +370,7 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
        (d) 저장소 밖 실행 파일의 인자 없는 `--help`/`--version`, 또는 저장소 밖 인터프리터 + 저장소 밖 스크립트 1개 + `--help`/`--version`
        (예: npm 설치 `node codex.js --help`; 실행 파일·스크립트 경로와 SHA-256을 R4에 포함). shell 경유·launcher·
        그 밖의 도구는 허용하지 않는다.
-     `partial` 원본으로는 문서 후보 제외·절 단위 대체를 하지 않으며 지문은 문서 후보 전체를 포함한다(정확히 같은 상태만 재사용).
+     `partial` 원본은 재사용 원본이 될 수 없다(그 실행 결과는 유효하지만 증거는 재사용하지 않는다).
    - R6 시계·난수와 시간 경과 (2026-11-16 사용자 결정 '1번 — 남은 위험 수락, 비결정성 예외 조건 추가'):
      `ci_plan.py` 정책 목록 `NON_REUSABLE_TESTS`의 항목은 `{test_id, reason, mode}`이며 mode는 둘 중 하나다.
      - `always`: suite를 재사용하는 V3에서도 이 테스트는 매번 실행한다.
@@ -453,7 +462,7 @@ AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·�
 | 허용 밖 native 모듈 적재 / 경로 정규화 실패 | 원본 partial |
 | Python 자식·손자 hook 미적재(`-I`, env 교체) | 원본 partial |
 | 허용목록 밖 비-Python 자식(shell, 임의 도구, 저장소 대상 git 기타 명령) | 원본 partial |
-| 원본 partial일 때 문서 후보만 변경 | suite 실행 |
+| 원본 partial(상태가 정확히 같아도) | suite 실행, `SOURCE_READSET_PARTIAL` |
 | 원본 실패/skip/tests_run=0/재사용 결과 | 재사용 금지 |
 | read set·증거 JSON 손상, 해시 불일치, schema 변경 | suite 실행 |
 | 지문 계산 중 상태 변경 | suite 실행 |

@@ -149,7 +149,7 @@ class ReadsetTests(unittest.TestCase):
         client.connect(server.getsockname())
         client.close()
         accepted.join(timeout=2)
-        self.assertEqual(rec._socket_allowed_connects, 1)
+        self.assertEqual(rec._socket_allowed, 1)
         server.close()
         unbound = socket.socket()
         with self.assertRaises(OSError):
@@ -256,6 +256,88 @@ class ReadsetTests(unittest.TestCase):
         connection.close()
         rec.stop()
         self.assertNotIn("PATH_UNNORMALIZABLE", rec.as_dict()["partial_reasons"])
+
+    # -- Codex cross-review 2026-11-16 (69e8e3b) regressions -----------------
+    def test_failed_listing_is_recorded_and_partial(self):
+        rec = self.recorder()
+        with self.assertRaises(OSError):
+            os.listdir(self.root / "missing-dir")
+        with self.assertRaises(OSError):
+            os.scandir(self.root / "missing-dir")
+        rec.stop()
+        data = rec.as_dict()
+        self.assertIn("LISTING_FAILED", data["partial_reasons"])
+        self.assertTrue(all(not item["ok"] for item in data["listings"]))
+
+    def test_scandir_records_the_entries_of_the_same_call(self):
+        folder = self.root / "dir"; folder.mkdir(); (folder / "a.txt").write_text("a")
+        time.sleep(0.05)
+        rec = self.recorder()
+        with os.scandir(folder) as entries:
+            names = sorted(e.name for e in entries)
+        rec.stop()
+        self.assertEqual(names, ["a.txt"])
+        self.assertEqual(rec.as_dict()["listings"][0]["entries"], [["a.txt", "file"]])
+
+    def test_all_socket_paths_are_judged(self):
+        rec = self.recorder()
+        server = socket.socket(); server.bind(("127.0.0.1", 0)); server.listen(1)
+        port = server.getsockname()[1]
+        client = socket.socket(); self.assertEqual(client.connect_ex(("127.0.0.1", port)), 0)
+        client.close(); server.close()
+        rec.stop()
+        self.assertNotIn("NETWORK", rec.partial_reasons)
+        rec2 = self.recorder()
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.sendto(b"x", ("127.0.0.1", 9))  # not an owned endpoint
+        udp.close()
+        rec2.stop()
+        self.assertIn("NETWORK", rec2.partial_reasons)
+        rec3 = self.recorder()
+        wild = socket.socket(); wild.bind(("0.0.0.0", 0)); wild.close()
+        rec3.stop()
+        self.assertIn("NETWORK", rec3.partial_reasons)
+
+    def test_git_location_applies_every_dash_c_and_check_attr_cached_is_refused(self):
+        temp_repo = os.path.join(readset._real(tempfile.gettempdir()), "fixture")
+        repo = str(Path(__file__).resolve().parents[1])
+        self.assertEqual(readset._git_location(["-C", temp_repo, "-C", repo, "status"], repo), readset._canonical(repo))
+        self.assertEqual(readset._git_location(["-C", repo, "-C", temp_repo, "status"], repo), readset._canonical(temp_repo))
+        rec = self.recorder()
+        rec._child(["git", "-C", temp_repo, "-C", repo, "status"], repo, None)
+        rec.stop()
+        self.assertIn("CHILD_NOT_ALLOWED", rec.partial_reasons)
+        outer = readset.Recorder(repo)
+        try:
+            outer._child(["git", "-C", repo, "check-attr", "text", "--", "README.md"], repo, None)
+            self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)
+            outer._child(["git", "-C", repo, "check-attr", "--cached", "text", "--", "README.md"], repo, None)
+            self.assertIn("CHILD_NOT_ALLOWED", outer.partial_reasons)
+        finally:
+            outer.stop()
+
+    def test_child_alive_at_stop_is_partial(self):
+        rec = self.recorder()
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"], cwd=self.root)
+        try:
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                with open(rec._log_file(), encoding="utf-8") as stream:
+                    if "hook_loaded" in stream.read():
+                        break
+                time.sleep(0.05)
+            rec.stop()
+        finally:
+            child.kill(); child.wait()
+        self.assertIn("CHILD_ALIVE_AT_STOP", rec.partial_reasons)
+
+    def test_bare_dll_name_present_in_repo_is_partial(self):
+        (self.root / "evil.dll").write_bytes(b"MZ")
+        rec = self.recorder()
+        readset._audit("ctypes.dlopen", ("evil",))
+        readset._audit("ctypes.dlopen", ("kernel32",))
+        rec.stop()
+        self.assertEqual(rec.partial_samples.get("CTYPES_REPO_DLOPEN"), ["evil"])
 
     def test_corrupt_child_log(self):
         rec = self.recorder()

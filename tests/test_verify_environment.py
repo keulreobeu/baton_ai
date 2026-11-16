@@ -171,6 +171,13 @@ class EvidenceReuseTests(unittest.TestCase):
         keep = ("PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "HOME", "PATHEXT", "COMSPEC")
         self.environ = {**{k: os.environ[k] for k in keep if k in os.environ}, "OTHER": "1"}
         self.suite_runs = []
+        # Synthetic temporary repository: no Git call touches the real checkout.
+        self.repo = Path(self.temp.name) / "repo"
+        (self.repo / "tests").mkdir(parents=True)
+        (self.repo / "tests" / "test_x.py").write_text("x = 1\n", encoding="utf-8")
+        for args in (["init", "-q"], ["config", "user.name", "Offline fixture"],
+                     ["config", "user.email", "offline@example.invalid"], ["add", "."], ["commit", "-q", "-m", "fixture"]):
+            subprocess.run(["git", "--no-optional-locks", "-C", str(self.repo), *args], check=True, capture_output=True)
 
     def fake_recorder(test):
         class Recorder:
@@ -194,7 +201,7 @@ class EvidenceReuseTests(unittest.TestCase):
             if any(str(part).endswith("check_sdd.py") for part in command):
                 return subprocess.CompletedProcess(command, sdd_code)
             return real_run(command, *args, **kwargs)
-        with patch.object(verify, "prepare_git_path"), \
+        with patch.object(verify, "prepare_git_path"), patch.object(verify, "ROOT", self.repo), \
                 patch.object(verify.subprocess, "run", side_effect=selective_run), \
                 patch.object(verify, "_run_suite", side_effect=run_suite), \
                 patch("scripts.readset.Recorder", self.fake_recorder()), \

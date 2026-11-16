@@ -184,14 +184,15 @@ def _evidence_main(args, environ):
     from scripts import ci_plan as cp
     from scripts.readset import Recorder
     directory = Path(args.evidence_dir).resolve()
-    manifest, git = cp.runtime_manifest(), cp.git_identity(ROOT)
-    # Lock key: the exact-state fingerprint (every doc candidate included).
-    exact = cp.suite_fingerprint(ROOT, {"schema": cp.READSET_SCHEMA, "complete": False,
-                                        "partial_reasons": ["LOCK_KEY"], "repo_reads": [],
-                                        "outside_reads": [], "listings": [], "added_env": []},
-                                 environ=environ, manifest=manifest, git=git)
-    lock = cp.fingerprint_lock(args.lock_home, exact["fingerprint"]) if args.lock_home else nullcontext()
+    exact_readset = {"schema": cp.READSET_SCHEMA, "complete": False, "partial_reasons": ["EXACT_STATE"],
+                     "repo_reads": [], "outside_reads": [], "env_reads": [], "listings": [], "added_env": []}
+    # Lock key: the exact repository state. Every fingerprint input is then
+    # computed inside the lock (a concurrent run may have changed nothing or
+    # produced evidence meanwhile).
+    lock_key = cp.fingerprint(cp.freeze(ROOT))
+    lock = cp.fingerprint_lock(args.lock_home, lock_key) if args.lock_home else nullcontext()
     with lock:
+        manifest, git = cp.runtime_manifest(), cp.git_identity(ROOT)
         current, source, decision, reasons = _try_reuse(cp, environ, directory, manifest, git)
         if decision is not None:
             ran = _run_suite(decision["run_tests"]) if decision["run_tests"] else None
@@ -213,16 +214,29 @@ def _evidence_main(args, environ):
         readset = recorder.as_dict()
         if args.readset_out:
             recorder.write(args.readset_out)
-        stable = cp.freeze(ROOT) == before
+        # Repository, interpreter/installed files and Git identity must be the
+        # same after the suite as before it.
+        stable = (cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
+                  and cp.git_identity(ROOT) == git)
         try:
-            fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git)
-        except cp.PlanError:
-            fp, stable = None, False
+            fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git,
+                                      verify_observed=True)
+        except cp.PlanError as exc:
+            if str(exc) in {"INPUT_CHANGED_DURING_RUN", "STATE_CHANGED"}:
+                stable = False
+            # The run stays a real execution, but its evidence is not reusable.
+            readset = dict(readset, complete=False,
+                           partial_reasons=sorted(set(readset.get("partial_reasons", [])) | {"FINGERPRINT_" + str(exc)}))
+            try:
+                fp = cp.suite_fingerprint(ROOT, exact_readset, environ=environ, manifest=manifest, git=git)
+            except cp.PlanError:
+                fp, stable = None, False
         returncode = 0 if result.wasSuccessful() and result.testsRun > 0 else 1
         summary = _summary(result, suite_execution="executed", suite_fingerprint=fp["fingerprint"] if fp else None,
                            executed_tests=result.testsRun, reused_test_count=None, source_evidence=[],
                            reuse_decision="rejected" if reasons else "not_requested",
-                           reuse_reasons=sorted(set(reasons))[:32], equality_checks={})
+                           reuse_reasons=sorted(set(reasons))[:32], equality_checks={},
+                           readset_complete=readset.get("complete") is True)
         if fp is not None:
             evidence = cp.suite_evidence(
                 run_id=uuid.uuid4().hex, commit=before["head"], fingerprint_record=fp, readset=readset,
