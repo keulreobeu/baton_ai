@@ -292,6 +292,7 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 초안 4판: 재검토(469cb5e, FAIL: P1 1·P2 1)의 저장소 밖 입력·검증기 조합 지적을 반영했다.
 초안 5판: 재검토(ee1f974, FAIL: P1 2·P2 1)의 git 포함 설정·네트워크·시계/난수·SDD 실패 기록 지적과 2026-11-16 사용자 결정(아래 R6)을 반영했다.
 초안 6판: 재검토(70c9294, FAIL: P1 2·P2 1)의 loopback 소유권·R6 정밀도 지적과 외부 상태 잔여 위험 사용자 결정(아래 Risk Acceptance)을 반영했다.
+초안 7판: 재검토(6b599b4, PASS_WITH_FINDINGS: P2 1)의 `reused_test_count` 중복 집계 지적을 반영했다.
 
 ### 근거 실측 (2026-11-16, `2daa6a2`, 로컬 Windows, Python 3.12.10, 모델 호출 0)
 
@@ -372,8 +373,8 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
 |---|---|---|---|---|---|---|
 | `executed` | passed | >0 | null | 64 hex | `not_requested` 또는 `rejected` | 비교한 원본 참조 또는 Task 참조 |
 | `executed` | failed | ≥0 | null | 64 hex 또는 null | `not_requested` 또는 `rejected` | 위와 같음 |
-| `reused` | passed | `NON_REUSABLE_TESTS` 중 실행한 수(없으면 0) | >0 | 64 hex, 원본과 같음 | `accepted` | 정확히 `run:<id>`·`commit:<40 hex>`·`evidence:<64 hex>` 3개 |
-| `reused` | failed | 실행한 `NON_REUSABLE_TESTS` 수(>0) | >0 | 64 hex, 원본과 같음 | `accepted` | 위와 같음(재실행 대상 테스트가 실패한 경우) |
+| `reused` | passed | `NON_REUSABLE_TESTS` 중 실행한 수(없으면 0) | 원본 tests_run − 실행 수(>0) | 64 hex, 원본과 같음 | `accepted` | 정확히 `run:<id>`·`commit:<40 hex>`·`evidence:<64 hex>` 3개 |
+| `reused` | failed | 실행한 `NON_REUSABLE_TESTS` 수(>0) | 원본 tests_run − 실행 수(>0) | 64 hex, 원본과 같음 | `accepted` | 위와 같음(재실행 대상 테스트가 실패한 경우) |
 | `not_run` | not_run | 0 | null | null | `rejected` 또는 `unknown` | Task 참조 |
 | `not_run` | failed | 0 | null | null | `not_requested` | Task 참조(`sdd_static` 실패로 suite 미실행) |
 
@@ -381,7 +382,8 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
 집계·report는 `executed_test_count`만 새 실행 수로 센다.
 재사용 시 `reuse_decision=accepted`, `equality_checks`=R1~R5 구성요소별 일치, `source_evidence`=[원본 실행 id, 원본 commit,
 원본 증거 SHA-256], `executed_test_count`=이번에 실제 실행한 수(재사용이면 0, `sdd_static`은 test 수가 아님),
-`reused_test_count`=원본 tests_run으로 기록한다.
+`reused_test_count`=원본 tests_run − 이번에 실행한 `NON_REUSABLE_TESTS` 수(결과를 원본에서 가져온 테스트 수)로 기록한다.
+실행 수와 재사용 수는 겹치지 않으며 둘의 합은 원본 tests_run과 같아야 한다(검증기가 확인할 수 있도록 `source_evidence`의 원본 증거에 tests_run이 있다).
 거부 시 `reuse_decision=rejected`와 사유 코드를 남긴다.
 
 ### Risk Acceptance (2026-11-16 사용자 결정)
@@ -441,7 +443,8 @@ AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·�
 | read set·증거 JSON 손상, 해시 불일치, schema 변경 | suite 실행 |
 | 지문 계산 중 상태 변경 | suite 실행 |
 | 같은 지문 동시 요청 / 대기 중 상태 변경 | 1회 실행 후 나머지 판정 / 새 지문으로 재판정 |
-| 재사용 기록 | `suite_execution=reused`, `executed_test_count=0`, `reused_test_count`=원본 수, 원본 참조, 새 실행으로 집계 안 함 |
+| 재사용 기록 | `suite_execution=reused`, `executed_test_count`=실행한 목록 테스트 수, `reused_test_count`=원본 수 − 실행 수, 원본 참조, 재사용분은 새 실행으로 집계 안 함 |
+| 원본 100개 중 `always` 1개 실행 | 실행 1, 재사용 99 |
 | passed·실행 수 0인데 reused 조건 중 하나라도 빠짐 | 검증기가 `invalid_ci_empty_success`로 거부 |
 | 위 표 밖 조합(reused인데 실행 수>0, executed인데 reused_test_count 값, source_evidence 형식 오류 등) | `invalid_ci_suite_execution`으로 거부 |
 | 2026-11-13 b50ec38→2daa6a2 5회 재현(임시 저장소 fixture) | 첫 1회 실행 후 4회 재사용 판정(실측 아닌 재현 판정) |
