@@ -290,6 +290,7 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 초안 2판: 2026-11-16 Codex 독립 검토(f4a26c9, FAIL: P1 4·P2 3) 지적을 모두 반영했다.
 초안 3판: 재검토(27c8993, FAIL: P1 1·P2 1)의 실행 환경 파일 내용·native 입력·기록 검증기 지적을 반영했다.
 초안 4판: 재검토(469cb5e, FAIL: P1 1·P2 1)의 저장소 밖 입력·검증기 조합 지적을 반영했다.
+초안 5판: 재검토(ee1f974, FAIL: P1 2·P2 1)의 git 포함 설정·네트워크·시계/난수·SDD 실패 기록 지적과 2026-11-16 사용자 결정(아래 R6)을 반영했다.
 
 ### 근거 실측 (2026-11-16, `2daa6a2`, 로컬 Windows, Python 3.12.10, 모델 호출 0)
 
@@ -324,13 +325,14 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
      성공/실패를 넣는다. 문서 후보 디렉터리라도 항목이 추가·삭제되면 지문이 바뀐다.
    - R4 실행·환경: suite 명령 argv, `verify_environment.py`·`ci_plan.py` 정책 버전, 테스트 설정, OS·버전, Python 구현/버전,
      설치 배포판 이름==버전 전체와 **실행 환경 manifest**(Python 실행 파일·DLL, `sys.base_prefix`의 stdlib `.py`/`.pyd`/`.dll`,
-     `sys.prefix` site-packages 아래 모든 배포판 파일의 경로와 내용 SHA-256; 버전 번호만으로 대신하지 않음), git 실행 파일 경로·SHA-256·버전과 git system/global 설정 파일 내용 SHA-256(git 자식은 in-process hook 밖이므로), **환경 변수 전체**의 이름과 값 SHA-256(값 원문은 저장하지 않음).
+     `sys.prefix` site-packages 아래 모든 배포판 파일의 경로와 내용 SHA-256; 버전 번호만으로 대신하지 않음), git 실행 파일 경로·SHA-256·버전과 git 유효 설정 파일 전체의 내용 SHA-256(system/global/worktree·저장소 `.git/config`와 `include.path`·`includeIf`로 재귀 참조되는 파일 포함;
+     `git config --list --show-origin --show-scope`로 열거하며 열거·읽기 실패, 해석할 수 없는 조건·순환은 partial. git 자식은 in-process hook 밖이므로), **환경 변수 전체**의 이름과 값 SHA-256(값 원문은 저장하지 않음).
      환경 일부만 고르는 허용목록은 쓰지 않는다. 대가로 다른 셸 세션 사이에서는 재사용이 드물다.
    - R5 read set 완전성: 원본 실행은 시작부터 CPython `open` audit event(builtins/io.open_code/os.open과 그 fd로 만든 mmap 포함),
      `os.listdir`/`os.scandir`, `subprocess.Popen`을 기록한다. 아래 중 하나라도 있으면 `partial`이다.
      - 열기·목록 중 경로를 정규화할 수 없는 것(저장소 안팎 모두), 기록 파일 손상·누락.
-     - 루프백이 아닌 대상의 `socket.connect`/`socket.getaddrinfo`(네트워크 입력은 지문화할 수 없음). 시계·난수는 입력으로 보지 않으며
-       flaky 테스트 판정에 쓰지 않는다.
+     - 네트워크: 모든 `socket.connect`/`socket.getaddrinfo`는 partial이다. 예외는 같은 실행 안에서 `socket.bind`로 만든 loopback endpoint에
+       대한 연결뿐이다(그 endpoint의 상태는 실행이 만든 것이므로 입력이 아님).
      - stdlib와 허용 배포판(`cryptography`) 밖 native 확장 모듈 적재(hook이 직접 파일 읽기를 보지 못함).
      - native API 입력: `sqlite3.connect` audit event의 대상이 저장소 안이고 실행 시작 전부터 있던 파일이면 그 내용을 R1에 넣고,
        경로를 정규화할 수 없으면 partial이다. `:memory:`·실행 중 만든 임시 DB는 제외한다. 저장소 안 경로의 `ctypes.dlopen`은 partial이다.
@@ -342,10 +344,20 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
        (d) 저장소 밖 실행 파일의 인자 없는 `--help`/`--version`(실행 파일 경로·SHA-256을 R4에 포함). shell 경유·launcher·
        그 밖의 도구는 허용하지 않는다.
      `partial` 원본으로는 문서 후보 제외·절 단위 대체를 하지 않으며 지문은 문서 후보 전체를 포함한다(정확히 같은 상태만 재사용).
+   - R6 시계·난수와 시간 경과 (2026-11-16 사용자 결정 '1번 — 남은 위험 수락, 비결정성 예외 조건 추가'):
+     시계·난수에 따른 비결정성은 잔여 위험으로 명시한다. 재사용은 "같은 입력으로 이미 한 번 통과"를 뜻하며 V3 1회 실행 통과와 같은 수준의 위험이다.
+     다만 시간 경과로 실질 입력이 바뀌는 경우(만료일·날짜 기준 분기 등)까지 같은 위험으로 단정하지 않는다. 비결정성이 확인된 테스트는
+     가능하면 시계 고정·난수 시드 고정으로 결정성을 확보한다. 통제할 수 없는 테스트는 `ci_plan.py` 정책 목록(`NON_REUSABLE_TESTS`)에
+     test id·사유와 함께 올리고, suite를 재사용하는 V3에서도 그 테스트만 매번 실행한다(재사용 범위 제외). 전체 V3에 일괄 TTL은 두지 않는다.
+     특정 검증에만 같은 정책 목록의 `expires_after_seconds`로 만료를 둘 수 있고, 원본이 그보다 오래되면 그 테스트를 실행한다.
+     목록은 현재 비어 있고 정책 버전(R4)에 포함되어 바뀌면 지문이 바뀐다. 비결정성 탐지를 위한 별도 시스템은 두지 않는다.
+     최종 `verified`는 언제나 대상 SHA에서 새로 실행한 원격 Windows Python 3.11/3.12 CI 필수 체크 통과가 필요하다.
 3. 현재 지문 계산 전후 상태가 고정·동일하다(`ci_plan.freeze`).
 4. 원본 증거 JSON이 존재하고 기록된 SHA-256과 일치하며 schema·정책 버전이 같다.
 
-재사용 결과는 새 실행으로 세지 않는다. 같은 지문의 동시 V3 요청은 지문별 lock으로 하나만 실행하고, 나머지는 lock 해제 뒤
+실행 순서: `sdd_static`을 먼저 실행한다. 실패하면 V3는 failed이며 `offline_suite`는 실행도 재사용도 하지 않는다(`suite_execution=not_run`).
+성공하면 재사용 판정을 하고, 재사용이 거부되면 suite를 실행한다. 재사용 시에도 `NON_REUSABLE_TESTS`의 해당 test는 실행한다.
+재사용 결과는 기존 성공 증거로 기록하며 새 실행으로 세지 않는다. 같은 지문의 동시 V3 요청은 지문별 lock으로 하나만 실행하고, 나머지는 lock 해제 뒤
 상태를 다시 고정·지문화해 판정한다. lock 대기 중 상태가 바뀌면 새 지문으로 다시 판정한다. 실패한 원본은 대기 후에도 성공이 되지 않는다.
 
 기록: 기존 MetricsStore `ci.validation`과 Task 증거 JSON만 쓰며 새 검증 DB·table·결과 cache 서비스는 만들지 않는다.
@@ -358,8 +370,10 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
 |---|---|---|---|---|---|---|
 | `executed` | passed | >0 | null | 64 hex | `not_requested` 또는 `rejected` | 비교한 원본 참조 또는 Task 참조 |
 | `executed` | failed | ≥0 | null | 64 hex 또는 null | `not_requested` 또는 `rejected` | 위와 같음 |
-| `reused` | passed | 0 | >0 | 64 hex, 원본과 같음 | `accepted` | 정확히 `run:<id>`·`commit:<40 hex>`·`evidence:<64 hex>` 3개 |
+| `reused` | passed | `NON_REUSABLE_TESTS` 중 실행한 수(없으면 0) | >0 | 64 hex, 원본과 같음 | `accepted` | 정확히 `run:<id>`·`commit:<40 hex>`·`evidence:<64 hex>` 3개 |
+| `reused` | failed | 실행한 `NON_REUSABLE_TESTS` 수(>0) | >0 | 64 hex, 원본과 같음 | `accepted` | 위와 같음(재실행 대상 테스트가 실패한 경우) |
 | `not_run` | not_run | 0 | null | null | `rejected` 또는 `unknown` | Task 참조 |
+| `not_run` | failed | 0 | null | null | `not_requested` | Task 참조(`sdd_static` 실패로 suite 미실행) |
 
 `reused` event는 기록 전에 caller가 원본 증거 JSON의 SHA-256·schema·지문을 다시 확인한 경우에만 만든다.
 집계·report는 `executed_test_count`만 새 실행 수로 센다.
@@ -391,7 +405,13 @@ AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·�
 | 버전 번호는 같고 `.venv`·stdlib·실행 파일 내용만 변경 | suite 실행 |
 | 저장소 안 기존 sqlite DB를 테스트가 연결하고 그 내용 변경 | suite 실행 |
 | 저장소 밖 기존 파일(HOME 설정, 기존 TEMP 파일)·git 전역 설정 내용 변경 | suite 실행 |
-| 루프백 아닌 네트워크 연결 시도 | 원본 partial |
+| 실행이 bind하지 않은 endpoint로의 연결(루프백 포함)·이름 조회 | 원본 partial |
+| 실행 중 bind한 loopback endpoint 연결 | 영향 없음 |
+| git `include.path`/`includeIf` 대상·`.git/config` 내용 변경 | suite 실행 |
+| git 설정 열거 실패·순환 | 원본 partial |
+| `NON_REUSABLE_TESTS` 항목 있음 + suite 재사용 | 그 테스트만 실행, 나머지 재사용 |
+| `expires_after_seconds` 초과 원본 | 해당 테스트 실행 |
+| `sdd_static` 실패 | V3 failed, suite not_run, 재사용 판정 안 함 |
 | 저장소 안 `ctypes.dlopen` / 고정 목록 밖 stdlib native 적재 | 원본 partial |
 | 허용 밖 native 모듈 적재 / 경로 정규화 실패 | 원본 partial |
 | Python 자식·손자 hook 미적재(`-I`, env 교체) | 원본 partial |
