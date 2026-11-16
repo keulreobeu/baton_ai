@@ -1010,3 +1010,8 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-16 추가 사용자 결정: 지문 입력 단위는 **테스트가 실제로 읽는 범위 단위 + SDD 정적 검사 매번 별도 실행**,
   격리 branch에는 CI-TIME `b2633db`를 **필수 의존으로 포함**하고 다른 Task 9개 커밋은 제외한다(PR 본문에 포함 근거 기록).
   다음 단계: revision 5 AC-12 개정문·Plan·ADR 초안 → 독립 검토 → 구현·V2 → 격리 branch 구성·V3 → 게시 대상 승인 요청.
+- 2026-11-16 revision 5 계약 독립 검토(Codex, Orca run `run_462044c6b665`, 읽기 전용): f4a26c9 FAIL(P1 4·P2 3) → 27c8993 FAIL(P1 1·P2 1)
+  → 469cb5e FAIL(P1 1·P2 1) → ee1f974 FAIL(P1 2·P2 1) → 70c9294 FAIL(P1 2·P2 1) → 6b599b4 PASS_WITH_FINDINGS(P2 1) → **3cc208c PASS(findings 0)**.
+  중간에 사용자 결정 2건(RA-1 시계·난수, RA-2 관측 불가 외부 상태 잔여 위험 수락)을 Spec Risk Acceptance에 기록했다.
+  revision 5는 계약 검토를 통과했으나 AC-12 본문 교체·AC-01/AC-13·AGENTS 문구 개정은 구현 묶음과 함께 적용한다. 그 전까지 현행 AC-12가 유효하다.
+  구현: part A(read set 기록기)는 Codex worker `ctx_b384c99ec672`(worktree `ci-opt-001-readset-A`, base 3cc208c), part B(`ci_plan.py` 지문·판정)는 Claude.
