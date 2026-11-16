@@ -1007,3 +1007,6 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   (전체 V3 미실행이라 무의존 증명은 아님).
 - 남은 결정/작업: (1) revision 5 AC-12 개정문과 지문 입력 단위(파일/테스트 읽기 범위) 결정, (2) 격리 branch에 CI-TIME 포함 여부와
   branch 이름·base 승인, (3) 구현·로컬 V3·독립 검토 후 게시 대상 승인 요청. Task는 in_progress/not verified.
+- 2026-11-16 추가 사용자 결정: 지문 입력 단위는 **테스트가 실제로 읽는 범위 단위 + SDD 정적 검사 매번 별도 실행**,
+  격리 branch에는 CI-TIME `b2633db`를 **필수 의존으로 포함**하고 다른 Task 9개 커밋은 제외한다(PR 본문에 포함 근거 기록).
+  다음 단계: revision 5 AC-12 개정문·Plan·ADR 초안 → 독립 검토 → 구현·V2 → 격리 branch 구성·V3 → 게시 대상 승인 요청.
