@@ -660,7 +660,7 @@ SUITE_COMMAND = ["-X", "utf8", "-m", "unittest", "discover", "-s", "tests", "-t"
 NON_REUSABLE_TESTS = []
 ALLOWED_NATIVE_DISTRIBUTIONS = ("cryptography",)
 FP_COMPONENTS = ("files", "index", "sections", "ignored_reads", "listings", "outside_reads", "env_reads",
-                 "aliases", "environment", "resolver", "manifest", "git", "policy")
+                 "aliases", "trust_store", "environment", "resolver", "manifest", "git", "policy")
 ADDED_ENV_ALLOWED = {"BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH"}
 _REPO_PATH = re.compile(r"[^\\/:*?\"<>|\x00-\x1f][^\\:*?\"<>|\x00-\x1f]*")
 _ALWAYS_INCLUDED_DOCS = ("docs/sdd/", "docs/templates/")
@@ -753,6 +753,7 @@ def valid_readset(readset):
                         for r in readset.get("env_reads", []))
                 and all(isinstance(r, dict) and _abs_path(r.get("path")) and _abs_path(r.get("target"))
                         for r in readset.get("aliases", []))
+                and type(readset.get("trust_store", False)) is bool
                 and all(isinstance(r, dict) and r.get("scope") in {"repo", "outside"}
                         and (_repo_path(r.get("path")) if r["scope"] == "repo" else _abs_path(r.get("path")))
                         for r in readset.get("listings", []))
@@ -854,6 +855,37 @@ def git_identity(root):
             "attributes": fingerprint(sorted(attributes.items()))}
 
 
+def trust_store_identity():
+    """The default TLS trust store loaded by load_default_certs /
+    set_default_verify_paths: Windows CA/ROOT certificate stores and the
+    OpenSSL default verify file/directory contents."""
+    import ssl
+    rows = []
+    if hasattr(ssl, "enum_certificates"):
+        for store in ("CA", "ROOT"):
+            try:
+                for cert, encoding, trust in ssl.enum_certificates(store):
+                    rows.append([store, hashlib.sha256(cert).hexdigest(), encoding,
+                                 sorted(trust) if isinstance(trust, (set, frozenset)) else bool(trust)])
+            except (OSError, PermissionError):
+                raise PlanError("TRUST_STORE_UNREADABLE") from None
+    paths = ssl.get_default_verify_paths()
+    for location in (paths.cafile, paths.capath, paths.openssl_cafile, paths.openssl_capath):
+        if not location:
+            continue
+        path = Path(location)
+        if path.is_dir():
+            for item in sorted(path.iterdir()):
+                content = _content(item)
+                need(content is not None, "TRUST_STORE_UNREADABLE")
+                rows.append([str(item), content])
+        else:
+            content = _content(path)
+            need(content is not None, "TRUST_STORE_UNREADABLE")
+            rows.append([str(path), content])
+    return fingerprint(sorted(rows, key=json.dumps))
+
+
 def resolver_identity():
     """Local name resolution answered without a network service: host name and
     the hosts file (loopback/localhost lookups are allowed by the recorder)."""
@@ -875,7 +907,8 @@ def policy_identity(root):
                         "non_reusable": NON_REUSABLE_TESTS, "native": list(ALLOWED_NATIVE_DISTRIBUTIONS)})
 
 
-def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, resolver=None, verify_observed=False):
+def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, resolver=None, trust=None,
+                      verify_observed=False):
     """fp(current state, source readset). Raises PlanError when not computable.
 
     verify_observed: at the source run, every input whose content the recorder
@@ -973,6 +1006,8 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         "git": fingerprint(git if git is not None else git_identity(root)),
         "resolver": resolver if resolver is not None else resolver_identity(),
         "aliases": fingerprint(aliases),
+        "trust_store": ((trust if trust is not None else trust_store_identity())
+                        if readset.get("trust_store") else "unused"),
         "policy": policy_identity(root),
     }
     need(freeze(root) == before, "STATE_CHANGED")

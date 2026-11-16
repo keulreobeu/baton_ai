@@ -1032,6 +1032,16 @@ class SuiteReuseTests(unittest.TestCase):
                                         resolver="r" * 64)
         self.assertEqual(snapshot["components"]["resolver"], "r" * 64)
 
+    def test_trust_store_component_only_when_used(self):
+        unused = self.fp()
+        self.assertEqual(unused["components"]["trust_store"], "unused")
+        used = readset(trust_store=True)
+        with patch.object(cp, "trust_store_identity", return_value="t" * 64):
+            source = self.evidence(self.fp(used))
+            self.assertTrue(self.decide(self.fp(used), source)["allowed"])
+        with patch.object(cp, "trust_store_identity", return_value="u" * 64):
+            self.assertEqual(self.decide(self.fp(used), source)["equality_checks"]["trust_store"], "different")
+
     def test_windows_style_and_escaping_paths_are_rejected(self):
         """Review P2: only normalized POSIX-relative repository paths."""
         for path in ("docs\\a.md", "..\\outside", "C:/x.md", "//server/share/x", "/abs", "a/../b", "./a", "a//b"):

@@ -270,6 +270,7 @@ class Recorder:
         self._outside = {}
         self._env_reads = {}
         self._aliases = {}
+        self._trust_store = False
         self._listings = {}
         self._sections = {}
         self._section_depth = {}
@@ -403,38 +404,41 @@ class Recorder:
         return False
 
     # -- observations --------------------------------------------------------
-    def _alias(self, path, canonical):
-        """An observed path that resolves elsewhere (symlink, junction) is an input
-        too: retargeting it must change the fingerprint even if both targets exist."""
+    def _alias_of(self, path, canonical):
+        """(observed path, resolved target) when the observed path resolves
+        elsewhere (symlink, junction); None otherwise; False if unresolvable."""
         raw = _path_text(path)
         if raw is None:
-            return
+            return None
         try:
             observed = os.path.abspath(raw)
         except (OSError, ValueError):
+            return False
+        key = os.path.normcase(observed) if os.name == "nt" else observed
+        if key == canonical:
+            return None
+        target = _real(observed)
+        return False if target is None else (observed, target)
+
+    def _note_alias(self, alias, path):
+        """Record an alias of an input; a retarget within the run is a change."""
+        if alias is False:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
+        if not alias:
+            return
+        observed, target = alias
         key = os.path.normcase(observed) if os.name == "nt" else observed
-        if key != canonical:
-            target = _real(observed)
-            if target is None:
-                self._partial("PATH_UNNORMALIZABLE", path)
-                return
-            if self._is_child:
-                self._emit({"type": "alias", "path": observed, "target": target})
-            else:
-                previous = self._aliases.get(key)
-                if previous is not None and previous["target"] != target:
-                    self._partial("INPUT_CHANGED_DURING_RUN", observed)  # retargeted while the suite ran
-                self._aliases[key] = {"path": observed, "target": target}
+        previous = self._aliases.get(key)
+        if previous is not None and previous["target"] != target:
+            self._partial("INPUT_CHANGED_DURING_RUN", observed)
+        self._aliases[key] = {"path": observed, "target": target}
 
-    def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False):
+    def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        if not relayed:
-            self._alias(path, canonical)
         if _is_device(canonical):
             return
         scope = self._scope(canonical)
@@ -447,15 +451,18 @@ class Recorder:
                 return
             with self._quiet():
                 digest, born = _sha(canonical), _born(canonical)
+            found = self._alias_of(path, canonical)
             self._emit({"type": "read", "path": canonical, "via": via, "section_only": bool(section_only),
-                        "sha256": digest, "born": born})
+                        "sha256": digest, "born": born, "alias": list(found) if found else found})
             return
         if relayed:
             if canonical in self._created or (born is not None and born >= self._started_epoch):
                 return
+            self._note_alias(tuple(alias) if alias else alias, path)
         else:
             if not os.path.exists(canonical) or self._is_created(canonical) or os.path.isdir(canonical):
                 return  # nothing to read, an output of this run, or a directory handle
+            self._note_alias(self._alias_of(path, canonical), path)  # only inputs carry aliases
             if digest is None:
                 with self._quiet():
                     digest = _sha(canonical)
@@ -488,36 +495,41 @@ class Recorder:
                       or (isinstance(flags, int) and flags & (os.O_CREAT | os.O_TRUNC)))
         if _is_device(canonical) or self._scope(canonical) == "derived":
             return
+        # The original path (not the resolved one) goes on, so symlink and
+        # junction aliases are recorded with their observed target.
         if self._is_child:
             if not (create and not os.path.exists(canonical)):
-                self._record_read(canonical, section_only=self._section_depth.get(canonical, 0) > 0)
+                self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
             return
         if create:
             self._is_created(canonical, True)
         if not self._is_created(canonical):
-            self._record_read(canonical, section_only=self._section_depth.get(canonical, 0) > 0)
+            self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
 
-    def _listing(self, path, ok, entries, error=None, born=None, relayed=False):
+    def _listing(self, path, ok, entries, error=None, born=None, relayed=False, alias=None):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        if not relayed:
-            self._alias(path, canonical)
         scope = self._scope(canonical)
         if scope in {"env_manifest", "derived"}:
             return
         if self._is_child:
             with self._quiet():
                 born = _born(canonical)
+            found = self._alias_of(path, canonical)
             self._emit({"type": "listing", "path": canonical, "ok": bool(ok), "error": error, "born": born,
+                        "alias": list(found) if found else found,
                         "entries": sorted([[str(n), str(k)] for n, k in entries]) if ok else []})
             return
         if relayed:
             if canonical in self._created or (born is not None and born >= self._started_epoch):
                 return
+            self._note_alias(tuple(alias) if alias else alias, path)
         elif self._is_created(canonical):
             return
+        else:
+            self._note_alias(self._alias_of(path, canonical), path)
         if not ok and error not in LISTING_ERRORS_AS_INPUT:
             self._partial("LISTING_FAILED", "%s %s" % (error, path))
         normalized = sorted([[str(n), str(k)] for n, k in entries]) if ok else []
@@ -779,6 +791,12 @@ class Recorder:
                 self._partial("NETWORK", "connect %s:%s" % (connect["host"], connect["port"]))
                 self._network_violations += 1
 
+    def _trust_store_used(self):
+        if self._is_child:
+            self._emit({"type": "trust_store"})
+        else:
+            self._trust_store = True
+
     def _spawned_event(self, token, pid):
         if not token:
             return
@@ -939,17 +957,12 @@ class Recorder:
             self._partial(str(event["reason"]), event.get("sample"))
         elif kind == "read":
             self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
-                              event.get("sha256"), born=event.get("born"), relayed=True)
+                              event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"))
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
-                          born=event.get("born"), relayed=True)
-        elif kind == "alias":
-            observed, target = str(event["path"]), str(event["target"])
-            key = os.path.normcase(observed) if os.name == "nt" else observed
-            previous = self._aliases.get(key)
-            if previous is not None and previous["target"] != target:
-                self._partial("INPUT_CHANGED_DURING_RUN", observed)
-            self._aliases[key] = {"path": observed, "target": target}
+                          born=event.get("born"), relayed=True, alias=event.get("alias"))
+        elif kind == "trust_store":
+            self._trust_store = True
         elif kind == "exit":
             for endpoint in self._endpoints:
                 if endpoint["key"][0] == event["pid"] and endpoint["closed"] is None:
@@ -980,6 +993,7 @@ class Recorder:
                 "partial_reasons": sorted(self.partial_reasons), "repo_reads": repo, "outside_reads": outside,
                 "env_reads": env_reads,
                 "aliases": [dict(v) for _, v in sorted(self._aliases.items())],
+                "trust_store": self._trust_store,
                 "sections_missing": sorted([list(item) for item in self.sections_missing]),
                 "listings": [item for _, item in sorted(self._listings.items(), key=lambda pair: (pair[0][0], pair[0][1]))],
                 "children": {**self._children, "python_launched": self._python_launches,
@@ -1202,10 +1216,38 @@ def _tracked_sqlite_connect(*args, **kwargs):
 
 def _ssl_wrapper(name, original):
     """SSL certificate/trust-store loading reads files (or the OS store) in C
-    without audit events: fail closed."""
+    without audit events. Named files become ordinary reads; the default
+    trust store becomes the ``trust_store`` fingerprint input."""
     def wrapper(context, *args, **kwargs):
-        for r in _active():
-            r._partial("SSL_FILE_INPUT", name)
+        recorders = [r for r in _active() if not r._is_quiet()]
+        files, directories = [], []
+        if name == "load_verify_locations":
+            files.append(args[0] if args else kwargs.get("cafile"))
+            directories.append(args[1] if len(args) > 1 else kwargs.get("capath"))
+        elif name == "load_cert_chain":
+            files.append(args[0] if args else kwargs.get("certfile"))
+            files.append(args[1] if len(args) > 1 else kwargs.get("keyfile"))
+        elif name == "load_dh_params":
+            files.append(args[0] if args else kwargs.get("path"))
+        else:  # load_default_certs, set_default_verify_paths
+            for r in recorders:
+                r._trust_store_used()
+        for r in recorders:
+            for value in files:
+                if value is not None:
+                    r._record_read(value, via="ssl")
+            for value in directories:
+                if value is None:
+                    continue
+                try:
+                    names = sorted(_ORIGINAL_LISTDIR(value))
+                except OSError as exc:
+                    r._listing(value, False, [], type(exc).__name__)
+                    continue
+                base = _path_text(value) or "."
+                r._listing(value, True, [(n, "file" if os.path.isfile(os.path.join(base, n)) else "other") for n in names])
+                for item in names:  # the hashed-name lookup may read any of them
+                    r._record_read(os.path.join(base, item), via="ssl")
         return original(context, *args, **kwargs)
     wrapper.__name__ = name
     return wrapper

@@ -337,7 +337,12 @@ bind한 loopback endpoint로의 연결은 모든 프로세스의 bind·close 시
 6차 검토 반영(2026-11-16, Codex `8d26947` FAIL: P1 2): 별칭은 읽을 때의 대상과 함께 기록하고 같은 실행 안에서 대상이 바뀌거나 source 실행
 종료 시점의 대상이 다르면 증거를 무효화한다(`INPUT_CHANGED_DURING_RUN`). SSL 인증서·신뢰 저장소 적재 API(`load_verify_locations`,
 `load_cert_chain`, `load_default_certs`, `set_default_verify_paths`, `load_dh_params`)는 C 코드에서 audit event 없이 파일·OS 저장소를
-읽으므로 호출 시 partial이다(현재 suite는 SSL을 쓰지 않는다).
+읽으므로 관측 대상으로 다룬다(아래 7차 반영으로 대체).
+7차 검토·E2E 반영(2026-11-16, Codex `a11bb1f` FAIL: P1 1): 실제 `open()` 경로도 원래 경로를 넘겨 별칭과 관측 대상을 기록하며, 별칭은 입력으로
+인정된 읽기·목록에만 붙는다(실행 중 만든 junction 등은 별칭이 아니다). E2E에서 Python 3.12 `urllib.request`가 `http://`에서도 기본 SSL
+context를 만들어 신뢰 저장소를 읽는 것을 확인해, SSL을 partial 대신 입력으로 바꿨다: `cafile`·`certfile`·`keyfile`·DH 파일은 일반 읽기,
+`capath`는 목록과 그 안의 모든 파일 읽기, 기본 신뢰 저장소(`load_default_certs`, `set_default_verify_paths`)는 지문 `trust_store`
+구성요소(Windows `CA`/`ROOT` 인증서 저장소와 OpenSSL 기본 검증 경로 내용)이며 suite 전후로 같아야 한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

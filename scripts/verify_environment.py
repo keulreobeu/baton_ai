@@ -206,6 +206,7 @@ def _evidence_main(args, environ):
             return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
         before = cp.freeze(ROOT)
         resolver = cp.resolver_identity()
+        trust = cp.trust_store_identity()
         started = _utc()
         recorder = Recorder(ROOT)
         try:
@@ -218,11 +219,12 @@ def _evidence_main(args, environ):
         # Repository, interpreter/installed files and Git identity must be the
         # same after the suite as before it.
         stable = (cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
-                  and cp.git_identity(ROOT) == git and cp.resolver_identity() == resolver)
+                  and cp.git_identity(ROOT) == git and cp.resolver_identity() == resolver
+                  and cp.trust_store_identity() == trust)
         try:
             # The snapshot compared before/after the suite is the one fingerprinted.
             fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git,
-                                      resolver=resolver, verify_observed=True)
+                                      resolver=resolver, trust=trust, verify_observed=True)
         except cp.PlanError as exc:
             if str(exc) in {"INPUT_CHANGED_DURING_RUN", "STATE_CHANGED"}:
                 stable = False
@@ -231,7 +233,7 @@ def _evidence_main(args, environ):
                            partial_reasons=sorted(set(readset.get("partial_reasons", [])) | {"FINGERPRINT_" + str(exc)}))
             try:
                 fp = cp.suite_fingerprint(ROOT, exact_readset, environ=environ, manifest=manifest, git=git,
-                                          resolver=resolver)
+                                          resolver=resolver, trust=trust)
             except cp.PlanError:
                 fp, stable = None, False
         returncode = 0 if result.wasSuccessful() and result.testsRun > 0 else 1

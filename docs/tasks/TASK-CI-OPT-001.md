@@ -1065,3 +1065,6 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-16 Codex 6차 재검토(`8d26947`, `ctx_f83fc85b0e9f`): FAIL(P1 2: 실행 중 별칭 대상 변경, SSL 파일 입력 미관측). 이전 3건 중 2건 해결. 반영: 별칭 관측 대상 기록·변경 시 무효,
   SSL 적재 API partial. E2E(`8d26947`) 741 tests OK였으나 read set partial(`CHILD_ALIVE_AT_STOP`): venv `python.exe` launcher만 kill해 실제 인터프리터가
   남은 자체 테스트 → stdin 종료로 자연 종료하도록 수정.
+- 2026-11-16 Codex 7차 재검토(`a11bb1f`, `ctx_fa6c91494118`): FAIL(P1 1: 실제 open 경로가 realpath를 넘겨 별칭 누락). 반영: 원래 경로 전달, 별칭은 입력인 읽기·목록에만,
+  실제 directory junction으로 open하는 회귀 테스트(심볼릭 링크 권한 불필요·skip 없음). E2E(`a11bb1f`) 743 tests OK·stable이나 SSL partial: Python 3.12
+  `urllib.request`가 http에서도 기본 SSL context(신뢰 저장소)를 만듦 → SSL 파일은 읽기, 기본 저장소는 `trust_store` 지문(전후 비교) 입력으로 재설계.

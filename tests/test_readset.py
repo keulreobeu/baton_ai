@@ -413,14 +413,23 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(len(ends), 1)
         self.assertIsNotNone(ends[0])
 
-    def test_ssl_certificate_and_trust_store_loading_is_partial(self):
+    def test_ssl_files_are_reads_and_default_store_is_a_fingerprint_input(self):
+        """Review P1 (8d26947), redesigned after E2E: urllib builds a default context even for http://."""
         import ssl
+        ca = self.root / "ca.pem"
+        ca.write_text("not a certificate", encoding="utf-8")
+        time.sleep(0.06)
         rec = self.recorder()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        with self.assertRaises(Exception):
-            context.load_verify_locations(cafile=str(self.root / "missing-ca.pem"))
+        with self.assertRaises(ssl.SSLError):
+            context.load_verify_locations(cafile=str(ca))  # read even though the content is invalid
+        self.assertFalse(rec.as_dict()["trust_store"])
+        ssl.create_default_context()  # load_default_certs: the OS trust store
         rec.stop()
-        self.assertEqual(rec.partial_samples.get("SSL_FILE_INPUT"), ["load_verify_locations"])
+        data = rec.as_dict()
+        self.assertIn("ca.pem", [x["path"] for x in data["repo_reads"]])
+        self.assertTrue(data["trust_store"])
+        self.assertTrue(data["complete"], data["partial_reasons"])
 
     def test_alias_retargeted_during_the_run_is_partial(self):
         target = self.root / "real.txt"
@@ -435,6 +444,41 @@ class ReadsetTests(unittest.TestCase):
                     patch.object(readset, "_real", lambda value, c=current: str(c)):
                 rec._record_read(alias)
         rec.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
+
+    def test_real_open_through_a_junction_records_the_alias_and_its_retarget(self):
+        """Review P1 (a11bb1f): the real open path keeps the alias (no symlink privilege needed)."""
+        first, second = Path(self.temp.name) / "first", Path(self.temp.name) / "second"
+        for folder, text in ((first, "A"), (second, "B")):
+            folder.mkdir()
+            (folder / "config.txt").write_text(text, encoding="utf-8")
+        link = self.root / "linked"
+
+        def point(target):
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(target), str(link))
+            else:
+                os.symlink(target, link, target_is_directory=True)
+
+        def unpoint():
+            if os.name == "nt":
+                os.rmdir(link)
+            else:
+                os.unlink(link)
+
+        point(first)
+        time.sleep(0.06)
+        rec = self.recorder()
+        self.assertEqual((link / "config.txt").read_text(encoding="utf-8"), "A")
+        aliases = rec.as_dict()["aliases"]
+        self.assertEqual([a["path"] for a in aliases], [os.path.abspath(str(link / "config.txt"))])
+        self.assertEqual(os.path.normcase(aliases[0]["target"]), os.path.normcase(readset._real(first / "config.txt")))
+        unpoint()
+        point(second)
+        self.assertEqual((link / "config.txt").read_text(encoding="utf-8"), "B")
+        rec.stop()
+        unpoint()
         self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
 
     def test_aliases_are_recorded(self):
