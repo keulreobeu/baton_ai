@@ -1017,13 +1017,17 @@ class SuiteReuseTests(unittest.TestCase):
     def test_alias_retarget_and_resolver_snapshot(self):
         """Review P1 (86e4bf8): a retargeted link/junction changes the fingerprint; the compared resolver snapshot is the one fingerprinted."""
         alias = str(Path(self.temp.name) / "alias-path")
-        rs = readset(aliases=[{"path": alias}])
+        rs = readset(aliases=[{"path": alias, "target": "C:/target-a"}])
         real = cp.os.path.realpath
         with patch.object(cp.os.path, "realpath", lambda p, **kw: "C:/target-a" if p == alias else real(p, **kw)):
             source = self.evidence(self.fp(rs))
             self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
         with patch.object(cp.os.path, "realpath", lambda p, **kw: "C:/target-b" if p == alias else real(p, **kw)):
             self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["aliases"], "different")
+            with self.assertRaises(cp.PlanError) as caught:  # review P1 (8d26947): retargeted during the source run
+                cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                     verify_observed=True)
+            self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
         snapshot = cp.suite_fingerprint(self.root, readset(), environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                         resolver="r" * 64)
         self.assertEqual(snapshot["components"]["resolver"], "r" * 64)

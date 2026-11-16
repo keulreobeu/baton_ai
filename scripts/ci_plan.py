@@ -751,7 +751,8 @@ def valid_readset(readset):
                         for r in readset.get("outside_reads", []))
                 and all(isinstance(r, dict) and _abs_path(r.get("path")) and _hash_or_none(r.get("sha256"))
                         for r in readset.get("env_reads", []))
-                and all(isinstance(r, dict) and _abs_path(r.get("path")) for r in readset.get("aliases", []))
+                and all(isinstance(r, dict) and _abs_path(r.get("path")) and _abs_path(r.get("target"))
+                        for r in readset.get("aliases", []))
                 and all(isinstance(r, dict) and r.get("scope") in {"repo", "outside"}
                         and (_repo_path(r.get("path")) if r["scope"] == "repo" else _abs_path(r.get("path")))
                         for r in readset.get("listings", []))
@@ -951,9 +952,13 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
     aliases = []
     for record in sorted(readset.get("aliases", []), key=lambda r: r["path"]):
         try:
-            aliases.append([record["path"], os.path.realpath(record["path"])])
+            target = os.path.realpath(record["path"])
         except (OSError, ValueError):
             raise PlanError("ALIAS_UNRESOLVABLE") from None
+        same = (os.path.normcase(target) == os.path.normcase(record["target"])) if os.name == "nt" else target == record["target"]
+        if verify_observed and not same:
+            raise PlanError("INPUT_CHANGED_DURING_RUN")  # the run read through another target
+        aliases.append([record["path"], target])
     # Staged content (mode, blob, path; no stat data) for Git reads of the
     # index, limited to the same paths the file component hashes in full.
     hashed = {name for name, _ in files}

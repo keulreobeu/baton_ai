@@ -334,6 +334,10 @@ bind한 loopback endpoint로의 연결은 모든 프로세스의 bind·close 시
 연결은 partial이다(같은 포트를 다른 프로세스가 재사용할 수 있음). 기록기는 socket을 약한 참조로만 붙잡는다. 관측 경로가 실제 경로와 다르면
 (symlink·junction 별칭) 별칭을 기록하고 지문 `aliases`에 별칭과 현재 해석 대상을 넣는다. suite 전후 비교에 쓴 resolver snapshot을 그대로
 지문화한다.
+6차 검토 반영(2026-11-16, Codex `8d26947` FAIL: P1 2): 별칭은 읽을 때의 대상과 함께 기록하고 같은 실행 안에서 대상이 바뀌거나 source 실행
+종료 시점의 대상이 다르면 증거를 무효화한다(`INPUT_CHANGED_DURING_RUN`). SSL 인증서·신뢰 저장소 적재 API(`load_verify_locations`,
+`load_cert_chain`, `load_default_certs`, `set_default_verify_paths`, `load_dh_params`)는 C 코드에서 audit event 없이 파일·OS 저장소를
+읽으므로 호출 시 partial이다(현재 suite는 SSL을 쓰지 않는다).
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

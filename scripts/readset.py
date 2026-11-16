@@ -57,6 +57,8 @@ _ORIGINAL_SOCKET_BIND = socket.socket.bind
 _ORIGINAL_SOCKET_CLOSE = socket.socket.close
 _ORIGINAL_SQLITE_CONNECT = None
 _ORIGINAL_CFFI_DLOPEN = None
+_SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
+                  "load_dh_params")
 _PROCESS_EVENTS = {"os.system", "os.spawn", "os.startfile", "os.exec", "os.posix_spawn", "os.fork", "os.forkpty"}
 
 
@@ -316,6 +318,14 @@ class Recorder:
                     cffi.FFI.dlopen = _tracked_cffi_dlopen
                 except Exception:
                     pass
+                try:
+                    import ssl
+                    for name in _SSL_FILE_APIS:
+                        original = getattr(ssl.SSLContext, name, None)
+                        if original is not None:
+                            setattr(ssl.SSLContext, name, _ssl_wrapper(name, original))
+                except Exception:
+                    pass
                 os.listdir = _tracked_listdir
                 os.scandir = _tracked_scandir
                 subprocess.Popen = _TrackedPopen
@@ -406,10 +416,17 @@ class Recorder:
             return
         key = os.path.normcase(observed) if os.name == "nt" else observed
         if key != canonical:
+            target = _real(observed)
+            if target is None:
+                self._partial("PATH_UNNORMALIZABLE", path)
+                return
             if self._is_child:
-                self._emit({"type": "alias", "path": observed})
+                self._emit({"type": "alias", "path": observed, "target": target})
             else:
-                self._aliases[key] = observed
+                previous = self._aliases.get(key)
+                if previous is not None and previous["target"] != target:
+                    self._partial("INPUT_CHANGED_DURING_RUN", observed)  # retargeted while the suite ran
+                self._aliases[key] = {"path": observed, "target": target}
 
     def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False):
         canonical = _canonical(path)
@@ -927,8 +944,12 @@ class Recorder:
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
                           born=event.get("born"), relayed=True)
         elif kind == "alias":
-            observed = str(event["path"])
-            self._aliases[os.path.normcase(observed) if os.name == "nt" else observed] = observed
+            observed, target = str(event["path"]), str(event["target"])
+            key = os.path.normcase(observed) if os.name == "nt" else observed
+            previous = self._aliases.get(key)
+            if previous is not None and previous["target"] != target:
+                self._partial("INPUT_CHANGED_DURING_RUN", observed)
+            self._aliases[key] = {"path": observed, "target": target}
         elif kind == "exit":
             for endpoint in self._endpoints:
                 if endpoint["key"][0] == event["pid"] and endpoint["closed"] is None:
@@ -958,7 +979,7 @@ class Recorder:
                 "finished_utc": self.finished_utc or _utc_now(), "complete": not self.partial_reasons,
                 "partial_reasons": sorted(self.partial_reasons), "repo_reads": repo, "outside_reads": outside,
                 "env_reads": env_reads,
-                "aliases": [{"path": v} for _, v in sorted(self._aliases.items())],
+                "aliases": [dict(v) for _, v in sorted(self._aliases.items())],
                 "sections_missing": sorted([list(item) for item in self.sections_missing]),
                 "listings": [item for _, item in sorted(self._listings.items(), key=lambda pair: (pair[0][0], pair[0][1]))],
                 "children": {**self._children, "python_launched": self._python_launches,
@@ -1177,6 +1198,17 @@ def _tracked_sqlite_connect(*args, **kwargs):
             else:
                 r._record_read(path, via="sqlite")
     return _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+
+
+def _ssl_wrapper(name, original):
+    """SSL certificate/trust-store loading reads files (or the OS store) in C
+    without audit events: fail closed."""
+    def wrapper(context, *args, **kwargs):
+        for r in _active():
+            r._partial("SSL_FILE_INPUT", name)
+        return original(context, *args, **kwargs)
+    wrapper.__name__ = name
+    return wrapper
 
 
 def _tracked_cffi_dlopen(ffi, *args, **kwargs):

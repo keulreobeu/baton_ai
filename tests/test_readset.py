@@ -376,7 +376,11 @@ class ReadsetTests(unittest.TestCase):
         child = subprocess.run([sys.executable, "-c", "open(r'%s').read()" % outside], cwd=self.root,
                                capture_output=True, text=True)
         self.assertEqual(child.returncode, 0, child.stderr)
-        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"], cwd=self.root)
+        # Waits on stdin and exits when it is closed: a venv python.exe is a
+        # launcher, and kill() would leave the real interpreter running (it
+        # would then still be alive when the official recorder stops).
+        sleeper = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], cwd=self.root,
+                                   stdin=subprocess.PIPE)
         try:
             deadline = time.time() + 15
             while time.time() < deadline and len(inner._hooked) < 2:
@@ -384,7 +388,11 @@ class ReadsetTests(unittest.TestCase):
                 time.sleep(0.05)
             inner.stop()
         finally:
-            sleeper.kill(); sleeper.wait()
+            sleeper.stdin.close()
+            sleeper.wait(timeout=30)
+        deadline = time.time() + 30
+        while time.time() < deadline and any(readset._pid_alive(p) for p in inner._hooked.values()):
+            time.sleep(0.05)
         outer.stop()
         self.assertIn("CHILD_ALIVE_AT_STOP", inner.partial_reasons)
         self.assertNotIn("CHILD_ALIVE_AT_STOP", outer.partial_reasons)
@@ -405,6 +413,30 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(len(ends), 1)
         self.assertIsNotNone(ends[0])
 
+    def test_ssl_certificate_and_trust_store_loading_is_partial(self):
+        import ssl
+        rec = self.recorder()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        with self.assertRaises(Exception):
+            context.load_verify_locations(cafile=str(self.root / "missing-ca.pem"))
+        rec.stop()
+        self.assertEqual(rec.partial_samples.get("SSL_FILE_INPUT"), ["load_verify_locations"])
+
+    def test_alias_retargeted_during_the_run_is_partial(self):
+        target = self.root / "real.txt"
+        target.write_text("x")
+        other = self.root / "other.txt"
+        other.write_text("y")
+        time.sleep(0.06)
+        alias = str(self.root / "alias.txt")
+        rec = self.recorder()
+        for current in (target, other):
+            with patch.object(readset, "_canonical", lambda value, c=current: os.path.normcase(str(c))), \
+                    patch.object(readset, "_real", lambda value, c=current: str(c)):
+                rec._record_read(alias)
+        rec.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
+
     def test_aliases_are_recorded(self):
         target = self.root / "real.txt"
         target.write_text("x")
@@ -414,7 +446,7 @@ class ReadsetTests(unittest.TestCase):
                 patch.object(readset, "_real", lambda value: str(target)):
             rec._record_read(str(self.root / "alias.txt"))
         rec.stop()
-        self.assertEqual([a["path"] for a in rec.as_dict()["aliases"]], [os.path.abspath(str(self.root / "alias.txt"))])
+        self.assertEqual(rec.as_dict()["aliases"], [{"path": os.path.abspath(str(self.root / "alias.txt")), "target": str(target)}])
 
     def test_hook_failure_corrupt_log_and_untracked_processes(self):
         rec = self.recorder()

@@ -1062,3 +1062,6 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-16 Codex 5차 재검토(`86e4bf8`, `ctx_f24276aaf0b2`): FAIL(P1 3: 끝을 입증하지 못한 endpoint, symlink 별칭, resolver 재계산 race), 이전 4건 중
   3건 해결·commit SHA 건은 결정대로 재제기 없음. 반영: endpoint 끝 입증(close·GC·exit)·미입증 partial·socket 약한 참조, `aliases` 지문,
   resolver snapshot 지문화. 이 반영으로 코드가 바뀌어 위 E2E는 다시 실행한다.
+- 2026-11-16 Codex 6차 재검토(`8d26947`, `ctx_f83fc85b0e9f`): FAIL(P1 2: 실행 중 별칭 대상 변경, SSL 파일 입력 미관측). 이전 3건 중 2건 해결. 반영: 별칭 관측 대상 기록·변경 시 무효,
+  SSL 적재 API partial. E2E(`8d26947`) 741 tests OK였으나 read set partial(`CHILD_ALIVE_AT_STOP`): venv `python.exe` launcher만 kill해 실제 인터프리터가
+  남은 자체 테스트 → stdin 종료로 자연 종료하도록 수정.
