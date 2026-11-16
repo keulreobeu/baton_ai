@@ -282,3 +282,70 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 - Q2 경계: 다른 Task 커밋은 기본 제외하되, 필수 의존성이 있으면 근거와 분리 방법을 보고한다. 기본 branch 직접 push·
   force·기존 공유 이력 변경은 금지한다. remote와 최종 branch 이름은 현행 확인 후 사용자에게 제시하고 구체 대상 승인 후 게시한다.
 - Q3는 현행 AC-12(ready/main Windows 2 job 개별 성공 확인 전 `not_run`)와 같은 방향이며 추가 완화가 없다.
+
+## revision 5 초안 — AC-12 입력 지문 V3 재사용 (2026-11-16, 독립 검토 전)
+
+이 절은 위 2026-11-16 사용자 결정(Q1=B, 지문 단위=테스트가 실제로 읽는 범위 + SDD 별도)을 AC-12 개정문으로 쓴 **초안**이다.
+독립 검토 PASS와 이 절의 status 갱신 전까지 효력이 없고 현행 AC-12가 적용된다.
+
+### 근거 실측 (2026-11-16, `2daa6a2`, 로컬 Windows, Python 3.12.10, 모델 호출 0)
+
+- 전체 692 tests를 audit hook 아래 실행(1017.9 s, 실패/skip 0). 같은 프로세스에서 연 저장소 파일 119개 중 문서는
+  `AGENTS.md`, `README.md`, `docs/sdd.md`, `docs/specs/CI-OPT-001.md`, `docs/plans/ci-optimization.md`,
+  `docs/tasks/TASK-CI-OPT-001.md`, `docs/templates/*.md` 4개, `skills/**`, `tooling/pstack-source.json`이다.
+  `docs/tasks/current.md`·다른 Task/Spec·`docs/sdd/traceability.json`은 열지 않았다.
+- `TASK-CI-OPT-001.md`는 `tests/test_ci_workflow.py`의 `section(read(TASK_DOC), "## P-01 AGENTS 문안 초안")` 한 곳에서만 읽는다.
+- 자식 프로세스 15,522개 중 대다수는 임시 fixture 대상 git이다. 임시 밖 자식의 분류는 아래 R5에 적었다.
+
+### 개정 AC-12 (초안)
+
+V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci`)은 매 V3마다 현재 상태에서 실행하며 재사용하지 않는다.
+**`offline_suite`**(`unittest discover`)만 아래 조건을 모두 만족할 때 이전 실행 결과를 재사용할 수 있다.
+
+1. 원본은 실제 실행된(재사용이 아닌) `offline_suite`이며 rc 0, tests_run>0, failures/errors/skips/expected_failures/
+   unexpected_successes 0, 실행 전후 상태 고정·동일, read set `complete`다. 실패·취소·부분·재사용 결과는 원본이 될 수 없다.
+2. 입력 지문 schema `suite-fp/1`이 같다. 지문 = 다음의 정규화 digest.
+   - R1 파일: 저장소의 tracked + untracked(ignored 제외) 작업 파일 내용과 경로 집합. 단 **문서 후보**(`docs/**` 중
+     `docs/sdd/**`·`docs/templates/**` 제외)는 원본 read set에 있는 것만 포함한다. `AGENTS.md`·`CLAUDE.md`·`README.md`·
+     `skills/**`·`.github/**`·`docs/sdd/**`·`docs/templates/**`는 항상 전체 포함한다(확장자만으로 문서 취급하지 않음).
+   - R2 절 단위: 문서 후보 파일의 모든 열기가 선언된 절 읽기 helper를 통한 경우에만 그 절 본문 digest로 대신한다.
+     helper 밖의 열기가 하나라도 있으면 파일 전체 digest다.
+   - R3 실행: suite 명령 argv, `verify_environment.py`·`ci_plan.py` 정책 버전, 테스트 설정.
+   - R4 환경: OS·버전, Python 구현/버전, 설치 배포판 이름==버전 전체, git 버전, 관련 env(`PYTHON*`, `BATON_*`, `GIT_*`,
+     `CI`, `ORCA_*`) 이름과 값 digest. 경로·계정·비밀 원문은 저장하지 않는다.
+   - R5 read set 완전성: 원본 실행은 시작부터 audit hook으로 같은 프로세스의 `open`/`listdir`/`scandir`와 자식 프로세스를 기록한다.
+     Python 자식에는 `sitecustomize` 경유로 같은 hook을 전파하고 자식별 "hook 적재" 기록을 남긴다. 실행된 Python 자식 수보다
+     적재 기록이 적거나(`-I`/`-S`/`-E` 또는 env 교체로 전파 실패) 기록 파일이 손상되면 read set은 `partial`이다.
+     git 자식은 `-C`/cwd가 임시·`.local_runtime` 아래이거나, 저장소 대상 `check-attr`(입력 `.gitattributes`는 항상 포함)일 때만 허용한다.
+     그 밖의 실행 파일은 argv에 저장소 경로가 없고 cwd가 저장소가 아니거나, 저장소 밖 도구의 `--help`/`--version` 조회일 때만 허용한다.
+     허용되지 않은 자식이 하나라도 있으면 `partial`이다. `partial` 원본으로는 문서 후보 제외·절 단위 대체를 하지 않는다
+     (파일 전체 지문으로 정확히 같은 상태만 재사용). 문서 후보 디렉터리 목록 조회가 기록되면 그 디렉터리 경로 집합을 지문에 넣는다.
+     2026-11-16 실측에서 임시 밖 자식은 `git -C ROOT check-attr` 3, baton import/스크립트 Python 자식 약 17, `codex --help` 2,
+     임시 대상 `mklink` 2였고 저장소 문서를 읽는 자식은 없었다(분류 근거는 audit 기록, 자식 내부 읽기는 이번 측정에서 미관측).
+3. 현재 지문 계산 전후 상태가 고정·동일하다. 하나라도 계산 실패·unknown·partial이면 재사용하지 않고 실행한다.
+4. 원본 증거 파일이 존재하고 기록된 SHA-256과 일치하며 schema·정책 버전이 같다.
+
+재사용 결과는 `execution=reused`로 기록하고 원본 실행 id·원본 commit·지문·schema·판정 사유·현재 commit을 남긴다.
+새 실행으로 세지 않는다. 같은 지문의 동시 V3 요청은 지문별 lock으로 하나만 실행하고 나머지는 끝난 뒤 증거를 다시 판정한다.
+실패한 원본은 lock 대기 후에도 성공으로 바뀌지 않는다. 기록은 기존 MetricsStore `ci.validation`(`reuse_decision`,
+`equality_checks`, `source_evidence`)과 Task 증거 JSON만 사용하며 새 검증 DB·table·결과 cache 서비스는 만들지 않는다.
+
+변하지 않는 것: 같은 SHA만으로 재사용하지 않는다. 독립 검토와 원격 CI는 재사용으로 충족되지 않는다. 원격 CI는 재사용하지 않는다.
+다른 커밋의 원격 CI 성공은 현재 SHA의 필수 체크가 아니다. `verified`는 대상 SHA에서 Windows 3.11·3.12 job이 모두 개별 성공하고
+다른 필수 조건을 충족한 뒤에만 가능하다(Q3). V1/V2 결과는 V3 재사용 원본이 될 수 없다.
+
+### 수용 시나리오 (fake runner/clock, 모델 호출 0)
+
+| 시나리오 | 기대 |
+|---|---|
+| read set 밖 문서 후보만 변경(예: `current.md`) | suite 재사용, `sdd_static` 실행 |
+| 선언된 절 밖만 바뀐 `TASK-CI-OPT-001.md` | suite 재사용 |
+| 선언된 절 안 변경 / helper 밖 열기 | suite 실행 |
+| `AGENTS.md`·`skills/**`·workflow·코드·테스트 변경 | suite 실행 |
+| 의존성·Python·env·정책 버전 변경 | suite 실행 |
+| 원본 read set partial(Python 자식 hook 미적재·허용 밖 자식) | 문서 후보 제외 없음(정확 동일 상태만 재사용) |
+| 원본 실패/skip/tests_run=0/재사용 결과 | 재사용 금지 |
+| 증거 파일 누락·해시 불일치·schema 변경 | 실행 |
+| 계산 중 상태 변경 | 실행 |
+| 같은 지문 동시 요청 | 1회 실행, 나머지 판정 |
+| 2026-11-13 b50ec38→2daa6a2 5회 사례 재현 | 첫 1회 실행 후 4회 재사용 가능 판정(실측 아닌 재현 판정) |

@@ -80,3 +80,11 @@ windows-latest × Python 3.11/3.12의 두 조합으로 고정하고 plan/gate도
 기존 필수 검사/no-skip/V3/독립 검토/원격 승인 경계를 보존한다. 정책/구현/정적 및 실행 경계 테스트를
 같은 Task로 갱신하고 V2 checkpoint 뒤 고정 후보 독립 검토와 정확한 후보 V3를 수행한다.
 과거 fixed4 CI 및 플랫폼 skip 미결정 기록은 이 범위 결정으로 superseded이며 원격 Windows CI는 여전히 NOT_RUN이다.
+
+## Eng Review Amendments — 2026-11-16 revision 5 초안 (입력 지문 V3 재사용·격리 게시)
+
+Spec revision 5 초안 승인(독립 검토 PASS) 후 순서: (1) read set 기록 — `verify_environment.py` audit hook, Python 자식 전파,
+절 단위 읽기 helper, 증거 JSON 출력 (2) `ci_plan.py` 입력 지문 `suite-fp/1`·재사용 판정 순수 함수·지문별 lock
+(3) Orchestrator V3 caller와 `ci.validation` 연결 (4) 수용 시나리오 테스트·V2 (5) 격리 branch(CI-OPT + CI-TIME `b2633db`)
+구성과 그 후보 공식 V3 (6) remote/branch/포함 커밋 보고 후 사용자 게시 승인. (1)과 (2)는 read set JSON 형식을 먼저 고정하면
+파일이 겹치지 않아 병렬 가능하다. Orca 배정은 별도 사용자 승인이 필요하다.

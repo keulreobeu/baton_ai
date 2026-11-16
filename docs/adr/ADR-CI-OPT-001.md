@@ -80,3 +80,12 @@ Linux/Ubuntu qualification은 후속 확장이다. 로컬 Git 조회 가속을 �
 필수 Windows 검사에 skip 예외를 만들지 않고 nonzero/no-skip/V3/독립 검토/원격 CI를 유지한다.
 대가: 현재 Linux 호환성은 CI로 검증하지 않으며 두 Python 검증 외 plan/gate 두 job의 준비 비용도 남는다.
 이 결정은 원격 실행/push/PR/모델 smoke를 승인하지 않는다.
+
+## Eng Review Amendments — 2026-11-16 입력 지문 V3 재사용 초안
+
+결정(사용자 Q1=B, 지문 단위=실제 읽기 범위 + SDD 별도): V3를 `sdd_static`(항상 실행)과 `offline_suite`(조건부 재사용)로 나눈다.
+재사용 근거는 SHA가 아니라 실행 중 관측한 read set과 입력 지문이다. 확장자 기반 문서 예외는 쓰지 않는다.
+이유: 2026-11-13 연속 V3 5회 사이 변경은 read set 밖 `current.md`와 선언 절 밖 `TASK-CI-OPT-001.md`뿐이었다.
+대가: audit hook과 Python 자식 전파라는 관측 장치가 필요하고, 관측 불완전(partial)이면 절감이 없다. 지문 계산 비용은 미측정이다.
+거부한 대안: 파일 확장자 예외(테스트가 읽는 문서를 놓침), 파일 단위 지문(이번 사례 절감 0), 정적 분석 read set(동적 경로를 놓침).
+이 초안은 독립 검토 전이며 현행 AC-12가 유효하다.
