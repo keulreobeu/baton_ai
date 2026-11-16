@@ -179,6 +179,16 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual([r["via"] for r in rows], ["sqlite"])
         self.assertEqual(rec.partial_reasons, {"SQLITE_UNRESOLVED"})
         self.assertEqual(readset._sqlite_target("C:/x.db", False), ("file", "C:/x.db"))
+        # Review P1 (df93236): a non-creating URI on a missing file records its absence.
+        missing = self.root / "missing.db"
+        rec2 = self.recorder()
+        for mode in ("ro", "rw"):
+            with self.assertRaises(sqlite3.OperationalError):
+                sqlite3.connect("file:%s?mode=%s" % (missing.as_posix(), mode), uri=True).close()
+        rec2.stop()
+        absent = [x for x in rec2.as_dict()["repo_reads"] if x["path"] == "missing.db"]
+        self.assertEqual([x.get("absent") for x in absent], [True])
+        self.assertFalse(missing.exists())
 
     def test_unhashable_prefix_read_is_partial(self):
         target = Path(os.__file__)  # always under sys.base_prefix; no skip in the official suite

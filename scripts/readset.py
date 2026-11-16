@@ -637,9 +637,11 @@ class Recorder:
         canonical = _canonical(value)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", value)
-        elif not os.path.exists(canonical):
+        elif not os.path.exists(canonical) and _sqlite_mode(database, uri) == "rwc":
             self._created.add(canonical)  # a new database file is an output
         else:
+            # Existing file, or a non-creating mode (ro/rw) on a missing file:
+            # the file's content or absence is an input.
             self._record_read(value, via="sqlite")
 
     def _socket_event(self, event, args):
@@ -1262,6 +1264,18 @@ def _tracked_close(sock):
         if id(sock) in r._sockets or r._is_child:
             r._endpoint_closed(sock)
     return _ORIGINAL_SOCKET_CLOSE(sock)
+
+
+def _sqlite_mode(database, uri):
+    """'ro'/'rw' (never creates) or 'rwc' (default: creates a missing file)."""
+    if isinstance(database, str) and database.startswith("file:") and uri is not False:
+        from urllib.parse import parse_qs, urlsplit
+        try:
+            mode = parse_qs(urlsplit(database).query).get("mode", ["rwc"])[-1]
+        except ValueError:
+            return "rwc"
+        return mode if mode in {"ro", "rw"} else "rwc"
+    return "rwc"
 
 
 def _sqlite_target(database, uri):
