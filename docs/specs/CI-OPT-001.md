@@ -329,6 +329,11 @@ bind한 loopback endpoint로의 연결은 모든 프로세스의 bind·close 시
 허용하고, close를 관측하지 못한 endpoint는 열린 것으로 본다(거절된 연결은 읽은 것이 없다). stdlib native 허용 목록에 경로 기반 파일 입출력을
 하지 않는 압축·해시·socket·XML 모듈을 추가했다. 지적 중 "증거 commit과 현재 HEAD 일치"는 반영하지 않는다: commit SHA는 기록하되 동등성
 조건이 아니라는 이 revision의 결정(사용자 Q1=B, 문서만 바뀐 다른 커밋의 재사용)과 충돌하며 ADR의 옛 문장도 이번에 명시적으로 대체했다.
+5차 검토 반영(2026-11-16, Codex `86e4bf8` FAIL: P1 3): loopback 연결은 끝을 입증한 endpoint(close·GC 종료(`weakref.finalize`)·자식 정상
+종료(exit) 시각이 연결 뒤)이거나 지금도 이 프로세스에서 열린 endpoint로만 허용하고, 끝을 관측하지 못한 endpoint(강제 종료된 자식 등)로의
+연결은 partial이다(같은 포트를 다른 프로세스가 재사용할 수 있음). 기록기는 socket을 약한 참조로만 붙잡는다. 관측 경로가 실제 경로와 다르면
+(symlink·junction 별칭) 별칭을 기록하고 지문 `aliases`에 별칭과 현재 해석 대상을 넣는다. suite 전후 비교에 쓴 resolver snapshot을 그대로
+지문화한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

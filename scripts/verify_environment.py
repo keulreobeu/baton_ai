@@ -220,8 +220,9 @@ def _evidence_main(args, environ):
         stable = (cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
                   and cp.git_identity(ROOT) == git and cp.resolver_identity() == resolver)
         try:
+            # The snapshot compared before/after the suite is the one fingerprinted.
             fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git,
-                                      verify_observed=True)
+                                      resolver=resolver, verify_observed=True)
         except cp.PlanError as exc:
             if str(exc) in {"INPUT_CHANGED_DURING_RUN", "STATE_CHANGED"}:
                 stable = False
@@ -229,7 +230,8 @@ def _evidence_main(args, environ):
             readset = dict(readset, complete=False,
                            partial_reasons=sorted(set(readset.get("partial_reasons", [])) | {"FINGERPRINT_" + str(exc)}))
             try:
-                fp = cp.suite_fingerprint(ROOT, exact_readset, environ=environ, manifest=manifest, git=git)
+                fp = cp.suite_fingerprint(ROOT, exact_readset, environ=environ, manifest=manifest, git=git,
+                                          resolver=resolver)
             except cp.PlanError:
                 fp, stable = None, False
         returncode = 0 if result.wasSuccessful() and result.testsRun > 0 else 1

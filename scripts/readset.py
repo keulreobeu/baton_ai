@@ -267,6 +267,7 @@ class Recorder:
         self._repo = {}
         self._outside = {}
         self._env_reads = {}
+        self._aliases = {}
         self._listings = {}
         self._sections = {}
         self._section_depth = {}
@@ -392,11 +393,31 @@ class Recorder:
         return False
 
     # -- observations --------------------------------------------------------
+    def _alias(self, path, canonical):
+        """An observed path that resolves elsewhere (symlink, junction) is an input
+        too: retargeting it must change the fingerprint even if both targets exist."""
+        raw = _path_text(path)
+        if raw is None:
+            return
+        try:
+            observed = os.path.abspath(raw)
+        except (OSError, ValueError):
+            self._partial("PATH_UNNORMALIZABLE", path)
+            return
+        key = os.path.normcase(observed) if os.name == "nt" else observed
+        if key != canonical:
+            if self._is_child:
+                self._emit({"type": "alias", "path": observed})
+            else:
+                self._aliases[key] = observed
+
     def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
+        if not relayed:
+            self._alias(path, canonical)
         if _is_device(canonical):
             return
         scope = self._scope(canonical)
@@ -464,6 +485,8 @@ class Recorder:
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
+        if not relayed:
+            self._alias(path, canonical)
         scope = self._scope(canonical)
         if scope in {"env_manifest", "derived"}:
             return
@@ -584,9 +607,10 @@ class Recorder:
             return False
         if not (isinstance(host, str) and _is_loopback(host)):
             return False
-        for bound, family, kind, addr, bport in list(self._sockets.values()):
+        for ref, family, kind, addr, bport in list(self._sockets.values()):
+            bound = ref()
             try:
-                open_now = bound.fileno() >= 0
+                open_now = bound is not None and bound.fileno() >= 0
             except OSError:
                 open_now = False
             if (open_now and family == getattr(sock, "family", None)
@@ -697,9 +721,12 @@ class Recorder:
         if self._is_child:
             self._emit({"type": "bind", "pid": os.getpid(), "sid": id(sock), **record})
         else:
-            self._endpoints.append({"key": (os.getpid(), id(sock)), "family": record["family"],
-                                    "kind": record["kind"], "host": host, "port": port,
-                                    "bound": record["t"], "closed": None, "sock": sock})
+            entry = {"key": (os.getpid(), id(sock)), "family": record["family"], "kind": record["kind"],
+                     "host": host, "port": port, "bound": record["t"], "closed": None, "sock": None}
+            self._endpoints.append(entry)
+        # A socket closed by garbage collection never calls close(): record it.
+        import weakref
+        weakref.finalize(sock, _gc_closed, self, os.getpid(), id(sock))
 
     def _endpoint_closed(self, sock):
         if self._is_child:
@@ -711,13 +738,23 @@ class Recorder:
 
     def _judge_pending_connects(self):
         """A loopback connect is allowed only to an endpoint of this run that was
-        bound before and not yet closed at that moment. An endpoint whose close
-        time was never observed (closed by garbage collection or process exit)
-        counts as open: a refused connect reads nothing."""
+        bound before and provably still open at that moment: closed after the
+        connect (close(), garbage collection or process exit observed), or still
+        open in this process now. An unobserved end makes the read set partial
+        (the port could have been reused by another process)."""
+        def open_at(endpoint, moment):
+            if endpoint["closed"] is not None:
+                return moment <= endpoint["closed"]
+            ref = self._sockets.get(endpoint["key"][1], (None,))[0] if endpoint["key"][0] == os.getpid() else None
+            sock = ref() if ref is not None else None
+            try:
+                return sock is not None and sock.fileno() >= 0
+            except OSError:
+                return False
+
         for connect in self._pending_connects:
             ok = any(e["family"] == connect["family"] and e["kind"] == connect["kind"] and e["host"] == connect["host"]
-                     and e["port"] == connect["port"] and e["bound"] <= connect["t"]
-                     and (e["closed"] is None or connect["t"] <= e["closed"])
+                     and e["port"] == connect["port"] and e["bound"] <= connect["t"] and open_at(e, connect["t"])
                      for e in self._endpoints)
             if ok:
                 self._socket_allowed += 1
@@ -889,6 +926,13 @@ class Recorder:
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
                           born=event.get("born"), relayed=True)
+        elif kind == "alias":
+            observed = str(event["path"])
+            self._aliases[os.path.normcase(observed) if os.name == "nt" else observed] = observed
+        elif kind == "exit":
+            for endpoint in self._endpoints:
+                if endpoint["key"][0] == event["pid"] and endpoint["closed"] is None:
+                    endpoint["closed"] = event["t"]
         elif kind == "bind":
             self._endpoints.append({"key": (event["pid"], event["sid"]), "family": event["family"],
                                     "kind": event["kind"], "host": event["host"], "port": event["port"],
@@ -913,7 +957,9 @@ class Recorder:
         return {"schema": "readset/1", "root": self.root, "started_utc": self.started_utc,
                 "finished_utc": self.finished_utc or _utc_now(), "complete": not self.partial_reasons,
                 "partial_reasons": sorted(self.partial_reasons), "repo_reads": repo, "outside_reads": outside,
-                "env_reads": env_reads, "sections_missing": sorted([list(item) for item in self.sections_missing]),
+                "env_reads": env_reads,
+                "aliases": [{"path": v} for _, v in sorted(self._aliases.items())],
+                "sections_missing": sorted([list(item) for item in self.sections_missing]),
                 "listings": [item for _, item in sorted(self._listings.items(), key=lambda pair: (pair[0][0], pair[0][1]))],
                 "children": {**self._children, "python_launched": self._python_launches,
                              "python_hooked": self._python_hooks, "python_unstarted": list(self._unstarted),
@@ -1090,12 +1136,24 @@ def _tracked_bind(sock, address):
     try:
         actual = sock.getsockname()
         if isinstance(actual, tuple) and _is_loopback(actual[0]):
+            import weakref
             for r in _active():
-                r._sockets[id(sock)] = (sock, sock.family, sock.type, actual[0], actual[1])
+                # Weak: the recorder must not keep a socket alive (its GC end is recorded).
+                r._sockets[id(sock)] = (weakref.ref(sock), sock.family, sock.type, actual[0], actual[1])
                 r._endpoint_bound(sock, actual[0], actual[1])
     except (OSError, IndexError, TypeError):
         pass
     return result
+
+
+def _gc_closed(recorder, pid, sid):
+    """weakref.finalize callback: the socket object is gone, so is its handle."""
+    if recorder._is_child:
+        recorder._emit({"type": "close", "pid": pid, "sid": sid, "t": _now()})
+        return
+    for endpoint in recorder._endpoints:
+        if endpoint["key"] == (pid, sid) and endpoint["closed"] is None:
+            endpoint["closed"] = _now()
 
 
 def _tracked_close(sock):
@@ -1198,4 +1256,8 @@ def _is_device(canonical):
 
 def _record_child_log(path):
     root = Path(__file__).resolve().parents[1]
-    Recorder(root, os.environ.get("BATON_READSET_STARTED") or None, _child=True, _log_path=path)
+    recorder = Recorder(root, os.environ.get("BATON_READSET_STARTED") or None, _child=True, _log_path=path)
+    import atexit
+    # A normal exit ends every endpoint of this process; a killed process
+    # leaves them unproven (connects to them are then partial).
+    atexit.register(lambda: recorder._emit({"type": "exit", "pid": os.getpid(), "t": _now()}))

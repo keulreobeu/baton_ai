@@ -660,7 +660,7 @@ SUITE_COMMAND = ["-X", "utf8", "-m", "unittest", "discover", "-s", "tests", "-t"
 NON_REUSABLE_TESTS = []
 ALLOWED_NATIVE_DISTRIBUTIONS = ("cryptography",)
 FP_COMPONENTS = ("files", "index", "sections", "ignored_reads", "listings", "outside_reads", "env_reads",
-                 "environment", "resolver", "manifest", "git", "policy")
+                 "aliases", "environment", "resolver", "manifest", "git", "policy")
 ADDED_ENV_ALLOWED = {"BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH"}
 _REPO_PATH = re.compile(r"[^\\/:*?\"<>|\x00-\x1f][^\\:*?\"<>|\x00-\x1f]*")
 _ALWAYS_INCLUDED_DOCS = ("docs/sdd/", "docs/templates/")
@@ -751,6 +751,7 @@ def valid_readset(readset):
                         for r in readset.get("outside_reads", []))
                 and all(isinstance(r, dict) and _abs_path(r.get("path")) and _hash_or_none(r.get("sha256"))
                         for r in readset.get("env_reads", []))
+                and all(isinstance(r, dict) and _abs_path(r.get("path")) for r in readset.get("aliases", []))
                 and all(isinstance(r, dict) and r.get("scope") in {"repo", "outside"}
                         and (_repo_path(r.get("path")) if r["scope"] == "repo" else _abs_path(r.get("path")))
                         for r in readset.get("listings", []))
@@ -873,7 +874,7 @@ def policy_identity(root):
                         "non_reusable": NON_REUSABLE_TESTS, "native": list(ALLOWED_NATIVE_DISTRIBUTIONS)})
 
 
-def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, verify_observed=False):
+def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, resolver=None, verify_observed=False):
     """fp(current state, source readset). Raises PlanError when not computable.
 
     verify_observed: at the source run, every input whose content the recorder
@@ -947,6 +948,12 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, v
         if verify_observed and record.get("sha256") is not None and record["sha256"] != content:
             raise PlanError("INPUT_CHANGED_DURING_RUN")
         env_reads.append([record["path"], content])
+    aliases = []
+    for record in sorted(readset.get("aliases", []), key=lambda r: r["path"]):
+        try:
+            aliases.append([record["path"], os.path.realpath(record["path"])])
+        except (OSError, ValueError):
+            raise PlanError("ALIAS_UNRESOLVABLE") from None
     # Staged content (mode, blob, path; no stat data) for Git reads of the
     # index, limited to the same paths the file component hashes in full.
     hashed = {name for name, _ in files}
@@ -959,7 +966,8 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, v
         "environment": environment_digest(os.environ if environ is None else environ),
         "manifest": fingerprint(manifest if manifest is not None else runtime_manifest()),
         "git": fingerprint(git if git is not None else git_identity(root)),
-        "resolver": resolver_identity(),
+        "resolver": resolver if resolver is not None else resolver_identity(),
+        "aliases": fingerprint(aliases),
         "policy": policy_identity(root),
     }
     need(freeze(root) == before, "STATE_CHANGED")

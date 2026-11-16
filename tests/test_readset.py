@@ -340,6 +340,26 @@ class ReadsetTests(unittest.TestCase):
         rec.stop()
         self.assertEqual(rec._socket_allowed, 1)  # during the bind interval
         self.assertEqual(rec.partial_samples.get("NETWORK"), ["connect 127.0.0.1:5000"])  # after close
+        # Review P1 (86e4bf8): an endpoint whose end was never observed (killed
+        # child, no close/exit event) cannot vouch for a later connect.
+        unproven = self.recorder()
+        directory = unproven._log_targets()[0]
+        Path(directory, "4.jsonl").write_text(
+            json.dumps({"type": "bind", "pid": 4, "sid": 9, "family": 2, "kind": 1, "host": "127.0.0.1", "port": 6000,
+                        "t": now}) + "\n"
+            + json.dumps({"type": "connect", "family": 2, "kind": 1, "host": "127.0.0.1", "port": 6000, "t": now + 1}) + "\n",
+            encoding="utf-8")
+        unproven.stop()
+        self.assertIn("NETWORK", unproven.partial_reasons)
+        exited = self.recorder()
+        directory = exited._log_targets()[0]
+        Path(directory, "5.jsonl").write_text(
+            json.dumps({"type": "bind", "pid": 5, "sid": 9, "family": 2, "kind": 1, "host": "127.0.0.1", "port": 6001,
+                        "t": now}) + "\n"
+            + json.dumps({"type": "connect", "family": 2, "kind": 1, "host": "127.0.0.1", "port": 6001, "t": now + 1}) + "\n"
+            + json.dumps({"type": "exit", "pid": 5, "t": now + 2}) + "\n", encoding="utf-8")
+        exited.stop()
+        self.assertNotIn("NETWORK", exited.partial_reasons)
         truncated = self.recorder()
         directory = truncated._log_targets()[0]
         Path(directory, "3.jsonl").write_text('{"type": "read", "path": "C:/x"', encoding="utf-8")  # no newline
@@ -372,6 +392,29 @@ class ReadsetTests(unittest.TestCase):
         for rec in (inner, outer):
             with self.subTest(recorder="inner" if rec is inner else "outer"):
                 self.assertIn(expected, [x["path"] for x in rec.as_dict()["outside_reads"]])
+
+    def test_garbage_collected_socket_end_is_recorded(self):
+        import gc
+        rec = self.recorder()
+        server = socket.socket(); server.bind(("127.0.0.1", 0))
+        key = (os.getpid(), id(server))
+        del server
+        gc.collect()
+        ends = [e["closed"] for e in rec._endpoints if e["key"] == key]
+        rec.stop()
+        self.assertEqual(len(ends), 1)
+        self.assertIsNotNone(ends[0])
+
+    def test_aliases_are_recorded(self):
+        target = self.root / "real.txt"
+        target.write_text("x")
+        time.sleep(0.06)
+        rec = self.recorder()
+        with patch.object(readset, "_canonical", lambda value: os.path.normcase(str(target))), \
+                patch.object(readset, "_real", lambda value: str(target)):
+            rec._record_read(str(self.root / "alias.txt"))
+        rec.stop()
+        self.assertEqual([a["path"] for a in rec.as_dict()["aliases"]], [os.path.abspath(str(self.root / "alias.txt"))])
 
     def test_hook_failure_corrupt_log_and_untracked_processes(self):
         rec = self.recorder()

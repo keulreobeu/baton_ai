@@ -1055,3 +1055,10 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   E2E(`4506c02`): 736 tests 중 2 실패(중첩 기록기 시험에서 자식이 바깥 시작 시각으로 생성 판정) → 자식은 생성 시각만 보내고 기록기별 판정.
   read set partial 원인(자식의 `_bz2`/`_lzma`, 부모가 bind한 서버로의 자식 연결)도 반영: native 허용 목록, 프로세스 간 bind/close 시각 기반 판정
   (정밀 시스템 시각; time.time()은 Windows 3.12에서 약 16 ms).
+- **2026-11-16 실제 저장소 재사용 E2E 성공(`86e4bf8`)**: 1회차 공식 순차 실행 738 tests OK(1188.5 s), read set complete, state stable, 증거
+  `suite-56515acb….json`. 2회차는 테스트가 읽지 않는 `docs/tasks/current.md`만 바꾼 상태에서 `suite_execution=reused`,
+  `reused_test_count=738`, `executed_test_count=0`, 12개 지문 구성요소 equal, `sdd_static` 새로 실행, **8 s**(변경은 직후 되돌림).
+  증거 사본: 외부 handoff `CI-OPT-001-e2e-reuse-86e4bf8/`(run1/run2 summary, 증거 JSON SHA-256 = 파일명). 실측 1회 비교이며 일반 절감률이 아니다.
+- 2026-11-16 Codex 5차 재검토(`86e4bf8`, `ctx_f24276aaf0b2`): FAIL(P1 3: 끝을 입증하지 못한 endpoint, symlink 별칭, resolver 재계산 race), 이전 4건 중
+  3건 해결·commit SHA 건은 결정대로 재제기 없음. 반영: endpoint 끝 입증(close·GC·exit)·미입증 partial·socket 약한 참조, `aliases` 지문,
+  resolver snapshot 지문화. 이 반영으로 코드가 바뀌어 위 E2E는 다시 실행한다.

@@ -1014,6 +1014,20 @@ class SuiteReuseTests(unittest.TestCase):
         (self.root / "docs" / "new").mkdir()
         self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["listings"], "different")
 
+    def test_alias_retarget_and_resolver_snapshot(self):
+        """Review P1 (86e4bf8): a retargeted link/junction changes the fingerprint; the compared resolver snapshot is the one fingerprinted."""
+        alias = str(Path(self.temp.name) / "alias-path")
+        rs = readset(aliases=[{"path": alias}])
+        real = cp.os.path.realpath
+        with patch.object(cp.os.path, "realpath", lambda p, **kw: "C:/target-a" if p == alias else real(p, **kw)):
+            source = self.evidence(self.fp(rs))
+            self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
+        with patch.object(cp.os.path, "realpath", lambda p, **kw: "C:/target-b" if p == alias else real(p, **kw)):
+            self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["aliases"], "different")
+        snapshot = cp.suite_fingerprint(self.root, readset(), environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                        resolver="r" * 64)
+        self.assertEqual(snapshot["components"]["resolver"], "r" * 64)
+
     def test_windows_style_and_escaping_paths_are_rejected(self):
         """Review P2: only normalized POSIX-relative repository paths."""
         for path in ("docs\\a.md", "..\\outside", "C:/x.md", "//server/share/x", "/abs", "a/../b", "./a", "a//b"):
