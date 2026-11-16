@@ -977,3 +977,33 @@ Evidence-only status files at this checkpoint:
 - 커밋 `085e5a2` 생성 당시 c8 V3는 이미 끝났으며, 이 기록도 exact-SHA evidence 원칙에 따라
   `085e5a2` 자체의 V3를 주장하지 않는다. 새 후보는 별도 V3로 확인한다.
   Task in_progress/not verified, 원격 Windows CI·plan/gate·job E2E NOT_RUN, Q1·게시 범위 결정은 사용자 복귀까지 보류.
+
+## 사용자 결정 Q1/Q2/Q3 반영과 Phase 1 조사 — 2026-11-16
+
+결정: Q1=B(입력 지문 기반 V3 재사용), Q2=B(Task 전용 branch 격리 게시), Q3=B(원격 Windows 3.11/3.12 성공 후 verified).
+상세 경계는 [Spec 2026-11-16 amendment](../specs/CI-OPT-001.md). 이 기록은 구현·push·원격 CI 실행이 아니다.
+
+작업 위치 변경: 기존 worktree `D:/baton_ai/.local_runtime/ci-opt-001`이 삭제돼 2026-11-16 09:32
+`C:/Users/SSAFY/orca/workspaces/baton_ai/ci-opt-001`로 같은 branch/HEAD `2daa6a2`가 다시 만들어졌다. 사라진 ignored `.venv`는
+`setup-environment.ps1`과 같은 단계로 복구했다(Python 3.12.10, editable `.[gms]`, `pip check` OK). 과거 V3 증거의 실행 경로는
+옛 경로이므로 환경 동등성 증거로 쓰지 않는다.
+
+Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree는 삭제):
+
+- remote는 `origin` 하나다. `origin/codex/ci-opt-001`=`b133bde`(PR #13, open/ready, 이전 CI 8개 중 2개 CANCELLED).
+  로컬 `2daa6a2`는 그보다 33커밋 앞서고, 그중 다른 Task 커밋이 10개다: CI-TIME `b2633db`, T4-PREP `3465597`·`dd3121a`,
+  REVIEW-READ `fa10f2a`, HOOK-QUAL `28d3cac`·`52ec9d9`·`687069e`, JIPDAM-SKIP `627db24`·`99486ff`·`ec65365`.
+  이미 게시된 `b133bde` 계보에도 SCOPE-PATH `ba69443`·`05e1113`이 있다(origin/main 기준 격리 시 별도 판단 필요).
+- 남은 6개 커밋 `b50ec38`(코드 7파일)·`3e5b1f1`·`1721c95`·`c8e7e05`·`085e5a2`·`2daa6a2`(문서 2파일씩): 추가 줄의 비밀값
+  패턴 검색 0건. `b50ec38`은 독립 코드 수렴 검토 대상, 나머지는 문서 delta 검토 대상이다.
+- V3 연속 실행: `b50ec38`→`3e5b1f1`→`1721c95`→`c8e7e05`→`2daa6a2` 5회. 사이 변경은 `TASK-CI-OPT-001.md`·`current.md`뿐이다.
+  `tests/test_ci_workflow.py`가 `TASK-CI-OPT-001.md`의 P-01 절을 읽고 `check_sdd.py`가 Task 문서를 읽으므로 두 파일은 V3 입력이다.
+  P-01 절은 다섯 커밋에서 바뀌지 않았다. 따라서 파일 단위 지문이면 절감 0회, 테스트가 실제로 읽는 범위 단위 지문과
+  SDD 정적 검사 별도 재실행이면 최대 4회(약 61분) 절감 가능성이 있다. 실측 아님, 추정이다.
+- 격리 시험: `b133bde` 위에 다른 Task 10개를 뺀 23커밋을 cherry-pick하면 `current.md`·`test_ci_workflow.py`·`traceability.json`
+  3곳이 충돌한다. 해소 후 `check_sdd.py --base 5c07aea`는 MISSING_FILE로 실패(traceability가 다른 Task 문서 참조)하고,
+  `test_ci_workflow`는 `timeout-minutes: 25`(CI-TIME `b2633db`) 부재로 1건 실패했다(113 tests 중). CI-TIME은 필수 의존성이며
+  PR #13의 이전 CANCELLED 원인 수정이다. REVIEW-READ·T4-PREP·HOOK-QUAL·JIPDAM-SKIP는 이번 시험에서 의존성이 발견되지 않았다
+  (전체 V3 미실행이라 무의존 증명은 아님).
+- 남은 결정/작업: (1) revision 5 AC-12 개정문과 지문 입력 단위(파일/테스트 읽기 범위) 결정, (2) 격리 branch에 CI-TIME 포함 여부와
+  branch 이름·base 승인, (3) 구현·로컬 V3·독립 검토 후 게시 대상 승인 요청. Task는 in_progress/not verified.
