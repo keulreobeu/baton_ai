@@ -88,3 +88,10 @@ Spec revision 5 초안 승인(독립 검토 PASS) 후 순서: (1) read set 기�
 (3) Orchestrator V3 caller와 `ci.validation` 연결 (4) 수용 시나리오 테스트·V2 (5) 격리 branch(CI-OPT + CI-TIME `b2633db`)
 구성과 그 후보 공식 V3 (6) remote/branch/포함 커밋 보고 후 사용자 게시 승인. (1)과 (2)는 read set JSON 형식을 먼저 고정하면
 파일이 겹치지 않아 병렬 가능하다. Orca 배정은 별도 사용자 승인이 필요하다.
+
+격리 게시 Q2의 CI-TIME 의존(검토 지적 반영): `b2633db`는 `verify.yml` timeout 15→25, `verify_environment.py` Git 런처 우회와
+모듈 진행 줄, 그 테스트·CI-TIME 계약 문서를 한 커밋으로 담는다. CI-OPT의 `tests/test_ci_workflow.py`가 timeout 25를 단언하고,
+이후 CI-OPT 커밋이 같은 `verify.yml`을 두 번 고쳤으며, PR #13의 CANCELLED가 이 timeout 부족과 일치한다. timeout은 P-07에 따라
+CI-TIME 소유이므로 CI-OPT 안에서 다시 구현하지 않고 커밋 단위로 포함한다. 분리 방법(CI-TIME 선행 별도 게시)은 사용자가
+2026-11-16 선택하지 않았다. 나머지 9개 커밋은 격리 시험에서 의존이 관측되지 않아 제외하고, 그 결과 생기는 `current.md`·
+`traceability.json`·`test_ci_workflow.py` 충돌은 CI-OPT 소유 범위에서 다시 작성한다. remote/branch 확인과 대상 승인은 push 직전 별도 단계다.
