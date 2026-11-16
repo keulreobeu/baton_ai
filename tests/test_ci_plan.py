@@ -826,6 +826,236 @@ class SyntheticGitTests(unittest.TestCase):
         with self.assertRaisesRegex(cp.PlanError, "NOT_BATON_DEVELOPMENT_ROOT"): self.planner()
 
 
+FIXED_MANIFEST = {"digest": "f" * 64, "files": 1, "python": "3.12.10", "implementation": "cpython",
+                  "platform": "win32", "os": "nt"}
+FIXED_GIT = {"exe_sha256": "a" * 64, "version": "git version 2.55.0", "config": "b" * 64}
+SECTION = "## P-01 AGENTS 문안 초안"
+
+
+def readset(**overrides):
+    value = {"schema": "readset/1", "complete": True, "partial_reasons": [],
+             "repo_reads": [{"path": "docs/tasks/TASK-X.md", "via": "open", "section_only": True, "sections": [SECTION]},
+                            {"path": "docs/specs/READ.md", "via": "open", "section_only": False, "sections": []}],
+             "outside_reads": [], "listings": [], "added_env": ["BATON_READSET_LOG", "PYTHONPATH"]}
+    value.update(overrides)
+    return value
+
+
+class SuiteReuseTests(unittest.TestCase):
+    """CI-OPT-001-AC-12 revision 5: suite-fp/1 fingerprint and reuse decision (offline)."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve() / "repo"
+        self.outside = Path(self.temp.name).resolve() / "outside.cfg"
+        self.outside.write_text("v1", encoding="utf-8")
+        self.write(".gitignore", "__pycache__/\nlocal.cfg\n")
+        self.write("src/value.py", "def value(): return 1\n")
+        self.write("tests/test_value.py", TEST_SOURCE)
+        self.write("AGENTS.md", "rules\n")
+        self.write("docs/tasks/current.md", "status\n")
+        self.write("docs/tasks/TASK-X.md", "# T\n\n" + SECTION + "\nkeep\n\n## Other\nfree\n")
+        self.write("docs/specs/READ.md", "read whole\n")
+        self.write("docs/sdd/traceability.json", "{}\n")
+        self.write("local.cfg", "ignored v1\n")
+        self.git("init"); self.git("config", "user.name", "Offline fixture")
+        self.git("config", "user.email", "offline@example.invalid")
+        self.git("add", "."); self.git("commit", "-m", "fixture")
+        self.env = {"PATH": "C:/bin", "TEMP": "C:/tmp", "OTHER": "1"}
+
+    def write(self, name, text):
+        file = self.root / name; file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(text, encoding="utf-8")
+
+    def git(self, *args):
+        result = subprocess.run(["git", "--no-optional-locks", "-C", str(self.root), *args], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def fp(self, rs=None, env=None, manifest=None, git=None):
+        return cp.suite_fingerprint(self.root, rs or readset(), environ=self.env if env is None else env,
+                                    manifest=manifest or FIXED_MANIFEST, git=git or FIXED_GIT)
+
+    def evidence(self, fp, **overrides):
+        value = cp.suite_evidence(run_id="run-1", commit="c" * 40, fingerprint_record=fp, readset=readset(complete=fp["readset_complete"], partial_reasons=[] if fp["readset_complete"] else ["NETWORK"]),
+                                  result={"tests_run": 100, "failures": 0, "errors": 0, "skipped": 0,
+                                          "expected_failures": 0, "unexpected_successes": 0},
+                                  returncode=0, state_stable=True,
+                                  started_utc="2026-11-16T00:00:00+00:00", finished_utc="2026-11-16T00:10:00+00:00")
+        value.update(overrides)
+        raw = json.dumps(value, sort_keys=True).encode()
+        return value, cp.hashlib.sha256(raw).hexdigest(), raw
+
+    def decide(self, current, source, now="2026-11-16T01:00:00+00:00", non_reusable=None):
+        value, digest, raw = source
+        return cp.decide_suite_reuse(current, value, digest, raw, now_utc=now, non_reusable=non_reusable)
+
+    def test_unread_doc_candidate_and_outside_section_change_reuse(self):
+        source = self.evidence(self.fp())
+        self.write("docs/tasks/current.md", "status changed\n")
+        self.write("docs/tasks/TASK-X.md", "# T changed\n\n" + SECTION + "\nkeep\n\n## Other\nchanged\n")
+        decision = self.decide(self.fp(), source)
+        self.assertTrue(decision["allowed"], decision["reasons"])
+        self.assertEqual(decision["reused_test_count"], 100)
+        self.assertEqual(decision["source_evidence"], ["run:run-1", "commit:" + "c" * 40, "evidence:" + source[1]])
+        self.assertFalse(decision["remote_ci_skippable"])
+
+    def test_inputs_that_must_invalidate(self):
+        cases = {
+            "section": lambda: self.write("docs/tasks/TASK-X.md", "# T\n\n" + SECTION + "\nedited\n\n## Other\nfree\n"),
+            "whole_read_doc": lambda: self.write("docs/specs/READ.md", "changed\n"),
+            "agents": lambda: self.write("AGENTS.md", "rules changed\n"),
+            "sdd_docs": lambda: self.write("docs/sdd/traceability.json", "{\"x\": 1}\n"),
+            "code": lambda: self.write("src/value.py", "def value(): return 2\n"),
+            "test": lambda: self.write("tests/test_value.py", TEST_SOURCE + "\n"),
+            "new_untracked_code": lambda: self.write("src/new.py", "x = 1\n"),
+        }
+        for name, change in cases.items():
+            with self.subTest(name=name):
+                self.setUp()
+                source = self.evidence(self.fp())
+                change()
+                decision = self.decide(self.fp(), source)
+                self.assertFalse(decision["allowed"])
+                self.assertIn("FINGERPRINT_CHANGED", decision["reasons"])
+
+    def test_ignored_read_listing_outside_env_manifest_git_invalidate(self):
+        rs = readset(repo_reads=readset()["repo_reads"] + [{"path": "local.cfg", "via": "open"}],
+                     listings=[{"path": "docs/specs", "scope": "repo", "ok": True, "entries": []}],
+                     outside_reads=[{"path": str(self.outside), "via": "open"}])
+        source = self.evidence(self.fp(rs))
+        self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
+        mutations = {
+            "ignored_reads": lambda: self.write("local.cfg", "ignored v2\n"),
+            "listings": lambda: self.write("docs/specs/NEW.md", "new doc\n"),
+            "outside_reads": lambda: self.outside.write_text("v2", encoding="utf-8"),
+        }
+        for component, change in mutations.items():
+            with self.subTest(component=component):
+                self.setUp(); self.outside.write_text("v1", encoding="utf-8")
+                rs = readset(repo_reads=readset()["repo_reads"] + [{"path": "local.cfg", "via": "open"}],
+                             listings=[{"path": "docs/specs", "scope": "repo", "ok": True, "entries": []}],
+                             outside_reads=[{"path": str(self.outside), "via": "open"}])
+                source = self.evidence(self.fp(rs)); change()
+                decision = self.decide(self.fp(rs), source)
+                self.assertEqual(decision["equality_checks"][component], "different")
+                self.assertFalse(decision["allowed"])
+        source = self.evidence(self.fp())
+        for label, kwargs in {"env_value": {"env": {**self.env, "PATH": "C:/other"}},
+                              "env_added": {"env": {**self.env, "NEW": "x"}},
+                              "env_removed": {"env": {"PATH": "C:/bin", "TEMP": "C:/tmp"}},
+                              "manifest": {"manifest": {**FIXED_MANIFEST, "digest": "e" * 64}},
+                              "git": {"git": {**FIXED_GIT, "config": "d" * 64}}}.items():
+            with self.subTest(label=label):
+                self.assertFalse(self.decide(self.fp(**kwargs), source)["allowed"])
+        # Variables the recorder itself adds are not inputs.
+        self.assertTrue(self.decide(self.fp(env={**self.env, "BATON_READSET_LOG": "x"}), source)["allowed"])
+
+    def test_partial_source_includes_every_doc_candidate(self):
+        partial = readset(complete=False, partial_reasons=["CHILD_HOOK_MISSING"])
+        source = self.evidence(self.fp(partial))
+        self.assertTrue(self.decide(self.fp(partial), source)["allowed"])
+        self.write("docs/tasks/current.md", "changed\n")
+        self.assertFalse(self.decide(self.fp(partial), source)["allowed"])
+
+    def test_unsuccessful_or_untrusted_sources_reject(self):
+        fp = self.fp()
+        bad = {"execution": "reused", "status": "failed", "returncode": 1, "tests_run": 0, "skipped": 1,
+               "failures": 1, "errors": 1, "expected_failures": 1, "unexpected_successes": 1,
+               "state_stable": False, "run_id": "bad id!", "commit": "short", "schema": "other"}
+        for key, value in bad.items():
+            with self.subTest(key=key):
+                self.assertFalse(self.decide(fp, self.evidence(fp, **{key: value}))["allowed"])
+        value, digest, raw = self.evidence(fp)
+        self.assertFalse(cp.decide_suite_reuse(fp, value, "0" * 64, raw, now_utc="2026-11-16T01:00:00+00:00")["allowed"])
+        self.assertFalse(cp.decide_suite_reuse(fp, value, digest, raw + b" ", now_utc="2026-11-16T01:00:00+00:00")["allowed"])
+        tampered = dict(value, tests_run=200)
+        self.assertIn("EVIDENCE_HASH_MISMATCH",
+                      cp.decide_suite_reuse(fp, tampered, digest, raw, now_utc="2026-11-16T01:00:00+00:00")["reasons"])
+        self.assertFalse(self.decide(fp, self.evidence(fp), now="2026-11-15T00:00:00+00:00")["allowed"])
+        self.assertFalse(self.decide(fp, self.evidence(fp), now="not-a-time")["allowed"])
+        self.assertFalse(self.decide({"schema": "x"}, self.evidence(fp))["allowed"])
+
+    def test_invalid_readset_and_unreadable_inputs_raise(self):
+        for bad in ({"schema": "x"}, readset(complete=True, partial_reasons=["NETWORK"]),
+                    readset(repo_reads=[{"path": "../escape"}]), readset(outside_reads=[{"path": "relative"}])):
+            with self.subTest(bad=bad), self.assertRaises(cp.PlanError):
+                self.fp(bad)
+
+    def test_state_change_during_fingerprint_raises(self):
+        original = cp.freeze; calls = []
+        def moving(root):
+            calls.append(1); value = original(root)
+            return dict(value, worktree=value["worktree"] + str(len(calls)))
+        with patch.object(cp, "freeze", moving), self.assertRaises(cp.PlanError) as caught:
+            self.fp()
+        self.assertEqual(str(caught.exception), "STATE_CHANGED")
+
+    def test_non_reusable_tests_always_and_expiry(self):
+        fp = self.fp(); source = self.evidence(fp)
+        always = [{"test_id": "tests.t.A.test_clock", "reason": "RA-1 clock", "mode": "always"}]
+        decision = self.decide(fp, source, non_reusable=always)
+        self.assertEqual((decision["run_tests"], decision["reused_test_count"]), (["tests.t.A.test_clock"], 99))
+        expiring = [{"test_id": "tests.t.A.test_cert", "reason": "expiry", "mode": "expires_after_seconds", "seconds": 3000}]
+        self.assertEqual(self.decide(fp, source, now="2026-11-16T00:40:00+00:00", non_reusable=expiring)["run_tests"], [])
+        self.assertEqual(self.decide(fp, source, now="2026-11-16T01:00:01+00:00", non_reusable=expiring)["run_tests"],
+                         ["tests.t.A.test_cert"])
+        for bad in ([{"test_id": "x", "reason": "", "mode": "always"}], [{"test_id": "x", "reason": "r", "mode": "sometimes"}],
+                    [{"test_id": "x", "reason": "r", "mode": "expires_after_seconds", "seconds": 0}],
+                    [{"test_id": "x", "reason": "r", "mode": "always"}] * 2, "not-a-list"):
+            with self.subTest(bad=bad):
+                self.assertIn("POLICY_INVALID", self.decide(fp, source, non_reusable=bad)["reasons"])
+        tiny = self.evidence(fp, tests_run=1)
+        self.assertIn("NOTHING_TO_REUSE", self.decide(fp, tiny, non_reusable=always)["reasons"])
+
+    def test_policy_identity_tracks_non_reusable_list_and_scripts(self):
+        before = cp.policy_identity(self.root)
+        with patch.object(cp, "NON_REUSABLE_TESTS", [{"test_id": "x", "reason": "r", "mode": "always"}]):
+            self.assertNotEqual(cp.policy_identity(self.root), before)
+        self.write("scripts/verify_environment.py", "# changed\n")
+        self.assertNotEqual(cp.policy_identity(self.root), before)
+
+    def test_doc_candidate_boundaries(self):
+        self.assertTrue(cp.doc_candidate("docs/tasks/current.md"))
+        for name in ("docs/sdd/traceability.json", "docs/templates/task.md", "AGENTS.md", "README.md",
+                     "skills/baton-flow/SKILL.md", ".github/workflows/verify.yml", "src/docs/x.md"):
+            with self.subTest(name=name):
+                self.assertFalse(cp.doc_candidate(name))
+
+    def test_fingerprint_lock_serializes_and_times_out(self):
+        home = Path(self.temp.name) / "home"; digest = "a" * 64
+        with cp.fingerprint_lock(home, digest):
+            clock = iter([0.0, 0.0, 10.0])
+            with self.assertRaises(cp.PlanError) as caught:
+                with cp.fingerprint_lock(home, digest, wait_seconds=1, clock=lambda: next(clock), sleep=lambda s: None):
+                    pass
+            self.assertEqual(str(caught.exception), "FINGERPRINT_LOCK_TIMEOUT")
+        with cp.fingerprint_lock(home, digest):
+            pass
+        with self.assertRaises(cp.PlanError):
+            with cp.fingerprint_lock(home, "not-hex"):
+                pass
+
+    def test_reproduces_2026_11_13_five_run_case(self):
+        """b50ec38->2daa6a2: only current.md and outside-section Task text changed between runs."""
+        source = self.evidence(self.fp())
+        allowed = 0
+        for step in range(4):
+            self.write("docs/tasks/current.md", f"status {step}\n")
+            self.write("docs/tasks/TASK-X.md", f"# T {step}\n\n" + SECTION + "\nkeep\n\n## Other\nlog {step}\n")
+            self.git("add", "."); self.git("commit", "-m", f"doc {step}")
+            allowed += self.decide(self.fp(), source)["allowed"]
+        self.assertEqual(allowed, 4)
+
+    def test_real_environment_helpers_are_deterministic(self):
+        self.assertEqual(cp.environment_digest({"A": "1", "B": "2"}), cp.environment_digest({"B": "2", "A": "1"}))
+        self.assertNotEqual(cp.environment_digest({"A": "1"}), cp.environment_digest({"A": "2"}))
+        identity = cp.git_identity(self.root)
+        self.assertRegex(identity["exe_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(identity, cp.git_identity(self.root))
+        self.assertEqual(cp.extract_section("a\n## X\nb\n## Y\nc", "## X"), "## X\nb")
+
+
 class RemoteTests(unittest.TestCase):
     def setUp(self):
         self.sha, self.base = "a" * 40, "b" * 40

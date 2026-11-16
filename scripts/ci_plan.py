@@ -23,6 +23,7 @@ import time
 import tomllib
 import zlib
 from collections import deque
+from contextlib import contextmanager
 
 try:
     from . import check_sdd as sdd
@@ -643,6 +644,393 @@ def reuse_v3(current, evidence, *, remote=False):
             reasons.append("REVIEW_NOT_PASSED")
     return {"allowed": not reasons, "reasons": sorted(set(reasons)), "equality_checks": dict(sorted(equal.items())),
             "remote_ci_skippable": False}
+
+
+# --- CI-OPT-001 revision 5: input-fingerprint offline_suite reuse ------------
+# Pure policy plus deterministic hashing. sdd_static is never reused; remote CI
+# is never reused; evidence lives in existing Task evidence JSON/MetricsStore.
+
+SUITE_FP_SCHEMA = "suite-fp/1"
+SUITE_EVIDENCE_SCHEMA = "suite-evidence/1"
+READSET_SCHEMA = "readset/1"
+SUITE_COMMAND = ["-X", "utf8", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
+# Tests that must run even when the suite is reused (R6). Entries:
+# {"test_id": str, "reason": str, "mode": "always"} or
+# {"test_id": str, "reason": str, "mode": "expires_after_seconds", "seconds": int > 0}.
+NON_REUSABLE_TESTS = []
+ALLOWED_NATIVE_DISTRIBUTIONS = ("cryptography",)
+FP_COMPONENTS = ("files", "sections", "ignored_reads", "listings", "outside_reads",
+                 "environment", "manifest", "git", "policy")
+_ALWAYS_INCLUDED_DOCS = ("docs/sdd/", "docs/templates/")
+
+
+def doc_candidate(name):
+    """R1: only docs/** (minus sdd/templates) may be omitted when unread."""
+    return name.startswith("docs/") and not name.startswith(_ALWAYS_INCLUDED_DOCS)
+
+
+def extract_section(text, heading):
+    """Same rule as the declared section helper: heading to next '## ' line."""
+    text = text.replace("\r\n", "\n")
+    start = text.index(heading)
+    rest = text[start:]
+    end = rest.find("\n## ", 1)
+    return (rest if end < 0 else rest[:end]).rstrip("\n")
+
+
+def _sha_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _content(path):
+    """Content digest; 'missing'/'dir'/'link:<target>' for non-files, None on error."""
+    try:
+        if path.is_symlink():
+            return "link:" + os.readlink(path)
+        if not path.exists():
+            return "missing"
+        if path.is_dir():
+            return "dir"
+        return _sha_file(path)
+    except OSError:
+        return None
+
+
+def _listing(path):
+    try:
+        with os.scandir(path) as entries:
+            rows = []
+            for entry in entries:
+                kind = ("link" if entry.is_symlink() else "dir" if entry.is_dir(follow_symlinks=False)
+                        else "file" if entry.is_file(follow_symlinks=False) else "other")
+                rows.append([entry.name, kind])
+        return {"ok": True, "entries": sorted(rows)}
+    except OSError:
+        return {"ok": False, "entries": []}
+
+
+def valid_readset(readset):
+    """Structural check of a readset/1 record; unknown shapes are untrusted."""
+    try:
+        return (isinstance(readset, dict) and readset.get("schema") == READSET_SCHEMA
+                and type(readset.get("complete")) is bool
+                and isinstance(readset.get("partial_reasons"), list)
+                and readset["complete"] == (not readset["partial_reasons"])
+                and all(isinstance(r, dict) and isinstance(r.get("path"), str) and r["path"]
+                        and not r["path"].startswith("/") and ".." not in r["path"].split("/")
+                        and ":" not in r["path"]
+                        and type(r.get("section_only", False)) is bool
+                        and isinstance(r.get("sections", []), list)
+                        and all(isinstance(h, str) and h for h in r.get("sections", []))
+                        for r in readset.get("repo_reads", []))
+                and all(isinstance(r, dict) and isinstance(r.get("path"), str) and Path(r["path"]).is_absolute()
+                        for r in readset.get("outside_reads", []))
+                and all(isinstance(r, dict) and isinstance(r.get("path"), str) and r.get("scope") in {"repo", "outside"}
+                        and (r["scope"] == "outside" or ".." not in r["path"].split("/"))
+                        for r in readset.get("listings", []))
+                and isinstance(readset.get("added_env", []), list)
+                and all(isinstance(n, str) for n in readset.get("added_env", [])))
+    except (TypeError, AttributeError):
+        return False
+
+
+def environment_digest(environ, added=()):
+    """R4: every variable name and value digest; raw values never leave."""
+    fold = (lambda s: s.upper()) if os.name == "nt" else (lambda s: s)
+    skip = {fold(name) for name in added}
+    rows = []
+    for name, value in environ.items():
+        if fold(name) in skip:
+            continue
+        rows.append([fold(name), hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()])
+    return fingerprint(sorted(rows))
+
+
+def runtime_manifest():
+    """R4: interpreter, stdlib and installed distribution file contents."""
+    rows, seen = [], set()
+    executable = Path(sys.executable).resolve()
+    base = Path(sys.base_prefix).resolve()
+    roots = [("exe", executable.parent, ("*.exe", "*.dll")),
+             ("base", base, ("*.exe", "*.dll")),
+             ("base:Lib", base / "Lib", ("**/*.py", "**/*.pyd", "**/*.dll", "**/*.so")),
+             ("base:DLLs", base / "DLLs", ("**/*.pyd", "**/*.dll"))]
+    for label, directory, patterns in roots:
+        if not directory.is_dir():
+            continue
+        for pattern in patterns:
+            for file in directory.glob(pattern):
+                if "__pycache__" in file.parts or "site-packages" in file.parts:
+                    continue
+                resolved = file.resolve()
+                if resolved in seen or not resolved.is_file():
+                    continue
+                seen.add(resolved)
+                rows.append([label, file.relative_to(directory).as_posix(), _sha_file(resolved)])
+    site = Path(sys.prefix).resolve() / "Lib" / "site-packages"
+    if not site.is_dir():
+        site = Path(sys.prefix).resolve() / "lib" / ("python%d.%d" % sys.version_info[:2]) / "site-packages"
+    if site.is_dir():
+        for file in site.rglob("*"):
+            if "__pycache__" in file.parts or not file.is_file():
+                continue
+            # Editable BATON points back into the repository (hashed by R1).
+            rows.append(["site", file.relative_to(site).as_posix(), _sha_file(file)])
+    rows.sort()
+    return {"digest": fingerprint(rows), "files": len(rows), "python": sys.version,
+            "implementation": sys.implementation.name, "platform": sys.platform, "os": os.name}
+
+
+def git_identity(root):
+    """R4: git executable, version and every effective config file content."""
+    exe = shutil.which("git")
+    need(exe, "GIT_UNAVAILABLE")
+    version = sdd.git(root, "--version").strip()
+    out = subprocess.run([exe, "-C", str(root), "config", "--list", "--show-origin", "--show-scope", "-z"],
+                         capture_output=True, timeout=60)
+    need(out.returncode == 0, "GIT_CONFIG_UNAVAILABLE")
+    files = {}
+    # -z records: "<scope>\0<origin>\0<key>\n<value>\0" with --show-scope/--show-origin.
+    fields = out.stdout.decode("utf-8", "replace").split("\0")
+    need(len(fields) % 3 == 1 and fields[-1] == "", "GIT_CONFIG_UNPARSEABLE")
+    for index in range(0, len(fields) - 1, 3):
+        origin = fields[index + 1]
+        if origin.startswith("file:"):
+            name = origin[5:]
+            path = Path(name) if Path(name).is_absolute() else root / name
+            content = _content(path)
+            need(content is not None, "GIT_CONFIG_UNREADABLE")
+            key = str(path.resolve())
+            files[key.lower() if os.name == "nt" else key] = content
+        elif origin in {"command line:", "standard input:"} or origin.startswith("blob:"):
+            files[origin] = "non-file-origin"
+        else:
+            raise PlanError("GIT_CONFIG_ORIGIN_UNKNOWN")
+    return {"exe_sha256": _sha_file(exe), "version": version, "config": fingerprint(sorted(files.items()))}
+
+
+def policy_identity(root):
+    """R4 policy version: entry scripts, schema, command and R6 list."""
+    scripts = {}
+    for name in ("scripts/verify_environment.py", "scripts/ci_plan.py", "scripts/check_sdd.py",
+                 "scripts/readset.py", "scripts/readset_site/sitecustomize.py"):
+        scripts[name] = _content(Path(root) / name)
+    return fingerprint({"schema": SUITE_FP_SCHEMA, "command": SUITE_COMMAND, "scripts": scripts,
+                        "non_reusable": NON_REUSABLE_TESTS, "native": list(ALLOWED_NATIVE_DISTRIBUTIONS)})
+
+
+def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
+    """fp(current state, source readset). Raises PlanError when not computable."""
+    root = Path(root).resolve()
+    need(valid_readset(readset), "READSET_INVALID")
+    before = freeze(root)
+    complete = readset["complete"]
+    reads = {r["path"]: r for r in readset.get("repo_reads", [])}
+    names = set(sdd.git(root, "ls-files", "-co", "--exclude-standard", "-z").split("\0")) - {""}
+    need(len(names) <= 20000, "MANIFEST_LIMIT")
+    files, sections = [], []
+    for name in sorted(names):
+        if complete and doc_candidate(name):
+            record = reads.get(name)
+            if record is None:
+                continue
+            if record.get("section_only") and record.get("sections"):
+                try:
+                    text = (root / name).read_text(encoding="utf-8")
+                    for heading in sorted(set(record["sections"])):
+                        sections.append([name, heading, fingerprint(extract_section(text, heading))])
+                except (OSError, ValueError, UnicodeDecodeError):
+                    sections.append([name, "*", "unreadable"])
+                continue
+        content = _content(root / name)
+        need(content is not None, "FILE_UNREADABLE")
+        files.append([name, content])
+    ignored = []
+    for name in sorted(set(reads) - names):
+        parts = name.split("/")
+        if parts[0] == ".venv" or "__pycache__" in parts:
+            continue
+        content = _content(root / name)
+        need(content is not None, "FILE_UNREADABLE")
+        ignored.append([name, content])
+    listings = []
+    for record in sorted(readset.get("listings", []), key=lambda r: (r["scope"], r["path"])):
+        path = root / record["path"] if record["scope"] == "repo" else Path(record["path"])
+        listings.append([record["scope"], record["path"], _listing(path)])
+    outside = []
+    for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):
+        content = _content(Path(record["path"]))
+        need(content is not None, "OUTSIDE_UNREADABLE")
+        outside.append([record["path"], content])
+    components = {
+        "files": fingerprint(files), "sections": fingerprint(sections), "ignored_reads": fingerprint(ignored),
+        "listings": fingerprint(listings), "outside_reads": fingerprint(outside),
+        "environment": environment_digest(os.environ if environ is None else environ, readset.get("added_env", [])),
+        "manifest": fingerprint(manifest if manifest is not None else runtime_manifest()),
+        "git": fingerprint(git if git is not None else git_identity(root)),
+        "policy": policy_identity(root),
+    }
+    need(freeze(root) == before, "STATE_CHANGED")
+    return {"schema": SUITE_FP_SCHEMA, "fingerprint": fingerprint(components), "components": components,
+            "readset_complete": complete, "head": before["head"]}
+
+
+def _parse_utc(value):
+    from datetime import datetime, timezone
+    need(isinstance(value, str), "EVIDENCE_TIME_INVALID")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise PlanError("EVIDENCE_TIME_INVALID") from None
+    need(parsed.tzinfo is not None, "EVIDENCE_TIME_INVALID")
+    return parsed.astimezone(timezone.utc)
+
+
+def valid_non_reusable(entries):
+    if not isinstance(entries, list):
+        return False
+    ids = set()
+    for entry in entries:
+        if (not isinstance(entry, dict) or not isinstance(entry.get("test_id"), str) or not entry["test_id"]
+                or not isinstance(entry.get("reason"), str) or not entry["reason"] or entry["test_id"] in ids):
+            return False
+        ids.add(entry["test_id"])
+        if entry.get("mode") == "always":
+            if set(entry) != {"test_id", "reason", "mode"}:
+                return False
+        elif entry.get("mode") == "expires_after_seconds":
+            if (set(entry) != {"test_id", "reason", "mode", "seconds"} or type(entry["seconds"]) is not int
+                    or entry["seconds"] <= 0):
+                return False
+        else:
+            return False
+    return True
+
+
+def decide_suite_reuse(current, evidence, evidence_sha256, raw_evidence, *, now_utc, non_reusable=None):
+    """Pure decision over caller-supplied evidence bytes; never writes."""
+    non_reusable = NON_REUSABLE_TESTS if non_reusable is None else non_reusable
+    reasons, equal = [], {}
+    if not valid_non_reusable(non_reusable):
+        reasons.append("POLICY_INVALID")
+    if (not isinstance(raw_evidence, (bytes, bytearray)) or not isinstance(evidence_sha256, str)
+            or hashlib.sha256(raw_evidence).hexdigest() != evidence_sha256):
+        reasons.append("EVIDENCE_HASH_MISMATCH")
+    else:
+        try:
+            if json.loads(bytes(raw_evidence).decode("utf-8")) != evidence:
+                reasons.append("EVIDENCE_HASH_MISMATCH")
+        except (ValueError, UnicodeDecodeError):
+            reasons.append("EVIDENCE_SCHEMA_INVALID")
+    if not isinstance(current, dict) or current.get("schema") != SUITE_FP_SCHEMA:
+        reasons.append("CURRENT_FINGERPRINT_INVALID")
+    if not isinstance(evidence, dict) or evidence.get("schema") != SUITE_EVIDENCE_SCHEMA:
+        reasons.append("EVIDENCE_SCHEMA_INVALID")
+        evidence = {}
+    if evidence.get("execution") != "executed":
+        reasons.append("SOURCE_NOT_EXECUTED")
+    if (evidence.get("status") != "passed" or evidence.get("returncode") != 0
+            or type(evidence.get("tests_run")) is not int or evidence["tests_run"] <= 0
+            or any(type(evidence.get(k)) is not int or evidence[k] != 0 for k in (
+                "failures", "errors", "skipped", "expected_failures", "unexpected_successes"))):
+        reasons.append("SOURCE_NOT_SUCCESSFUL")
+    if evidence.get("state_stable") is not True:
+        reasons.append("SOURCE_STATE_UNSTABLE")
+    if not isinstance(evidence.get("run_id"), str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", evidence["run_id"]):
+        reasons.append("SOURCE_RUN_ID_INVALID")
+    if not isinstance(evidence.get("commit"), str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
+        reasons.append("SOURCE_COMMIT_INVALID")
+    source_fp = evidence.get("fingerprint")
+    if not isinstance(source_fp, dict) or source_fp.get("schema") != SUITE_FP_SCHEMA:
+        reasons.append("SOURCE_FINGERPRINT_INVALID")
+    elif source_fp.get("readset_complete") is not evidence.get("readset_complete"):
+        reasons.append("SOURCE_FINGERPRINT_INVALID")
+    if isinstance(current, dict) and isinstance(source_fp, dict):
+        cur, src = current.get("components") or {}, source_fp.get("components") or {}
+        for name in FP_COMPONENTS:
+            equal[name] = ("missing" if not isinstance(cur.get(name), str) or not isinstance(src.get(name), str)
+                           else "equal" if cur[name] == src[name] else "different")
+        if (current.get("fingerprint") != source_fp.get("fingerprint")
+                or current.get("readset_complete") is not source_fp.get("readset_complete")
+                or any(v != "equal" for v in equal.values())):
+            reasons.append("FINGERPRINT_CHANGED")
+    run_tests = []
+    if not reasons:
+        try:
+            age = (_parse_utc(now_utc) - _parse_utc(evidence.get("finished_utc"))).total_seconds()
+            need(age >= 0, "EVIDENCE_TIME_INVALID")
+        except PlanError as exc:
+            reasons.append(str(exc))
+        else:
+            for entry in non_reusable:
+                if entry["mode"] == "always" or age > entry["seconds"]:
+                    run_tests.append(entry["test_id"])
+            if len(run_tests) >= evidence["tests_run"]:
+                reasons.append("NOTHING_TO_REUSE")
+    allowed = not reasons
+    return {"allowed": allowed, "decision": "accepted" if allowed else "rejected",
+            "reasons": sorted(set(reasons)), "equality_checks": dict(sorted(equal.items())),
+            "run_tests": sorted(run_tests) if allowed else [],
+            "reused_test_count": evidence["tests_run"] - len(run_tests) if allowed else None,
+            "source_evidence": ["run:" + evidence["run_id"], "commit:" + evidence["commit"],
+                                "evidence:" + evidence_sha256] if allowed else [],
+            "remote_ci_skippable": False}
+
+
+def suite_evidence(*, run_id, commit, fingerprint_record, readset, result, returncode, state_stable,
+                   started_utc, finished_utc):
+    """Task-evidence JSON for an executed offline_suite (never for a reuse)."""
+    counts = {k: result.get(k) for k in ("tests_run", "failures", "errors", "skipped",
+                                          "expected_failures", "unexpected_successes")}
+    passed = (returncode == 0 and all(type(v) is int for v in counts.values()) and counts["tests_run"] > 0
+              and all(counts[k] == 0 for k in counts if k != "tests_run"))
+    return {"schema": SUITE_EVIDENCE_SCHEMA, "execution": "executed", "run_id": run_id, "commit": commit,
+            "status": "passed" if passed else "failed", "returncode": returncode, **counts,
+            "state_stable": state_stable is True, "fingerprint": fingerprint_record,
+            "readset_sha256": fingerprint(readset), "readset_complete": readset.get("complete") is True,
+            "started_utc": started_utc, "finished_utc": finished_utc}
+
+
+@contextmanager
+def fingerprint_lock(home, digest, *, wait_seconds=3600, clock=time.monotonic, sleep=time.sleep):
+    """One concurrent executor per fingerprint (OS file lock under BATON home)."""
+    need(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest), "FINGERPRINT_INVALID")
+    path = Path(home) / "locks" / ("suite-" + digest + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = path.open("a+b")
+    acquired = False
+    try:
+        if path.stat().st_size == 0:
+            stream.write(b"0"); stream.flush()
+        deadline = clock() + wait_seconds
+        while not acquired:
+            stream.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError:
+                need(clock() < deadline, "FINGERPRINT_LOCK_TIMEOUT")
+                sleep(0.05)
+        yield
+    finally:
+        if acquired:
+            stream.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream, fcntl.LOCK_UN)
+        stream.close()
 
 
 def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures=False,
