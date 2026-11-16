@@ -1032,6 +1032,26 @@ class SuiteReuseTests(unittest.TestCase):
                                         resolver="r" * 64)
         self.assertEqual(snapshot["components"]["resolver"], "r" * 64)
 
+    def test_absent_inputs_appearing_change_the_fingerprint(self):
+        """Review P1 (3a7d63b): a probed absent file that later appears is a change."""
+        probe = Path(self.temp.name) / "maybe.cfg"
+        rs = readset(outside_reads=[{"path": str(probe), "via": "open", "sha256": None, "absent": True}],
+                     repo_reads=readset()["repo_reads"] + [{"path": "local-missing.cfg", "via": "open", "sha256": None,
+                                                           "absent": True}])
+        source = self.evidence(self.fp(rs))
+        self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
+        probe.write_text("now present", encoding="utf-8")
+        self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["outside_reads"], "different")
+        with self.assertRaises(cp.PlanError) as caught:
+            cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                 verify_observed=True)
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        probe.unlink()
+        self.write("local-missing.cfg", "appeared\n")
+        self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["ignored_reads"], "different")
+        with self.assertRaises(cp.PlanError):
+            self.fp(readset(outside_reads=[{"path": str(probe), "via": "open", "sha256": "a" * 64, "absent": True}]))
+
     def test_trust_store_component_only_when_used(self):
         unused = self.fp()
         self.assertEqual(unused["components"]["trust_store"], "unused")

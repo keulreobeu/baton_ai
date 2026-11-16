@@ -56,10 +56,22 @@ class ReadsetTests(unittest.TestCase):
         rec._record_read(created)
         rec.stop()
         data = rec.as_dict()
-        self.assertEqual([x["path"] for x in data["repo_reads"]], ["in.txt"])
+        # Review P1 (3a7d63b): a probed but absent path is an input too.
+        self.assertEqual([(x["path"], x.get("absent", False)) for x in data["repo_reads"]],
+                         [("in.txt", False), ("never-existed.txt", True)])
         self.assertEqual(data["outside_reads"][0]["path"], readset._real(outside))
         self.assertRegex(data["outside_reads"][0]["sha256"], r"^[0-9a-f]{64}$")
         self.assertTrue(data["complete"])
+
+    def test_absent_path_inside_an_area_created_by_the_run_is_not_an_input(self):
+        rec = self.recorder()
+        time.sleep(0.1)
+        made = self.root / "made-by-run"
+        made.mkdir()
+        rec._record_read(made / "later.txt")          # inside a folder the run created
+        rec._record_read(self.root / "probe.cfg")      # in a folder that existed before
+        rec.stop()
+        self.assertEqual([x["path"] for x in rec.as_dict()["repo_reads"]], ["probe.cfg"])
 
     def test_listing_of_directory_created_during_run_is_not_an_input(self):
         rec = self.recorder()

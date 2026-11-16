@@ -1068,3 +1068,6 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-16 Codex 7차 재검토(`a11bb1f`, `ctx_fa6c91494118`): FAIL(P1 1: 실제 open 경로가 realpath를 넘겨 별칭 누락). 반영: 원래 경로 전달, 별칭은 입력인 읽기·목록에만,
   실제 directory junction으로 open하는 회귀 테스트(심볼릭 링크 권한 불필요·skip 없음). E2E(`a11bb1f`) 743 tests OK·stable이나 SSL partial: Python 3.12
   `urllib.request`가 http에서도 기본 SSL context(신뢰 저장소)를 만듦 → SSL 파일은 읽기, 기본 저장소는 `trust_store` 지문(전후 비교) 입력으로 재설계.
+- **2026-11-16 재사용 E2E 재확인(`3a7d63b`)**: 1회차 745 tests OK(1148.7 s), read set complete(`trust_store` 사용), 2회차 `current.md`만 변경 → reused 745,
+  executed 0, 13개 구성요소 equal, 8 s. 증거 사본 외부 handoff `CI-OPT-001-e2e-reuse-3a7d63b/`.
+- 2026-11-16 Codex 8차 재검토(`3a7d63b`, `ctx_40cac46d0be8`): FAIL(P1 1: 없던 파일 열기 시도 미기록). 반영: `absent` 입력(실행 이전 상위 디렉터리만), 끝에 생기면 무효.

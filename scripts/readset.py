@@ -156,6 +156,17 @@ def _born(path):
     return stamp
 
 
+def _ancestor_born(path):
+    """Birth time of the nearest existing ancestor directory (None if unknown)."""
+    current = os.path.dirname(path)
+    while current and not os.path.exists(current):
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
+    return _born(current) if current else None
+
+
 def _entry_kind(entry):
     try:
         if entry.is_symlink():
@@ -434,7 +445,8 @@ class Recorder:
             self._partial("INPUT_CHANGED_DURING_RUN", observed)
         self._aliases[key] = {"path": observed, "target": target}
 
-    def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None):
+    def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None,
+                     absent=False):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
@@ -447,7 +459,12 @@ class Recorder:
         if self._is_child:
             # A child judges nothing: it reports content and birth time, and
             # every recorder applies its own start time (nested recorders).
-            if not os.path.exists(canonical) or os.path.isdir(canonical):
+            if not os.path.exists(canonical):
+                with self._quiet():
+                    parent_born = _ancestor_born(canonical)
+                self._emit({"type": "read", "path": canonical, "via": via, "absent": True, "born": parent_born})
+                return
+            if os.path.isdir(canonical):
                 return
             with self._quiet():
                 digest, born = _sha(canonical), _born(canonical)
@@ -457,11 +474,21 @@ class Recorder:
             return
         if relayed:
             if canonical in self._created or (born is not None and born >= self._started_epoch):
+                return  # an output of this run (for an absent path: inside an area created by the run)
+            if absent:
+                self._record_absent(path, canonical, scope)
                 return
             self._note_alias(tuple(alias) if alias else alias, path)
         else:
-            if not os.path.exists(canonical) or self._is_created(canonical) or os.path.isdir(canonical):
-                return  # nothing to read, an output of this run, or a directory handle
+            if not os.path.exists(canonical):
+                # A path probed but absent is an input too (it may appear later),
+                # unless its nearest existing ancestor was created by this run.
+                parent_born = _ancestor_born(canonical)
+                if canonical not in self._created and not (parent_born is not None and parent_born >= self._started_epoch):
+                    self._record_absent(path, canonical, scope)
+                return
+            if self._is_created(canonical) or os.path.isdir(canonical):
+                return  # an output of this run, or a directory handle
             self._note_alias(self._alias_of(path, canonical), path)  # only inputs carry aliases
             if digest is None:
                 with self._quiet():
@@ -483,6 +510,16 @@ class Recorder:
             entry["via"] = "sqlite"
         if not section_only:
             entry["section_only"] = False
+
+    def _record_absent(self, path, canonical, scope):
+        record = {"path": _real(path) or canonical, "sha256": None, "absent": True}
+        if scope == "env_manifest":
+            self._env_reads.setdefault(canonical, record)
+        elif scope == "repo":
+            self._repo.setdefault(canonical, {"path": self._display(_real(path) or canonical), "via": "open",
+                                              "section_only": False, "sections": set(), "sha256": None, "absent": True})
+        else:
+            self._outside.setdefault(canonical, {"path": record["path"], "via": "open", "sha256": None, "absent": True})
 
     def _open_event(self, path, mode=None, flags=None):
         if isinstance(path, int):
@@ -957,7 +994,8 @@ class Recorder:
             self._partial(str(event["reason"]), event.get("sample"))
         elif kind == "read":
             self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
-                              event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"))
+                              event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"),
+                              absent=event.get("absent") is True)
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
                           born=event.get("born"), relayed=True, alias=event.get("alias"))
@@ -984,9 +1022,17 @@ class Recorder:
         repo = []
         for key, item in sorted(self._repo.items()):
             sections = sorted(self._sections.get(key, item["sections"]))
-            repo.append({"path": item["path"], "via": item["via"], "section_only": item["section_only"],
-                         "sections": sections, "sha256": item.get("sha256")})
-        outside = [{"path": v["path"], "via": v["via"], "sha256": v.get("sha256")} for _, v in sorted(self._outside.items())]
+            row = {"path": item["path"], "via": item["via"], "section_only": item["section_only"],
+                   "sections": sections, "sha256": item.get("sha256")}
+            if item.get("absent"):
+                row["absent"] = True
+            repo.append(row)
+        outside = []
+        for _, v in sorted(self._outside.items()):
+            row = {"path": v["path"], "via": v["via"], "sha256": v.get("sha256")}
+            if v.get("absent"):
+                row["absent"] = True
+            outside.append(row)
         env_reads = [dict(v) for _, v in sorted(self._env_reads.items())]
         return {"schema": "readset/1", "root": self.root, "started_utc": self.started_utc,
                 "finished_utc": self.finished_utc or _utc_now(), "complete": not self.partial_reasons,

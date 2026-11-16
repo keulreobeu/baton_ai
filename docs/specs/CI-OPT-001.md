@@ -343,6 +343,9 @@ bind한 loopback endpoint로의 연결은 모든 프로세스의 bind·close 시
 context를 만들어 신뢰 저장소를 읽는 것을 확인해, SSL을 partial 대신 입력으로 바꿨다: `cafile`·`certfile`·`keyfile`·DH 파일은 일반 읽기,
 `capath`는 목록과 그 안의 모든 파일 읽기, 기본 신뢰 저장소(`load_default_certs`, `set_default_verify_paths`)는 지문 `trust_store`
 구성요소(Windows `CA`/`ROOT` 인증서 저장소와 OpenSSL 기본 검증 경로 내용)이며 suite 전후로 같아야 한다.
+8차 검토 반영(2026-11-16, Codex `3a7d63b` FAIL: P1 1): 열려고 했지만 없던 경로도 입력이다(`absent`). 가장 가까운 기존 상위 디렉터리가
+이 실행보다 먼저 있었을 때만 기록하며(실행이 만든 영역 안의 부재 경로는 출력), 지문은 그 경로의 현재 상태(`missing` 또는 내용)를 넣고
+source 실행 끝에 생겼으면 증거를 무효화한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

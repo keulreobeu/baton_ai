@@ -759,8 +759,10 @@ def valid_readset(readset):
                         for r in readset.get("listings", []))
                 and isinstance(readset.get("added_env", []), list)
                 and set(readset.get("added_env", [])) <= ADDED_ENV_ALLOWED
+                and all(r.get("absent", False) in {False, True} and not (r.get("absent") and r.get("sha256") is not None)
+                        for key in ("repo_reads", "outside_reads", "env_reads") for r in readset.get(key, []))
                 and (not readset["complete"] or all(
-                    isinstance(r.get("sha256"), str)
+                    isinstance(r.get("sha256"), str) or r.get("absent") is True
                     for key in ("repo_reads", "outside_reads", "env_reads") for r in readset.get(key, []))))
     except (TypeError, AttributeError):
         return False
@@ -945,7 +947,8 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         content = _content(root / name)
         need(content is not None, "FILE_UNREADABLE")
         files.append([name, content])
-    observed = {fold(r["path"]): r.get("sha256") for r in readset.get("repo_reads", [])}
+    observed = {fold(r["path"]): ("missing" if r.get("absent") else r.get("sha256"))
+                for r in readset.get("repo_reads", [])}
 
     def check(key, content):
         recorded = observed.get(key)
@@ -972,14 +975,16 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
     for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):
         content = _content(Path(record["path"]))
         need(content is not None, "OUTSIDE_UNREADABLE")
-        if verify_observed and record.get("sha256") is not None and record["sha256"] != content:
+        expected = "missing" if record.get("absent") else record.get("sha256")
+        if verify_observed and expected is not None and expected != content:
             raise PlanError("INPUT_CHANGED_DURING_RUN")
         outside.append([record["path"], content])
     env_reads = []
     for record in sorted(readset.get("env_reads", []), key=lambda r: r["path"]):
         content = _content(Path(record["path"]))
         need(content is not None, "ENV_INPUT_UNREADABLE")
-        if verify_observed and record.get("sha256") is not None and record["sha256"] != content:
+        expected = "missing" if record.get("absent") else record.get("sha256")
+        if verify_observed and expected is not None and expected != content:
             raise PlanError("INPUT_CHANGED_DURING_RUN")
         env_reads.append([record["path"], content])
     aliases = []
