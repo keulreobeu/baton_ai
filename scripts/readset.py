@@ -156,6 +156,14 @@ def _born(path):
     return stamp
 
 
+def _impossible_name(path):
+    """A name that cannot exist on this platform (e.g. '<unknown>' on Windows,
+    tried by traceback/linecache) is never an input."""
+    if os.name != "nt":
+        return False
+    return any(ch in part for part in Path(str(path)).parts[1:] for ch in '<>"|?*')
+
+
 def _ancestor_born(path):
     """Birth time of the nearest existing ancestor directory (None if unknown)."""
     current = os.path.dirname(path)
@@ -451,7 +459,7 @@ class Recorder:
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        if _is_device(canonical):
+        if _is_device(canonical) or _impossible_name(canonical):
             return
         scope = self._scope(canonical)
         if scope == "derived":
@@ -462,7 +470,9 @@ class Recorder:
             if not os.path.exists(canonical):
                 with self._quiet():
                     parent_born = _ancestor_born(canonical)
-                self._emit({"type": "read", "path": canonical, "via": via, "absent": True, "born": parent_born})
+                found = self._alias_of(path, canonical)
+                self._emit({"type": "read", "path": canonical, "via": via, "absent": True, "born": parent_born,
+                            "alias": list(found) if found else found})
                 return
             if os.path.isdir(canonical):
                 return
@@ -475,16 +485,19 @@ class Recorder:
         if relayed:
             if canonical in self._created or (born is not None and born >= self._started_epoch):
                 return  # an output of this run (for an absent path: inside an area created by the run)
+            self._note_alias(tuple(alias) if alias else alias, path)
             if absent:
                 self._record_absent(path, canonical, scope)
                 return
-            self._note_alias(tuple(alias) if alias else alias, path)
         else:
             if not os.path.exists(canonical):
                 # A path probed but absent is an input too (it may appear later),
                 # unless its nearest existing ancestor was created by this run.
                 parent_born = _ancestor_born(canonical)
                 if canonical not in self._created and not (parent_born is not None and parent_born >= self._started_epoch):
+                    # The observed path may reach the absent target through a
+                    # symlink/junction: its retarget is a change too.
+                    self._note_alias(self._alias_of(path, canonical), path)
                     self._record_absent(path, canonical, scope)
                 return
             if self._is_created(canonical) or os.path.isdir(canonical):

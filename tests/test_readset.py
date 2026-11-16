@@ -51,6 +51,7 @@ class ReadsetTests(unittest.TestCase):
         rec._record_read(repo_file)
         rec._record_read(outside)
         rec._record_read(self.root / "never-existed.txt")
+        rec._record_read(self.root / "<unknown>")  # cannot exist on Windows: not an input
         created = self.root / "new.txt"
         rec._open_event(created, "w")
         rec._record_read(created)
@@ -491,6 +492,36 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual((link / "config.txt").read_text(encoding="utf-8"), "B")
         rec.stop()
         unpoint()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
+
+    def test_absent_path_through_a_junction_records_the_alias(self):
+        """Review P1 (8118419): an absent read through a junction keeps its alias and retarget."""
+        first, second = Path(self.temp.name) / "first-absent", Path(self.temp.name) / "second-present"
+        first.mkdir()
+        second.mkdir()
+        (second / "config.txt").write_text("B", encoding="utf-8")
+        link = self.root / "linked-absent"
+
+        def point(target):
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(target), str(link))
+            else:
+                os.symlink(target, link, target_is_directory=True)
+
+        point(first)
+        time.sleep(0.06)
+        rec = self.recorder()
+        with self.assertRaises(FileNotFoundError):
+            (link / "config.txt").read_text(encoding="utf-8")
+        data = rec.as_dict()
+        self.assertEqual([a["path"] for a in data["aliases"]], [os.path.abspath(str(link / "config.txt"))])
+        self.assertTrue(any(r.get("absent") for r in data["outside_reads"]))
+        os.rmdir(link) if os.name == "nt" else os.unlink(link)
+        point(second)
+        self.assertEqual((link / "config.txt").read_text(encoding="utf-8"), "B")  # retargeted within the run
+        rec.stop()
+        os.rmdir(link) if os.name == "nt" else os.unlink(link)
         self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
 
     def test_aliases_are_recorded(self):

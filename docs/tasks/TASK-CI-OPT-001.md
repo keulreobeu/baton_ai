@@ -1071,3 +1071,5 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - **2026-11-16 재사용 E2E 재확인(`3a7d63b`)**: 1회차 745 tests OK(1148.7 s), read set complete(`trust_store` 사용), 2회차 `current.md`만 변경 → reused 745,
   executed 0, 13개 구성요소 equal, 8 s. 증거 사본 외부 handoff `CI-OPT-001-e2e-reuse-3a7d63b/`.
 - 2026-11-16 Codex 8차 재검토(`3a7d63b`, `ctx_40cac46d0be8`): FAIL(P1 1: 없던 파일 열기 시도 미기록). 반영: `absent` 입력(실행 이전 상위 디렉터리만), 끝에 생기면 무효.
+- 2026-11-16 Codex 9차 재검토(`8118419`, `ctx_ade7e0b475b4`): FAIL(P1 1: 부재 경로의 junction 별칭 누락). 반영: 부재 읽기도 별칭 기록(자식 포함), 실제 junction 회귀 테스트.
+  E2E(`8118419`) 747 tests OK·stable이나 증거 read set 형식 오류: traceback 계열이 연 `<unknown>`이 부재 입력으로 기록됨 → 플랫폼에서 존재 불가능한 이름은 입력 아님.
