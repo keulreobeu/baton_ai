@@ -3,6 +3,11 @@
 CI-OPT-001 AC-12 revision 5 (R1-R5): records what the suite actually reads so
 that ``scripts/ci_plan.py`` can fingerprint it. Anything the recorder cannot
 observe completely makes the read set ``partial`` (fail-closed).
+
+Real events (file opens, listings, Python child launches, sockets, ...) are
+delivered to every active recorder, so a recorder created inside the suite
+(recorder self-tests) never hides them from the official one. Child processes
+write one log file per process into every active recorder's log directory.
 """
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -26,20 +32,37 @@ STDLIB_NATIVE_ALLOWED = ("_asyncio", "_ctypes", "_decimal", "_overlapped", "_que
 # Variables the recorder itself puts into child environments; nothing else may
 # be declared in ``added_env``.
 ADDED_ENV_ALLOWED = ("BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH")
-HASH_LIMIT = 64 * 1024 * 1024
+# .pth files whose import lines run before sitecustomize. Only these known
+# installer files (their code is in the hashed runtime manifest) keep the
+# "ended before startup" exception available.
+PTH_IMPORT_ALLOWED = re.compile(r"(distutils-precedence|__editable__\..+)\.pth", re.IGNORECASE)
+# A failed listing with these errors is itself a recorded input (the directory
+# is absent); other failures make the read set partial.
+LISTING_ERRORS_AS_INPUT = {"FileNotFoundError", "NotADirectoryError"}
+HASH_LIMIT = 1024 * 1024 * 1024
+CREATED_MARGIN_SECONDS = 0.05
 _ACTIVE = []
 _HOOK_INSTALLED = False
 _HOOK_LOCK = threading.RLock()
+_WRITE_LOCK = threading.Lock()
 _ORIGINAL_POPEN = subprocess.Popen
 _ORIGINAL_LISTDIR = os.listdir
 _ORIGINAL_SCANDIR = os.scandir
 _ORIGINAL_SOCKET_BIND = socket.socket.bind
 _ORIGINAL_SQLITE_CONNECT = None
 _ORIGINAL_CFFI_DLOPEN = None
+_PROCESS_EVENTS = {"os.system", "os.spawn", "os.startfile", "os.exec", "os.posix_spawn", "os.fork", "os.forkpty"}
 
 
 def _utc_now():
     return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _epoch(text):
+    try:
+        return _dt.datetime.fromisoformat(str(text).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def _path_text(value):
@@ -83,7 +106,7 @@ def _sha(path):
         if os.path.getsize(path) > HASH_LIMIT:
             return None
         digest = hashlib.sha256()
-        with open(path, "rb") as stream:  # audited while the recorder is inert for its own reads
+        with open(path, "rb") as stream:
             for chunk in iter(lambda: stream.read(1 << 20), b""):
                 digest.update(chunk)
         return digest.hexdigest()
@@ -132,6 +155,52 @@ def _pid_alive(pid):
         return True
 
 
+def _is_loopback(host):
+    import ipaddress
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _local_name(host):
+    """Loopback literal, 'localhost' or no host: answered from the hosts file
+    (fingerprinted by ci_plan) without a network service."""
+    if host is None:
+        return True
+    if isinstance(host, bytes):
+        host = host.decode("ascii", "replace")
+    return isinstance(host, str) and (_is_loopback(host) or host.lower() == "localhost")
+
+
+def pth_safe():
+    """True when every .pth import line that runs before sitecustomize belongs
+    to an allowlisted installer file."""
+    import site
+    directories = []
+    try:
+        directories.extend(site.getsitepackages())
+    except AttributeError:
+        pass
+    if site.ENABLE_USER_SITE:
+        directories.append(site.getusersitepackages())
+    for directory in directories:
+        try:
+            names = sorted(_ORIGINAL_LISTDIR(directory))
+        except OSError:
+            continue
+        for name in names:
+            if not name.lower().endswith(".pth"):
+                continue
+            try:
+                lines = Path(directory, name).read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                return False
+            if any(line.startswith(("import ", "import\t")) for line in lines) and not PTH_IMPORT_ALLOWED.fullmatch(name):
+                return False
+    return True
+
+
 class Recorder:
     """Install a process audit hook and collect conservative input observations."""
 
@@ -142,13 +211,14 @@ class Recorder:
             raise ValueError("root cannot be normalized")
         self.partial_samples = {}
         self.started_utc = started_utc or _utc_now()
-        try:
-            self._started_epoch = _dt.datetime.fromisoformat(self.started_utc.replace("Z", "+00:00")).timestamp()
-        except ValueError:
-            self._started_epoch = time.time()
+        # Clock reads can be ~16 ms coarse on Windows: a file must be born
+        # clearly after the recorded start to count as an output of this run
+        # (a file born just before the start must stay an input).
+        self._started_epoch = (_epoch(self.started_utc) or time.time()) + CREATED_MARGIN_SECONDS
         self.finished_utc = None
         self._is_child = _child
-        self._log_path = _log_path
+        self._log_dirs = [d for d in (_log_path or "").split(os.pathsep) if d] if _child else []
+        self._own_log_dir = None
         self._stopped = False
         self._busy = threading.local()
         self._repo = {}
@@ -168,13 +238,16 @@ class Recorder:
                           "tools": [], "disallowed": [], "disallowed_count": 0}
         self._python_launches = 0
         self._python_hooks = 0
+        self._tracked_launches = 0
+        self._audited_launches = 0
         self._added_env = set()
         self._launch_tokens = {}
         self._unstarted = []
         self._hooked = {}
         self._spawned = {}
-        self._log_offset = 0
+        self._offsets = {}
         self._created = set()
+        self._pth_safe = True if _child else pth_safe()
         self._install()
         if _child:
             self._emit({"type": "hook_loaded", "pid": os.getpid(), "token": os.environ.get("BATON_READSET_TOKEN")})
@@ -206,15 +279,17 @@ class Recorder:
             _ACTIVE.append(self)
 
     def _emit(self, event):
-        # Only child processes write the shared log; the parent reads it once
-        # at stop(). A parent writing while merging would never finish.
-        if self._is_child and self._log_path:
-            with self._quiet():
+        """Children append to their own per-process file in every log directory."""
+        if not (self._is_child and self._log_dirs):
+            return
+        line = json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+        with self._quiet(), _WRITE_LOCK:
+            for directory in self._log_dirs:
                 try:
-                    with open(self._log_path, "a", encoding="utf-8") as stream:
-                        stream.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n")
+                    with open(os.path.join(directory, "%d.jsonl" % os.getpid()), "a", encoding="utf-8") as stream:
+                        stream.write(line)
                 except OSError:
-                    self._partial("READSET_LOG_CORRUPT", "emit")
+                    self.partial_reasons.add("READSET_LOG_CORRUPT")
 
     def _quiet(self):
         """The recorder's own file access is not a suite input."""
@@ -233,11 +308,13 @@ class Recorder:
                 if home and home != "~":
                     text = text.replace(home, "<HOME>")
                 rows.append(text[:160])
+        if self._is_child:
+            self._emit({"type": "partial", "reason": reason, "sample": None if sample is None else str(sample)[:160]})
 
     # -- classification ------------------------------------------------------
     def _scope(self, canonical):
-        if _under(canonical, self.root) and "__pycache__" in Path(canonical).parts:
-            return "derived"
+        if "__pycache__" in Path(canonical).parts:
+            return "derived"  # bytecode is derived from hashed sources
         if _under(canonical, self.root) and not _under(canonical, os.path.join(self.root, ".venv")):
             return "repo"
         if any(_under(canonical, _canonical(p)) for p in (sys.prefix, sys.base_prefix) if _canonical(p)):
@@ -274,15 +351,16 @@ class Recorder:
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        if self._is_created(canonical) or _is_device(canonical):
-            return
+        if _is_device(canonical) or not os.path.exists(canonical) or self._is_created(canonical):
+            return  # nothing to read, or an output of this run
         scope = self._scope(canonical)
-        if scope == "derived":
-            return
+        if scope == "derived" or os.path.isdir(canonical):
+            return  # bytecode, or a directory handle (listings are recorded separately)
+        if digest is None:
+            with self._quiet():
+                digest = _sha(canonical)
         if scope == "env_manifest":
             if canonical not in self._env_reads:
-                with self._quiet():
-                    digest = digest or _sha(canonical)
                 self._env_reads[canonical] = {"path": _real(path) or canonical, "sha256": digest}
                 if digest is None:
                     self._partial("INPUT_UNHASHABLE", path)
@@ -291,9 +369,6 @@ class Recorder:
         item = self._repo if scope == "repo" else self._outside
         entry = item.get(canonical)
         if entry is None:
-            if digest is None and os.path.isfile(canonical):
-                with self._quiet():
-                    digest = _sha(canonical)
             entry = item[canonical] = {"path": self._display(_real(path) or canonical), "via": via,
                                        "section_only": bool(section_only), "sections": set(), "sha256": digest}
             if digest is None:
@@ -321,7 +396,7 @@ class Recorder:
         if not self._is_created(canonical):
             self._record_read(canonical, section_only=self._section_depth.get(canonical, 0) > 0)
 
-    def _listing(self, path, ok, entries):
+    def _listing(self, path, ok, entries, error=None):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
@@ -329,13 +404,61 @@ class Recorder:
         scope = self._scope(canonical)
         if scope in {"env_manifest", "derived"} or self._is_created(canonical):
             return
-        if not ok:
-            self._partial("LISTING_FAILED", path)
+        if not ok and error not in LISTING_ERRORS_AS_INPUT:
+            self._partial("LISTING_FAILED", "%s %s" % (error, path))
         normalized = sorted([[str(n), str(k)] for n, k in entries]) if ok else []
         item = {"path": self._display(_real(path) or canonical), "scope": "repo" if scope == "repo" else "outside",
                 "ok": bool(ok), "entries": normalized}
+        if not ok:
+            item["error"] = error
         self._listings[(canonical, len(self._listings))] = item
         self._emit({"type": "listing", **item})
+
+    def _audit_event(self, event, args):
+        """One recorder's handling of a CPython audit event."""
+        if event == "open":
+            self._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
+                             args[2] if len(args) > 2 else None)
+        elif event == "sqlite3.connect":
+            path = args[0] if args else None
+            if path != ":memory:":
+                canonical = _canonical(path)
+                if canonical is None:
+                    self._partial("PATH_UNNORMALIZABLE", path)
+                elif not os.path.exists(canonical):
+                    self._created.add(canonical)
+                else:
+                    self._open_event(path)
+        elif event.startswith("socket."):
+            self._socket_event(event, args)
+        elif event == "subprocess.Popen":
+            self._audited_launches += 1
+        elif event in _PROCESS_EVENTS:
+            self._partial("UNTRACKED_PROCESS", event)
+        elif event == "mmap.__new__":
+            fileno = args[0] if args else -1
+            if isinstance(fileno, int) and fileno != -1:
+                self._partial("MMAP_UNATTRIBUTED", fileno)
+        elif event == "ctypes.dlopen":
+            name = _path_text(args[0]) if args and args[0] else None
+            if name and (os.path.isabs(name) or "/" in name or "\\" in name):
+                path = _canonical(name)
+                if path is None or self._scope(path) == "repo":
+                    self._partial("CTYPES_REPO_DLOPEN", name)
+            elif name:
+                # A bare name is resolved by the OS search order, which can
+                # include the working directory: refuse if the repo holds it.
+                stems = {name, name + ".dll", name + ".so"}
+                for base in {self.root, _canonical(os.getcwd())}:
+                    if base and any(os.path.exists(os.path.join(base, stem)) for stem in stems):
+                        self._partial("CTYPES_REPO_DLOPEN", name)
+        elif event == "import":
+            name = args[0] if args else ""
+            filename = args[1] if len(args) > 1 else None
+            if filename and str(filename).lower().endswith((".pyd", ".so", ".dll")):
+                self.native_modules.add(str(name))
+                if name.split(".")[0] not in self._native_allowed and not name.startswith("cryptography"):
+                    self._partial("NATIVE_MODULE_NOT_ALLOWED", name)
 
     def _socket_event(self, event, args):
         if event == "socket.bind":
@@ -354,15 +477,17 @@ class Recorder:
             else:
                 self._partial("NETWORK", event); self._network_violations += 1
             return
-        if event == "socket.getaddrinfo":
-            host = args[0] if args else None
-            if isinstance(host, bytes):
-                host = host.decode("ascii", "replace")
-            if not (isinstance(host, str) and _is_loopback(host)):
-                self._partial("NETWORK", "getaddrinfo"); self._network_violations += 1
+        if event in {"socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyname_ex"}:
+            if not _local_name(args[0] if args else None):
+                self._partial("NETWORK", event); self._network_violations += 1
             return
-        if event in {"socket.gethostbyname", "socket.gethostbyaddr", "socket.getnameinfo", "socket.gethostname"}:
-            self._partial("NETWORK", event); self._network_violations += 1
+        if event in {"socket.gethostbyaddr", "socket.getnameinfo"}:
+            target = args[0] if args else None
+            host = target[0] if isinstance(target, tuple) and target else target
+            if not _local_name(host):
+                self._partial("NETWORK", event); self._network_violations += 1
+            return
+        # socket.gethostname: the host name is fingerprinted (ci_plan resolver component)
 
     def _owned(self, sock, address):
         """Only a loopback endpoint bound successfully by this run and still open."""
@@ -382,14 +507,14 @@ class Recorder:
                 return True
         return False
 
-    def _child(self, args, cwd, env):
+    def _child(self, args, cwd, env, token=None):
+        """Judge one launch; returns the environment the child must get."""
         command = args if isinstance(args, (list, tuple)) else [args]
         if not command:
             return env
         parts = [str(x) for x in command]
         exe = _canonical(parts[0]) if os.path.isabs(parts[0]) or os.path.sep in parts[0] else _canonical(shutil_which(parts[0]))
         basename = Path(parts[0]).name.casefold()
-        cwdc = _canonical(cwd or os.getcwd())
         temp = _canonical(os.environ.get("TEMP") or os.environ.get("TMP") or os.getcwd())
         summary = " ".join(parts)
         for prefix in {os.path.expanduser("~"), os.environ.get("USERPROFILE") or ""}:
@@ -399,10 +524,9 @@ class Recorder:
                                  "python3.exe", "pythonw.exe", "py", "py.exe"} or (
             exe and exe.casefold() == (_canonical(sys.executable) or "").casefold())
         if is_python:
-            # Every generation gets a per-launch token so a missing hook can be
-            # attributed to an exact launch (children, grandchildren, ...).
-            import uuid
-            token = uuid.uuid4().hex
+            if token is None:
+                import uuid
+                token = uuid.uuid4().hex
             expected = _hook_expected(parts[1:])
             self._python_launches += 1
             if self._is_child:
@@ -410,8 +534,16 @@ class Recorder:
             else:
                 self._launch_tokens[token] = (summary[:160], expected)
             childenv = dict(os.environ if env is None else env)
-            childenv["BATON_READSET_LOG"] = str(self._log_file())
-            childenv["BATON_READSET_STARTED"] = self.started_utc
+            same_launch = childenv.get("BATON_READSET_TOKEN") == token
+            logs = [d for d in childenv.get("BATON_READSET_LOG", "").split(os.pathsep) if d] if same_launch else []
+            for directory in self._log_targets():
+                if directory not in logs:
+                    logs.append(directory)
+            childenv["BATON_READSET_LOG"] = os.pathsep.join(logs)
+            earliest = childenv.get("BATON_READSET_STARTED") if same_launch else None
+            if earliest is None or (_epoch(self.started_utc) or 0) < (_epoch(earliest) or float("inf")):
+                earliest = self.started_utc
+            childenv["BATON_READSET_STARTED"] = earliest
             childenv["BATON_READSET_TOKEN"] = token
             site = str(Path(__file__).resolve().parent / "readset_site")
             old = childenv.get("PYTHONPATH", "")
@@ -431,13 +563,13 @@ class Recorder:
                             or p.startswith(("--source=", "--git-dir=", "--work-tree=", "--namespace=",
                                              "--config-env=", "--exec-path=", "--super-prefix="))
                             for p in parts[1:])
-            child_env = os.environ if env is None else env
             # The environment itself is fingerprinted; only variables that move
-            # Git to another gitdir/worktree/config are refused here.
+            # Git to another gitdir/worktree/index or config file are refused.
             # Inline config (GIT_CONFIG_COUNT/KEY/VALUE, GIT_CONFIG_PARAMETERS)
-            # is itself an environment value; variables naming other files are not.
+            # is itself an environment value.
             moving = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_ATTR_SOURCE", "GIT_NAMESPACE",
                       "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_INDEX_FILE"}
+            child_env = os.environ if env is None else env
             plain = plain and not any(str(k).upper() in moving for k in child_env)
             if subcommand == "check-attr" and plain:
                 separator = parts.index("--") + 1 if "--" in parts else len(parts)
@@ -459,10 +591,8 @@ class Recorder:
                 and (len(parts) == 2 or (len(parts) == 3 and os.path.isabs(parts[1])
                                          and not _under(_canonical(parts[1]) or self.root, self.root)))):
             files = [exe] + ([_real(parts[1])] if len(parts) == 3 else [])
-            digests = []
             with self._quiet():
-                for file in files:
-                    digests.append(_sha(file) if file else None)
+                digests = [_sha(file) if file else None for file in files]
             if all(digests):
                 for file, digest in zip(files, digests):
                     self._children["tools"].append({"exe": file, "sha256": digest, "arg": parts[-1]})
@@ -482,17 +612,14 @@ class Recorder:
         else:
             self._spawned[token] = pid
 
-    def _log_file(self):
-        if self._log_path:
-            return self._log_path
-        import tempfile
-        if not hasattr(self, "_owned_log"):
+    def _log_targets(self):
+        if self._is_child:
+            return list(self._log_dirs)
+        if self._own_log_dir is None:
+            import tempfile
             with self._quiet():
-                fd, name = tempfile.mkstemp(prefix="baton-readset-", suffix=".jsonl")
-                os.close(fd)
-            self._owned_log = name
-            self._log_path = name
-        return self._log_path
+                self._own_log_dir = tempfile.mkdtemp(prefix="baton-readset-")
+        return [self._own_log_dir]
 
     def read_section(self, path, heading):
         p = _canonical(path)
@@ -514,12 +641,14 @@ class Recorder:
             self._partial("SECTIONS_MISSING", rel)
             raise ValueError(f"heading not found: {heading}")
         end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-        section = "\n".join(lines[start:end]).rstrip("\n")
-        self._sections.setdefault(p, set()).add(heading)
-        entry = self._repo.get(p)
+        self._note_section(p, heading)
+        return "\n".join(lines[start:end]).rstrip("\n")
+
+    def _note_section(self, canonical, heading):
+        self._sections.setdefault(canonical, set()).add(heading)
+        entry = self._repo.get(canonical)
         if entry is not None and entry["section_only"]:
             entry["sections"].add(heading)
-        return section
 
     # -- completion ----------------------------------------------------------
     def stop(self):
@@ -533,95 +662,101 @@ class Recorder:
             pass
         if self._is_child:
             return
-        # Drain: a process can only write the log while alive. Merge, confirm
-        # every known Python process (direct, grandchildren from the log) has
+        if self._audited_launches > self._tracked_launches:
+            self._partial("UNTRACKED_PROCESS", "audited=%d tracked=%d" % (self._audited_launches, self._tracked_launches))
+        # Drain: a process can only write its log while alive. Merge, confirm
+        # every known Python process (direct, grandchildren from the logs) has
         # exited, merge again, and repeat until no new process appears.
         alive = []
         for _ in range(1000):
-            self._merge_child_log()
-            known = {**{t: p for t, p in self._spawned.items()}, **{"h:" + t: p for t, p in self._hooked.items()}}
-            alive = sorted({p for p in known.values() if _pid_alive(p)})
+            self._merge_child_logs()
+            known = list(self._spawned.values()) + list(self._hooked.values())
+            alive = sorted({p for p in known if _pid_alive(p)})
             if alive:
                 break
             count = len(self._spawned) + len(self._hooked)
-            self._merge_child_log()
+            self._merge_child_logs()
             if len(self._spawned) + len(self._hooked) == count:
                 break
         else:
             self._partial("CHILD_DRAIN_INCOMPLETE")
         for pid in alive:
             self._partial("CHILD_ALIVE_AT_STOP", "pid %s" % pid)
-        owned = getattr(self, "_owned_log", None)
-        if owned and not alive:
-            try:
-                os.remove(owned)
-            except OSError:
-                pass
+        if self._own_log_dir:
+            # Late writers (alive processes) already made the read set partial.
+            import shutil
+            shutil.rmtree(self._own_log_dir, ignore_errors=True)
         # A Python process launched without -I/-E/-S and with the injected
-        # environment imports sitecustomize during startup, before user code.
-        # If its token never reported, it ended before startup completed (e.g.
-        # killed at once by a Job object) and read only interpreter startup
-        # files. Launches with disabling options, failed hooks, and processes
-        # still alive now are never explained away.
+        # environment imports sitecustomize during startup, before user code;
+        # only allowlisted .pth import lines run earlier. If its token never
+        # reported and its known process has exited, it ended before startup
+        # completed and read only interpreter startup files. Anything else is
+        # never explained away.
         missing = [(token, command, expected) for token, (command, expected) in self._launch_tokens.items()
                    if token not in self._hooked]
-        # "Unstarted" only for a launch whose process is known and has exited.
-        unstarted = [command for token, command, expected in missing
-                     if expected and token in self._spawned and not _pid_alive(self._spawned[token])]
+        unstarted = []
         for token, command, expected in missing:
-            if not expected or token not in self._spawned:
+            if expected and self._pth_safe and token in self._spawned and not _pid_alive(self._spawned[token]):
+                unstarted.append(command)
+            else:
                 self._partial("CHILD_HOOK_MISSING", command)
         if self._python_launches - self._python_hooks > len(unstarted):
             self._partial("CHILD_HOOK_MISSING", f"launched={self._python_launches} hooked={self._python_hooks}")
         self._unstarted = unstarted
 
-
-    def _merge_child_log(self):
-        if not self._log_path:
+    def _merge_child_logs(self):
+        if not self._own_log_dir:
             return
         try:
-            with self._quiet(), open(self._log_path, "rb") as stream:
-                stream.seek(self._log_offset)
-                data = stream.read()
+            names = sorted(_ORIGINAL_LISTDIR(self._own_log_dir))
         except OSError as exc:
             self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
             return
-        complete = data[:data.rfind(b"\n") + 1]  # a partial last line is read on the next pass
-        self._log_offset += len(complete)
-        try:
-            events = [json.loads(line) for line in complete.decode("utf-8").splitlines() if line.strip()]
-        except ValueError as exc:
-            self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
-            return
-        try:
-            for event in events:
-                kind = event.get("type")
-                if kind == "hook_loaded":
-                    self._python_hooks += 1
-                    if event.get("token"):
-                        self._hooked[event["token"]] = event.get("pid")
-                elif kind == "python_spawned":
-                    if event.get("token"):
-                        self._spawned[event["token"]] = event.get("pid")
-                elif kind == "python_launched":
-                    self._python_launches += 1
-                    if event.get("token"):
-                        self._launch_tokens[event["token"]] = (str(event.get("command", ""))[:160],
-                                                               event.get("expected") is True)
-                elif kind == "hook_failed":
-                    self._partial("HOOK_FAILED", event.get("error", "unknown"))
-                elif kind == "partial":
-                    self._partial(str(event.get("reason", "CHILD_PARTIAL")), event.get("sample"))
-                elif kind == "read":
-                    self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
-                                      event.get("sha256"))
-                elif kind == "listing":
-                    self._listings[(event["path"], len(self._listings))] = {
-                        k: event[k] for k in ("path", "scope", "ok", "entries")}
-                    if not event["ok"]:
-                        self._partial("LISTING_FAILED", event["path"])
-        except (KeyError, TypeError, AttributeError) as exc:
-            self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
+        for name in names:
+            path = os.path.join(self._own_log_dir, name)
+            try:
+                with self._quiet(), open(path, "rb") as stream:
+                    stream.seek(self._offsets.get(name, 0))
+                    data = stream.read()
+            except OSError as exc:
+                self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
+                continue
+            complete = data[:data.rfind(b"\n") + 1]  # a partial last line is read on the next pass
+            self._offsets[name] = self._offsets.get(name, 0) + len(complete)
+            for raw in complete.decode("utf-8", "replace").splitlines():
+                if not raw.strip():
+                    continue
+                try:
+                    self._apply(json.loads(raw))
+                except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                    self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
+
+    def _apply(self, event):
+        kind = event.get("type")
+        if kind == "hook_loaded":
+            self._python_hooks += 1
+            if event.get("token"):
+                self._hooked[event["token"]] = event.get("pid")
+        elif kind == "python_spawned":
+            if event.get("token"):
+                self._spawned[event["token"]] = event.get("pid")
+        elif kind == "python_launched":
+            self._python_launches += 1
+            if event.get("token"):
+                self._launch_tokens[event["token"]] = (str(event.get("command", ""))[:160],
+                                                       event.get("expected") is True)
+        elif kind == "hook_failed":
+            self._partial("HOOK_FAILED", event.get("error", "unknown"))
+        elif kind == "partial":
+            self._partial(str(event["reason"]), event.get("sample"))
+        elif kind == "read":
+            self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
+                              event.get("sha256"))
+        elif kind == "listing":
+            item = {k: event[k] for k in ("path", "scope", "ok", "entries", "error") if k in event}
+            self._listings[(event["path"], len(self._listings))] = item
+        else:
+            raise KeyError(kind)
 
     def as_dict(self):
         repo = []
@@ -637,7 +772,8 @@ class Recorder:
                 "env_reads": env_reads, "sections_missing": sorted([list(item) for item in self.sections_missing]),
                 "listings": [item for _, item in sorted(self._listings.items(), key=lambda pair: (pair[0][0], pair[0][1]))],
                 "children": {**self._children, "python_launched": self._python_launches,
-                             "python_hooked": self._python_hooks, "python_unstarted": list(self._unstarted)},
+                             "python_hooked": self._python_hooks, "python_unstarted": list(self._unstarted),
+                             "pth_safe": self._pth_safe},
                 "native_modules": sorted(self.native_modules),
                 "network": {"owned_loopback": self._socket_allowed, "violations": self._network_violations},
                 "added_env": sorted(self._added_env),
@@ -667,58 +803,10 @@ def _active():
     return [r for r in tuple(_ACTIVE) if not r._stopped]
 
 
-def _innermost():
-    """Nested recorders (recorder self-tests): completeness signals and child
-    launches belong to the innermost one; file reads/listings go to all."""
-    active = _active()
-    return active[-1:]
-
-
 def _audit(event, args):
     for r in _active():
-        if r._is_quiet():
-            continue
-        if event == "open":
-            r._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
-                          args[2] if len(args) > 2 else None)
-        elif event == "sqlite3.connect":
-            path = args[0] if args else None
-            if path != ":memory:":
-                canonical = _canonical(path)
-                if canonical is None:
-                    r._partial("PATH_UNNORMALIZABLE", path)
-                elif not os.path.exists(canonical):
-                    r._created.add(canonical)
-                else:
-                    r._open_event(path)
-        elif r not in _innermost():
-            continue
-        elif event.startswith("socket."):
-            r._socket_event(event, args)
-        elif event == "mmap.__new__":
-            fileno = args[0] if args else -1
-            if isinstance(fileno, int) and fileno != -1:
-                r._partial("MMAP_UNATTRIBUTED", fileno)
-        elif event == "ctypes.dlopen":
-            name = _path_text(args[0]) if args and args[0] else None
-            if name and (os.path.isabs(name) or "/" in name or "\\" in name):
-                path = _canonical(name)
-                if path is None or r._scope(path) == "repo":
-                    r._partial("CTYPES_REPO_DLOPEN", name)
-            elif name:
-                # A bare name is resolved by the OS search order, which can
-                # include the working directory: refuse if the repo holds it.
-                stems = {name, name + ".dll", name + ".so"}
-                for base in {r.root, _canonical(os.getcwd())}:
-                    if base and any(os.path.exists(os.path.join(base, stem)) for stem in stems):
-                        r._partial("CTYPES_REPO_DLOPEN", name)
-        elif event == "import":
-            name = args[0] if args else ""
-            filename = args[1] if len(args) > 1 else None
-            if filename and str(filename).lower().endswith((".pyd", ".so", ".dll")):
-                r.native_modules.add(str(name))
-                if name.split(".")[0] not in r._native_allowed and not name.startswith("cryptography"):
-                    r._partial("NATIVE_MODULE_NOT_ALLOWED", name)
+        if not r._is_quiet():
+            r._audit_event(event, args)
 
 
 def _git_location(arguments, cwd):
@@ -728,11 +816,7 @@ def _git_location(arguments, cwd):
     index = 0
     while index < len(arguments):
         arg = str(arguments[index])
-        if arg == "-C" and index + 1 < len(arguments):
-            location = os.path.join(location, str(arguments[index + 1]))
-            index += 2
-            continue
-        if arg in {"--git-dir", "--work-tree"} and index + 1 < len(arguments):
+        if arg in {"-C", "--git-dir", "--work-tree"} and index + 1 < len(arguments):
             location = os.path.join(location, str(arguments[index + 1]))
             index += 2
             continue
@@ -767,28 +851,28 @@ def _git_subcommand(arguments):
 def _tracked_listdir(path="."):
     try:
         result = _ORIGINAL_LISTDIR(path)
-    except OSError:
+    except OSError as exc:
         for r in _active():
-            r._listing(path, False, [])
+            if not r._is_quiet():
+                r._listing(path, False, [], type(exc).__name__)
         raise
-    base = _path_text(path) if not isinstance(path, int) else None
-    if base is None and not isinstance(path, int):
-        base = "."
+    if isinstance(path, int):
+        for r in _active():
+            if not r._is_quiet():
+                r._partial("PATH_UNNORMALIZABLE", "listdir(fd)")
+        return result
+    base = _path_text(path) or "."
     entries = []
     for name in result:
-        if base is None:
+        full = os.path.join(base, os.fsdecode(name))
+        try:
+            kind = ("link" if os.path.islink(full) else "dir" if os.path.isdir(full)
+                    else "file" if os.path.isfile(full) else "other")
+        except OSError:
             kind = "other"
-        else:
-            try:
-                full = os.path.join(base, name)
-                kind = "link" if os.path.islink(full) else "dir" if os.path.isdir(full) else "file" if os.path.isfile(full) else "other"
-            except OSError:
-                kind = "other"
         entries.append((os.fsdecode(name), kind))
     for r in _active():
-        if isinstance(path, int):
-            r._partial("PATH_UNNORMALIZABLE", "listdir(fd)")
-        else:
+        if not r._is_quiet():
             r._listing(path, True, entries)
     return result
 
@@ -797,7 +881,6 @@ class _ScandirResult:
     """Entries of one completed scandir call, served to the caller."""
 
     def __init__(self, entries):
-        self._entries = entries
         self._iter = iter(entries)
 
     def __iter__(self):
@@ -820,11 +903,14 @@ def _tracked_scandir(path="."):
     try:
         with _ORIGINAL_SCANDIR(path) as iterator:
             entries = list(iterator)
-    except OSError:
+    except OSError as exc:
         for r in _active():
-            r._listing(path, False, [])
+            if not r._is_quiet():
+                r._listing("." if path is None else path, False, [], type(exc).__name__)
         raise
     for r in _active():
+        if r._is_quiet():
+            continue
         if isinstance(path, int):
             r._partial("PATH_UNNORMALIZABLE", "scandir(fd)")
         else:
@@ -836,19 +922,23 @@ class _TrackedPopen(_ORIGINAL_POPEN):
     """Subclass, not a function: other code subclasses subprocess.Popen."""
 
     def __init__(self, args, *rest, **kwargs):
+        import uuid
         positional_env = len(rest) >= 10
         childenv = rest[9] if positional_env else kwargs.get("env")
         cwd = rest[8] if len(rest) >= 9 else kwargs.get("cwd")
-        for r in _innermost():
-            childenv = r._child(args, cwd, childenv)
+        token = uuid.uuid4().hex
+        recorders = _active()
+        for r in recorders:
+            r._tracked_launches += 1
+            childenv = r._child(args, cwd, childenv, token)
         if positional_env:
             rest = rest[:9] + (childenv,) + rest[10:]
         elif childenv is not None:
             kwargs["env"] = childenv
         super().__init__(args, *rest, **kwargs)
-        token = childenv.get("BATON_READSET_TOKEN") if isinstance(childenv, dict) else None
-        for r in _innermost():
-            r._spawned_event(token, self.pid)
+        if isinstance(childenv, dict) and childenv.get("BATON_READSET_TOKEN") == token:
+            for r in recorders:
+                r._spawned_event(token, self.pid)
 
 
 def _tracked_bind(sock, address):
@@ -856,25 +946,19 @@ def _tracked_bind(sock, address):
     try:
         actual = sock.getsockname()
         if isinstance(actual, tuple) and _is_loopback(actual[0]):
-            for r in _innermost():
+            for r in _active():
                 r._sockets[id(sock)] = (sock, sock.family, sock.type, actual[0], actual[1])
     except (OSError, IndexError, TypeError):
         pass
     return result
 
 
-def _is_loopback(host):
-    import ipaddress
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
 def _tracked_sqlite_connect(*args, **kwargs):
     path = args[0] if args else kwargs.get("database")
     if path != ":memory:":
         for r in _active():
+            if r._is_quiet():
+                continue
             canonical = _canonical(path)
             if canonical is None:
                 r._partial("PATH_UNNORMALIZABLE", path)
@@ -886,7 +970,7 @@ def _tracked_sqlite_connect(*args, **kwargs):
 
 
 def _tracked_cffi_dlopen(ffi, *args, **kwargs):
-    for r in _innermost():
+    for r in _active():
         r._partial("CFFI_DLOPEN", args[0] if args else kwargs.get("name"))
     return _ORIGINAL_CFFI_DLOPEN(ffi, *args, **kwargs)
 
@@ -897,18 +981,35 @@ def shutil_which(name):
 
 
 def read_section(path, heading):
-    """Read a declared Markdown section through the active recorder."""
+    """Read a declared Markdown section through every active recorder."""
     recorders = _active()
     if not recorders:
-        text = Path(path).read_text(encoding="utf-8")
-        lines = text.replace("\r\n", "\n").splitlines()
+        lines = Path(path).read_text(encoding="utf-8").replace("\r\n", "\n").splitlines()
         try:
             start = lines.index(heading)
         except ValueError:
             raise ValueError(f"heading not found: {heading}")
         end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
         return "\n".join(lines[start:end]).rstrip("\n")
-    return recorders[-1].read_section(path, heading)
+    p = _canonical(path)
+    outer = recorders[:-1]
+    for r in outer:
+        if p is not None:
+            r._section_depth[p] = r._section_depth.get(p, 0) + 1
+    try:
+        section = recorders[-1].read_section(path, heading)
+    except ValueError:
+        for r in outer:
+            r._partial("SECTIONS_MISSING", path)
+        raise
+    finally:
+        for r in outer:
+            if p is not None:
+                r._section_depth[p] -= 1
+    for r in outer:
+        if p is not None:
+            r._note_section(p, heading)
+    return section
 
 
 def _hook_expected(arguments):

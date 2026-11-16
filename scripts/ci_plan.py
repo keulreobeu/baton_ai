@@ -660,7 +660,7 @@ SUITE_COMMAND = ["-X", "utf8", "-m", "unittest", "discover", "-s", "tests", "-t"
 NON_REUSABLE_TESTS = []
 ALLOWED_NATIVE_DISTRIBUTIONS = ("cryptography",)
 FP_COMPONENTS = ("files", "index", "sections", "ignored_reads", "listings", "outside_reads", "env_reads",
-                 "environment", "manifest", "git", "policy")
+                 "environment", "resolver", "manifest", "git", "policy")
 ADDED_ENV_ALLOWED = {"BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH"}
 _REPO_PATH = re.compile(r"[^\\/:*?\"<>|\x00-\x1f][^\\:*?\"<>|\x00-\x1f]*")
 _ALWAYS_INCLUDED_DOCS = ("docs/sdd/", "docs/templates/")
@@ -688,10 +688,15 @@ def _sha_file(path):
 
 
 def _content(path):
-    """Content digest; 'missing'/'dir'/'link:<target>' for non-files, None on error."""
+    """Content digest; 'missing'/'dir' for non-files, None on error. A link
+    records its target and the content actually read through it."""
     try:
         if path.is_symlink():
-            return "link:" + os.readlink(path)
+            target = os.readlink(path)
+            resolved = path.resolve()
+            inner = ("missing" if not resolved.exists() else "dir" if resolved.is_dir()
+                     else _sha_file(resolved))
+            return "link:" + target + ":" + inner
         if not path.exists():
             return "missing"
         if path.is_dir():
@@ -710,8 +715,8 @@ def _listing(path):
                         else "file" if entry.is_file(follow_symlinks=False) else "other")
                 rows.append([entry.name, kind])
         return {"ok": True, "entries": sorted(rows)}
-    except OSError:
-        return {"ok": False, "entries": []}
+    except OSError as exc:
+        return {"ok": False, "entries": [], "error": type(exc).__name__}
 
 
 def _repo_path(value):
@@ -847,6 +852,17 @@ def git_identity(root):
             "attributes": fingerprint(sorted(attributes.items()))}
 
 
+def resolver_identity():
+    """Local name resolution answered without a network service: host name and
+    the hosts file (loopback/localhost lookups are allowed by the recorder)."""
+    import socket
+    hosts = (Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "drivers" / "etc" / "hosts"
+             if os.name == "nt" else Path("/etc/hosts"))
+    content = _content(hosts)
+    need(content is not None, "RESOLVER_UNREADABLE")
+    return fingerprint({"hostname": socket.gethostname(), "hosts": content})
+
+
 def policy_identity(root):
     """R4 policy version: entry scripts, schema, command and R6 list."""
     scripts = {}
@@ -943,6 +959,7 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, v
         "environment": environment_digest(os.environ if environ is None else environ),
         "manifest": fingerprint(manifest if manifest is not None else runtime_manifest()),
         "git": fingerprint(git if git is not None else git_identity(root)),
+        "resolver": resolver_identity(),
         "policy": policy_identity(root),
     }
     need(freeze(root) == before, "STATE_CHANGED")

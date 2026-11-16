@@ -1045,3 +1045,8 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   생존 자식 partial·`python_unstarted`는 종료 확인된 pid만, prefix 읽기 digest 필수·complete read set의 관측 digest 필수,
   `check-attr` 위치/설정 이동 옵션·환경 변수 불허, git identity에 attribute 파일 포함. V2 246 tests OK, SDD PASS.
   E2E 1회차는 실행 중 코드 수정으로 무효가 되어 중단했고 이 커밋 뒤 다시 실행한다.
+- 2026-11-16 Codex 3차 재검토(`cb3ab15`, `ctx_eeefa5038d31`): FAIL(P1 3, 이전 3건 해결)과 실제 저장소 E2E(`cb3ab15`, 743 tests PASS지만 read set
+  partial: 동시 추가 쓰기로 로그 줄 섞임→hook 기록 0, `gethostbyaddr` loopback, 없는 파일·`__pycache__`, 80MB `node.exe` 해시 한도) 반영:
+  실제 이벤트를 모든 활성 기록기에 전달·자식은 프로세스별 로그 파일, 추적 밖 프로세스 생성 partial, `.pth` import 허용 목록,
+  링크 대상 내용 지문, 없는 디렉터리 조회는 입력으로 기록, `resolver`(호스트 이름·hosts 파일) 지문, 생성 판정 50 ms 여유(Windows 시계 해상도).
+  기록기 자체 테스트는 partial 상황을 실제로 일으키지 않고 합성 이벤트로 주입한다. V2 239 tests OK(1건 시계 여유 반영 후 readset 19 OK), SDD PASS.

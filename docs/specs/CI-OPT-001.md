@@ -312,6 +312,15 @@ pid가 알려지고 이미 종료된 토큰에만 적용한다. prefix 읽기도
 digest를 가져야 한다. 저장소 대상 `check-attr`는 `--git-dir`/`--work-tree`/`-c` 등 위치·설정 이동 옵션과 다른 gitdir·설정 파일을
 가리키는 환경 변수(`GIT_DIR`, `GIT_WORK_TREE`, `GIT_CONFIG_GLOBAL` 등) 없이 실행될 때만 허용한다. git identity는 `check-attr`가 읽는
 attribute 파일(`core.attributesFile`, XDG `git/attributes`, `info/attributes`) 내용도 포함한다.
+3차 검토·E2E 반영(2026-11-16, Codex `cb3ab15` FAIL: P1 3, 실제 저장소 E2E): 실제 이벤트(파일·목록·Python 자식·socket·sqlite·cffi)는
+활성 기록기 모두에 전달하고 자식은 활성 기록기 각각의 로그 디렉터리에 프로세스별 파일로 기록한다(중첩 기록기가 바깥 기록기를 가리지
+않으며, 여러 프로세스의 동시 추가 쓰기로 로그 줄이 섞이지 않는다). 추적 Popen 밖의 프로세스 생성(`subprocess.Popen` audit 수가 추적
+수보다 많음, `os.system`/`os.spawn*`/`os.exec*`/`os.startfile`/`os.posix_spawn`)은 partial이다. `python_unstarted` 예외는 실행 환경의
+`.pth` import 줄이 허용 목록(`distutils-precedence.pth`, `__editable__.*.pth`; 코드가 manifest에 해시됨)뿐일 때만 적용한다.
+링크인 지문 입력은 링크 대상 경로와 실제 읽히는 대상 내용을 함께 넣는다. 없는 디렉터리 조회(`FileNotFoundError`/`NotADirectoryError`)는
+partial이 아니라 "없음" 입력으로 기록·지문화하고 그 밖의 조회 실패만 partial이다. loopback 주소·`localhost`·호스트 없는 이름 조회와
+loopback 역조회는 허용하되 지문 `resolver` 구성요소에 호스트 이름과 hosts 파일 내용을 넣는다. 존재하지 않거나 실행 중 만든 파일,
+디렉터리 handle, 모든 `__pycache__`는 입력이 아니다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

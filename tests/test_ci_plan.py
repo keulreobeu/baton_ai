@@ -992,6 +992,28 @@ class SuiteReuseTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(cp.PlanError):
                 self.fp(readset(**{key: [entry]}))
 
+    def test_link_targets_resolver_and_missing_listing_are_inputs(self):
+        """Review P1 (cb3ab15) and E2E findings: link target content, hosts/hostname, absent directories."""
+        target = Path(self.temp.name) / "real-config"
+        target.write_text("a", encoding="utf-8")
+        link = Path(self.temp.name) / "linked-config"
+        real_is_symlink, real_resolve = Path.is_symlink, Path.resolve
+        with patch.object(Path, "is_symlink", lambda p: p == link or real_is_symlink(p)), \
+                patch.object(Path, "resolve", lambda p, strict=False: target if p == link else real_resolve(p, strict)), \
+                patch.object(cp.os, "readlink", lambda p: str(target)):
+            first = cp._content(link)
+            target.write_text("b", encoding="utf-8")
+            self.assertNotEqual(cp._content(link), first)
+            self.assertTrue(first.startswith("link:" + str(target) + ":"))
+        before = cp.resolver_identity()
+        with patch("socket.gethostname", return_value="another-host"):
+            self.assertNotEqual(cp.resolver_identity(), before)
+        rs = readset(listings=[{"path": "docs/new", "scope": "repo", "ok": False, "entries": [], "error": "FileNotFoundError"}])
+        source = self.evidence(self.fp(rs))
+        self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
+        (self.root / "docs" / "new").mkdir()
+        self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["listings"], "different")
+
     def test_windows_style_and_escaping_paths_are_rejected(self):
         """Review P2: only normalized POSIX-relative repository paths."""
         for path in ("docs\\a.md", "..\\outside", "C:/x.md", "//server/share/x", "/abs", "a/../b", "./a", "a//b"):
