@@ -179,7 +179,8 @@ class LedgerTests(unittest.TestCase):
                    "selection_reasons": ["DIRECT_CHANGE"], "graph_seconds": None, "ci_seconds": None,
                    "validation_seconds": None, "escalations": [], "fallback_reasons": [],
                    "reuse_decision": "not_requested", "equality_checks": {}, "source_evidence": ["EVID-1"],
-                   "v3_only_defects": [], "measurement_kind": "unknown", "coverage_state": "partial"}
+                   "v3_only_defects": [], "measurement_kind": "unknown", "coverage_state": "partial",
+                   "suite_execution": None, "suite_fingerprint": None, "reused_test_count": None}
         request.update(changes)
         return request
 
@@ -216,6 +217,54 @@ class LedgerTests(unittest.TestCase):
                         {"total_tests": 0, "selected_tests": ["tests.test_a.T.test_one"]}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.metrics.record_ci_validation(self.ci_observation(**changes))
+
+    def test_ci_suite_execution_combinations(self):
+        """CI-OPT-001-AC-12 rev5: exact suite_execution table; reuse never counts as a new run."""
+        refs = ["run:run-1", "commit:" + "c" * 40, "evidence:" + "d" * 64]
+        v3 = {"requested_level": 3, "effective_level": 3, "stage": "task_complete"}
+        valid = [
+            dict(v3, suite_execution="executed", status="passed", executed_test_count=100, suite_fingerprint="e" * 64),
+            dict(v3, suite_execution="executed", status="failed", executed_test_count=3, suite_fingerprint=None),
+            dict(v3, suite_execution="executed", status="passed", executed_test_count=100, suite_fingerprint="e" * 64,
+                 reuse_decision="rejected", equality_checks={"files": "different"}),
+            dict(v3, suite_execution="reused", status="passed", executed_test_count=0, reused_test_count=100,
+                 suite_fingerprint="e" * 64, reuse_decision="accepted", source_evidence=refs),
+            dict(v3, suite_execution="reused", status="passed", executed_test_count=1, reused_test_count=99,
+                 suite_fingerprint="e" * 64, reuse_decision="accepted", source_evidence=refs),
+            dict(v3, suite_execution="reused", status="failed", executed_test_count=1, reused_test_count=99,
+                 suite_fingerprint="e" * 64, reuse_decision="accepted", source_evidence=refs),
+            dict(v3, suite_execution="not_run", status="not_run", executed_test_count=0, reuse_decision="rejected"),
+            dict(v3, suite_execution="not_run", status="failed", executed_test_count=0, reuse_decision="not_requested"),
+        ]
+        run_id = self.begin()["run_id"]
+        for index, changes in enumerate(valid):
+            with self.subTest(valid=changes):
+                self.metrics.record_ci_validation(self.ci_observation(run_id=run_id, event_id=f"CI-S-{index}", **changes))
+        events = self.metrics.report(run_id)["ci_validations"]
+        self.assertEqual(events[3]["suite_execution"], "reused")
+        self.assertEqual((events[3]["executed_test_count"], events[3]["reused_test_count"]), (0, 100))
+        good_reuse = valid[3]
+        invalid = [
+            dict(v3, status="passed", executed_test_count=5),
+            dict(good_reuse, source_evidence=["EVID-1"]),
+            dict(good_reuse, reuse_decision="rejected"),
+            dict(good_reuse, reused_test_count=None),
+            dict(good_reuse, reused_test_count=0),
+            dict(good_reuse, suite_fingerprint=None),
+            dict(good_reuse, status="failed", executed_test_count=0),
+            dict(valid[0], reused_test_count=5),
+            dict(valid[0], executed_test_count=0),
+            dict(valid[0], reuse_decision="accepted"),
+            dict(valid[6], executed_test_count=1),
+            dict(valid[6], suite_fingerprint="e" * 64),
+            dict(valid[7], reuse_decision="rejected"),
+            dict(suite_execution="executed", status="passed", executed_test_count=1, suite_fingerprint="e" * 64),
+            dict(suite_fingerprint="e" * 64),
+            dict(v3, suite_execution="sometimes", status="not_run"),
+        ]
+        for changes in invalid:
+            with self.subTest(invalid=changes), self.assertRaises(ValueError):
+                self.metrics.record_ci_validation(self.ci_observation(run_id=run_id, event_id="CI-BAD", **changes))
 
     def test_ci_validation_event_contains_only_allowlisted_values(self):
         request = self.ci_observation()

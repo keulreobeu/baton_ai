@@ -134,6 +134,118 @@ class OfficialRunnerTests(unittest.TestCase):
         discover.assert_not_called()
         self.assertEqual(stdout.getvalue(), "")
 
+    def test_readset_flag_writes_json_without_changing_final_stdout_line(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "readset.json"
+            suite = unittest.TestSuite([case("synthetic", "pass")])
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch.object(verify, "ROOT", Path(folder)), \
+                    patch.object(verify, "prepare_git_path"), \
+                    patch.object(verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
+                    patch.object(verify.unittest.defaultTestLoader, "discover", return_value=suite), \
+                    patch.object(verify.time, "monotonic", return_value=20), \
+                    patch.dict(os.environ), patch.object(sys, "path", list(sys.path)), \
+                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(verify.main(["--readset-out", str(out)]), 0)
+            expected = {"status": "PASS", "tests_run": 1, "failures": 0, "errors": 0, "skipped": 0,
+                        "expected_failures": 0, "verified_evidence_eligible": True,
+                        "scope": "offline_tests_only", "live_provider_validation": "NOT_RUN"}
+            self.assertEqual(stdout.getvalue().splitlines()[-1], json.dumps(expected, sort_keys=True))
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema"], "readset/1")
+            self.assertTrue(payload["root"].endswith(folder.replace("\\", "/").split("/")[-1]))
+            self.assertEqual(stdout.getvalue().count("\n"), 1)
+
+
+class EvidenceReuseTests(unittest.TestCase):
+    """CI-OPT-001-AC-12 rev5 offline_suite reuse through --evidence-dir (fake suite/recorder/SDD)."""
+
+    def setUp(self):
+        from scripts import ci_plan
+        self.cp = ci_plan
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.evidence = Path(self.temp.name) / "evidence"
+        self.home = Path(self.temp.name) / "home"
+        self.readset = {"schema": "readset/1", "complete": True, "partial_reasons": [], "repo_reads": [],
+                        "outside_reads": [], "listings": [], "added_env": []}
+        keep = ("PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "HOME", "PATHEXT", "COMSPEC")
+        self.environ = {**{k: os.environ[k] for k in keep if k in os.environ}, "OTHER": "1"}
+        self.suite_runs = []
+
+    def fake_recorder(test):
+        class Recorder:
+            def __init__(self, root): pass
+            def stop(self): pass
+            def as_dict(self): return dict(test.readset)
+            def write(self, path): Path(path).write_text(json.dumps(test.readset), encoding="utf-8")
+        return Recorder
+
+    def run_main(self, behavior="pass", environ=None, sdd_code=0):
+        def run_suite(names=None):
+            self.suite_runs.append(names)
+            suite = unittest.TestSuite([case("synthetic", behavior), case("synthetic", "pass")])
+            return unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+        stdout = io.StringIO()
+        fixed = {"digest": "f" * 64, "files": 1}
+        git = {"exe_sha256": "a" * 64, "version": "git version x", "config": "b" * 64}
+        real_run = subprocess.run
+        def selective_run(command, *args, **kwargs):
+            # Only the SDD step is faked; Git calls of the fingerprint stay real.
+            if any(str(part).endswith("check_sdd.py") for part in command):
+                return subprocess.CompletedProcess(command, sdd_code)
+            return real_run(command, *args, **kwargs)
+        with patch.object(verify, "prepare_git_path"), \
+                patch.object(verify.subprocess, "run", side_effect=selective_run), \
+                patch.object(verify, "_run_suite", side_effect=run_suite), \
+                patch("scripts.readset.Recorder", self.fake_recorder()), \
+                patch.object(self.cp, "runtime_manifest", return_value=fixed), \
+                patch.object(self.cp, "git_identity", return_value=git), \
+                patch.dict(os.environ, environ or self.environ, clear=True), patch.object(sys, "path", list(sys.path)), \
+                contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+            code = verify.main(["--base", "fake-base", "--evidence-dir", str(self.evidence), "--lock-home", str(self.home)])
+        lines = stdout.getvalue().strip().splitlines()
+        return code, (json.loads(lines[-1]) if lines else None)
+
+    def test_execute_then_reuse_then_reexecute_after_input_change(self):
+        code, first = self.run_main()
+        self.assertEqual((code, first["suite_execution"], first["executed_tests"], first["tests_run"]), (0, "executed", 2, 2))
+        self.assertRegex(first["suite_fingerprint"], r"^[0-9a-f]{64}$")
+        files = list(self.evidence.glob("suite-*.json"))
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].name, "suite-" + first["evidence_sha256"] + ".json")
+        code, second = self.run_main()
+        self.assertEqual((code, second["suite_execution"], second["executed_tests"], second["reused_test_count"]),
+                         (0, "reused", 0, 2))
+        self.assertEqual(second["tests_run"], 2)
+        self.assertEqual(second["source_evidence"][2], "evidence:" + first["evidence_sha256"])
+        self.assertEqual(len(self.suite_runs), 1)  # the reuse did not run the suite
+        code, third = self.run_main(environ={**self.environ, "OTHER": "2"})
+        self.assertEqual(third["suite_execution"], "executed")
+        self.assertEqual(third["reuse_decision"], "rejected")
+        self.assertIn("FINGERPRINT_CHANGED", third["reuse_reasons"])
+
+    def test_failed_run_is_recorded_but_never_reused_and_sdd_failure_runs_nothing(self):
+        code, first = self.run_main(behavior="failure")
+        self.assertEqual((code, first["status"], first["suite_execution"]), (1, "FAIL", "executed"))
+        code, second = self.run_main()
+        self.assertEqual(second["suite_execution"], "executed")
+        self.assertEqual(len(self.suite_runs), 2)
+        code, third = self.run_main(sdd_code=5)
+        self.assertEqual((code, third), (5, None))
+        self.assertEqual(len(self.suite_runs), 2)
+
+    def test_tampered_or_renamed_evidence_is_ignored(self):
+        self.run_main()
+        file = next(self.evidence.glob("suite-*.json"))
+        file.write_text(file.read_text(encoding="utf-8").replace('"tests_run": 2', '"tests_run": 9'), encoding="utf-8")
+        code, again = self.run_main()
+        self.assertEqual(again["suite_execution"], "executed")
+
+    def test_lock_home_requires_evidence_dir(self):
+        with patch.object(verify, "prepare_git_path"), contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit):
+            verify.main(["--lock-home", str(self.home)])
+
 
 if __name__ == "__main__":
     unittest.main()

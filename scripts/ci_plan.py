@@ -670,12 +670,11 @@ def doc_candidate(name):
 
 
 def extract_section(text, heading):
-    """Same rule as the declared section helper: heading to next '## ' line."""
-    text = text.replace("\r\n", "\n")
-    start = text.index(heading)
-    rest = text[start:]
-    end = rest.find("\n## ", 1)
-    return (rest if end < 0 else rest[:end]).rstrip("\n")
+    """Same rule as scripts/readset.read_section: exact heading line to next '## ' line."""
+    lines = text.replace("\r\n", "\n").splitlines()
+    start = lines.index(heading)
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end]).rstrip("\n")
 
 
 def _sha_file(path):
@@ -829,13 +828,20 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
     need(valid_readset(readset), "READSET_INVALID")
     before = freeze(root)
     complete = readset["complete"]
-    reads = {r["path"]: r for r in readset.get("repo_reads", [])}
+    fold = (lambda s: s.casefold()) if os.name == "nt" else (lambda s: s)
+    reads = {}
+    for record in readset.get("repo_reads", []):
+        key = fold(record["path"])
+        if key in reads:  # same file under two spellings: never trust section-only
+            reads[key] = dict(reads[key], section_only=False)
+        else:
+            reads[key] = record
     names = set(sdd.git(root, "ls-files", "-co", "--exclude-standard", "-z").split("\0")) - {""}
     need(len(names) <= 20000, "MANIFEST_LIMIT")
     files, sections = [], []
     for name in sorted(names):
         if complete and doc_candidate(name):
-            record = reads.get(name)
+            record = reads.get(fold(name))
             if record is None:
                 continue
             if record.get("section_only") and record.get("sections"):
@@ -850,7 +856,8 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None):
         need(content is not None, "FILE_UNREADABLE")
         files.append([name, content])
     ignored = []
-    for name in sorted(set(reads) - names):
+    tracked_keys = {fold(n) for n in names}
+    for name in sorted(r["path"] for r in readset.get("repo_reads", []) if fold(r["path"]) not in tracked_keys):
         parts = name.split("/")
         if parts[0] == ".venv" or "__pycache__" in parts:
             continue
@@ -944,6 +951,9 @@ def decide_suite_reuse(current, evidence, evidence_sha256, raw_evidence, *, now_
         reasons.append("SOURCE_RUN_ID_INVALID")
     if not isinstance(evidence.get("commit"), str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
         reasons.append("SOURCE_COMMIT_INVALID")
+    if (not valid_readset(evidence.get("readset")) or evidence.get("readset_sha256") != fingerprint(evidence.get("readset"))
+            or evidence["readset"].get("complete") is not evidence.get("readset_complete")):
+        reasons.append("SOURCE_READSET_INVALID")
     source_fp = evidence.get("fingerprint")
     if not isinstance(source_fp, dict) or source_fp.get("schema") != SUITE_FP_SCHEMA:
         reasons.append("SOURCE_FINGERPRINT_INVALID")
@@ -991,7 +1001,7 @@ def suite_evidence(*, run_id, commit, fingerprint_record, readset, result, retur
     return {"schema": SUITE_EVIDENCE_SCHEMA, "execution": "executed", "run_id": run_id, "commit": commit,
             "status": "passed" if passed else "failed", "returncode": returncode, **counts,
             "state_stable": state_stable is True, "fingerprint": fingerprint_record,
-            "readset_sha256": fingerprint(readset), "readset_complete": readset.get("complete") is True,
+            "readset": readset, "readset_sha256": fingerprint(readset), "readset_complete": readset.get("complete") is True,
             "started_utc": started_utc, "finished_utc": finished_utc}
 
 

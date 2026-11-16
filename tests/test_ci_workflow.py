@@ -3,6 +3,8 @@ import hashlib
 from pathlib import Path
 import unittest
 
+from scripts.readset import read_section as declared_section
+
 ROOT = Path(__file__).resolve().parents[1]
 GUIDANCE_DOCS = ("AGENTS.md", "README.md", "docs/sdd.md")
 TASK_DOC = "docs/tasks/TASK-CI-OPT-001.md"
@@ -39,9 +41,12 @@ class MethodologyDocsTests(unittest.TestCase):
     )
     NEGATIVE_TERMS = (
         "같은 SHA만으로 검증 재사용을 결정하지 않는다",
-        "코드 상태·commit SHA·target base·Task/AC·정책·테스트 설정·의존성·환경·필수 검사 목록/성공 결과",
+        "`sdd_static`·독립 검토·원격 CI는 재사용하지 않는다",
+        "AC-12 revision 5 입력 지문(`suite-fp/1`",
+        "원본 read set이 complete",
         "unknown/partial이면 재실행",
-        "후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효",
+        "지문 입력이 바뀌면 관련 증거는 무효",
+        "Risk Acceptance RA-1/RA-2",
         "최근 1~3개 커밋 조회는 빠른 파악용",
         "최종 diff 범위는 Task base 또는 통합 대상",
         "새 검증 DB·두 번째 정책 엔진은 금지",
@@ -77,8 +82,8 @@ class MethodologyDocsTests(unittest.TestCase):
             text = read(name)
             for term in ("worker V1은 `Orchestrator._run` 직접 실행 피드백",
                          "Orca author settle 경로는 현재 기본 V3로 보수적으로 실행",
-                         "`reuse_v3`는 순수 비교 함수만 있고 runtime 수집/저장 호출자가 없어",
-                         "현재 모든 V3를 실제 실행하며 재사용 절감을 주장하지 않는다",
+                         "`offline_suite` 재사용은 2026-11-16 `verify_environment.py --evidence-dir`와 Orchestrator V3 caller에 연결",
+                         "재사용 절감은 실측 전이라 주장하지 않는다",
                          "부분 재실행(Re-run failed jobs)은 fail-closed", "Re-run all jobs가 필요",
                          "승인된 영구 정책이 아니라", "run id/attempt", "첫 merge parent", "null이다"):
                 with self.subTest(doc=name, term=term):
@@ -144,7 +149,7 @@ class WorkerIoDocsTests(unittest.TestCase):
                 self.assertNotIn(term, agents)
 
     def test_p01_recorded_in_task_as_confirmed_and_applied(self):
-        draft = section(read(TASK_DOC), "## P-01 AGENTS 문안 초안")
+        draft = declared_section(ROOT / TASK_DOC, "## P-01 AGENTS 문안 초안")
         status = next(line for line in draft.splitlines() if line.startswith("상태:"))
         self.assertIn("사용자 확인", status)
         self.assertIn("AGENTS.md 반영됨", status)
@@ -227,8 +232,8 @@ class VStageContractTests(unittest.TestCase):
 
     def test_single_planner_keeps_shared_task_selection_and_pr_regressions(self):
         spec = read("docs/specs/CI-OPT-001.md")
-        self.assertIn("revision = 4", spec)
-        self.assertIn('approved_at = "2026-11-13"', spec)
+        self.assertIn("revision = 5", spec)
+        self.assertIn('approved_at = "2026-11-16"', spec)
         for term in ("ci_plan.py", "두 번째 정책 엔진은 두지 않는다", "T3a~T3c는 로컬 V2 checkpoint"):
             self.assertIn(term, spec)
         self.assertIn("eligible_tasks(item, tasks, changed)", self.ac(5))
@@ -287,8 +292,9 @@ class VStageContractTests(unittest.TestCase):
                      "skip/cancel/fail", "not_configured", "passed로 취급하지 않는다", "유효한 V3"):
             self.assertIn(term, self.ac(11))
         ac = self.ac(12)
-        for term in ("코드 상태", "commit SHA", "target base", "Task/AC와 정책", "테스트 설정/명령",
-                     "실제 의존성 버전", "환경(OS·Python", "필수 검사 목록/결과", "unknown/partial/누락",
+        for term in ("`sdd_static`(매번 실행, 재사용 없음)", "`suite-fp/1`", "read set이 complete", "코드 상태",
+                     "테스트 설정/명령", "실행 환경 파일 내용", "환경 변수 전체", "commit SHA와 target base는",
+                     "독립 검토와 필수 검사 목록/결과(원격 CI)는 재사용으로 충족되지 않는다", "unknown/partial/누락",
                      "같은 SHA만으로", "tests_run=0", "검사 전후", "CI full Windows 2 job을 재사용으로 생략하지 않는다",
                      "merge-ref SHA/tree", "옛 draft 재실행", "not_run", "원격 E2E passed 근거가 아니다"):
             self.assertIn(term, ac)

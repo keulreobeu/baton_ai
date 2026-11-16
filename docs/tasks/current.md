@@ -2,7 +2,7 @@
 
 ## 현재 작업 — 2026-11-16 CI-OPT Q1/Q2/Q3 결정
 
-- [TASK-CI-OPT-001](TASK-CI-OPT-001.md): 사용자 결정 Q1=B(입력 지문 V3 재사용)·Q2=B(Task 전용 branch 격리 게시)·Q3=B(원격 Windows 3.11/3.12 성공 후 verified) 기록과 Phase 1 조사. CI-TIME `b2633db`는 격리 시 필수 의존성. revision 5 AC 개정·구현·push·원격 CI는 pending, in_progress/not verified.
+- [TASK-CI-OPT-001](TASK-CI-OPT-001.md): 사용자 결정 Q1=B(입력 지문 V3 재사용)·Q2=B(Task 전용 branch 격리 게시)·Q3=B(원격 Windows 3.11/3.12 성공 후 verified) 기록과 Phase 1 조사. CI-TIME `b2633db`는 격리 시 필수 의존성. revision 5 계약 PASS·구현 통합(read set complete 실측, V2 234 OK). 재사용 E2E·교차 검토·격리 branch V3·push·원격 CI는 pending, in_progress/not verified.
 
 ## 현재 작업 — 2026-11-13 CI 단계 분할 T3d
 

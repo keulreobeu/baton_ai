@@ -34,7 +34,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
    13 AC 모두 실제 테스트 symbol이 생기는 이 묶음에서 feature를 일괄 원장 등록하고 임시 SDD-001-AC-06 연결을 끝낸다.
    AC-12/13 정적 검사는 계약 경계만 증명하며 원격 E2E와 대체하지 않는다. 미승인/미실행 원격 E2E는 not_run, verified 금지.
 8. 최종 후보 — 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 독립 검토(`check_sdd.py` 포함) + 필수 CI.
-   엄격히 동일한 기존 V3만 AC-12대로 재사용할 수 있으며 로컬 재사용으로 ready/main CI Windows 2 job은 생략하지 않는다.
+   AC-12 revision 5 입력 지문이 같은 기존 성공 `offline_suite`만 재사용할 수 있으며 로컬 재사용으로 ready/main CI Windows 2 job은 생략하지 않는다.
 
 ## 단계별 검증
 
@@ -49,7 +49,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 
 원격 E2E는 승인 시 draft 선택 범위·ready/main 실제 Windows 2 job 이름별 성공·gate 실패 전파·옛 draft 재실행을 확인한다.
 충돌 PR은 CI가 없으므로 검증된 것으로 보지 않는다. 결과를 안전하게 만들지 못하면 실패하며 SDD FAIL은 fallback으로 지워지지 않는다.
-현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 현재 기본 V3로 보수적으로 실행한다. `reuse_v3`는 순수 비교 함수만 있고 runtime 수집/저장 호출자가 없어 현재 모든 V3를 실제 실행하며 재사용 절감을 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
+현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 현재 기본 V3로 보수적으로 실행한다. `offline_suite` 재사용은 2026-11-16 `verify_environment.py --evidence-dir`와 Orchestrator V3 caller에 연결됐으며 재사용 절감은 실측 전이라 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
 원격 E2E 승인 시 부분 재실행 fail-closed와 Re-run all jobs 재생성 경로, plan/gate 로그 필드도 확인한다.
 
 ## 결정과 경계 — 2026-11-12

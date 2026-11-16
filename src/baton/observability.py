@@ -32,7 +32,9 @@ CI_EVENT_FIELDS = {
     "requested_level", "effective_level", "stage", "status", "selected_tests", "total_tests", "executed_test_count",
     "selection_reasons", "graph_seconds", "ci_seconds", "validation_seconds", "escalations", "fallback_reasons",
     "reuse_decision", "equality_checks", "source_evidence", "v3_only_defects", "measurement_kind", "coverage_state",
+    "suite_execution", "suite_fingerprint", "reused_test_count",
 }
+CI_SUITE_EXECUTIONS = {"executed", "reused", "not_run"}
 CI_LEVELS = {1, 2, 3}
 CI_FRESHNESS = {"fresh", "stale", "failed", "partial", "unknown", "not_run"}
 CI_COVERAGE = {"complete", "partial", "unknown", "unavailable", "not_run"}
@@ -40,6 +42,44 @@ CI_STAGES = {"editing", "in_progress", "debugging", "checkpoint", "task_complete
 CI_STATUSES = {"passed", "failed", "not_run"}
 CI_REUSE = {"accepted", "rejected", "not_requested", "unknown"}
 CI_MEASUREMENTS = {"measured", "measured_calculation", "assumed", "unknown"}
+
+
+def suite_execution(request, executed, source_evidence):
+    """CI-OPT-001 AC-12 rev5 suite_execution combinations; anything else is rejected.
+
+    The table governs V3 (effective_level 3). Lower tiers carry no suite fields.
+    """
+    suite, fp, reused = request["suite_execution"], request["suite_fingerprint"], request["reused_test_count"]
+    status, decision = request["status"], request["reuse_decision"]
+    hexfp = isinstance(fp, str) and re.fullmatch(r"[a-f0-9]{64}", fp) is not None
+
+    def bad():
+        raise ValueError("invalid_ci_suite_execution")
+    if suite is None:
+        if request["effective_level"] == 3 or fp is not None or reused is not None:
+            bad()
+        return None
+    if suite not in CI_SUITE_EXECUTIONS or request["effective_level"] != 3:
+        bad()
+    if reused is not None and (type(reused) is not int or not 0 < reused <= 1000000):
+        bad()
+    if suite == "executed":
+        ok = (reused is None and decision in {"not_requested", "rejected"}
+              and ((status == "passed" and executed > 0 and hexfp) or (status == "failed" and (hexfp or fp is None))))
+    elif suite == "reused":
+        refs = source_evidence
+        ok = (status in {"passed", "failed"} and hexfp and decision == "accepted" and reused is not None
+              and len(refs) == 3 and re.fullmatch(r"run:[A-Za-z0-9_.:-]{1,128}", refs[0]) is not None
+              and re.fullmatch(r"commit:[a-f0-9]{40}", refs[1]) is not None
+              and re.fullmatch(r"evidence:[a-f0-9]{64}", refs[2]) is not None
+              and (status == "passed" or executed > 0))
+    else:
+        ok = (executed == 0 and reused is None and fp is None
+              and ((status == "not_run" and decision in {"rejected", "unknown"})
+                   or (status == "failed" and decision == "not_requested")))
+    if not ok:
+        bad()
+    return suite
 
 
 def encoded(value):
@@ -397,7 +437,8 @@ class MetricsStore:
         executed_test_count = request["executed_test_count"]
         if type(executed_test_count) is not int or not 0 <= executed_test_count <= 1000000:
             raise ValueError("invalid_ci_executed_test_count")
-        if request["status"] == "passed" and (executed_test_count <= 0 or total_tests == 0):
+        suite = suite_execution(request, executed_test_count, source_evidence)
+        if request["status"] == "passed" and (total_tests == 0 or (executed_test_count <= 0 and suite != "reused")):
             raise ValueError("invalid_ci_empty_success")
         equality = request["equality_checks"]
         if not isinstance(equality, dict) or len(equality) > 32 or any(
@@ -427,6 +468,8 @@ class MetricsStore:
                 "equality_checks": dict(sorted(equality.items())), "source_evidence": source_evidence,
                 "v3_only_defects": defects, "measurement_kind": request["measurement_kind"],
                 "coverage_state": request["coverage_state"], "evidence_sha256": evidence_hash,
+                "suite_execution": suite, "suite_fingerprint": request["suite_fingerprint"],
+                "reused_test_count": request["reused_test_count"],
                 "selected_tests_sha256": hashed(selected), "selection_detail": "full"}
         while len(encoded(body).encode("utf-8")) > 24000 and body["selected_tests"]:
             keep = max(0, len(body["selected_tests"]) // 2)

@@ -5,10 +5,11 @@ kind = "spec"
 id = "CI-OPT-001"
 status = "approved"
 owner = "Claude"
-revision = 4
+revision = 5
 approved_by = "사용자"
-approved_at = "2026-11-13"
-approval_ref = "2026-11-13 user: 리눅스는 나중에 확장하고 윈도우부터 안정화 해야지. Windows-first CI: windows-latest x Python 3.11/3.12, two required validation members; plan/gate also Windows. Linux validation deferred. Existing nonzero/no-skip, V1/V2/V3, evidence, independent-review and push boundaries remain."
+approved_at = "2026-11-16"
+approval_ref = "2026-11-16 user decisions: Q1=B input-fingerprint V3 reuse (fingerprint unit = what tests actually read, sdd_static always separate), Q2=B task-isolated branch publication (CI-TIME b2633db included as required dependency), Q3=B verified only after remote Windows 3.11/3.12 CI on the exact SHA; RA-1 clock/random and RA-2 unobservable external state residual risks accepted. Codex independent contract review PASS at 3cc208c (run_462044c6b665)."
+prior_revision4_approval_ref = "2026-11-13 user: 리눅스는 나중에 확장하고 윈도우부터 안정화 해야지. Windows-first CI: windows-latest x Python 3.11/3.12, two required validation members; plan/gate also Windows. Linux validation deferred. Existing nonzero/no-skip, V1/V2/V3, evidence, independent-review and push boundaries remain."
 prior_revision3_approval_ref = "2026-11-12 user-approved V1 Fast Feedback amendment relayed by coordinator msg_beb3d53cbede: union available CBM impact with full Task-base Git direct-file checks; graph partial/failure alone does not force full or fail V1; executed failures fail, no checks NOT_RUN; preserve conservative V2 and independent full V3/final safeguards. Prior revision2 approval retained below."
 prior_revision2_approval_ref = "2026-11-12 사용자 결정: A = '1': rewrite CI-OPT T3 (T3a-T3c, AC-05..AC-12, still unimplemented; scripts/ci_plan.py does not exist) into the V1/V2/V3 design; ci_plan.py becomes the single policy planner (no second engine). | B = '제안대로': V1 and V2 run as local BATON validation (task validation / work-unit checks with local commits); GitHub CI: draft PR = V2 scope, ready PR and main push = V3 full (fixed 4 matrix, AC-08 'ready/main always full 4' kept). Push rules in AGENTS stay unchanged (push still needs its own approval). | C = '변경 허용': amend CI-OPT-001 AC-01 (the ban on a new impact-analysis engine/cache) and AC-13 (verification cache out of scope) and the AGENTS verification ladder, only as needed for: CBM graph-based selection for V1/V2, and V3 result reuse under strict equality of code state/commit SHA/target base/test config/dependencies/environment/required check list (same SHA alone never suffices). No new verification DB: record in existing MetricsStore/Task evidence. | E: CBM installed binary-only (codebase-memory-mcp 0.12.1, C:/Users/SSAFY/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes. | F: CBM defaults kept (watcher_enabled true, auto_watch true, watch_non_git false, auto_index false); before any V1/V2 selection BATON checks freshness (index_status / check_index_coverage), runs an incremental index_repository if stale, and falls back to V3 on any failure; resource caps decided after measurement. Trial measurement: index of this worktree 7.5 s, 16 MB SQLite in %USERPROFILE%/.cache/codebase-memory-mcp, repository untouched."
 ```
@@ -34,7 +35,7 @@ CBM은 그래프 조회/인덱싱 도구이며 BATON Python 테스트 선택 정
 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
 AC-07/09의 상향·fallback은 단계 기본값보다 우선한다. 기존 fast runner는 로컬 보조 피드백이며 공식 V3/SDD 증거를 대체하지 않는다.
 음성: 같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
-CBM 그래프 선택과 AC-12의 엄격한 V3 재사용만 허용한다. 자동 무조건 cache·새 검증 DB·두 번째 영향 분석 엔진은 금지한다.
+CBM 그래프 선택과 AC-12 revision 5 입력 지문 V3 재사용만 허용한다. 자동 무조건 cache·새 검증 DB·두 번째 영향 분석 엔진은 금지한다.
 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다.
 기존 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다.
 
@@ -159,10 +160,12 @@ merge에는 유효한 V3가 필요하고 validation은 검사한 코드 상태�
 
 ### CI-OPT-001-AC-12
 
-V3 결과 재사용은 기존 MetricsStore·Task 증거에 있는 성공한 V3의 다음 조건이 **모두 엄격히 동일**할 때만 허용한다.
-코드 상태(전체 tracked 파일·index·작업 파일·관련 untracked manifest 포함), commit SHA, target base, Task/AC와 정책,
-테스트 설정/명령, 실제 의존성 버전, 환경(OS·Python·실행 도구/버전·관련 env), 필수 검사 목록/결과가 동일해야 한다.
-항목이 unknown/partial/누락이거나 변경되면 재사용하지 않고 V3를 실행한다. 같은 SHA만으로 검증 재사용을 결정하지 않는다.
+revision 5(2026-11-16): V3는 `sdd_static`(매번 실행, 재사용 없음)과 `offline_suite`로 나눈다. `offline_suite` 결과 재사용은
+아래 "revision 5 — AC-12 입력 지문 V3 재사용" 절의 R1~R6 입력 지문(`suite-fp/1`)이 원본과 같고, 원본이 실제 실행된 성공 결과이며
+read set이 complete일 때만 허용한다(partial 원본은 문서 후보 전체를 포함한 정확히 같은 상태만). 코드 상태·테스트 설정/명령·실제
+의존성과 실행 환경 파일 내용·환경(OS·Python·실행 도구/버전·환경 변수 전체)·정책은 지문 구성요소다. commit SHA와 target base는
+증거에 기록하되 재사용 동등성 조건이 아니며, 독립 검토와 필수 검사 목록/결과(원격 CI)는 재사용으로 충족되지 않는다.
+항목이 unknown/partial/누락이거나 변경되면 재사용하지 않고 실행한다. 같은 SHA만으로 검증 재사용을 결정하지 않는다.
 실패·취소·skip·not_configured 필수 검사·tests_run=0 증거는 재사용 불가이며 기존 nonzero/no-skip·독립 검토 조건을 보존한다.
 코드 상태는 검사 전후 고정해서 비교하고, 달라지면 해당 증거를 무효화한다. 재사용 결정과 각 비교 사유를 남긴다.
 로컬 V3 재사용은 필수 원격 CI를 대신하지 않는다. ready/main CI full Windows 2 job을 재사용으로 생략하지 않는다. V1/V2 partial/fast pass는 V3 재사용·최종 완료/merge 요건을 충족하지 않는다.
@@ -190,7 +193,7 @@ ready/main 실제 Windows 2 job 성공은 별도 승인된 원격 E2E에서 개�
 
 ### CI-OPT-001-AC-13
 
-AC-01/13의 기존 '새 영향 분석 엔진/cache 전면 금지'는 CBM V1/V2 선택과 AC-12 엄격 동등성 V3 재사용에 한해서 개정한다.
+AC-01/13의 기존 '새 영향 분석 엔진/cache 전면 금지'는 CBM V1/V2 선택과 AC-12 revision 5 입력 지문 V3 재사용에 한해서 개정한다.
 새 검증 DB는 금지하고 기존 MetricsStore·Task 증거를 사용한다. CBM 자체 SQLite index는 전역 cache 아래 프로젝트/worktree별이며 검증 DB가 아니다.
 범위 밖: main tree 동일성만으로 생략(R4), merge_group(사용 unknown), CI/공식 검증 병렬화, Base+Delta overlay,
 별도 벤치마크/비교실험 시스템·원격 보호설정 변경. 공식 `verify_environment.py`는 순차 유지한다.
@@ -283,16 +286,19 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
   force·기존 공유 이력 변경은 금지한다. remote와 최종 branch 이름은 현행 확인 후 사용자에게 제시하고 구체 대상 승인 후 게시한다.
 - Q3는 현행 AC-12(ready/main Windows 2 job 개별 성공 확인 전 `not_run`)와 같은 방향이며 추가 완화가 없다.
 
-## revision 5 초안 — AC-12 입력 지문 V3 재사용 (2026-11-16, 독립 검토 전)
+## revision 5 — AC-12 입력 지문 V3 재사용 (2026-11-16)
 
-이 절은 위 2026-11-16 사용자 결정(Q1=B, 지문 단위=테스트가 실제로 읽는 범위 + SDD 별도)을 AC-12 개정문으로 쓴 **초안**이다.
-독립 검토 PASS와 이 절의 status 갱신 전까지 효력이 없고 현행 AC-12가 적용된다.
+이 절은 위 2026-11-16 사용자 결정(Q1=B, 지문 단위=테스트가 실제로 읽는 범위 + SDD 별도)의 AC-12 개정문이다.
+Codex 독립 계약 검토 PASS(3cc208c) 뒤 구현 묶음과 함께 효력을 갖는다. 실측에 맞춘 구현 보완 문구(아래 '구현 보완')는
+구현 교차 검토에서 함께 확인한다.
 초안 2판: 2026-11-16 Codex 독립 검토(f4a26c9, FAIL: P1 4·P2 3) 지적을 모두 반영했다.
 초안 3판: 재검토(27c8993, FAIL: P1 1·P2 1)의 실행 환경 파일 내용·native 입력·기록 검증기 지적을 반영했다.
 초안 4판: 재검토(469cb5e, FAIL: P1 1·P2 1)의 저장소 밖 입력·검증기 조합 지적을 반영했다.
 초안 5판: 재검토(ee1f974, FAIL: P1 2·P2 1)의 git 포함 설정·네트워크·시계/난수·SDD 실패 기록 지적과 2026-11-16 사용자 결정(아래 R6)을 반영했다.
 초안 6판: 재검토(70c9294, FAIL: P1 2·P2 1)의 loopback 소유권·R6 정밀도 지적과 외부 상태 잔여 위험 사용자 결정(아래 Risk Acceptance)을 반영했다.
 초안 7판: 재검토(6b599b4, PASS_WITH_FINDINGS: P2 1)의 `reused_test_count` 중복 집계 지적을 반영했다.
+구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
+시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
 ### 근거 실측 (2026-11-16, `2daa6a2`, 로컬 Windows, Python 3.12.10, 모델 호출 0)
 
@@ -333,18 +339,27 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
    - R5 read set 완전성: 원본 실행은 시작부터 CPython `open` audit event(builtins/io.open_code/os.open과 그 fd로 만든 mmap 포함),
      `os.listdir`/`os.scandir`, `subprocess.Popen`을 기록한다. 아래 중 하나라도 있으면 `partial`이다.
      - 열기·목록 중 경로를 정규화할 수 없는 것(저장소 안팎 모두), 기록 파일 손상·누락.
-     - 네트워크: 모든 `socket.connect`/`socket.getaddrinfo`는 partial이다. 예외는 같은 실행 안에서 `socket.bind`로 만든 loopback endpoint에
+     - 네트워크: 모든 `socket.connect`/`socket.getaddrinfo`는 partial이다. `getaddrinfo`는 숫자 loopback 주소(예: `127.0.0.1`, `::1`)만 예외다
+       (`localhost` 이름 조회는 hosts 파일을 읽으므로 partial). `connect`의 예외는 같은 실행 안에서 `socket.bind`로 만든 loopback endpoint에
        대한 연결뿐이다. 조건: 같은 실행의 socket이 그 (family, type, address, port)로 `bind`에 **성공**했고(audit event 뒤 반환값 확인),
        연결 시점에 그 socket이 아직 열려 있어 endpoint를 점유하고 있어야 한다. 성공·소유·수명을 확인할 수 없으면 partial이다.
-     - stdlib와 허용 배포판(`cryptography`) 밖 native 확장 모듈 적재(hook이 직접 파일 읽기를 보지 못함).
+     - 고정 stdlib native 목록(`scripts/readset.py`의 `STDLIB_NATIVE_ALLOWED`)과 허용 배포판(`cryptography`와 그 필수 native 의존성 `cffi`) 밖
+       native 확장 모듈 적재(hook이 직접 파일 읽기를 보지 못함).
      - native API 입력: `sqlite3.connect` audit event의 대상이 저장소 안이고 실행 시작 전부터 있던 파일이면 그 내용을 R1에 넣고,
-       경로를 정규화할 수 없으면 partial이다. `:memory:`·실행 중 만든 임시 DB는 제외한다. 저장소 안 경로의 `ctypes.dlopen`은 partial이다.
+       경로를 정규화할 수 없으면 partial이다. `:memory:`·실행 중 만든 임시 DB는 제외한다. 저장소 안 경로의 `ctypes.dlopen`은 partial이다
+       (경로 구분자 없는 DLL 이름은 OS 검색 경로로 적재되므로 저장소 경로가 아니다).
        stdlib native 모듈은 측정 실행에서 적재된 목록을 정책에 고정하고, 목록 밖 stdlib native 적재도 partial이다.
      - Python 자식에 `sitecustomize` 경유 hook 전파가 실패한 경우: 실행된 Python 자식 수(손자 포함)보다 "hook 적재" 기록이
-       적음(`-I`/`-S`/`-E`, env 교체 등).
-     - 허용목록 밖 비-Python 자식. 허용: (a) `-C`와 cwd가 모두 실행 중 만든 임시/`.local_runtime` 아래인 git,
+       적음(`-I`/`-S`/`-E`, env 교체 등), 또는 자식의 `sitecustomize`가 예외로 hook 설치에 실패(`hook_failed` 기록).
+       예외: 직접 자식이 hook을 끌 수 있는 옵션(`-I`/`-E`/`-S`) 없이 주입된 환경으로 실행됐는데 실행 고유 토큰의 적재 기록이 없으면,
+       `sitecustomize`는 사용자 코드보다 먼저 적재되므로 그 자식은 시작 완료 전에 끝난 것(예: Job object로 즉시 종료)으로 보고
+       `python_unstarted`에 명령 요약을 남기며 partial로 만들지 않는다(그 자식이 읽은 것은 R4 manifest의 시작 파일뿐이다).
+       토큰은 손자 이하 모든 세대의 Python 실행마다 부여하며, 토큰 없는 실행 수와 적재 수의 차이가 남으면 partial이다.
+     - 허용목록 밖 비-Python 자식. 허용: (a) 실효 작업 위치(`-C`가 있으면 그 대상, git이 먼저 이동하므로 cwd 무관; 없으면 cwd)가
+       임시/`.local_runtime` 아래인 git,
        (b) 저장소 대상 `git check-attr`(입력 `.gitattributes`·index는 R1에 포함), (c) 두 인자가 모두 임시 경로인 `cmd /c mklink /j`,
-       (d) 저장소 밖 실행 파일의 인자 없는 `--help`/`--version`(실행 파일 경로·SHA-256을 R4에 포함). shell 경유·launcher·
+       (d) 저장소 밖 실행 파일의 인자 없는 `--help`/`--version`, 또는 저장소 밖 인터프리터 + 저장소 밖 스크립트 1개 + `--help`/`--version`
+       (예: npm 설치 `node codex.js --help`; 실행 파일·스크립트 경로와 SHA-256을 R4에 포함). shell 경유·launcher·
        그 밖의 도구는 허용하지 않는다.
      `partial` 원본으로는 문서 후보 제외·절 단위 대체를 하지 않으며 지문은 문서 후보 전체를 포함한다(정확히 같은 상태만 재사용).
    - R6 시계·난수와 시간 경과 (2026-11-16 사용자 결정 '1번 — 남은 위험 수락, 비결정성 예외 조건 추가'):

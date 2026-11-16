@@ -962,7 +962,8 @@ class SuiteReuseTests(unittest.TestCase):
         fp = self.fp()
         bad = {"execution": "reused", "status": "failed", "returncode": 1, "tests_run": 0, "skipped": 1,
                "failures": 1, "errors": 1, "expected_failures": 1, "unexpected_successes": 1,
-               "state_stable": False, "run_id": "bad id!", "commit": "short", "schema": "other"}
+               "state_stable": False, "run_id": "bad id!", "commit": "short", "schema": "other",
+               "readset": {"schema": "x"}, "readset_sha256": "0" * 64, "readset_complete": "yes"}
         for key, value in bad.items():
             with self.subTest(key=key):
                 self.assertFalse(self.decide(fp, self.evidence(fp, **{key: value}))["allowed"])

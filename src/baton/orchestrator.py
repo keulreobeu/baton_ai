@@ -79,6 +79,47 @@ def baton_development_root(root):
     return name == "baton-ai"
 
 
+SUITE_EQUALITY = {"equal", "different", "unknown", "missing"}
+
+
+def official_suite(summary):
+    """CI-OPT-001 AC-12 rev5 fields of the official verifier summary, or None if malformed."""
+    if not isinstance(summary, dict):
+        return None
+    execution = summary.get("suite_execution")
+    fp, executed, reused = summary.get("suite_fingerprint"), summary.get("executed_tests"), summary.get("reused_test_count")
+    refs, decision = summary.get("source_evidence", []), summary.get("reuse_decision")
+    equality = summary.get("equality_checks", {})
+    hexfp = isinstance(fp, str) and re.fullmatch(r"[a-f0-9]{64}", fp) is not None
+    if (execution not in {"executed", "reused", "not_run"} or type(executed) is not int or executed < 0
+            or not isinstance(refs, list) or not isinstance(equality, dict)
+            or any(not isinstance(k, str) or v not in SUITE_EQUALITY for k, v in equality.items())
+            or decision not in {"accepted", "rejected", "not_requested"}):
+        return None
+    if execution == "executed" and not (hexfp and reused is None and decision != "accepted"):
+        return None
+    if execution == "reused" and not (hexfp and type(reused) is int and reused > 0 and decision == "accepted"
+                                      and len(refs) == 3 and all(isinstance(r, str) for r in refs)
+                                      and summary.get("tests_run") == executed + reused):
+        return None
+    if execution == "executed" and summary.get("tests_run") != executed:
+        return None
+    return {"suite_execution": execution, "suite_fingerprint": fp if hexfp else None, "executed_tests": executed,
+            "reused_test_count": reused if execution == "reused" else None, "source_evidence": list(refs),
+            "reuse_decision": decision, "equality_checks": dict(sorted(equality.items()))}
+
+
+def suite_observation(effective, status, suite):
+    """Map a V3 result onto the ci.validation suite_execution table."""
+    if effective != 3:
+        return {"suite_execution": None, "suite_fingerprint": None, "reused_test_count": None}
+    if suite is None or status == "not_run":
+        # Planner/SDD or verifier failure before a trustworthy suite result.
+        return {"suite_execution": "not_run", "suite_fingerprint": None, "reused_test_count": None}
+    return {"suite_execution": suite["suite_execution"], "suite_fingerprint": suite["suite_fingerprint"],
+            "reused_test_count": suite["reused_test_count"]}
+
+
 class Orchestrator:
     def __init__(self, store: ManagedStore, providers=None, runtime_client=None):
         self.store = store
@@ -296,7 +337,12 @@ class Orchestrator:
         if local_plan is not None:
             tier = local_plan["effective_tier"]
             if tier == "V3":
-                internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/verify_environment.py"), "--base", target_base],
+                # CI-OPT-001 AC-12 rev5: Task evidence directory for suite-fp/1
+                # evidence and reuse; sdd_static always runs inside the verifier.
+                home = Path(getattr(self.store, "directory", None) or (Path(tree) / ".local_runtime/harness-managed"))
+                safe_task = re.sub(r"[^A-Za-z0-9_.-]", "_", str(task["task_id"]))[:128] or "task"
+                internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/verify_environment.py"), "--base", target_base,
+                                          "--evidence-dir", str(home / "evidence" / safe_task), "--lock-home", str(home)],
                                  "acs": [], "official": True})
             else:
                 if local_plan["selected_ids"]:
@@ -370,11 +416,13 @@ class Orchestrator:
                         if isinstance(value, dict) and value.get("scope") == "offline_tests_only": summary = value
                     except (ValueError, TypeError):
                         continue
+                suite = official_suite(summary)
                 valid = (summary is not None and summary.get("status") == "PASS"
                          and summary.get("verified_evidence_eligible") is True
                          and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
                          and all(type(summary.get(k)) is int and summary[k] == 0
-                                 for k in ("failures", "errors", "skipped", "expected_failures")))
+                                 for k in ("failures", "errors", "skipped", "expected_failures"))
+                         and suite is not None and suite["suite_execution"] in {"executed", "reused"})
                 if not valid: code = 2
                 counts = [str(summary["tests_run"])] if summary and type(summary.get("tests_run")) is int else []
                 skipped = summary.get("skipped", 0) if summary else 0
@@ -386,6 +434,8 @@ class Orchestrator:
             results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": code,
                             "test_count": int(counts[-1]) if counts else 0, "skipped": skipped, "expected_failures": expected, "unexpected_successes": unexpected,
                             "output": persisted_text(output)[-6000:], "stop_reason": reason})
+            if check.get("official"):
+                results[-1]["suite"] = suite
             if local_plan is not None:
                 results[-1]["_planner_internal"] = id(check) in internal_ids
             if reason: break
@@ -458,12 +508,24 @@ class Orchestrator:
         executed = list(details.get("executed_checks", [])) + [
             {key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes", "stop_reason")}
             for check in results]
-        executed_test_count = sum(check.get("test_count", 0) for check in executed
-                                  if type(check.get("test_count", 0)) is int)
+        suites = [check.get("suite") for check in details.get("executed_checks", []) if "suite" in check]
+        suite = suites[-1] if suites else None
+        # A reused offline_suite is not a new run: count only what actually ran.
+        executed_test_count = sum(check.get("test_count", 0) for check in details.get("executed_checks", [])
+                                  if "suite" not in check and type(check.get("test_count", 0)) is int)
+        executed_test_count += sum(check.get("test_count", 0) for check in results
+                                   if type(check.get("test_count", 0)) is int)
+        if suite is not None:
+            executed_test_count += suite["executed_tests"]
+        if effective == 3:
+            # AC-12 rev5 table: a V3 event counts only the offline_suite tests
+            # this run actually executed (declared checks stay in evidence).
+            executed_test_count = suite["executed_tests"] if suite is not None else 0
         # Direct-file checks may succeed without producing test evidence. Keep
         # the observation instead of sending an invalid passed/tests0 event to
         # the shadow collector and silently losing it.
-        if status == "passed" and (executed_test_count <= 0 or local_plan.get("inventory_count") == 0):
+        reused_suite = suite is not None and suite["suite_execution"] == "reused"
+        if status == "passed" and ((executed_test_count <= 0 and not reused_suite) or local_plan.get("inventory_count") == 0):
             status = "not_run"
         digest_basis = {"code_identity": local_plan["code_identity"], "target_base": local_plan["target_base"],
                         "task_ids": local_plan["task_ids"], "acs": local_plan["acs"],
@@ -487,11 +549,14 @@ class Orchestrator:
             "graph_seconds": graph.get("seconds"), "ci_seconds": None,
             "validation_seconds": round(max(0.0, validation_seconds), 3),
             "escalations": escalations, "fallback_reasons": local_plan["reasons"] if escalations else [],
-            "reuse_decision": "not_requested", "equality_checks": {},
-            "source_evidence": ["task:" + task_id for task_id in local_plan["task_ids"]],
+            "reuse_decision": suite["reuse_decision"] if suite else "not_requested",
+            "equality_checks": suite["equality_checks"] if suite else {},
+            "source_evidence": (suite["source_evidence"] if suite and suite["suite_execution"] == "reused"
+                                else ["task:" + task_id for task_id in local_plan["task_ids"]]),
             "v3_only_defects": [], "measurement_kind": "measured",
             "coverage_state": "complete" if effective == 3 and status == "passed"
                               and details.get("execution_complete") is True else "partial",
+            **suite_observation(effective, status, suite),
         }
         self.store.observe(task["task_id"], "record_ci_validation", observation)
 

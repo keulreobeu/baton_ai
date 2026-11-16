@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
-scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py"]
+scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py", "scripts/readset.py", "scripts/readset_site/sitecustomize.py", "scripts/verify_environment.py", "tests/test_readset.py", "tests/test_verify_environment.py"]
 acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
 
 ```
@@ -1015,3 +1015,23 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   중간에 사용자 결정 2건(RA-1 시계·난수, RA-2 관측 불가 외부 상태 잔여 위험 수락)을 Spec Risk Acceptance에 기록했다.
   revision 5는 계약 검토를 통과했으나 AC-12 본문 교체·AC-01/AC-13·AGENTS 문구 개정은 구현 묶음과 함께 적용한다. 그 전까지 현행 AC-12가 유효하다.
   구현: part A(read set 기록기)는 Codex worker `ctx_b384c99ec672`(worktree `ci-opt-001-readset-A`, base 3cc208c), part B(`ci_plan.py` 지문·판정)는 Claude.
+- 2026-11-16 사용자 승인('Draft로 전환하고 보류 표시'): PR #13(head `b133bde`, Windows job CANCELLED 2회)을 draft로 전환하고 보류 코멘트를 남겼다
+  (`gh pr ready 13 --undo`, issuecomment-6907778593). workflow 트리거에 converted_to_draft가 없어 새 CI는 실행되지 않았다(run 목록 확인).
+  격리 branch 게시 때 닫을 예정이며 push·병합은 하지 않았다.
+
+## revision 5 구현 통합 — 2026-11-16
+
+- part A(read set 기록기)는 Codex worker `ctx_b384c99ec672`의 `c22188e`를 가져와 통합했다(worker 보고: 39 tests PASS, SDD는 scope 미등록으로 FAIL → Task scope에 5개 파일 추가로 해소).
+  통합 중 실측으로 찾은 결함을 고쳤다: Popen 함수 교체가 `asyncio` 상속을 깨 28개 모듈 import 실패, Windows 소문자 경로로 읽은 문서를
+  미읽음 처리할 위험, 부모가 병합 중 같은 로그에 다시 써 709MB 무한 루프, 저장소 `__pycache__`를 외부로 오분류, 자식 시작 시각 기준 생성 판정,
+  `sqlite3.connect/handle` 오해석, 경로 없는 DLL 이름 오탐, 중첩 기록기 오염, 손자 Python 토큰 부재. mmap descriptor는 partial로 처리했다.
+- part B `ci_plan.py` `suite-fp/1`·판정·lock(`f93cd37`)에 증거 read set 결속을 더했고, C로 `ci.validation` 조합 검증기, Orchestrator V3
+  (`--evidence-dir`/`--lock-home`, summary suite 필드, 재사용분 비집계), `verify_environment.py` 재사용 흐름(sdd_static 먼저 → 지문 lock →
+  내용 주소형 Task 증거 후보 판정 → 재사용 또는 기록기 아래 실행 → 증거 기록)을 연결했다.
+- 실측(로컬 Windows, Python 3.12.10, 모델·원격 호출 0, 기록기 켠 전체 suite): 1차 143 tests 실행·28 오류(위 Popen 결함) → 2차 723 OK·종료 단계 정지
+  → 3차 723 OK 1139 s partial 5종 → 4차 723 OK 1155 s partial 2종 → 5차 726 OK 1136 s partial 1종 → **6차 727 OK 1154 s, read set complete**.
+  기록기 오버헤드는 같은 PC V3(약 920~970 s) 대비 약 20%(실측 비교, 별도 통제 실험 아님). 지문 계산 6.4 s(manifest 2,877 파일 포함).
+- revision 5 효력화: Spec revision 5/approved_at 2026-11-16, AC-12 본문·AC-01/13·AGENTS/README/sdd/Plan 문구와 정적 테스트 갱신,
+  traceability AC-12에 새 테스트 13개 연결. 구현 보완 문구(R5 7곳)는 구현 교차 검토에서 확인한다.
+- 검증: V2 영향 모듈 234 tests OK(test_ci_workflow·sdd·ci_plan·readset·verify_environment·managed_harness·observability), Task-base SDD PASS.
+  실제 저장소 재사용 E2E(실행 → 문서만 변경 → 재사용)와 Codex 교차 검토, 격리 branch V3는 다음 단계다. Task in_progress/not verified.

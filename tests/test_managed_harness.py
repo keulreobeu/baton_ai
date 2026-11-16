@@ -117,8 +117,60 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
 
     def official_output(self, **changes):
         value = dict(status="PASS", scope="offline_tests_only", tests_run=5, failures=0, errors=0,
-                     skipped=0, expected_failures=0, verified_evidence_eligible=True)
-        value.update(changes); return json.dumps(value)
+                     skipped=0, expected_failures=0, verified_evidence_eligible=True,
+                     suite_execution="executed", suite_fingerprint="e" * 64, executed_tests=5,
+                     reused_test_count=None, source_evidence=[], reuse_decision="not_requested", equality_checks={})
+        value.update(changes)
+        if "tests_run" in changes and "executed_tests" not in changes and value["suite_execution"] == "executed":
+            value["executed_tests"] = value["tests_run"]
+        return json.dumps(value)
+
+    def v3_argv(self):
+        home = self.root / ".local_runtime/harness-managed"
+        return [sys.executable, "-X", "utf8", str(self.root / "scripts/verify_environment.py"), "--base", "a" * 40,
+                "--evidence-dir", str(home / "evidence" / "TASK-OFFLINE"), "--lock-home", str(home)]
+
+    def test_v3_reused_suite_is_recorded_without_counting_as_new_run(self):
+        """CI-OPT-001-AC-12 rev5: a reused suite keeps evidence counts but executed_test_count is only what ran."""
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        refs = ["run:run-1", "commit:" + "c" * 40, "evidence:" + "d" * 64]
+        reused = self.official_output(tests_run=5, suite_execution="reused", executed_tests=0, reused_test_count=5,
+                                      source_evidence=refs, reuse_decision="accepted",
+                                      equality_checks={"files": "equal"})
+        def runner(argv, *args, **kw):
+            if "--base" in argv: return 0, reused, "", None
+            return 0, "", "Ran 2 tests\nOK", None
+        result, _ = self.run_validation(runner)
+        self.assertEqual(result[0]["exit_code"], 0)
+        official = result[0]["planner"]["executed_checks"][-1]
+        self.assertEqual((official["test_count"], official["suite"]["suite_execution"]), (5, "reused"))
+        event = self.observations[-1][2]
+        self.assertEqual((event["status"], event["suite_execution"], event["executed_test_count"], event["reused_test_count"]),
+                         ("passed", "reused", 0, 5))
+        self.assertEqual((event["reuse_decision"], event["source_evidence"]), ("accepted", refs))
+
+    def test_v3_executed_suite_event_and_malformed_suite_fail_closed(self):
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        def runner_for(summary):
+            def runner(argv, *args, **kw):
+                if "--base" in argv: return 0, summary, "", None
+                return 0, "", "Ran 2 tests\nOK", None
+            return runner
+        self.run_validation(runner_for(self.official_output()))
+        event = self.observations[-1][2]
+        self.assertEqual((event["suite_execution"], event["suite_fingerprint"], event["executed_test_count"]),
+                         ("executed", "e" * 64, 5))
+        bad = [dict(suite_execution=None), dict(suite_fingerprint="short"), dict(executed_tests=4),
+               dict(suite_execution="reused", reused_test_count=None), dict(suite_execution="executed", reuse_decision="accepted"),
+               dict(suite_execution="reused", executed_tests=0, reused_test_count=5, reuse_decision="accepted", source_evidence=["x"]),
+               dict(equality_checks={"files": "maybe"}), dict(suite_execution="not_run")]
+        for changes in bad:
+            with self.subTest(changes=changes):
+                result, _ = self.run_validation(runner_for(self.official_output(**changes)))
+                self.assertNotEqual(result[0]["exit_code"], 0)
+                event = self.observations[-1][2]
+                self.assertEqual(event["status"], "failed")
+                self.assertIn(event["suite_execution"], {"not_run", "executed", "reused"})
 
     def test_default_v3_actual_target_base_full_budget_and_accounting(self):
         self.plan.update(effective_tier="V3", direct_checks=[])
@@ -128,7 +180,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         result, process = self.run_validation(runner)
         self.assertEqual(self.calls[0][1]["stage"], "task_complete")
         call = process.call_args_list[-1]
-        self.assertEqual(call.args[0], [sys.executable, "-X", "utf8", str(self.root / "scripts/verify_environment.py"), "--base", "a" * 40])
+        self.assertEqual(call.args[0], self.v3_argv())
         self.assertEqual(call.args[1], self.root)
         self.assertGreater(call.args[3], 1100)
         self.assertLessEqual(call.args[3], 1200)
