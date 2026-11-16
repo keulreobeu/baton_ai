@@ -291,6 +291,7 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 초안 3판: 재검토(27c8993, FAIL: P1 1·P2 1)의 실행 환경 파일 내용·native 입력·기록 검증기 지적을 반영했다.
 초안 4판: 재검토(469cb5e, FAIL: P1 1·P2 1)의 저장소 밖 입력·검증기 조합 지적을 반영했다.
 초안 5판: 재검토(ee1f974, FAIL: P1 2·P2 1)의 git 포함 설정·네트워크·시계/난수·SDD 실패 기록 지적과 2026-11-16 사용자 결정(아래 R6)을 반영했다.
+초안 6판: 재검토(70c9294, FAIL: P1 2·P2 1)의 loopback 소유권·R6 정밀도 지적과 외부 상태 잔여 위험 사용자 결정(아래 Risk Acceptance)을 반영했다.
 
 ### 근거 실측 (2026-11-16, `2daa6a2`, 로컬 Windows, Python 3.12.10, 모델 호출 0)
 
@@ -332,7 +333,8 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
      `os.listdir`/`os.scandir`, `subprocess.Popen`을 기록한다. 아래 중 하나라도 있으면 `partial`이다.
      - 열기·목록 중 경로를 정규화할 수 없는 것(저장소 안팎 모두), 기록 파일 손상·누락.
      - 네트워크: 모든 `socket.connect`/`socket.getaddrinfo`는 partial이다. 예외는 같은 실행 안에서 `socket.bind`로 만든 loopback endpoint에
-       대한 연결뿐이다(그 endpoint의 상태는 실행이 만든 것이므로 입력이 아님).
+       대한 연결뿐이다. 조건: 같은 실행의 socket이 그 (family, type, address, port)로 `bind`에 **성공**했고(audit event 뒤 반환값 확인),
+       연결 시점에 그 socket이 아직 열려 있어 endpoint를 점유하고 있어야 한다. 성공·소유·수명을 확인할 수 없으면 partial이다.
      - stdlib와 허용 배포판(`cryptography`) 밖 native 확장 모듈 적재(hook이 직접 파일 읽기를 보지 못함).
      - native API 입력: `sqlite3.connect` audit event의 대상이 저장소 안이고 실행 시작 전부터 있던 파일이면 그 내용을 R1에 넣고,
        경로를 정규화할 수 없으면 partial이다. `:memory:`·실행 중 만든 임시 DB는 제외한다. 저장소 안 경로의 `ctypes.dlopen`은 partial이다.
@@ -345,13 +347,13 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
        그 밖의 도구는 허용하지 않는다.
      `partial` 원본으로는 문서 후보 제외·절 단위 대체를 하지 않으며 지문은 문서 후보 전체를 포함한다(정확히 같은 상태만 재사용).
    - R6 시계·난수와 시간 경과 (2026-11-16 사용자 결정 '1번 — 남은 위험 수락, 비결정성 예외 조건 추가'):
-     시계·난수에 따른 비결정성은 잔여 위험으로 명시한다. 재사용은 "같은 입력으로 이미 한 번 통과"를 뜻하며 V3 1회 실행 통과와 같은 수준의 위험이다.
-     다만 시간 경과로 실질 입력이 바뀌는 경우(만료일·날짜 기준 분기 등)까지 같은 위험으로 단정하지 않는다. 비결정성이 확인된 테스트는
-     가능하면 시계 고정·난수 시드 고정으로 결정성을 확보한다. 통제할 수 없는 테스트는 `ci_plan.py` 정책 목록(`NON_REUSABLE_TESTS`)에
-     test id·사유와 함께 올리고, suite를 재사용하는 V3에서도 그 테스트만 매번 실행한다(재사용 범위 제외). 전체 V3에 일괄 TTL은 두지 않는다.
-     특정 검증에만 같은 정책 목록의 `expires_after_seconds`로 만료를 둘 수 있고, 원본이 그보다 오래되면 그 테스트를 실행한다.
-     목록은 현재 비어 있고 정책 버전(R4)에 포함되어 바뀌면 지문이 바뀐다. 비결정성 탐지를 위한 별도 시스템은 두지 않는다.
-     최종 `verified`는 언제나 대상 SHA에서 새로 실행한 원격 Windows Python 3.11/3.12 CI 필수 체크 통과가 필요하다.
+     `ci_plan.py` 정책 목록 `NON_REUSABLE_TESTS`의 항목은 `{test_id, reason, mode}`이며 mode는 둘 중 하나다.
+     - `always`: suite를 재사용하는 V3에서도 이 테스트는 매번 실행한다.
+     - `expires_after_seconds=N`(정수 N>0): 원본 증거의 `finished_utc`로부터 현재(UTC)까지 N초를 넘었으면 이 테스트를 실행하고, 넘지 않았으면 재사용한다.
+     시간 경과로 결과가 바뀔 수 있는 테스트(현재 시각·만료일·날짜 기준 분기를 쓰는 테스트)는 시계를 고정·주입해 결정화하거나,
+     그렇지 않으면 반드시 `always`로 올린다. 난수를 쓰는 테스트는 시드를 고정하거나 `always`로 올린다. 확인되지 않은 비결정성은 아래 RA-1에 속한다.
+     실행한 목록 테스트는 `executed_test_count`에 센다. 목록과 각 항목은 정책 버전(R4)에 들어가 바뀌면 지문이 바뀐다.
+     현재 목록은 비어 있다. 전체 V3에 일괄 TTL은 두지 않는다. 비결정성 탐지를 위한 별도 시스템은 두지 않는다.
 3. 현재 지문 계산 전후 상태가 고정·동일하다(`ci_plan.freeze`).
 4. 원본 증거 JSON이 존재하고 기록된 SHA-256과 일치하며 schema·정책 버전이 같다.
 
@@ -382,6 +384,22 @@ V3는 두 구성 요소로 나눈다. **`sdd_static`**(`check_sdd.py --base/--ci
 `reused_test_count`=원본 tests_run으로 기록한다.
 거부 시 `reuse_decision=rejected`와 사유 코드를 남긴다.
 
+### Risk Acceptance (2026-11-16 사용자 결정)
+
+| ID | 잔여 위험 | 수락 범위와 방어 | 수락 원문 요지 |
+|---|---|---|---|
+| RA-1 | 시계·난수에 따른 비결정성 | V3 1회 실행 통과와 같은 수준. 시간 경과로 실질 입력이 바뀌는 경우는 이 위험으로 보지 않고 R6로 처리 | '1번 — 남은 위험 수락, 비결정성 예외 조건 추가' |
+| RA-2 | 관측할 수 없는 외부 상태: 저장소 밖 파일의 stat·access·symlink 메타데이터, 외부 프로세스 상태 | 환경 변수 전체 digest(R4)와 실행 환경 manifest(R4)는 보조 방어이며 모든 외부 상태의 동일성을 보장한다고 주장하지 않는다. 관측되지 않았다는 이유만으로 외부 상태를 안정적이라고 간주하지 않는다 | '1번 — 관측 불가 외부 상태의 잔여 위험 수락(조건부)' |
+
+RA 운영 규칙: 외부 상태 의존성이 실제로 확인되고 재사용 결과에 영향을 줄 수 있으면, 그 입력을 지문에 추가하거나 안정성을 확인한다.
+불가능하면 해당 테스트를 `NON_REUSABLE_TESTS`(`always`, reason에 RA-2 의존 명시)로 올리거나 원본을 partial로 처리한다.
+완전 추적 시스템·OS 수준 감시 계층은 이번 범위에서 도입하지 않는다. 최종 `verified`는 언제나 대상 SHA의 원격 Windows Python 3.11/3.12
+CI 새 실행과 필수 체크 통과가 필요하다(Q3). 검토자는 RA-1·RA-2와 같은 가정을 새로운 근거 없이 반복 지적하지 않아도 되지만,
+새로운 반례나 계약 위반은 계속 보고한다.
+
+검토 완료 조건: 정의된 입력과 지문 계산의 정확성, 증거 무효화, 증거 연결, 실패 시 재실행, 알려진 외부 의존성 처리가 검증되고
+잔여 위험이 위 표에 문서화되어 있으면 이 계약의 수용 기준을 충족한 것으로 평가한다. PASS 여부는 실제 검증 증거로 판단한다.
+
 함께 개정할 상위 문구(이 초안 승인과 같은 변경 묶음): AC-01·AC-13의 "엄격 동등성 V3 재사용"을 "AC-12 revision 5 입력 지문
 재사용"으로 바꾸고, AGENTS.md 검증 사다리의 "코드 상태·commit SHA·… 모두 엄격히 동일할 때만" 문장을 "`offline_suite`는
 AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·독립 검토·원격 CI는 재사용하지 않는다"로 바꾼다.
@@ -409,8 +427,10 @@ AC-12의 입력 지문이 같고 read set이 complete일 때만, `sdd_static`·�
 | 실행 중 bind한 loopback endpoint 연결 | 영향 없음 |
 | git `include.path`/`includeIf` 대상·`.git/config` 내용 변경 | suite 실행 |
 | git 설정 열거 실패·순환 | 원본 partial |
-| `NON_REUSABLE_TESTS` 항목 있음 + suite 재사용 | 그 테스트만 실행, 나머지 재사용 |
-| `expires_after_seconds` 초과 원본 | 해당 테스트 실행 |
+| `NON_REUSABLE_TESTS` `always` 항목 있음 + suite 재사용 | 그 테스트만 실행, 나머지 재사용 |
+| `expires_after_seconds=N` 항목, 원본 `finished_utc`로부터 N초 초과 / 이내 | 해당 테스트 실행 / 재사용 |
+| `NON_REUSABLE_TESTS` 항목 추가·삭제·mode 변경 | 정책 버전 변경으로 suite 실행 |
+| bind 실패 뒤 같은 port 연결 / bind한 socket을 닫은 뒤 연결 | 원본 partial |
 | `sdd_static` 실패 | V3 failed, suite not_run, 재사용 판정 안 함 |
 | 저장소 안 `ctypes.dlopen` / 고정 목록 밖 stdlib native 적재 | 원본 partial |
 | 허용 밖 native 모듈 적재 / 경로 정규화 실패 | 원본 partial |
