@@ -305,15 +305,46 @@ class ReadsetTests(unittest.TestCase):
                 self.assertEqual(one.as_dict()["children"]["python_unstarted"], [])
 
     def test_pth_safety_scan(self):
+        """Review P1 (4506c02): exact import-line content, not file names; enumeration failure fails closed."""
         site_dir = Path(self.temp.name) / "site"
         site_dir.mkdir()
-        (site_dir / "distutils-precedence.pth").write_text("import os; x=1\n", encoding="utf-8")
-        (site_dir / "__editable__.baton_ai-0.1.pth").write_text("import __editable___finder\n", encoding="utf-8")
-        (site_dir / "paths.pth").write_text("C:/some/path\n", encoding="utf-8")
-        with patch("site.getsitepackages", return_value=[str(site_dir)]), patch("site.ENABLE_USER_SITE", False):
+        distutils = ("import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; "
+                     "enabled and __import__('_distutils_hack').add_shim(); \n")
+        (site_dir / "distutils-precedence.pth").write_text(distutils, encoding="utf-8")
+        (site_dir / "__editable__.baton_ai-0.1.pth").write_text("C:/repo/src\n", encoding="utf-8")
+        (site_dir / "__editable__.other-1.pth").write_text(
+            "import __editable___other_1_finder; __editable___other_1_finder.install()\n", encoding="utf-8")
+        with patch("site.getsitepackages", return_value=[str(site_dir), str(site_dir / "absent")]), \
+                patch("site.ENABLE_USER_SITE", False):
             self.assertTrue(readset.pth_safe())
+            (site_dir / "distutils-precedence.pth").write_text("import os; open('C:/outside').read()\n", encoding="utf-8")
+            self.assertFalse(readset.pth_safe())  # allowed name, unknown code
+            (site_dir / "distutils-precedence.pth").write_text(distutils, encoding="utf-8")
             (site_dir / "evil.pth").write_text("import evil_hook\n", encoding="utf-8")
             self.assertFalse(readset.pth_safe())
+        with patch("site.getsitepackages", return_value=[str(site_dir)]), patch("site.ENABLE_USER_SITE", False), \
+                patch.object(readset, "_ORIGINAL_LISTDIR", side_effect=PermissionError("denied")):
+            self.assertFalse(readset.pth_safe())
+
+    def test_cross_process_loopback_endpoints_and_truncated_log(self):
+        """A child's connect to an endpoint bound by another process of this run is judged at stop."""
+        rec = self.recorder()
+        directory = rec._log_targets()[0]
+        now = time.time()
+        events = [{"type": "bind", "pid": 1, "sid": 7, "family": 2, "kind": 1, "host": "127.0.0.1", "port": 5000, "t": now},
+                  {"type": "connect", "family": 2, "kind": 1, "host": "127.0.0.1", "port": 5000, "t": now + 1},
+                  {"type": "close", "pid": 1, "sid": 7, "t": now + 2},
+                  {"type": "connect", "family": 2, "kind": 1, "host": "127.0.0.1", "port": 5000, "t": now + 10}]
+        Path(directory, "1.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events[:3]), encoding="utf-8")
+        Path(directory, "2.jsonl").write_text(json.dumps(events[3]) + "\n", encoding="utf-8")
+        rec.stop()
+        self.assertEqual(rec._socket_allowed, 1)  # during the bind interval
+        self.assertEqual(rec.partial_samples.get("NETWORK"), ["connect 127.0.0.1:5000"])  # after close
+        truncated = self.recorder()
+        directory = truncated._log_targets()[0]
+        Path(directory, "3.jsonl").write_text('{"type": "read", "path": "C:/x"', encoding="utf-8")  # no newline
+        truncated.stop()
+        self.assertIn("READSET_LOG_CORRUPT", truncated.partial_reasons)
 
     def test_child_alive_at_stop_and_nested_propagation(self):
         """A recorder inside the suite never hides a real child's inputs from the outer one."""

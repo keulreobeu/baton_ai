@@ -1050,3 +1050,8 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   실제 이벤트를 모든 활성 기록기에 전달·자식은 프로세스별 로그 파일, 추적 밖 프로세스 생성 partial, `.pth` import 허용 목록,
   링크 대상 내용 지문, 없는 디렉터리 조회는 입력으로 기록, `resolver`(호스트 이름·hosts 파일) 지문, 생성 판정 50 ms 여유(Windows 시계 해상도).
   기록기 자체 테스트는 partial 상황을 실제로 일으키지 않고 합성 이벤트로 주입한다. V2 239 tests OK(1건 시계 여유 반영 후 readset 19 OK), SDD PASS.
+- 2026-11-16 Codex 4차 재검토(`4506c02`, `ctx_9cdd03135614`): FAIL(P1 4). 3건 반영(`.pth` 내용 검증·열거 실패 fail-closed, 잘린 마지막 로그 줄 partial,
+  resolver 전후 비교). "증거 commit == 현재 HEAD" 1건은 사용자 결정 Q1=B·Spec revision 5와 충돌해 반영하지 않고 ADR 옛 문장을 명시적으로 대체했다.
+  E2E(`4506c02`): 736 tests 중 2 실패(중첩 기록기 시험에서 자식이 바깥 시작 시각으로 생성 판정) → 자식은 생성 시각만 보내고 기록기별 판정.
+  read set partial 원인(자식의 `_bz2`/`_lzma`, 부모가 bind한 서버로의 자식 연결)도 반영: native 허용 목록, 프로세스 간 bind/close 시각 기반 판정
+  (정밀 시스템 시각; time.time()은 Windows 3.12에서 약 16 ms).

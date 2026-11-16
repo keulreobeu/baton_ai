@@ -27,15 +27,20 @@ import time
 # measurement (Windows, CPython 3.12). Any other native module import makes the
 # read set partial. Changing this list changes the policy digest
 # (ci_plan.policy_identity hashes this file).
-STDLIB_NATIVE_ALLOWED = ("_asyncio", "_ctypes", "_decimal", "_overlapped", "_queue", "_sqlite3",
-                         "_ssl", "_uuid", "math", "unicodedata")
+STDLIB_NATIVE_ALLOWED = ("_asyncio", "_bz2", "_ctypes", "_decimal", "_elementtree", "_hashlib", "_lzma",
+                         "_multiprocessing", "_overlapped", "_queue", "_socket", "_sqlite3", "_ssl", "_uuid",
+                         "math", "pyexpat", "select", "unicodedata")
 # Variables the recorder itself puts into child environments; nothing else may
 # be declared in ``added_env``.
 ADDED_ENV_ALLOWED = ("BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH")
 # .pth files whose import lines run before sitecustomize. Only these known
 # installer files (their code is in the hashed runtime manifest) keep the
 # "ended before startup" exception available.
-PTH_IMPORT_ALLOWED = re.compile(r"(distutils-precedence|__editable__\..+)\.pth", re.IGNORECASE)
+PTH_IMPORT_LINES = (
+    re.compile(r"import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, 'local'\) == 'local'; "
+               r"enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?"),
+    re.compile(r"import (__editable___[A-Za-z0-9_]+_finder); \1\.install\([^()]*\)"),
+)
 # A failed listing with these errors is itself a recorded input (the directory
 # is absent); other failures make the read set partial.
 LISTING_ERRORS_AS_INPUT = {"FileNotFoundError", "NotADirectoryError"}
@@ -49,6 +54,7 @@ _ORIGINAL_POPEN = subprocess.Popen
 _ORIGINAL_LISTDIR = os.listdir
 _ORIGINAL_SCANDIR = os.scandir
 _ORIGINAL_SOCKET_BIND = socket.socket.bind
+_ORIGINAL_SOCKET_CLOSE = socket.socket.close
 _ORIGINAL_SQLITE_CONNECT = None
 _ORIGINAL_CFFI_DLOPEN = None
 _PROCESS_EVENTS = {"os.system", "os.spawn", "os.startfile", "os.exec", "os.posix_spawn", "os.fork", "os.forkpty"}
@@ -112,6 +118,40 @@ def _sha(path):
         return digest.hexdigest()
     except OSError:
         return None
+
+
+_PRECISE = None
+
+
+def _now():
+    """Wall clock comparable across processes, with sub-millisecond resolution
+    (time.time() is ~16 ms coarse on Windows CPython 3.12)."""
+    global _PRECISE
+    if os.name != "nt":
+        return time.time()
+    if _PRECISE is None:
+        try:
+            import ctypes
+            function = ctypes.WinDLL("kernel32").GetSystemTimePreciseAsFileTime
+            def precise():
+                value = ctypes.c_ulonglong()
+                function(ctypes.byref(value))
+                return value.value / 1e7 - 11644473600.0  # FILETIME (100 ns since 1601) to Unix epoch
+            _PRECISE = precise
+        except (OSError, AttributeError):
+            _PRECISE = time.time
+    return _PRECISE()
+
+
+def _born(path):
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    stamp = getattr(stat, "st_birthtime", None)
+    if stamp is None and os.name == "nt":
+        stamp = stat.st_ctime
+    return stamp
 
 
 def _entry_kind(entry):
@@ -187,17 +227,20 @@ def pth_safe():
     for directory in directories:
         try:
             names = sorted(_ORIGINAL_LISTDIR(directory))
+        except FileNotFoundError:
+            continue  # a listed site directory that does not exist holds no .pth
         except OSError:
-            continue
+            return False
         for name in names:
             if not name.lower().endswith(".pth"):
                 continue
             try:
-                lines = Path(directory, name).read_text(encoding="utf-8", errors="replace").splitlines()
-            except OSError:
+                lines = Path(directory, name).read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
                 return False
-            if any(line.startswith(("import ", "import\t")) for line in lines) and not PTH_IMPORT_ALLOWED.fullmatch(name):
-                return False
+            for line in lines:
+                if line.startswith(("import ", "import\t")) and not any(p.fullmatch(line.rstrip()) for p in PTH_IMPORT_LINES):
+                    return False
     return True
 
 
@@ -232,6 +275,8 @@ class Recorder:
         self.native_modules = set()
         self._native_allowed = set(STDLIB_NATIVE_ALLOWED) | {"cryptography", "_cffi_backend"}
         self._sockets = {}
+        self._endpoints = []
+        self._pending_connects = []
         self._socket_allowed = 0
         self._network_violations = 0
         self._children = {"allowed": {"temp_git": 0, "repo_check_attr": 0, "temp_mklink": 0, "tool_help": 0},
@@ -274,6 +319,7 @@ class Recorder:
                 os.scandir = _tracked_scandir
                 subprocess.Popen = _TrackedPopen
                 socket.socket.bind = _tracked_bind
+                socket.socket.close = _tracked_close
                 sys.addaudithook(_audit)
                 _HOOK_INSTALLED = True
             _ACTIVE.append(self)
@@ -346,25 +392,40 @@ class Recorder:
         return False
 
     # -- observations --------------------------------------------------------
-    def _record_read(self, path, via="open", section_only=False, digest=None):
+    def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        if _is_device(canonical) or not os.path.exists(canonical) or self._is_created(canonical):
-            return  # nothing to read, or an output of this run
+        if _is_device(canonical):
+            return
         scope = self._scope(canonical)
-        if scope == "derived" or os.path.isdir(canonical):
-            return  # bytecode, or a directory handle (listings are recorded separately)
-        if digest is None:
+        if scope == "derived":
+            return
+        if self._is_child:
+            # A child judges nothing: it reports content and birth time, and
+            # every recorder applies its own start time (nested recorders).
+            if not os.path.exists(canonical) or os.path.isdir(canonical):
+                return
             with self._quiet():
-                digest = _sha(canonical)
+                digest, born = _sha(canonical), _born(canonical)
+            self._emit({"type": "read", "path": canonical, "via": via, "section_only": bool(section_only),
+                        "sha256": digest, "born": born})
+            return
+        if relayed:
+            if canonical in self._created or (born is not None and born >= self._started_epoch):
+                return
+        else:
+            if not os.path.exists(canonical) or self._is_created(canonical) or os.path.isdir(canonical):
+                return  # nothing to read, an output of this run, or a directory handle
+            if digest is None:
+                with self._quiet():
+                    digest = _sha(canonical)
         if scope == "env_manifest":
             if canonical not in self._env_reads:
                 self._env_reads[canonical] = {"path": _real(path) or canonical, "sha256": digest}
                 if digest is None:
                     self._partial("INPUT_UNHASHABLE", path)
-                self._emit({"type": "read", "path": canonical, "via": via, "section_only": False, "sha256": digest})
             return
         item = self._repo if scope == "repo" else self._outside
         entry = item.get(canonical)
@@ -377,8 +438,6 @@ class Recorder:
             entry["via"] = "sqlite"
         if not section_only:
             entry["section_only"] = False
-        self._emit({"type": "read", "path": canonical, "via": via, "section_only": bool(section_only),
-                    "sha256": entry.get("sha256")})
 
     def _open_event(self, path, mode=None, flags=None):
         if isinstance(path, int):
@@ -391,18 +450,33 @@ class Recorder:
                       or (isinstance(flags, int) and flags & (os.O_CREAT | os.O_TRUNC)))
         if _is_device(canonical) or self._scope(canonical) == "derived":
             return
+        if self._is_child:
+            if not (create and not os.path.exists(canonical)):
+                self._record_read(canonical, section_only=self._section_depth.get(canonical, 0) > 0)
+            return
         if create:
             self._is_created(canonical, True)
         if not self._is_created(canonical):
             self._record_read(canonical, section_only=self._section_depth.get(canonical, 0) > 0)
 
-    def _listing(self, path, ok, entries, error=None):
+    def _listing(self, path, ok, entries, error=None, born=None, relayed=False):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
         scope = self._scope(canonical)
-        if scope in {"env_manifest", "derived"} or self._is_created(canonical):
+        if scope in {"env_manifest", "derived"}:
+            return
+        if self._is_child:
+            with self._quiet():
+                born = _born(canonical)
+            self._emit({"type": "listing", "path": canonical, "ok": bool(ok), "error": error, "born": born,
+                        "entries": sorted([[str(n), str(k)] for n, k in entries]) if ok else []})
+            return
+        if relayed:
+            if canonical in self._created or (born is not None and born >= self._started_epoch):
+                return
+        elif self._is_created(canonical):
             return
         if not ok and error not in LISTING_ERRORS_AS_INPUT:
             self._partial("LISTING_FAILED", "%s %s" % (error, path))
@@ -412,7 +486,6 @@ class Recorder:
         if not ok:
             item["error"] = error
         self._listings[(canonical, len(self._listings))] = item
-        self._emit({"type": "listing", **item})
 
     def _audit_event(self, event, args):
         """One recorder's handling of a CPython audit event."""
@@ -474,8 +547,22 @@ class Recorder:
                 return  # connected socket: its connect was already judged
             if self._owned(sock, address):
                 self._socket_allowed += 1
-            else:
-                self._partial("NETWORK", event); self._network_violations += 1
+                return
+            try:
+                host, port = address[0], address[1]
+            except (TypeError, IndexError, KeyError):
+                host = port = None
+            if isinstance(host, str) and _is_loopback(host):
+                # Maybe an endpoint bound by another process of this run:
+                # judged at stop against every recorded bind/close interval.
+                pending = {"family": int(getattr(sock, "family", -1)), "kind": int(getattr(sock, "type", 0)) & 0xf,
+                           "host": host, "port": port, "t": _now()}
+                if self._is_child:
+                    self._emit({"type": "connect", **pending})
+                else:
+                    self._pending_connects.append(pending)
+                return
+            self._partial("NETWORK", event); self._network_violations += 1
             return
         if event in {"socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyname_ex"}:
             if not _local_name(args[0] if args else None):
@@ -604,6 +691,40 @@ class Recorder:
             self._children["disallowed"].append(summary[:160])
         return env
 
+    def _endpoint_bound(self, sock, host, port):
+        record = {"family": int(sock.family), "kind": int(sock.type) & 0xf, "host": host, "port": port,
+                  "t": _now()}
+        if self._is_child:
+            self._emit({"type": "bind", "pid": os.getpid(), "sid": id(sock), **record})
+        else:
+            self._endpoints.append({"key": (os.getpid(), id(sock)), "family": record["family"],
+                                    "kind": record["kind"], "host": host, "port": port,
+                                    "bound": record["t"], "closed": None, "sock": sock})
+
+    def _endpoint_closed(self, sock):
+        if self._is_child:
+            self._emit({"type": "close", "pid": os.getpid(), "sid": id(sock), "t": _now()})
+            return
+        for endpoint in self._endpoints:
+            if endpoint["key"] == (os.getpid(), id(sock)) and endpoint["closed"] is None:
+                endpoint["closed"] = _now()
+
+    def _judge_pending_connects(self):
+        """A loopback connect is allowed only to an endpoint of this run that was
+        bound before and not yet closed at that moment. An endpoint whose close
+        time was never observed (closed by garbage collection or process exit)
+        counts as open: a refused connect reads nothing."""
+        for connect in self._pending_connects:
+            ok = any(e["family"] == connect["family"] and e["kind"] == connect["kind"] and e["host"] == connect["host"]
+                     and e["port"] == connect["port"] and e["bound"] <= connect["t"]
+                     and (e["closed"] is None or connect["t"] <= e["closed"])
+                     for e in self._endpoints)
+            if ok:
+                self._socket_allowed += 1
+            else:
+                self._partial("NETWORK", "connect %s:%s" % (connect["host"], connect["port"]))
+                self._network_violations += 1
+
     def _spawned_event(self, token, pid):
         if not token:
             return
@@ -682,6 +803,17 @@ class Recorder:
             self._partial("CHILD_DRAIN_INCOMPLETE")
         for pid in alive:
             self._partial("CHILD_ALIVE_AT_STOP", "pid %s" % pid)
+        if not alive:
+            # Every writer has exited: bytes after the last newline are a
+            # truncated event that would otherwise be lost silently.
+            for name in self._log_names():
+                try:
+                    size = os.path.getsize(os.path.join(self._own_log_dir, name))
+                except OSError:
+                    continue
+                if size > self._offsets.get(name, 0):
+                    self._partial("READSET_LOG_CORRUPT", "truncated %s" % name)
+        self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
             import shutil
@@ -704,15 +836,17 @@ class Recorder:
             self._partial("CHILD_HOOK_MISSING", f"launched={self._python_launches} hooked={self._python_hooks}")
         self._unstarted = unstarted
 
-    def _merge_child_logs(self):
+    def _log_names(self):
         if not self._own_log_dir:
-            return
+            return []
         try:
-            names = sorted(_ORIGINAL_LISTDIR(self._own_log_dir))
+            return sorted(_ORIGINAL_LISTDIR(self._own_log_dir))
         except OSError as exc:
             self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
-            return
-        for name in names:
+            return []
+
+    def _merge_child_logs(self):
+        for name in self._log_names():
             path = os.path.join(self._own_log_dir, name)
             try:
                 with self._quiet(), open(path, "rb") as stream:
@@ -751,10 +885,20 @@ class Recorder:
             self._partial(str(event["reason"]), event.get("sample"))
         elif kind == "read":
             self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
-                              event.get("sha256"))
+                              event.get("sha256"), born=event.get("born"), relayed=True)
         elif kind == "listing":
-            item = {k: event[k] for k in ("path", "scope", "ok", "entries", "error") if k in event}
-            self._listings[(event["path"], len(self._listings))] = item
+            self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
+                          born=event.get("born"), relayed=True)
+        elif kind == "bind":
+            self._endpoints.append({"key": (event["pid"], event["sid"]), "family": event["family"],
+                                    "kind": event["kind"], "host": event["host"], "port": event["port"],
+                                    "bound": event["t"], "closed": None})
+        elif kind == "close":
+            for endpoint in self._endpoints:
+                if endpoint["key"] == (event["pid"], event["sid"]) and endpoint["closed"] is None:
+                    endpoint["closed"] = event["t"]
+        elif kind == "connect":
+            self._pending_connects.append({k: event[k] for k in ("family", "kind", "host", "port", "t")})
         else:
             raise KeyError(kind)
 
@@ -948,9 +1092,17 @@ def _tracked_bind(sock, address):
         if isinstance(actual, tuple) and _is_loopback(actual[0]):
             for r in _active():
                 r._sockets[id(sock)] = (sock, sock.family, sock.type, actual[0], actual[1])
+                r._endpoint_bound(sock, actual[0], actual[1])
     except (OSError, IndexError, TypeError):
         pass
     return result
+
+
+def _tracked_close(sock):
+    for r in _active():
+        if id(sock) in r._sockets or r._is_child:
+            r._endpoint_closed(sock)
+    return _ORIGINAL_SOCKET_CLOSE(sock)
 
 
 def _tracked_sqlite_connect(*args, **kwargs):

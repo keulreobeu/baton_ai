@@ -321,6 +321,14 @@ attribute 파일(`core.attributesFile`, XDG `git/attributes`, `info/attributes`)
 partial이 아니라 "없음" 입력으로 기록·지문화하고 그 밖의 조회 실패만 partial이다. loopback 주소·`localhost`·호스트 없는 이름 조회와
 loopback 역조회는 허용하되 지문 `resolver` 구성요소에 호스트 이름과 hosts 파일 내용을 넣는다. 존재하지 않거나 실행 중 만든 파일,
 디렉터리 handle, 모든 `__pycache__`는 입력이 아니다.
+4차 검토·E2E 반영(2026-11-16, Codex `4506c02` FAIL: P1 4 중 3 반영, E2E): `.pth`는 파일 이름이 아니라 import 줄의 정확한 내용
+(setuptools `distutils-precedence`, editable finder 표준 형식)으로 허용하고 site 디렉터리 열거 실패는 안전하지 않음으로 본다. 모든 자식이
+종료된 뒤 로그에 개행 없는 마지막 조각이 남으면 partial이다. resolver(호스트 이름·hosts 파일)도 suite 전후로 같아야 한다. 자식은 생성 여부를
+스스로 판정하지 않고 읽은 파일의 내용 digest와 생성 시각을 보내며 각 기록기가 자기 시작 시각으로 판정한다(중첩 기록기). 다른 프로세스가
+bind한 loopback endpoint로의 연결은 모든 프로세스의 bind·close 시각(정밀 시스템 시각)을 모아 종료 처리 때 "bind 이후·close 이전"이면
+허용하고, close를 관측하지 못한 endpoint는 열린 것으로 본다(거절된 연결은 읽은 것이 없다). stdlib native 허용 목록에 경로 기반 파일 입출력을
+하지 않는 압축·해시·socket·XML 모듈을 추가했다. 지적 중 "증거 commit과 현재 HEAD 일치"는 반영하지 않는다: commit SHA는 기록하되 동등성
+조건이 아니라는 이 revision의 결정(사용자 Q1=B, 문서만 바뀐 다른 커밋의 재사용)과 충돌하며 ADR의 옛 문장도 이번에 명시적으로 대체했다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

@@ -88,4 +88,7 @@ Linux/Ubuntu qualification은 후속 확장이다. 로컬 Git 조회 가속을 �
 이유: 2026-11-13 연속 V3 5회 사이 변경은 read set 밖 `current.md`와 선언 절 밖 `TASK-CI-OPT-001.md`뿐이었다.
 대가: audit hook과 Python 자식 전파라는 관측 장치가 필요하고, 관측 불완전(partial)이면 절감이 없다. 지문 계산 비용은 미측정이다.
 거부한 대안: 파일 확장자 예외(테스트가 읽는 문서를 놓침), 파일 단위 지문(이번 사례 절감 0), 정적 분석 read set(동적 경로를 놓침).
-이 초안은 독립 검토 전이며 현행 AC-12가 유효하다.
+이 결정은 Spec revision 5(2026-11-16 Codex 계약 검토 PASS)로 효력을 가진다. 위 2026-11-12 절의 "코드 상태·SHA·base·… 전부 동일할 때만
+재사용" 문장은 revision 5로 대체한다: commit SHA와 target base는 증거에 기록하되 `offline_suite` 재사용 동등성 조건이 아니며(문서만 바뀐
+다른 커밋에서도 재사용하는 것이 사용자 결정 Q1=B의 목적이다), 동등성은 입력 지문 구성요소 전부와 complete read set으로 판정한다.
+같은 SHA만으로 재사용하지 않는다는 원칙과 독립 검토·원격 CI 비재사용은 그대로다.

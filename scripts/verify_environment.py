@@ -205,6 +205,7 @@ def _evidence_main(args, environ):
                              sort_keys=True))
             return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
         before = cp.freeze(ROOT)
+        resolver = cp.resolver_identity()
         started = _utc()
         recorder = Recorder(ROOT)
         try:
@@ -217,7 +218,7 @@ def _evidence_main(args, environ):
         # Repository, interpreter/installed files and Git identity must be the
         # same after the suite as before it.
         stable = (cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
-                  and cp.git_identity(ROOT) == git)
+                  and cp.git_identity(ROOT) == git and cp.resolver_identity() == resolver)
         try:
             fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git,
                                       verify_observed=True)

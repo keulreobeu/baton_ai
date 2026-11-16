@@ -248,6 +248,13 @@ class EvidenceReuseTests(unittest.TestCase):
         code, again = self.run_main()
         self.assertEqual(again["suite_execution"], "executed")
 
+    def test_resolver_change_during_suite_makes_evidence_unstable(self):
+        """Review P1 (4506c02): resolver state is compared before and after the suite."""
+        calls = iter(range(1000))
+        with patch.object(self.cp, "resolver_identity", side_effect=lambda: "r%d" % next(calls)):
+            code, summary = self.run_main()
+        self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
+
     def test_lock_home_requires_evidence_dir(self):
         with patch.object(verify, "prepare_git_path"), contextlib.redirect_stderr(io.StringIO()), \
                 self.assertRaises(SystemExit):
