@@ -1164,3 +1164,4 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-17 Claude 재검토(`37b897a`, `ctx_3e6c5a562104`): PASS_WITH_FINDINGS(P1 0, P2 1, P3 2), 직전 P2×3·P3 resolved, 실제 suite의 check-attr·mklink 형태 회귀 없음.
   P2: GIT_* 부분집합 전제 오류(억제 변수 제거·HOME 계열). P3: 기록 저장소 아래 중첩 저장소, 다른 git 실행 파일.
   반영(검토자 권고 단순화): check-attr 면제 = env 상속(None) + PATH git 실행 파일 + 사이에 다른 `.git` 없음. 회귀 추가.
+- 2026-11-17 격리 branch 공식 V3(실행 SHA `37b897a`): 729 tests OK, skips 0, eligible true, read set partial(임시 영역 git, 예상). `37b897a`에만 결합.
