@@ -1212,3 +1212,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   P2 F04 mklink 실행 경계, F05 잠금 키가 commit/worktree 단위, F06 readset 필수 필드 기본값 처리. P3 F07 실행 중 환경 변경(기존 이관).
   반영(검토자 권장 A안 — 예외 제거 + 관측 결함 국소 수정): 남은 예외 3개 제거, 목록 관측 비교, 자식 로그 순번·exit 증명, 저장소 단위 잠금, 필수 필드 검사, 회귀 테스트 5종.
   기존 V3(`5e9d8c1`)·원격 CI(`762739f`) 증거는 그 SHA에 귀속해 보존. 수정 후보의 공식 V3·원격 CI·재검토는 아래에 기록한다.
+- **2026-11-18 수정 후보 `b4b9396` 공식 로컬 V3**: `verify_environment.py --base 5c07aea --evidence-dir` 734 tests OK, skips 0, failures/errors 0, eligible true, state stable, 1158 s,
+  evidence `6892ce58…`, read set partial(`CHILD_NOT_ALLOWED` 16,641 + `CHILD_LOG_INCOMPLETE`: `os._exit`·강제 종료 자식은 exit 증명 없음 — 재현 확인, 의도한 보수 동작). 로그 사본 `CI-OPT-001-v3-iso-b4b9396.log`.
+  ChatGPT 재검토 패키지 전달(Drive, 결과 대기). **게시 전 점검(2026-11-18, 사용자 "재검토중이고 게시 가능하면 올려둬")**: 원격 `codex/ci-opt-001-r5`=`762739f`, 미게시 `0bb3bc9`·`b4b9396`·이 기록 커밋,
+  작성자 lwwde07, 허용 경로(scripts/tests/docs)만, 비밀값·홈 경로·DB 없음. 대상: 기존 승인 branch(PR #16 draft) fast-forward push만. 재검토·원격 CI 결과 전 verified·병합 아님.
