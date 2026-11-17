@@ -116,7 +116,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 4. `529e93c` 최종 공식 순차 검사: `python -X utf8 scripts/verify_environment.py` exit 0, 1019초. check_sdd PASS(acs 52, features 8, tasks 12, provider_calls 0).
    564 tests OK, failures/errors 0, skipped 1(기존 Jipdam 환경 skip) → `verified_evidence_eligible=false`, live_provider_validation NOT_RUN. 따라서 Task는 `in_progress`(verified 아님).
    AC-03/04의 원격 CI/E2E는 not_run(push/PR 승인 필요).
-5. 정리 제안(4-B, 삭제 없음): `C:/Users/SSAFY/orca/workspaces/baton_ai` 아래 author workspace 7개가 모두 git blob hash로 각자의 후보와 일치한다
+5. 정리 제안(4-B, 삭제 없음): `<HOME>/orca/workspaces/baton_ai` 아래 author workspace 7개가 모두 git blob hash로 각자의 후보와 일치한다
    (T2A-author·T2A-R2-author = `351a8a9`; SCOPE-PATH-001-author·R2-author = `144fa832`, superseded, branch `codex/task-scope-path-001-r2`에 보존; R3-author = `ba694431`; EVID-author = `05e1113`; T2B-author = `e16a8f7`).
    제안: BATON Task `TASK-SCOPE-PATH-001`, `TASK-SCOPE-PATH-001-R2`, `TASK-CI-OPT-001-T2A`에 cancel/supersede 기록(삭제 아님).
 6. 남은 사용자 gate: `baton approve`(`TASK-CI-OPT-001-T2A-R2`, `TASK-SCOPE-PATH-001-R3`, `TASK-SCOPE-PATH-001-EVID`, `TASK-CI-OPT-001-T2B`); P-01 AGENTS 문안 확인(초안만); push/PR 결정; 정리 결정.
@@ -170,7 +170,7 @@ SDD 검사 base는 5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26이다. Task는 in_pr
 
 > D: hook integration (BATON vs CBM vs Orca hooks) is ON HOLD until Codex returns (it belongs to the Codex T4 lane). Record as pending; no hooks in this contract.
 
-> E: CBM installed binary-only (codebase-memory-mcp 0.12.1, C:/Users/SSAFY/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes.
+> E: CBM installed binary-only (codebase-memory-mcp 0.12.1, <HOME>/AppData/Local/Programs/codebase-memory-mcp, install.ps1 --skip-config; no hooks/skills/agents/AGENTS pointer installed); MCP registered manually for Claude Code (user scope, ~/.claude.json) and Codex (~/.codex/config.toml managed block); configs backed up under D:/baton_ai/.local_runtime/backups/client-config-20261112-111724. Record as environment facts, not as repository changes.
 
 > F: CBM defaults kept (watcher_enabled true, auto_watch true, watch_non_git false, auto_index false); before any V1/V2 selection BATON checks freshness (index_status / check_index_coverage), runs an incremental index_repository if stale, and falls back to V3 on any failure; resource caps decided after measurement. Trial measurement: index of this worktree 7.5 s, 16 MB SQLite in %USERPROFILE%/.cache/codebase-memory-mcp, repository untouched.
 
@@ -517,7 +517,7 @@ Evidence-only status files at this checkpoint:
   **21 tests OK, 0.389 s**, failures/errors/skips 0. fake 모델/clock 또는 tiny synthetic script만 사용,
   실제 모델/provider/GMS/network/공식 V3 실행 0. 새 테스트는 AC-11/12 traceability에 연결했다.
 - Claude 검토 dispatch `ctx_aa136c42a92b`, task `task_feaca027201d`, run `run_e1ccd974efd7`.
-  별도 workspace `C:/Users/SSAFY/orca/workspaces/baton_ai/CI-OPT-001-CLAUDE-REVIEW-20261113`에서
+  별도 workspace `<HOME>/orca/workspaces/baton_ai/CI-OPT-001-CLAUDE-REVIEW-20261113`에서
   수정 전 `6a37bb3`을 고정하고 `2cc905f..6a37bb3`을 검토한다. 먼저 기존 R1/R2 보고서를 읽지 않고
   자체 지적을 정리한 뒤 R1/R2를 대조하도록 했다. 결과는 pending이며 PASS로 기록하지 않는다.
 - V2 checkpoint 및 최종 후보 V3/수정 후 교차-provider 재검토/원격 fixed4 CI는 아직 남아 있다.
@@ -984,7 +984,7 @@ Evidence-only status files at this checkpoint:
 상세 경계는 [Spec 2026-11-16 amendment](../specs/CI-OPT-001.md). 이 기록은 구현·push·원격 CI 실행이 아니다.
 
 작업 위치 변경: 기존 worktree `D:/baton_ai/.local_runtime/ci-opt-001`이 삭제돼 2026-11-16 09:32
-`C:/Users/SSAFY/orca/workspaces/baton_ai/ci-opt-001`로 같은 branch/HEAD `2daa6a2`가 다시 만들어졌다. 사라진 ignored `.venv`는
+`<HOME>/orca/workspaces/baton_ai/ci-opt-001`로 같은 branch/HEAD `2daa6a2`가 다시 만들어졌다. 사라진 ignored `.venv`는
 `setup-environment.ps1`과 같은 단계로 복구했다(Python 3.12.10, editable `.[gms]`, `pip check` OK). 과거 V3 증거의 실행 경로는
 옛 경로이므로 환경 동등성 증거로 쓰지 않는다.
 
@@ -1165,3 +1165,40 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   P2: GIT_* 부분집합 전제 오류(억제 변수 제거·HOME 계열). P3: 기록 저장소 아래 중첩 저장소, 다른 git 실행 파일.
   반영(검토자 권고 단순화): check-attr 면제 = env 상속(None) + PATH git 실행 파일 + 사이에 다른 `.git` 없음. 회귀 추가.
 - 2026-11-17 격리 branch 공식 V3(실행 SHA `37b897a`): 729 tests OK, skips 0, eligible true, read set partial(임시 영역 git, 예상). `37b897a`에만 결합.
+
+## 게시 전 최종 기록 — 2026-11-17
+
+사용자 승인(2026-11-17): `origin`에 신규 branch `codex/ci-opt-001-r5` 게시, draft PR, Windows Python 3.11/3.12 CI, CI 통과 후 PR #13 종료(대체 링크),
+main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안(문서 변경은 SDD 재검사, 최종 게시 SHA의 원격 전체 V3가 최종 증거), 잔여 P3는 후속 Task.
+
+- **최종 코드 후보**: `5e9d8c1`(격리 branch). 이후 커밋은 문서만(홈 경로 표기 치환 7곳, 이 기록). 실행 로직·테스트 의미·검증 정책 변경 없음.
+- **로컬 V3(실행 SHA `5e9d8c1`, `--evidence-dir`)**: 730 tests OK, failures/errors/skips 0, eligible true, state stable, 1152.8 s,
+  evidence `suite-3292e7ac….json`, 로그 사본 외부 handoff `CI-OPT-001-v3-iso-5e9d8c1.log`
+  (SHA-256 `9cc38ea17a9dd967d5bcfa8a77ca948188d9ec3727c2da8eb9430fe34a553946`). 이 증거는 `5e9d8c1`에만 귀속한다.
+- **read set이 partial인 이유**: 2026-11-17 사용자 결정으로 임시 영역 git 면제를 제거했다. BATON suite는 임시 저장소 git 자식을
+  실행(16,617회)하므로 `CHILD_NOT_ALLOWED`로 partial이 정상이며, 그 결과 `offline_suite` 재사용 없이 매번 전체 실행한다(안전 방향).
+  남은 예외: 기록 저장소 plain `check-attr` 3, `cmd /c mklink /j` 2, 도구 `--help`/`--version` 2. 이전 complete·8 s 재사용 증거
+  (`adacb78`·`4301225`)는 제거 전 코드에 귀속된 과거 증거다.
+- **공식 독립 검토(Claude, 같은 제공자)**: 별도 Claude 세션(작성자 맥락 없음) `ctx_4fb63076cfdc`→`ctx_e13ab07d1be0`→`ctx_b56b2702e835`→
+  `ctx_3e6c5a562104`→`ctx_12265dacb320`. 최종 `5e9d8c1` **PASS(P1 0, P2 0, P3 1)**, 수렴 C, 검토 측 게시 준비 완료. CI-TIME 변경 포함 검토.
+- **정적 교차검토(ChatGPT Chat, 사용자 전달)**: `a03ba33` 대상 수렴 B(P1 계열 7) → 면제 제거 결정의 근거. 공식 PASS로 취급하지 않는다.
+- **Codex 이종 모델 교차 검토: 미수행.** 2026-11-17 Codex 주간 한도 소진(사용자 통보)으로 `ctx_f461ff1e5a2c`를 중단했다.
+  Codex 검토는 `63cadd8`(FAIL, P1 1)까지이며 최종 후보에 대한 Codex 교차 검토는 완료되지 않았다.
+- **미게시 커밋 점검(이 기록 직전, fetch 후)**: 원격 `origin/codex/ci-opt-001`=`b133bde`, `origin/main`=`5c07aea`, `codex/ci-opt-001-r5` 원격 없음.
+  미게시 66(+이 문서 커밋), 병합 0, 작성자 전부 저장소 계정, 변경 파일 31개 모두 CI-OPT/CI-TIME/JIPDAM-SKIP 선언 scope 안, 비밀값 패턴 0, 이메일 0.
+  홈 경로: 이 branch scope 문서 3개의 7곳을 `<HOME>`으로 치환. 이미 게시된 다른 문서의 경로(main 6곳 등)와 과거 커밋 이력은 재작성하지 않았다.
+  저장소 소유자 이름은 GitHub 저장소 주소 자체라 유지.
+- **원격 CI**: 게시 후 최종 게시 SHA에서 실행, 결과는 아래에 추가 기록.
+
+### 후속 Task로 이관하는 잔여 P3 (`5e9d8c1` 검토)
+
+- 발생 조건: 테스트가 실행 중 `os.environ`(HOME·USERPROFILE·XDG_CONFIG_HOME·PATH·`GIT_CONFIG_NOSYSTEM` 등)을 바꾼 상태에서, env를 지정하지 않고
+  기록 저장소에 plain `check-attr`를 실행하는 경우. 면제 판정은 호출 시점 환경을 상속으로 보지만 git 지문은 V3 시작 시 환경으로 계산된다.
+- 잠재 영향: git이 지문에 없는 사용자/system config·attributes를 읽어도 그 호출이 면제된다. 다만 이 suite는 임시 영역 git 때문에
+  read set이 항상 partial이라 현재 재사용 판정에 영향이 없다(증거 자격·검증 무결성에 직접 영향 없음 → 이관 가능).
+- 현재 도달 경로: 없음. `os.environ`을 바꾸는 테스트 7개 파일과 기록 저장소 `check-attr` 호출(`test_flow_skill` 3회)이 겹치지 않는다(검토자 grep).
+- 지금 고치지 않는 이유: 도달 경로가 없고 재사용에 영향이 없으며, 수정 시 다시 전체 V3(약 20분)와 재검토가 필요하다.
+- 재현·검증 방법: `Recorder._child`에 `patch.dict(os.environ, {"HOME": <tmp>})` 상태로 `["git","-C",root,"check-attr","text","--","x"]`, env=None을
+  넣었을 때 `repo_check_attr`로 면제되는지 확인(검토자 probe5 재현).
+- 후속 수용 기준: Recorder 시작 시 git 관련 환경(GIT_* 전부, HOME·USERPROFILE·XDG_CONFIG_HOME·HOMEDRIVE·HOMEPATH·PATH) 스냅샷과 호출 시점 값이
+  같을 때만 면제, 위 재현이 `CHILD_NOT_ALLOWED`가 되는 회귀, 실제 suite의 `check-attr` 3회는 계속 면제.

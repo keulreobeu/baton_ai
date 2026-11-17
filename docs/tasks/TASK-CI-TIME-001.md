@@ -112,7 +112,7 @@ interrupt stack은 test_wiki_lifecycle setUp / Wiki 초기화 / SQLite commit에
 환경: `D:/baton_ai/.local_runtime/ci-opt-001/.venv/Scripts/python.exe -X utf8`,
 `PYTHONDONTWRITEBYTECODE=1`, `PYTHONPATH=src`, 임시 `BATON_HOME`; editable 설치/연결 변경 없음.
 아래 `python`은 위 정확한 실행 파일을 뜻한다. 실행 위치는 격리된 author checkout
-`C:/Users/SSAFY/orca/workspaces/baton_ai/TASK-CI-TIME-001-author`, branch `keulreobeu/TASK-CI-TIME-001-author`다.
+`<HOME>/orca/workspaces/baton_ai/TASK-CI-TIME-001-author`, branch `keulreobeu/TASK-CI-TIME-001-author`다.
 토큰·비용은 unknown이다. 이 절 자체가 새 로컬 검사 결과의 영구 기록이며 역사적 측정과 구분한다.
 
 | 명령 | 결과 | count / exit / skips |
