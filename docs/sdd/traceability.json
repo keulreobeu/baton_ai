@@ -42,7 +42,11 @@
     "docs/tasks/TASK-CI-TIME-001.md",
     "docs/plans/ci-windows-time.md",
     "docs/adr/ADR-CI-TIME-001.md",
-    "docs/tasks/TASK-JIPDAM-SKIP-001.md"
+    "docs/tasks/TASK-JIPDAM-SKIP-001.md",
+    "docs/specs/CI-VTIER-001.md",
+    "docs/plans/ci-vtier.md",
+    "docs/adr/ADR-CI-VTIER-001.md",
+    "docs/tasks/TASK-CI-VTIER-001.md"
   ],
   "features": [
     {
