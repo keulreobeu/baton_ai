@@ -358,6 +358,26 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(rec._children["allowed"]["temp_git"], 1)
         self.assertEqual(rec._children["disallowed_count"], len(refused))
 
+    def test_reused_pid_is_not_a_live_child(self):
+        """V3 at 63cadd8: a finished child's pid reused by another program (Chrome) was
+        reported CHILD_ALIVE_AT_STOP. The creation stamp tells the processes apart."""
+        me = os.getpid()
+        created = readset._process_created(me)
+        self.assertTrue(readset._pid_alive(me))
+        if os.name == "nt":
+            self.assertIsInstance(created, int)
+            self.assertTrue(readset._pid_alive(me, created))
+            self.assertFalse(readset._pid_alive(me, created - 1))  # same pid, another process
+        self.assertTrue(readset._pid_alive(me, None))  # unknown stamp: still fail closed
+        rec = self.recorder()
+        rec._spawned["tok"] = me
+        rec._created_at[("spawned", "tok")] = (created - 1) if created else None
+        rec.stop()
+        if os.name == "nt":
+            self.assertNotIn("CHILD_ALIVE_AT_STOP", rec.partial_reasons)
+        else:
+            self.assertIn("CHILD_ALIVE_AT_STOP", rec.partial_reasons)
+
     def test_python_child_hook_and_log_cleanup(self):
         rec = self.recorder()
         child = subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True)

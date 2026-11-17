@@ -359,6 +359,9 @@ plain `check-attr`만 허용"이다. TEMP·`.local_runtime` 예외는 기록 중
 최종 독립 검토 반영(2026-11-17, Codex `63cadd8` FAIL: P1 1): 같은 불변식의 저장 위치 경로다. 예외 영역의 git 저장소는 `.git` 파일의
 `gitdir:`(linked worktree·submodule), gitdir의 `commondir`, object `alternates`가 모두 예외 영역 안이어야 하며, 읽을 수 없거나 형식이
 다르면 예외가 아니다(partial).
+최종 V3 반영(2026-11-17, `63cadd8` read set partial `CHILD_ALIVE_AT_STOP`: 끝난 자식의 pid를 Windows가 Chrome에 재배정): 자식 생존 판정은 pid와
+그 프로세스를 보고한 시점의 생성 시각(Windows `GetProcessTimes`)을 함께 쓴다. 같은 pid라도 생성 시각이 다르면 다른 프로세스이고, 생성 시각을
+알 수 없으면 종전대로 살아 있다고 본다(fail-closed).
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

@@ -1123,3 +1123,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   격리 무결성 PASS_WITH_FINDINGS(제외 Task 산출물 0·충돌 표식 0·CI-TIME tree 동일·JIPDAM-SKIP 조상), 11차 지적 resolved, 대상 61 tests OK.
   P1: 예외 영역 git 허용이 `.git` 파일의 `gitdir`/`commondir`를 따라가지 않아 linked worktree로 기록 저장소 refs를 읽을 수 있음
   (격리 worktree 자신의 `.git`도 `gitdir: D:/baton_ai/.git/worktrees/iso` 형태). 같은 계열 확장: `commondir`, object `alternates`, 형식 오류 포함 반영·회귀 테스트.
+- **2026-11-17 격리 branch 공식 V3·증거 기록(실행 SHA `63cadd8`, `--evidence-dir`)**: 728 tests OK, failures/errors/skips 0, eligible true, 1327.4 s(동시 검토 부하),
+  evidence `suite-be451e2f….json`. 그러나 read set partial(`CHILD_ALIVE_AT_STOP` pid 22324)이라 재사용 원본 자격 없음.
+  원인(systematic-debugging): 그 pid가 증거 기록 7초 전 시작한 `chrome.exe`로 재사용됨 → 끝난 자식을 pid만으로 생존 판정한 오판(안전 방향, 가용성 결함).
+  반영: 생성 시각으로 프로세스 동일성 판정, 알 수 없으면 fail-closed 유지, 회귀 테스트. 이 V3는 `63cadd8`에만 결합되며 코드 변경 후 최종 증거가 아니다.

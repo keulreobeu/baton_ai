@@ -188,7 +188,41 @@ def _entry_kind(entry):
     return "other"
 
 
-def _pid_alive(pid):
+def _creation_time(kernel, handle):
+    """FILETIME creation stamp of an open process handle (None if unknown)."""
+    import ctypes
+    times = [ctypes.c_ulonglong() for _ in range(4)]
+    if not kernel.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+        return None
+    return times[0].value or None
+
+
+def _stamp(value):
+    return value if type(value) is int and value > 0 else None
+
+
+def _process_created(pid):
+    """Creation stamp identifying *this* process behind pid (Windows reuses pids);
+    None when unknown or not on Windows."""
+    if os.name != "nt" or not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        import ctypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return None
+        try:
+            return _creation_time(kernel, handle)
+        finally:
+            kernel.CloseHandle(handle)
+    except (OSError, AttributeError):
+        return None
+
+
+def _pid_alive(pid, created=None):
+    """True while the process is running. With a recorded creation stamp, a live
+    process created at another time is a different process that reused the pid."""
     if not isinstance(pid, int) or pid <= 0:
         return False
     if os.name == "nt":
@@ -202,7 +236,13 @@ def _pid_alive(pid):
                 code = ctypes.c_ulong()
                 if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
                     return True  # unknown: fail closed
-                return code.value == 259  # STILL_ACTIVE
+                if code.value != 259:  # STILL_ACTIVE
+                    return False
+                if created is not None:
+                    current = _creation_time(kernel, handle)
+                    if current is not None and current != created:
+                        return False  # the pid now belongs to another process
+                return True
             finally:
                 kernel.CloseHandle(handle)
         except OSError:
@@ -313,12 +353,14 @@ class Recorder:
         self._unstarted = []
         self._hooked = {}
         self._spawned = {}
+        self._created_at = {}  # (kind, token) -> creation stamp reported by the owner
         self._offsets = {}
         self._created = set()
         self._pth_safe = True if _child else pth_safe()
         self._install()
         if _child:
-            self._emit({"type": "hook_loaded", "pid": os.getpid(), "token": os.environ.get("BATON_READSET_TOKEN")})
+            self._emit({"type": "hook_loaded", "pid": os.getpid(), "token": os.environ.get("BATON_READSET_TOKEN"),
+                        "created": _process_created(os.getpid())})
             self._python_hooks += 1
 
     # -- installation --------------------------------------------------------
@@ -935,10 +977,12 @@ class Recorder:
     def _spawned_event(self, token, pid):
         if not token:
             return
+        created = _process_created(pid)
         if self._is_child:
-            self._emit({"type": "python_spawned", "token": token, "pid": pid})
+            self._emit({"type": "python_spawned", "token": token, "pid": pid, "created": created})
         else:
             self._spawned[token] = pid
+            self._created_at[("spawned", token)] = created
 
     def _log_targets(self):
         if self._is_child:
@@ -998,8 +1042,9 @@ class Recorder:
         alive = []
         for _ in range(1000):
             self._merge_child_logs()
-            known = list(self._spawned.values()) + list(self._hooked.values())
-            alive = sorted({p for p in known if _pid_alive(p)})
+            known = ([(p, self._created_at.get(("spawned", t))) for t, p in self._spawned.items()]
+                     + [(p, self._created_at.get(("hooked", t))) for t, p in self._hooked.items()])
+            alive = sorted({p for p, created in known if _pid_alive(p, created)})
             if alive:
                 break
             count = len(self._spawned) + len(self._hooked)
@@ -1035,7 +1080,8 @@ class Recorder:
                    if token not in self._hooked]
         unstarted = []
         for token, command, expected in missing:
-            if expected and self._pth_safe and token in self._spawned and not _pid_alive(self._spawned[token]):
+            if (expected and self._pth_safe and token in self._spawned
+                    and not _pid_alive(self._spawned[token], self._created_at.get(("spawned", token)))):
                 unstarted.append(command)
             else:
                 self._partial("CHILD_HOOK_MISSING", command)
@@ -1078,9 +1124,11 @@ class Recorder:
             self._python_hooks += 1
             if event.get("token"):
                 self._hooked[event["token"]] = event.get("pid")
+                self._created_at[("hooked", event["token"])] = _stamp(event.get("created"))
         elif kind == "python_spawned":
             if event.get("token"):
                 self._spawned[event["token"]] = event.get("pid")
+                self._created_at[("spawned", event["token"])] = _stamp(event.get("created"))
         elif kind == "python_launched":
             self._python_launches += 1
             if event.get("token"):
