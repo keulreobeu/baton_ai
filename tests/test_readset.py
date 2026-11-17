@@ -296,6 +296,33 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)
         self.assertEqual(outer._children["disallowed_count"], len(refused))
 
+    def test_scratch_git_cannot_reach_the_recorded_repository(self):
+        """V3 on an isolated worktree under TEMP (8cae1cd): the TEMP exemption must not
+        cover the recorded repository, git discovery, or path-moving variables."""
+        (self.root / ".git").mkdir()
+        scratch = Path(self.temp.name) / "scratch"
+        (scratch / "own" / ".git").mkdir(parents=True)
+        (scratch / "plain").mkdir()
+        local = self.root / ".local_runtime" / "work"
+        local.mkdir(parents=True)
+        rec = self.recorder()
+        clean = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
+        rec._child(["git", "-C", str(scratch / "own"), "status"], str(scratch), clean)   # own repository: allowed
+        rec._child(["git", "-C", str(scratch / "plain"), "status"], str(scratch), clean)  # no repository above: allowed
+        refused = [(["git", "-C", str(self.root), "check-attr", "--cached", "text", "--", "x"], clean),
+                   (["git", "-C", str(self.root), "log"], clean),
+                   (["git", "-C", str(local), "status"], clean),  # discovery walks up to the recorded .git
+                   (["git", "-C", str(scratch / "own"), "status"], {**clean, "GIT_DIR": str(self.root / ".git")}),
+                   (["git", "-C", str(scratch / "own"), "--git-dir", str(self.root / ".git"), "log"], clean),
+                   (["cmd", "/c", "mklink", "/j", str(self.root / "a"), str(scratch / "b")], clean)]
+        for argv, env in refused:
+            rec._child(argv, str(scratch), env)
+        rec.stop()
+        self.assertEqual(rec._children["allowed"]["temp_git"], 2)
+        self.assertEqual(rec._children["allowed"]["temp_mklink"], 0)
+        self.assertEqual(rec._children["disallowed_count"], len(refused))
+        self.assertIn("CHILD_NOT_ALLOWED", rec.partial_reasons)
+
     def test_python_child_hook_and_log_cleanup(self):
         rec = self.recorder()
         child = subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True)

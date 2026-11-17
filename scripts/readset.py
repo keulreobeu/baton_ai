@@ -627,6 +627,45 @@ class Recorder:
                 if name.split(".")[0] not in self._native_allowed and not name.startswith("cryptography"):
                     self._partial("NATIVE_MODULE_NOT_ALLOWED", name)
 
+    def _in_temp_area(self, path, areas):
+        """Inside a scratch area (TEMP or <root>/.local_runtime) but never the recorded
+        repository itself, even when the repository lives under TEMP."""
+        if not path:
+            return False
+        local = _canonical(os.path.join(self.root, ".local_runtime"))
+        for area in areas:
+            if not area or not _under(path, area):
+                continue
+            if area != local and _under(path, self.root) and not (local and _under(path, local)):
+                continue  # the repository under TEMP is not scratch space
+            return True
+        return False
+
+    def _temp_git_ok(self, effective, temp, env):
+        """git in a scratch area may run freely only while it cannot reach the recorded
+        repository: no path-moving variable outside the area, and repository discovery
+        (git walks up to the first .git) must not leave the area."""
+        local = _canonical(os.path.join(self.root, ".local_runtime"))
+        areas = [d for d in (temp, local) if d]
+        if not self._in_temp_area(effective, areas):
+            return False
+        for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                     "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
+            value = next((v for k, v in env.items() if str(k).upper() == name), None)
+            if value:
+                for item in str(value).split(os.pathsep):
+                    target = _canonical(os.path.join(effective, item)) if item else None
+                    if item and not self._in_temp_area(target, areas):
+                        return False
+        current = effective
+        while True:
+            if os.path.exists(os.path.join(current, ".git")):
+                return self._in_temp_area(current, areas)
+            parent = os.path.dirname(current)
+            if parent == current:
+                return True  # no repository above: git reads nothing of ours
+            current = parent
+
     def _sqlite(self, database, uri):
         kind, value = _sqlite_target(database, uri)
         if kind == "memory":
@@ -753,8 +792,8 @@ class Recorder:
         allowed = None
         if basename in {"git", "git.exe"}:
             effective = _git_location(parts[1:], cwd or os.getcwd())
-            git_dirs = [d for d in (temp, _canonical(os.path.join(self.root, ".local_runtime"))) if d]
-            if effective and any(_under(effective, d) for d in git_dirs):
+            child_env = os.environ if env is None else env
+            if effective and self._temp_git_ok(effective, temp, child_env):
                 allowed = "temp_git"
             subcommand = _git_subcommand(parts[1:])
             plain = not any(p in {"--cached", "--source", "--git-dir", "--work-tree", "-c", "--namespace",
@@ -781,7 +820,7 @@ class Recorder:
             low = [p.casefold() for p in parts]
             if "/c" in low and "mklink" in low and "/j" in low:
                 paths = [p for p in parts if os.path.isabs(p)]
-                if len(paths) >= 2 and temp and all(_canonical(p) and _under(_canonical(p), temp) for p in paths[-2:]):
+                if len(paths) >= 2 and temp and all(self._in_temp_area(_canonical(p), [temp]) for p in paths[-2:]):
                     allowed = "temp_mklink"
         if allowed:
             self._children["allowed"][allowed] += 1

@@ -352,6 +352,10 @@ source 실행 끝에 생겼으면 증거를 무효화한다.
 해석해 입력으로 기록하고, 메모리 DB(`:memory:`, `file::memory:`, `mode=memory`)는 제외하며, 원격 authority 등 해석할 수 없는 형식은 partial이다.
 11차 검토 반영(2026-11-17, Codex `df93236` FAIL: P1 1): 파일을 만들지 않는 `mode=ro`/`mode=rw` URI가 없는 파일을 가리키면 출력이 아니라
 부재 입력이다. 이후 교차 검토 루프는 사용자 결정으로 종료하고, 같은 종류의 남은 위험은 RA-3으로 분류한다.
+격리 branch V3 반영(2026-11-17, `8cae1cd` FAIL 1: 저장소가 TEMP 아래 있을 때 git 허용 규칙 오판): 불변식은 "기록 중인 저장소를 읽는 git은
+plain `check-attr`만 허용"이다. TEMP·`.local_runtime` 예외는 기록 중인 저장소 자체를 포함하지 않고, 경로를 옮기는 git 환경 변수
+(`GIT_DIR`·`GIT_WORK_TREE`·`GIT_COMMON_DIR`·`GIT_INDEX_FILE`·object 경로)가 예외 영역 밖을 가리키거나 git 저장소 탐색(위로 첫 `.git`)이
+영역 밖에 닿으면 예외가 아니다. `mklink /j` 예외도 같은 영역 정의를 쓴다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
