@@ -1202,3 +1202,8 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   넣었을 때 `repo_check_attr`로 면제되는지 확인(검토자 probe5 재현).
 - 후속 수용 기준: Recorder 시작 시 git 관련 환경(GIT_* 전부, HOME·USERPROFILE·XDG_CONFIG_HOME·HOMEDRIVE·HOMEPATH·PATH) 스냅샷과 호출 시점 값이
   같을 때만 면제, 위 재현이 `CHILD_NOT_ALLOWED`가 되는 회귀, 실제 suite의 `check-attr` 3회는 계속 면제.
+- **2026-11-17 게시·원격 CI(최종 게시 SHA `762739f`)**: `origin/codex/ci-opt-001-r5`=`762739f`(push 후 read-back 일치), draft PR #16(base `main`, 병합 없음).
+  run `44020524048`(pull_request): plan·gate success, **offline windows-latest 3.11: 730 tests OK 855.8 s, 3.12: 730 tests OK 1010.4 s**,
+  두 조합 모두 failures/errors/skips 0, `verified_evidence_eligible=true`(로컬 V3 `5e9d8c1`와 같은 730개 범위). 이 원격 결과가 `762739f`의 최종 증거다.
+  PR #13은 #16 링크 댓글 후 종료(branch `codex/ci-opt-001` 보존). Task 상태는 in_progress 유지: 최종 후보에 대한 Codex 이종 모델 교차 검토 미수행,
+  공식 독립 검토는 같은 제공자(Claude). verified 승격과 main 병합은 별도 사용자 결정. 이 기록 커밋은 로컬 전용(게시 시 CI 재실행 필요).
