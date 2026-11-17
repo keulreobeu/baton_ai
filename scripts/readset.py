@@ -748,8 +748,17 @@ class Recorder:
                 if os.path.exists(config) and not _scratch_git_config_ok(config, lambda p: inside(os.path.join(common, p))):
                     return False
             for hooks in {os.path.join(gitdir, "hooks"), os.path.join(common, "hooks")}:
-                if os.path.isdir(hooks) and any(not name.endswith(".sample") for name in os.listdir(hooks)):
-                    return False  # an active hook is a program git runs outside the recorder
+                if not os.path.isdir(hooks):
+                    continue
+                for name in os.listdir(hooks):
+                    if name.endswith(".sample"):
+                        continue
+                    hook = _canonical(os.path.join(hooks, name))
+                    # An active hook is a program git runs outside the recorder. Only a
+                    # hook this run wrote (content fixed by recorded sources) whose text
+                    # names nothing outside the repository is exempt.
+                    if not hook or not self._is_created(hook) or not _scratch_hook_text_ok(hook):
+                        return False
             return True
         except (OSError, UnicodeDecodeError, ValueError):
             return False
@@ -1340,6 +1349,25 @@ def _scratch_git_config_ok(path, inside):
                     or not inside(value)):
                 return False
     return True
+
+
+_HOOK_SHEBANG = re.compile(r"^#!\s*/(?:usr/)?bin/(?:env\s+)?(?:sh|bash)\s*$")
+_HOOK_ESCAPE = re.compile(r"[$`~%]|\.\.|(?:^|[\s\"'=;|&<>(])(?:/|\\\\|[a-zA-Z]:)")
+
+
+def _scratch_hook_text_ok(path):
+    """A run-written hook may only use names relative to its repository: no absolute,
+    drive, UNC or parent paths and no variable/command/home expansion (fail-closed)."""
+    with open(path, "rb") as handle:
+        data = handle.read(65537)
+    if len(data) > 65536:
+        return False
+    lines = data.decode("utf-8").splitlines()
+    if lines and lines[0].startswith("#!"):
+        if not _HOOK_SHEBANG.match(lines[0].strip()):
+            return False
+        lines = lines[1:]
+    return not any(_HOOK_ESCAPE.search(line) for line in lines)
 
 
 def _looks_like_gitdir(path):

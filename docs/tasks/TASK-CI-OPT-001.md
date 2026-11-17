@@ -1142,3 +1142,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - **2026-11-17 격리 branch 공식 V3·증거 기록(실행 SHA `f6c8969`)**: 731 tests OK, skips 0, eligible true, 1277.6 s, evidence `suite-570fd823….json`.
   read set partial(`CHILD_NOT_ALLOWED` 4: 실제 suite의 `git --no-optional-locks -C <TEMP repo> --version`이 허용 목록 밖). 무해 옵션 `--version` 추가(I3, 과잉 차단 수정).
   temp_git 16,610회, repo_check_attr 3. 이 V3는 `f6c8969`에만 결합되며 최종 증거가 아니다.
+- **2026-11-17 격리 branch 공식 V3·증거 기록(실행 SHA `0b80f79`, 단독 실행 기준값)**: 732 tests OK, skips 0, eligible true, state stable, **1203.9 s**,
+  evidence `suite-cb841d82….json`. read set partial(`CHILD_NOT_ALLOWED` 37): 긍정 증명형 hook 규칙이 `test_git_lifecycle`의 실행 중 작성 pre-commit hook
+  (`printf … > src/value.py; git add src/value.py`) 저장소의 git 호출 전체를 거부(I3 과잉 차단). 반영: 실행이 만든·상대 이름만 쓰는 hook만 면제, 회귀 추가.
+  temp_git 16,577회. 이 V3는 `0b80f79`에만 결합되며 최종 증거가 아니다.

@@ -451,18 +451,28 @@ class ReadsetTests(unittest.TestCase):
         (bare_alt / "objects" / "info" / "alternates").write_text(str(self.root / ".git" / "objects") + "\n", encoding="utf-8")
         hooked = repo("hooked")
         (hooked / ".git" / "hooks").mkdir()
-        (hooked / ".git" / "hooks" / "post-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+        (hooked / ".git" / "hooks" / "post-commit").write_text("#!/bin/sh\n", encoding="utf-8")  # existed before the run
         (hooked / ".git" / "hooks" / "pre-push.sample").write_text("", encoding="utf-8")
+        run_hook, bad_hook = repo("run_hook"), repo("bad_hook")
+        time.sleep(0.06)
         rec = self.recorder()
+        # Hooks written by this run (test_git_lifecycle's pre-commit rewrite): relative names only.
+        (run_hook / ".git" / "hooks").mkdir()
+        (run_hook / ".git" / "hooks" / "pre-commit").write_bytes(
+            b'#!/bin/sh\nprintf "value = 99\\n" > src/value.py\ngit add src/value.py\n')
+        (bad_hook / ".git" / "hooks").mkdir()
+        (bad_hook / ".git" / "hooks" / "pre-commit").write_bytes(b"#!/bin/sh\ncat %s > x\n" % str(self.root / "a").encode())
         clean = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
         allowed = [(["git", "-C", str(ok), "commit", "-m", "fix a/b message"], clean),
                    (["git", "-C", str(ok), "push", "origin", "main"], clean),
                    (["git", "-C", str(bare_ok), "rev-parse", "HEAD"], clean),
                    (["git", "-C", str(scratch), "clone", str(bare_ok), str(scratch / "clone")], clean),
                    (["git", "-C", str(ok), "status"], {**clean, "GIT_INDEX_FILE": str(scratch / "private.index")}),
-                   (["git", "--no-optional-locks", "-C", str(ok), "--version"], clean)]  # real suite (V3 f6c8969)
+                   (["git", "--no-optional-locks", "-C", str(ok), "--version"], clean),  # real suite (V3 f6c8969)
+                   (["git", "-C", str(run_hook), "commit", "-m", "checkpoint: hook"], clean)]  # real suite (V3 0b80f79)
         refused = [(["git", "-C", str(path), "status"], clean) for path in cases.values()]
         refused += [(["git", "-C", str(bare_alt), "log"], clean), (["git", "-C", str(hooked), "commit", "-m", "x"], clean),
+                    (["git", "-C", str(bad_hook), "commit", "-m", "x"], clean),
                     (["git", "-C", str(ok), "status"], {**clean, "GIT_DIR": str(scratch / "ok" / ".git")}),
                     (["git", "-C", str(ok), "status"], {**clean, "GIT_COMMON_DIR": str(scratch)}),
                     (["git", "-C", str(ok), "-c", "core.fsmonitor=%s" % (self.root / "tool.exe"), "status"], clean),

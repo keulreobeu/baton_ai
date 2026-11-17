@@ -374,6 +374,9 @@ git이 실제로 쓸 저장소(`.git` 디렉터리·파일 또는 bare gitdir)�
 config는 git 문법을 흉내 내지 않고 BOM·같은 줄 헤더를 포함해 키 부분의 금지 단어(`worktree`·`include`·`fsmonitor`·`hookspath`·`program`·`command`·`helper`·
 `insteadof`·`extensions` 등)로 판정하며, `url` 값은 영역 안 로컬 경로만, `gpgsign`·`core.fsmonitor`는 false 값만 허용한다. 비 `.sample` hook이 있으면 면제가 아니다.
 판단할 수 없으면 면제가 아니다(partial). 사용자 전역 git 설정은 기존 `git` 지문 구성요소로 비교한다.
+hook 예외(2026-11-17, 공식 V3 `0b80f79` partial 37건: `test_git_lifecycle`이 실행 중 쓴 pre-commit hook): 비 `.sample` hook은 **이번 실행이 만든 파일**이고
+(내용은 기록된 테스트 소스가 정함) 본문이 저장소 기준 상대 이름만 쓸 때(절대·드라이브·UNC·`..` 경로, `$`·`` ` ``·`~`·`%` 확장 없음, shebang은 `/bin/sh`·`bash`·`env sh|bash`)만
+면제한다. 실행 전부터 있던 hook이나 그 밖의 hook은 면제가 아니다. hook이 이름으로 호출하는 프로그램 자체의 내부 읽기는 RA-3(관측 경계 밖 읽기)에 속한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
