@@ -342,7 +342,7 @@ class Recorder:
         self._pending_connects = []
         self._socket_allowed = 0
         self._network_violations = 0
-        self._children = {"allowed": {"repo_check_attr": 0, "temp_mklink": 0, "tool_help": 0},
+        self._children = {"allowed": {},
                           "tools": [], "disallowed": [], "disallowed_count": 0}
         self._python_launches = 0
         self._python_hooks = 0
@@ -352,6 +352,7 @@ class Recorder:
         self._launch_tokens = {}
         self._unstarted = []
         self._hooked = {}
+        self._log_seq = {}  # child log file -> received sequence numbers and exit proof
         self._spawned = {}
         self._created_at = {}  # (kind, token) -> creation stamp reported by the owner
         self._offsets = {}
@@ -401,6 +402,9 @@ class Recorder:
         """Children append to their own per-process file in every log directory."""
         if not (self._is_child and self._log_dirs):
             return
+        with _WRITE_LOCK:
+            self._seq = getattr(self, "_seq", 0) + 1
+            event = {**event, "seq": self._seq}
         line = json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
         with self._quiet(), _WRITE_LOCK:
             for directory in self._log_dirs:
@@ -409,6 +413,7 @@ class Recorder:
                         stream.write(line)
                 except OSError:
                     self.partial_reasons.add("READSET_LOG_CORRUPT")
+                    self._write_failed = True
 
     def _quiet(self):
         """The recorder's own file access is not a suite input."""
@@ -834,34 +839,10 @@ class Recorder:
             plain = (plain and env is None and _check_attr_form_ok(parts[1:])
                      and exe is not None and exe == _canonical(shutil_which("git"))
                      and effective is not None and _no_repository_between(effective, self.root))
-            if subcommand == "check-attr" and plain:
-                separator = parts.index("--") + 1 if "--" in parts else len(parts)
-                targets = parts[separator:]
-                if effective and _under(effective, self.root) and targets and all(
-                        (_canonical(p) and _under(_canonical(p), self.root)) if os.path.isabs(p)
-                        else ".." not in Path(p).parts for p in targets):
-                    allowed = "repo_check_attr"
-        if basename in {"cmd.exe", "cmd"}:
-            low = [p.casefold() for p in parts]
-            # Exactly `cmd /c mklink /j <link> <target>` (no chained commands, final review P2).
-            if len(parts) == 6 and low[1:4] == ["/c", "mklink", "/j"] and temp and all(
-                    os.path.isabs(p) and not any(ch in p for ch in "&|<>^%!\"\n")
-                    and self._in_temp_area(_canonical(p), [temp]) for p in parts[4:]):
-                allowed = "temp_mklink"
-        if allowed:
-            self._children["allowed"][allowed] += 1
-            return env
-        if (exe and not _under(exe, self.root) and parts[-1] in {"--help", "--version"}
-                and (len(parts) == 2 or (len(parts) == 3 and os.path.isabs(parts[1])
-                                         and not _under(_canonical(parts[1]) or self.root, self.root)))):
-            files = [exe] + ([_real(parts[1])] if len(parts) == 3 else [])
-            with self._quiet():
-                digests = [_sha(file) if file else None for file in files]
-            if all(digests):
-                for file, digest in zip(files, digests):
-                    self._children["tools"].append({"exe": file, "sha256": digest, "arg": parts[-1]})
-                self._children["allowed"]["tool_help"] += 1
-                return env
+            # CI-OPT-001 final cross review F01 (2026-11-17): no git child is exempt. The
+            # plain check-attr, `cmd /c mklink /j` and tool --help/--version exemptions
+            # read inputs (ignored .gitattributes, tool scripts) that the fingerprint
+            # did not cover; every non-Python child now makes the read set partial.
         self._partial("CHILD_NOT_ALLOWED")
         self._children["disallowed_count"] += 1
         if len(self._children["disallowed"]) < 20:
@@ -1012,6 +993,13 @@ class Recorder:
                     continue
                 if size > self._offsets.get(name, 0):
                     self._partial("READSET_LOG_CORRUPT", "truncated %s" % name)
+            # Every child log must end with its exit proof, and the sequence numbers
+            # 1..N of the events it emitted must all have arrived (none lost).
+            for name in self._log_names():
+                seen = self._log_seq.get(name)
+                end = seen and seen["end"]
+                if not end or type(end.get("seq")) is not int or seen["seqs"] != set(range(1, end["seq"] + 1)):
+                    self._partial("CHILD_LOG_INCOMPLETE", name)
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
@@ -1061,7 +1049,13 @@ class Recorder:
                 if not raw.strip():
                     continue
                 try:
-                    self._apply(json.loads(raw))
+                    event = json.loads(raw)
+                    seen = self._log_seq.setdefault(name, {"seqs": set(), "end": None})
+                    if type(event.get("seq")) is int:
+                        seen["seqs"].add(event["seq"])
+                    if event.get("type") == "exit":
+                        seen["end"] = event
+                    self._apply(event)
                 except (ValueError, KeyError, TypeError, AttributeError) as exc:
                     self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
 
@@ -1095,6 +1089,10 @@ class Recorder:
         elif kind == "trust_store":
             self._trust_store = True
         elif kind == "exit":
+            for reason in event.get("partial", []):
+                self._partial(str(reason), "child %s" % event.get("pid"))
+            if event.get("write_failed"):
+                self._partial("READSET_LOG_CORRUPT", "child %s write failed" % event.get("pid"))
             for endpoint in self._endpoints:
                 if endpoint["key"][0] == event["pid"] and endpoint["closed"] is None:
                     endpoint["closed"] = event["t"]
@@ -1541,4 +1539,10 @@ def _record_child_log(path):
     import atexit
     # A normal exit ends every endpoint of this process; a killed process
     # leaves them unproven (connects to them are then partial).
-    atexit.register(lambda: recorder._emit({"type": "exit", "pid": os.getpid(), "t": _now()}))
+    # CI-OPT-001 final cross review F03: the exit record is the child's end proof: its
+    # sequence number equals the count of events it emitted, and it carries the
+    # child's own partial reasons and write-failure flag. Without it the parent
+    # cannot know the log is complete.
+    atexit.register(lambda: recorder._emit({"type": "exit", "pid": os.getpid(), "t": _now(),
+                                            "partial": sorted(recorder.partial_reasons),
+                                            "write_failed": bool(getattr(recorder, "_write_failed", False))}))

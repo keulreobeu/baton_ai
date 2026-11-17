@@ -167,7 +167,8 @@ class EvidenceReuseTests(unittest.TestCase):
         self.evidence = Path(self.temp.name) / "evidence"
         self.home = Path(self.temp.name) / "home"
         self.readset = {"schema": "readset/1", "complete": True, "partial_reasons": [], "repo_reads": [],
-                        "outside_reads": [], "listings": [], "added_env": []}
+                        "outside_reads": [], "env_reads": [], "listings": [], "aliases": [], "trust_store": False,
+                        "children": {"allowed": {}, "disallowed": [], "disallowed_count": 0}, "added_env": []}
         keep = ("PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "HOME", "PATHEXT", "COMSPEC")
         self.environ = {**{k: os.environ[k] for k in keep if k in os.environ}, "OTHER": "1"}
         self.suite_runs = []
@@ -178,6 +179,23 @@ class EvidenceReuseTests(unittest.TestCase):
         for args in (["init", "-q"], ["config", "user.name", "Offline fixture"],
                      ["config", "user.email", "offline@example.invalid"], ["add", "."], ["commit", "-q", "-m", "fixture"]):
             subprocess.run(["git", "--no-optional-locks", "-C", str(self.repo), *args], check=True, capture_output=True)
+
+    def test_suite_lock_key_is_per_repository_not_per_commit_or_worktree(self):
+        """CI-OPT-001 final cross review F05: equal input fingerprints from a docs-only
+        commit or another worktree of the same repository wait on the same lock."""
+        git = lambda *args: subprocess.run(["git", "--no-optional-locks", "-C", str(self.repo), *args],
+                                           check=True, capture_output=True)
+        before = verify.suite_lock_key(self.cp, self.repo)
+        (self.repo / "README.md").write_text("docs only\n", encoding="utf-8")
+        git("add", "."); git("commit", "-q", "-m", "docs")
+        other = Path(self.temp.name) / "other-worktree"
+        git("worktree", "add", "-q", str(other))
+        self.assertEqual(verify.suite_lock_key(self.cp, self.repo), before)
+        self.assertEqual(verify.suite_lock_key(self.cp, other), before)
+        elsewhere = Path(self.temp.name) / "elsewhere"
+        elsewhere.mkdir()
+        subprocess.run(["git", "--no-optional-locks", "-C", str(elsewhere), "init", "-q"], check=True, capture_output=True)
+        self.assertNotEqual(verify.suite_lock_key(self.cp, elsewhere), before)
 
     def fake_recorder(test):
         class Recorder:

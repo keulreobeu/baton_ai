@@ -178,6 +178,13 @@ def main(argv=None):
     return _evidence_main(args, environ)
 
 
+def suite_lock_key(cp, root):
+    """One lock per repository (common git directory): equal input fingerprints may
+    come from different commits or worktrees of it (CI-OPT-001 final cross review F05)."""
+    common = cp.sdd.git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    return cp.fingerprint(["suite-lock/1", str(Path(common).resolve()).casefold()])
+
+
 def _evidence_main(args, environ):
     import uuid
     from contextlib import nullcontext
@@ -189,7 +196,10 @@ def _evidence_main(args, environ):
     # Lock key: the exact repository state. Every fingerprint input is then
     # computed inside the lock (a concurrent run may have changed nothing or
     # produced evidence meanwhile).
-    lock_key = cp.fingerprint(cp.freeze(ROOT))
+    # CI-OPT-001 final cross review F05: suites with the same input fingerprint can
+    # come from different commits or worktrees, so the lock is per repository
+    # (its common git directory), not per commit/worktree state.
+    lock_key = suite_lock_key(cp, ROOT)
     lock = cp.fingerprint_lock(args.lock_home, lock_key) if args.lock_home else nullcontext()
     with lock:
         manifest, git = cp.runtime_manifest(), cp.git_identity(ROOT)
