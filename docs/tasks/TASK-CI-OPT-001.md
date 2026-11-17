@@ -1094,3 +1094,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   `mklink` 예외도 같은 원인 → 영역 정의 수정·회귀 테스트(`test_scratch_git_cannot_reach_the_recorded_repository`).
   (2) skip 1: `tests/test_harness.py`의 jipdam 설정 테스트 `@unittest.skip`. 이를 제거한 것이 제외한 JIPDAM-SKIP `627db24`라 격리 시 다시 생김
   (`b133bde` 게시본에도 존재) → 격리 범위 사용자 결정 필요.
+- 2026-11-17 격리 범위 사용자 결정: JIPDAM-SKIP을 **필수 의존으로 포함**(`627db24` skip 제거·Task 문서, `ec65365` 검토·통합 기록) → `ea0d421`·`bc20d21`.
+  no-skip V3에 필요(제외 시 `b133bde`부터 있던 jipdam 설정 테스트 skip 재발). 충돌 1건(`traceability.json` 문서 목록)은 JIPDAM-SKIP Task 문서만 추가해 해소.
+  남은 제외 대상: T4-PREP `3465597`·`dd3121a`, REVIEW-READ `fa10f2a`, HOOK-QUAL `28d3cac`·`687069e`, 병합 `52ec9d9`·`99486ff`.
+  작업 실수 기록: `29eeeac` cherry-pick 때 충돌 표식이 남은 채 계속되어 `ce3a1a6`로 제거(amend 없이). 이후 계속 전에 표식 0을 확인한다.
