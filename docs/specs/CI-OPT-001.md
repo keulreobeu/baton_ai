@@ -356,6 +356,9 @@ source 실행 끝에 생겼으면 증거를 무효화한다.
 plain `check-attr`만 허용"이다. TEMP·`.local_runtime` 예외는 기록 중인 저장소 자체를 포함하지 않고, 경로를 옮기는 git 환경 변수
 (`GIT_DIR`·`GIT_WORK_TREE`·`GIT_COMMON_DIR`·`GIT_INDEX_FILE`·object 경로)가 예외 영역 밖을 가리키거나 git 저장소 탐색(위로 첫 `.git`)이
 영역 밖에 닿으면 예외가 아니다. `mklink /j` 예외도 같은 영역 정의를 쓴다.
+최종 독립 검토 반영(2026-11-17, Codex `63cadd8` FAIL: P1 1): 같은 불변식의 저장 위치 경로다. 예외 영역의 git 저장소는 `.git` 파일의
+`gitdir:`(linked worktree·submodule), gitdir의 `commondir`, object `alternates`가 모두 예외 영역 안이어야 하며, 읽을 수 없거나 형식이
+다르면 예외가 아니다(partial).
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

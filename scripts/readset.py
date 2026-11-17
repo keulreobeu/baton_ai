@@ -659,12 +659,49 @@ class Recorder:
                         return False
         current = effective
         while True:
-            if os.path.exists(os.path.join(current, ".git")):
-                return self._in_temp_area(current, areas)
+            dotgit = os.path.join(current, ".git")
+            if os.path.exists(dotgit):
+                return self._in_temp_area(current, areas) and self._git_storage_in_area(dotgit, areas)
             parent = os.path.dirname(current)
             if parent == current:
                 return True  # no repository above: git reads nothing of ours
             current = parent
+
+    def _git_storage_in_area(self, dotgit, areas):
+        """Every Git storage location the repository uses must be scratch space too:
+        a `.git` file's `gitdir:` (linked worktree / submodule), the gitdir's
+        `commondir`, and object `alternates`. Anything unreadable is not scratch."""
+        def inside(path):
+            return self._in_temp_area(_canonical(path), areas)
+        try:
+            if os.path.isfile(dotgit):
+                with open(dotgit, encoding="utf-8") as handle:
+                    line = handle.readline().strip()
+                if not line.startswith("gitdir:"):
+                    return False
+                gitdir = os.path.join(os.path.dirname(dotgit), line[len("gitdir:"):].strip())
+            else:
+                gitdir = dotgit
+            if not os.path.isdir(gitdir) or not inside(gitdir):
+                return False
+            common = gitdir
+            pointer = os.path.join(gitdir, "commondir")
+            if os.path.exists(pointer):
+                with open(pointer, encoding="utf-8") as handle:
+                    common = os.path.join(gitdir, handle.readline().strip())
+                if not os.path.isdir(common) or not inside(common):
+                    return False
+            alternates = os.path.join(common, "objects", "info", "alternates")
+            if os.path.exists(alternates):
+                with open(alternates, encoding="utf-8") as handle:
+                    for entry in handle:
+                        entry = entry.strip()
+                        if entry and not entry.startswith("#") and not inside(
+                                os.path.join(common, "objects", entry)):
+                            return False
+            return True
+        except (OSError, UnicodeDecodeError, ValueError):
+            return False
 
     def _sqlite(self, database, uri):
         kind, value = _sqlite_target(database, uri)

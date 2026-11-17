@@ -323,6 +323,41 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(rec._children["disallowed_count"], len(refused))
         self.assertIn("CHILD_NOT_ALLOWED", rec.partial_reasons)
 
+    def test_scratch_git_storage_pointers_must_stay_in_scratch(self):
+        """Final review P1 (63cadd8): a scratch linked worktree whose `.git` file,
+        `commondir` or object alternates reach outside scratch is not a scratch repository."""
+        scratch = Path(self.temp.name) / "scratch2"
+        outside = self.root / ".git"            # the recorded repository's storage
+        (outside / "worktrees" / "w" ).mkdir(parents=True)
+        (outside / "objects" / "info").mkdir(parents=True)
+        own = scratch / "own.git"
+        (own / "worktrees" / "w").mkdir(parents=True)
+        (own / "objects" / "info").mkdir(parents=True)
+        cases = {"linked_out": "gitdir: %s\n" % (outside / "worktrees" / "w"),
+                 "linked_in": "gitdir: %s\n" % (own / "worktrees" / "w"),
+                 "garbage": "not a pointer\n"}
+        for name, text in cases.items():
+            (scratch / name).mkdir(parents=True)
+            (scratch / name / ".git").write_text(text, encoding="utf-8")
+        (own / "worktrees" / "w" / "commondir").write_text("../..\n", encoding="utf-8")
+        (scratch / "common_out").mkdir()
+        (scratch / "common_out" / ".git").write_text("gitdir: %s\n" % (scratch / "cgit"), encoding="utf-8")
+        (scratch / "cgit").mkdir()
+        (scratch / "cgit" / "commondir").write_text(str(outside) + "\n", encoding="utf-8")
+        (scratch / "alt").mkdir()
+        (scratch / "alt" / ".git" / "objects" / "info").mkdir(parents=True)
+        (scratch / "alt" / ".git" / "objects" / "info" / "alternates").write_text(
+            "# comment\n%s\n" % (outside / "objects"), encoding="utf-8")
+        rec = self.recorder()
+        clean = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
+        rec._child(["git", "-C", str(scratch / "linked_in"), "status"], str(scratch), clean)  # allowed
+        refused = ["linked_out", "garbage", "common_out", "alt"]
+        for name in refused:
+            rec._child(["git", "-C", str(scratch / name), "branch", "--list"], str(scratch), clean)
+        rec.stop()
+        self.assertEqual(rec._children["allowed"]["temp_git"], 1)
+        self.assertEqual(rec._children["disallowed_count"], len(refused))
+
     def test_python_child_hook_and_log_cleanup(self):
         rec = self.recorder()
         child = subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True)

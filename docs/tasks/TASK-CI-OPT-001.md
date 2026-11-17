@@ -1119,3 +1119,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   5. V1/V2 실효성: 실측(2026-11-17 `ci_plan.py` plan-only 4회)에서 `tests/`·`scripts/` 경로 정책(`CONFIG_OR_TEST_PATH`)으로 V1/V2 요청이 모두 V3로
      상향, 실제 CBM 0.12.1은 coverage partial(2026-11-13 qualification) → V2는 V3 fallback. 경로 정책(계약 변경), CBM 완전성, V1 명령,
      Orca 작업자 연결, 원격 CBM은 별도 결정·Task로 다룬다.
+- 2026-11-17 최종 독립 검토(`63cadd8`, `ctx_4f82a9cb9aab`, 새 검토 방식·superpowers 4개 적용 보고): FAIL(P1 1, convergence A).
+  격리 무결성 PASS_WITH_FINDINGS(제외 Task 산출물 0·충돌 표식 0·CI-TIME tree 동일·JIPDAM-SKIP 조상), 11차 지적 resolved, 대상 61 tests OK.
+  P1: 예외 영역 git 허용이 `.git` 파일의 `gitdir`/`commondir`를 따라가지 않아 linked worktree로 기록 저장소 refs를 읽을 수 있음
+  (격리 worktree 자신의 `.git`도 `gitdir: D:/baton_ai/.git/worktrees/iso` 형태). 같은 계열 확장: `commondir`, object `alternates`, 형식 오류 포함 반영·회귀 테스트.
