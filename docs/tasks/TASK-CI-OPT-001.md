@@ -1159,3 +1159,5 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   면제 제거 완결·fail-closed, 이전 수정 유지, CI-TIME 변경(런처 우회 순서·진행 줄·timeout 25) 지문·계정 일치, 격리 PASS, 문서-코드 일치 확인.
   P2: `check-attr`의 `GIT_CONFIG_*`/`GIT_CONFIG_PARAMETERS` 설정 주입·`--attr-source` 허용, `mklink` 연결 명령 허용. P3: system gitattributes 지문 누락.
   반영: 두 예외를 정확한 형태 허용 목록으로, 자식 `GIT_*`는 부모 환경의 부분집합만, system gitattributes 지문 추가, 회귀 7종 추가.
+- 2026-11-17 격리 branch 공식 V3(실행 SHA `d8ffcd0`, 면제 제거 후): 729 tests OK, skips 0, eligible true, state stable, 1165.2 s, evidence `suite-e73bd3c6….json`,
+  read set partial(`CHILD_NOT_ALLOWED` 16,617 = 임시 영역 git; 예외 check-attr 3·mklink 2·tool 2). 예상 결과(재사용 없음). `d8ffcd0`에만 결합.
