@@ -70,6 +70,56 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
             result = self.orchestrator.validate(self.task, self.root, stop, **kwargs)
         return result, process
 
+    def vtier_runner(self, ids):
+        """Fake unittest -v output listing exactly these executed test IDs."""
+        lines = "".join("%s (%s) ... ok\n" % (i.rsplit(".", 1)[1], i) for i in ids)
+        return lambda *a, **k: (0, "", lines + "Ran %d tests in 0.1s\nOK" % max(len(ids), 1), None)
+
+    def test_vtier_required_tests_must_actually_run(self):
+        """CI-VTIER-001 review P1: a required test or required regression module that did
+        not run (e.g. emptied by load_tests) fails a V1/V2 even when the totals look fine."""
+        self.plan.update(effective_tier="V2", required_ids=["tests.test_value.T.test_value"],
+                         required_modules=["tests.test_guard"], selected_modules=["tests.test_guard", "tests.test_value"])
+        result, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                        stage="checkpoint", target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        check = result[0]["planner"]["executed_checks"][-1]
+        self.assertEqual(check["argv"], ["required_tests_executed"])
+        self.assertIn("tests.test_guard", check["output"])
+        self.assertEqual(result[0]["planner"]["actual_status"], "failed")
+        ok, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value", "tests.test_guard.T.test_guard"]),
+                                    stage="checkpoint", target_base="b" * 40)
+        self.assertEqual(ok[0]["exit_code"], 0)
+        self.plan.update(required_ids=["tests.test_value.T.test_missing"], required_modules=[])
+        missing, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                         stage="checkpoint", target_base="b" * 40)
+        self.assertNotEqual(missing[0]["exit_code"], 0)
+
+    def test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time(self):
+        """CI-VTIER-001 review P2: a V1 that ran no test reports not_run (not passed), and a
+        planner unittest run is bounded by the Task's remaining total time, not 300 s."""
+        self.plan.update(selected_ids=[])
+        result, process = self.run_validation(lambda *a, **k: (0, "", "Ran 1 test in 0.1s\nOK", None),
+                                              stage="in_progress", target_base="b" * 40)
+        self.assertEqual(result[0]["planner"]["actual_status"], "not_run")
+        self.plan.update(selected_ids=["tests.test_value.T.test_value"])
+        _, process = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                         stage="in_progress", target_base="b" * 40)
+        timeouts = [c.args[3] for c in process.call_args_list]
+        self.assertEqual(timeouts[0], 300)  # declared check keeps its limit
+        self.assertGreater(timeouts[1], 300)  # planner unittest uses the remaining total (1200 s)
+
+    def test_vtier_previous_failed_official_v3_is_an_outside_failure(self):
+        """CI-VTIER-001 review P2: after a failed official V3, the planner is told about the
+        unresolved outside-scope failure (and therefore plans V3)."""
+        failed = [{"planner": {"effective_tier": "V3", "actual_status": "failed"}}]
+        self.orchestrator.store.get = lambda task: {"result": {"base_commit": "a" * 40, "validation": failed}}
+        self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]), stage="in_progress", target_base="b" * 40)
+        self.assertIs(self.calls[-1][1].get("outside_failures"), True)
+        self.orchestrator.store.get = lambda task: {"result": {"base_commit": "a" * 40, "validation": []}}
+        self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]), stage="in_progress", target_base="b" * 40)
+        self.assertNotIn("outside_failures", self.calls[-1][1])
+
     def test_v1_direct_and_selected_checks_preserve_declared_ac_checks(self):
         result, process = self.run_validation(stage="in_progress", target_base="b" * 40)
         self.assertEqual(self.calls[0][0], self.root)
@@ -78,7 +128,8 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertTrue(callable(self.calls[0][1]["should_stop"]))
         self.assertEqual(len(result), len(self.task["validation"]))
         feedback = result[0]["planner"]["executed_checks"]
-        self.assertEqual(len(feedback), 2)
+        self.assertEqual(len(feedback), 3)  # direct file, selected unittest, required-tests check
+        self.assertEqual(feedback[-1]["argv"], ["required_tests_executed"])
         self.assertEqual(feedback[0]["test_count"], 0)
         self.assertEqual(feedback[0]["acs"], [])
         self.assertEqual(result[0]["acs"], ["AC1"])

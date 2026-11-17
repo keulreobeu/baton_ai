@@ -1198,7 +1198,8 @@ RISK_REGRESSION = (
     ("docs/sdd/", ("tests.test_sdd",)),
     ("docs/templates/", ("tests.test_sdd",)),
     (".github/workflows/", ("tests.test_ci_workflow",)),
-    ("src/baton/orchestrator.py", ("tests.test_managed_harness",)),
+    ("src/baton/orchestrator.py", ("tests.test_managed_harness", "tests.test_flow_runtime")),
+    ("src/baton/runtime.py", ("tests.test_flow_runtime",)),  # Orca author settlement stage
     ("src/baton/evidence.py", ("tests.test_managed_harness",)),
     ("src/baton/execution.py", ("tests.test_managed_harness",)),
     ("src/baton/managed.py", ("tests.test_managed_harness",)),
@@ -1220,13 +1221,18 @@ def convention_module(name):
     return "tests.test_" + p.stem if p.suffix == ".py" else None
 
 
-def risk_regression(name, modules):
-    """Required regression modules for a risk path, or None if none is known."""
+def risk_regression(name, modules, *, table_only=False):
+    """Required regression modules for a path, or None if none is known.
+
+    CI-VTIER-001 review P1: a module counts only if it has at least one inventoried
+    test (an empty module, or one emptied by load_tests, is not regression coverage)."""
     for key, mods in RISK_REGRESSION:
         if name == key or (key.endswith("/") and name.startswith(key)):
-            return set(mods) if all(m in modules for m in mods) else None
+            return set(mods) if all(modules.get(m) for m in mods) else None
+    if table_only:
+        return set()
     module = convention_module(name)
-    return {module} if module in modules else None
+    return {module} if modules.get(module) else None
 
 
 def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures=False,
@@ -1272,7 +1278,11 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
             tier = 3; reasons.append("INCOMPLETE_IMPACT_SCOPE")
     if tier == 1 and not graph.get("complete"):
         reasons.append("FAST_GRAPH_LIMITATION")
+        if local_mid:
+            partial = True
+            reasons.append("PARTIAL_IMPACT_SCOPE")
     selected = set(required)
+    required_modules = set()
     if tier < 3:
         graph_selected = set(graph.get("selected", []))
         if graph_selected <= inv["tests"].keys():
@@ -1282,7 +1292,7 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
             reasons.append("UNMAPPED_TEST")
             if tier == 2 and not local_mid:
                 tier = 3
-            elif tier == 2:
+            elif local_mid:
                 partial = True
                 reasons.append("PARTIAL_IMPACT_SCOPE")
         selected.update(key for key, test in inv["tests"].items() if test["file"] in names)
@@ -1294,11 +1304,12 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
         if tier == 2:
             modules = {key.rsplit(".", 2)[0] for key in selected}
             if local_mid:
-                for name in risk_names:
-                    mods = risk_regression(name, inv["modules"])
+                for name in names:
+                    mods = risk_regression(name, inv["modules"], table_only=name not in risk_names)
                     if mods is None:
                         tier = 3; reasons.append("REGRESSION_UNMAPPED")
                         break
+                    required_modules |= mods
                     modules |= mods
             if tier == 2:
                 selected = {test for module in modules for test in inv["modules"].get(module, [])}
@@ -1313,6 +1324,8 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
             "scope": SCOPES[tier], "selected_ids": sorted(selected),
             "selected_modules": sorted({key.rsplit(".", 2)[0] for key in selected}),
             "reasons": sorted(out),
+            # CI-VTIER-001 review P1: modules that must actually run tests in a local V2.
+            "required_modules": sorted(required_modules) if tier == 2 else [],
             "inventory_count": inv["count"] if inv["complete"] else None,
             "static_inventory_count": inv["count"], "inventory_complete": inv["complete"]}
 
@@ -1366,7 +1379,10 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
     if query_needed and names:
         try:
             graph = (adapter or CbmCLI(root, should_stop=should_stop)).inspect(names, sdd.commit(root, base), inv)
-            need(isinstance(graph, dict) and isinstance(graph.get("selected"), list), "CBM_UNKNOWN_SCHEMA")
+            # CI-VTIER-001 review P2: validity is checked apart from completeness.
+            need(isinstance(graph, dict) and isinstance(graph.get("selected"), list)
+                 and all(isinstance(item, str) for item in graph["selected"])
+                 and type(graph.get("complete", False)) is bool, "CBM_UNKNOWN_SCHEMA")
         except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
             graph = {**graph, "state": "failed", "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA",
                      "selected": [], "complete": False}

@@ -66,7 +66,7 @@ class PolicyTests(unittest.TestCase):
         fast = self.choose(required=["tests.test_value.T.test_two"])
         self.assertEqual(len(fast["selected_ids"]), 2)
 
-    def test_v1_partial_failure_does_not_full_fallback_v2_does(self):
+    def test_incomplete_graph_gives_partial_local_v1_v2_and_remote_v3(self):
         for graph in ({"complete": False, "selected": ["tests.test_value.T.test_one"]},
                       {"complete": False, "state": "failed", "selected": []}):
             with self.subTest(graph=graph):
@@ -84,7 +84,7 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(self.choose(event=event)["effective_tier"], "V3")
         self.assertEqual(self.choose(event="draft")["effective_tier"], "V2")
 
-    def test_policy_and_configuration_paths_always_raise(self):
+    def test_risk_paths_raise_final_and_remote_but_not_local_v1(self):
         """CI-VTIER-001 AC-01: risk paths raise the final stage and remote events to V3;
         a local V1 keeps its tier and records the reason."""
         paths = ["src/baton/provider.py", ".github/workflows/a.yml", "scripts/verify_environment.py",
@@ -125,6 +125,28 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue({"UNMAPPED_TEST", "PARTIAL_IMPACT_SCOPE"} <= set(local["reasons"]))
         self.assertEqual(self.choose("checkpoint", graph=graph, event="draft")["effective_tier"], "V3")
 
+    def test_vtier_empty_regression_module_is_not_coverage(self):
+        """CI-VTIER-001 review P1: a regression module with no inventoried test (or one of
+        several that is empty) does not satisfy AC-02; the local V2 becomes V3."""
+        inv = {"tests": {"tests.test_value.T.test_ok": {"file": "tests/test_value.py", "symbol": "T.test_ok",
+                                                       "start": 1, "end": 1}},
+               "modules": {"tests.test_guard": [], "tests.test_value": ["tests.test_value.T.test_ok"],
+                           "tests.test_ci_plan": ["tests.test_value.T.test_ok"], "tests.test_ci_workflow": []},
+               "complete": True, "issues": [], "count": 1}
+        graph = {"complete": False, "selected": []}
+        guard = cp.choose("checkpoint", ["scripts/guard.py"], inv, graph, ["tests.test_value.T.test_ok"])
+        self.assertEqual(guard["effective_tier"], "V3")
+        self.assertIn("REGRESSION_UNMAPPED", guard["reasons"])
+        one_empty = cp.choose("checkpoint", ["scripts/ci_plan.py"], inv, graph, ["tests.test_value.T.test_ok"])
+        self.assertEqual(one_empty["effective_tier"], "V3")  # tests.test_ci_workflow is empty
+
+    def test_vtier_bad_graph_ids_mark_a_partial_v1(self):
+        """CI-VTIER-001 review P2: unmapped graph IDs are discarded and the V1 is marked partial."""
+        graph = {"selected": ["tests.not_real.T.test_bad"], "complete": True}
+        fast = self.choose(graph=graph, names=("src/other.py",))
+        self.assertEqual(fast["effective_tier"], "V1")
+        self.assertTrue({"UNMAPPED_TEST", "PARTIAL_IMPACT_SCOPE"} <= set(fast["reasons"]))
+
     def test_vtier_risk_paths_add_required_regression_modules(self):
         """CI-VTIER-001 AC-02: a local V2 on a validator path runs its regression modules;
         a risk path without known regression modules is V3."""
@@ -137,6 +159,7 @@ class PolicyTests(unittest.TestCase):
         plan = cp.choose("checkpoint", ["scripts/ci_plan.py"], inv, graph)
         self.assertEqual(plan["effective_tier"], "V2")
         self.assertTrue({"tests.test_ci_plan", "tests.test_ci_workflow"} <= set(plan["selected_modules"]))
+        self.assertEqual(plan["required_modules"], ["tests.test_ci_plan", "tests.test_ci_workflow"])
         self.assertIn("CONFIG_OR_TEST_PATH", plan["reasons"])
         missing = cp.choose("checkpoint", ["scripts/verify_environment.py"], inv, graph)  # test_verify_environment absent
         self.assertEqual(missing["effective_tier"], "V3")
@@ -760,7 +783,7 @@ class SyntheticGitTests(unittest.TestCase):
         self.assertFalse(result["final_evidence_eligible"])
         self.assertEqual(self.planner("checkpoint")["effective_tier"], "V2")
 
-    def test_failed_graph_v1_direct_checks_and_v2_full(self):
+    def test_failed_graph_gives_partial_local_v1_v2(self):
         self.write("src/value.py", "def value(): return 2\n")
         class Failed:
             def inspect(self, *args): raise cp.PlanError("CBM_WRONG_ROOT")

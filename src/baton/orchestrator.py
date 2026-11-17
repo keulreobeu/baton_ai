@@ -324,7 +324,10 @@ class Orchestrator:
                 target_base = target_base or self.store.get(task["task_id"])["result"].get("base_commit")
                 if not target_base:
                     raise HarnessError("validation_base_required")
-                local_plan = planner.plan(tree, base=target_base, stage=stage, should_stop=bounded_stop)
+                # CI-VTIER-001 review P2: an unresolved failure of the previous official V3
+                # (possibly outside the current selection) raises this plan to V3.
+                extra = {"outside_failures": True} if self._previous_official_failed(task) else {}
+                local_plan = planner.plan(tree, base=target_base, stage=stage, should_stop=bounded_stop, **extra)
                 target_base = local_plan["target_base"]
                 execution_state = planner.freeze(tree)
             except Exception:
@@ -355,7 +358,8 @@ class Orchestrator:
                         batch.append(target); size += len(target) + 1
                     if batch: batches.append(batch)
                     for batch in batches:
-                        internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": []})
+                        # -v prints each executed test ID, checked against the plan below.
+                        internal.append({"argv": ["python", "-m", "unittest", "-v", *batch], "acs": []})
                 if tier == "V2":
                     internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/check_sdd.py"), "--base", target_base], "acs": []})
                 for direct in local_plan["direct_checks"]:
@@ -382,6 +386,7 @@ class Orchestrator:
             # Retain every declared Task/AC check, including generic commands.
             checks.extend(internal)
         internal_ids = {id(check) for check in internal}
+        executed_ids = set()
         for check in checks:
             argv = list(check["argv"])
             if argv[0] == "python": argv[0] = sys.executable
@@ -396,7 +401,9 @@ class Orchestrator:
                                 "_planner_internal": id(check) in internal_ids})
                 break
             timeout = min(300, task["execution"]["timeout_seconds"])
-            if check.get("official"):
+            if check.get("official") or id(check) in internal_ids:
+                # CI-VTIER-001 review P2: planner checks (a V2 module run can exceed 300 s)
+                # are bounded by the Task's remaining total time, like the official V3.
                 timeout = max(0.05, total - (time.monotonic() - started))
             rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
                                               env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
@@ -438,6 +445,8 @@ class Orchestrator:
                 results[-1]["suite"] = suite
             if local_plan is not None:
                 results[-1]["_planner_internal"] = id(check) in internal_ids
+                if id(check) in internal_ids and argv[1:3] == ["-m", "unittest"]:
+                    executed_ids.update(re.findall(r"^\w+ \(([\w.]+)\)", output, re.M))
             if reason: break
         if local_plan is not None:
             try:
@@ -451,6 +460,19 @@ class Orchestrator:
             if not results:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
+            coverage = None
+            if local_plan["effective_tier"] != "V3" and not any(r.get("stop_reason") for r in results):
+                # CI-VTIER-001 review P1: every required test (Task/AC) and every required
+                # regression module must have actually run; a module emptied at load time
+                # or a missing ID fails the check instead of passing on the total count.
+                missing = sorted(set(local_plan.get("required_ids", [])) - executed_ids)
+                missing += sorted(m for m in local_plan.get("required_modules", [])
+                                  if not any(i.startswith(m + ".") for i in executed_ids))
+                coverage = {"argv": ["required_tests_executed"], "acs": [], "exit_code": 2 if missing else 0,
+                            "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
+                            "output": ("required_tests_not_executed: " + " ".join(missing[:20])) if missing
+                            else "required_tests_executed", "stop_reason": None, "_planner_internal": True}
+                results.append(coverage)
             # evidence.py intentionally requires one result per declared check.
             # Keep planner checks in separate metadata, propagate their failures
             # into a declared result, and never credit their counts/ACs as tests.
@@ -461,7 +483,7 @@ class Orchestrator:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
             execution_complete = (len(declared) == len(task["validation"])
-                                  and len(feedback) == len(internal) + len(local_plan["direct_checks"])
+                                  and len(feedback) == len(internal) + len(local_plan["direct_checks"]) + (1 if coverage else 0)
                                   and not any(r.get("stop_reason") for r in results))
             failed = [r for r in feedback if r["exit_code"] != 0 or r.get("stop_reason")]
             if failed and declared[0]["exit_code"] == 0:
@@ -471,11 +493,24 @@ class Orchestrator:
                 declared[0]["exit_code"] = 2
             declared[0]["planner"] = {**local_plan, "executed_checks": feedback,
                                        "execution_complete": execution_complete,
-                                       "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared) else "passed",
+                                       "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared)
+                                       else "not_run" if local_plan["effective_tier"] != "V3" and not sum(
+                                           r.get("test_count", 0) for r in feedback if r["argv"][1:3] == ["-m", "unittest"])
+                                       else "passed",
                                        "final_evidence_eligible": False}
             results = declared
             self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
         return results
+
+    def _previous_official_failed(self, task):
+        """True when this Task's last recorded validation was a failed official V3."""
+        try:
+            row = self.store.get(task["task_id"])
+            checks = (row.get("result") or {}).get("validation") or []
+        except Exception:
+            return False
+        planners = [c.get("planner") for c in checks if isinstance(c, dict) and isinstance(c.get("planner"), dict)]
+        return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
 
     def _record_ci_observation(self, task, tree, planner, local_plan, results, validation_seconds):
         """Record execution facts without changing validation or Task outcomes."""

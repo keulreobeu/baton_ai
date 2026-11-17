@@ -28,9 +28,9 @@ V3(stage `task_complete`/`pre_merge`), 원격 event(`draft`/`ready`/`main`/`disp
 
 로컬 중간 단계(stage 기본 V1/V2, event `local`)에서 `policy_reason`(SDD_L3_PATH·POLICY_PATH·CONFIG_OR_TEST_PATH·UNKNOWN_PATH)은 **단계를 올리지 않고 사유로만 기록**한다.
 대상에는 검증기 자체(`scripts/ci_plan.py`, `scripts/verify_environment.py`, `scripts/readset.py`, `scripts/check_sdd.py`, `.github/workflows/**`, 기타 검증 진입점·실행기)도 포함한다.
-다음은 그대로 V3다: stage `task_complete`/`pre_merge`·알 수 없는 stage, `local` 외 event, 알 수 없는 event, 500개 초과 변경, 이전 범위 밖 실패 미해결,
+다음은 그대로 V3다: stage `task_complete`/`pre_merge`·알 수 없는 stage, 알 수 없는 event, 최종 event(`ready`/`main`/`dispatch`), 500개 초과 변경, 이전 범위 밖 실패 미해결,
 계획 중 상태 변경, Task `validation_minimum`·호출 minimum 3 또는 미상 값. 명시된 minimum은 낮추지 않는다(올리기만).
-정책 경로가 있어도 V1/V2의 CBM 조회는 수행한다(조회 실패는 아래 AC-03 처리).
+정책 경로가 있어도 V1/V2의 CBM 조회는 수행한다(조회 실패는 아래 AC-03 처리). 원격 event(`draft` 포함)에는 이 Spec의 완화 규칙을 적용하지 않는다(AC-06, CI-OPT-001 AC-08 그대로).
 
 ### CI-VTIER-001-AC-02
 
@@ -43,7 +43,9 @@ V2는 위험 경로별 **필수 회귀 테스트 모듈**을 항상 포함한다
 | `scripts/readset.py`, `scripts/readset_site/**` | `tests.test_readset`, `tests.test_verify_environment` |
 | `scripts/check_sdd.py`, `docs/sdd/**`, `docs/templates/**` | `tests.test_sdd` |
 | `.github/workflows/**` | `tests.test_ci_workflow` |
-| `src/baton/orchestrator.py`, `evidence.py`, `execution.py`, `managed.py`, `managed_cli.py`, `contracts.py` | `tests.test_managed_harness` |
+| `src/baton/orchestrator.py` | `tests.test_managed_harness`, `tests.test_flow_runtime` |
+| `src/baton/runtime.py` (위험 경로 아님, 표에 있으면 항상 포함) | `tests.test_flow_runtime` |
+| `src/baton/evidence.py`, `execution.py`, `managed.py`, `managed_cli.py`, `contracts.py` | `tests.test_managed_harness` |
 | `AGENTS.md`, `CLAUDE.md`, `docs/sdd.md`, `skills/**` | `tests.test_sdd`, `tests.test_ci_workflow` |
 | `README.md` | `tests.test_ci_workflow` (방법론 문장 검사) |
 | 그 밖의 `policy_reason` 경로 | 같은 이름 규칙 `tests/test_<stem>.py`가 있으면 그 모듈, 없으면 위 표 밖이라 V2는 V3 |
@@ -58,6 +60,7 @@ V2는 위험 경로별 **필수 회귀 테스트 모듈**을 항상 포함한다
 선택 = (직접 변경된 테스트 파일의 테스트) ∪ (직접 변경 파일의 이름 규칙 `tests/test_<stem>.py`) ∪ (유효한 CBM 영향 테스트, 인벤토리에 있는 ID만) ∪ (Task/AC 필수 테스트) ∪ (V2만: AC-02 필수 회귀).
 이 합집합 규칙은 그래프가 완전한 로컬 V1/V2에도 같이 적용한다(이름 규칙 모듈은 그래프가 놓친 직접 관련 테스트를 보완한다).
 V2는 선택된 테스트의 **모듈 전체**와 Task-base SDD 검사를 실행한다. 잘못된 graph 결과는 폐기한다(선택에 쓰지 않음).
+graph 응답 형식(dict, `selected`는 문자열 목록, `complete`는 bool)이 다르면 조회 실패로 본다. V1도 graph 불완전·매핑 불가 ID 폐기 시 `PARTIAL_IMPACT_SCOPE`를 기록한다.
 부분 검증은 기존 출력 필드로 표시한다: `reasons`에 `PARTIAL_IMPACT_SCOPE`와 원래 사유(`INCOMPLETE_IMPACT_SCOPE`/`UNMAPPED_TEST`/graph reason)를 남기고, `unverified_scope`에 `transitive_impact`를 넣는다.
 새 상태 체계는 만들지 않는다.
 
@@ -66,6 +69,7 @@ V2는 선택된 테스트의 **모듈 전체**와 Task-base SDD 검사를 실행
 부분 검증의 금지 사항: Task/AC 필수 테스트가 인벤토리에 없으면 실패(`REQUIRED_TEST_NOT_IN_INVENTORY` 유지), 실행한 테스트가 0개면 V2는 V3(`EMPTY_SELECTION` 유지)·V1은 직접 파일 검사만 수행하고 테스트 PASS로 보지 않음(NOT_RUN),
 실행 실패·알려진 범위 밖 실패는 무시하지 않음, 계획 중 상태 변경은 V3·검증 중 상태 변경은 결과 무효(`validation_state_changed` 유지).
 V1/V2 결과(부분 여부와 무관)는 `final_evidence_eligible=false`이며 최종 완료 증거가 아니다.
+**2026-11-17 교차 검토 반영(ChatGPT FAIL, P1 1·P2 5·P3 2):** 필수 회귀 모듈은 인벤토리에 테스트가 1개 이상 있어야 인정한다(빈 모듈·load_tests로 비는 모듈 불인정 → 표 경로면 V3). V1/V2 실행은 unittest `-v`로 실제 실행된 테스트 ID를 모으고, Task/AC 필수 테스트 ID와 V2 필수 회귀 모듈(`required_modules`)이 모두 실제로 실행됐는지 대조하는 `required_tests_executed` 검사를 통과해야 한다(총 개수만으로 판정하지 않음). 테스트를 하나도 실행하지 않은 V1/V2의 planner 상태는 `not_run`이다. 직전 기록된 검증이 실패한 공식 V3면 planner에 `outside_failures`를 전달한다(V3). planner 내부 unittest·SDD 검사는 Task 전체 잔여 시간으로 제한한다(300 s 상한 대신).
 
 ## CI-VTIER-001-REQ-03 실행 경로
 
