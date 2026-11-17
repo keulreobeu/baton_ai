@@ -1149,3 +1149,9 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - **2026-11-17 격리 branch 공식 V3·증거 기록(실행 SHA `adacb78`)**: PASS — 732 tests, failures/errors/skips 0, eligible true, state stable,
   **read set complete**, 1267.6 s, evidence `suite-e13bc689….json`(재사용 원본 자격), temp_git 16,599·repo_check_attr 3·거부 0.
   로그 사본 외부 handoff `CI-OPT-001-v3-iso-adacb78.log`(SHA-256 `0850cd72c3f9c5b819e21976230348fb782cce1801501a8c1262375d5439dd4c`). 정적 검토(ChatGPT Chat 패키지)와 공식 독립 검토는 대기.
+- 2026-11-17 ChatGPT Chat 정적 교차검토(사용자 전달, 대상 `a03ba33` 발췌 + `e63cd45` 설명, Linux Git 2.47.3 반례 실험): 수렴 **B**, P1 계열 7(F01~F07), P2 4(F08~F11).
+  작성자 대조 확인: F01(`-f<path>` 결합형 옵션 경로 검사 생략), F03(URL 기준점 `.git`), F04(`alias` 미금지)는 코드와 일치.
+- **2026-11-17 사용자 결정 "면제 제거 후 마무리"**: scratch-area git 면제 제거(같은 불변식 5회째, 경로 분석형 수렴 불가). 남은 자식 예외는
+  plain `check-attr`·`mklink /j`·도구 `--help`/`--version`. git 자식을 쓰는 suite(BATON 포함)는 `offline_suite` 재사용 없음(매번 실행). ADR·Spec 대체 문단 기록.
+  관련 회귀 4개(면제 판정 전용) 삭제, `test_scratch_area_git_is_not_exempt` 추가. 후속 Task 후보 추가:
+  6. 실행별 scratch 소유권 registry + git 하위 명령 계약(Chat 권장 설계, F01~F11 회귀 13종) 또는 자식 프로세스 I/O 격리·관측 — 재사용 효과 회복용.

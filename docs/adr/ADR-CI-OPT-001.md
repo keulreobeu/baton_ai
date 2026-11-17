@@ -92,3 +92,13 @@ Linux/Ubuntu qualification은 후속 확장이다. 로컬 Git 조회 가속을 �
 재사용" 문장은 revision 5로 대체한다: commit SHA와 target base는 증거에 기록하되 `offline_suite` 재사용 동등성 조건이 아니며(문서만 바뀐
 다른 커밋에서도 재사용하는 것이 사용자 결정 Q1=B의 목적이다), 동등성은 입력 지문 구성요소 전부와 complete read set으로 판정한다.
 같은 SHA만으로 재사용하지 않는다는 원칙과 독립 검토·원격 CI 비재사용은 그대로다.
+
+## Eng Review Amendments — 2026-11-17 scratch-area git 면제 제거
+
+결정(사용자, 2026-11-17 "면제 제거 후 마무리"): 테스트가 임시 영역(TEMP, `.local_runtime`)에서 띄우는 git 자식 프로세스의 read set 면제(`temp_git`)를
+제거한다. git은 native라 내부 읽기를 기록기가 볼 수 없고, "git이 무엇을 읽을지"를 경로·옵션·config·hook 분석으로 판정하는 방식은 같은 불변식이
+다섯 번 깨졌다(V3 8cae1cd, Codex 63cadd8, Claude c0997f7·f6c8969, ChatGPT Chat a03ba33: 결합형 옵션·상대 링크·원격 URL 기준점·alias·clone 대상·hook·영역 리디렉션).
+이제 기록 저장소의 plain `check-attr`, 임시 영역 `mklink /j`, 도구 `--help`/`--version` 외의 자식 프로세스는 `CHILD_NOT_ALLOWED`로 read set을 partial로 만든다.
+결과: 재사용 안전성은 유지되고 코드가 줄어든다. 대신 git 자식을 쓰는 suite(BATON 자체 suite 포함)는 `offline_suite`를 재사용하지 않는다(매번 실행).
+거부한 대안: 경로 분석 보강(수렴 불가), 이번 Task 안의 실행별 scratch registry+git 명령 계약 구현(규모·OS 수준 보장 부재, 후속 Task로 분리),
+재사용 기본 비활성화+알려진 P1 RA 처리(알려진 결함을 둔 채 출시). 후속 후보: 실행별 scratch 소유권 registry와 git 하위 명령 계약, 또는 자식 프로세스 I/O 격리·관측.

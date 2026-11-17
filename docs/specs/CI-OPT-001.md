@@ -377,6 +377,11 @@ config는 git 문법을 흉내 내지 않고 BOM·같은 줄 헤더를 포함해
 hook 예외(2026-11-17, 공식 V3 `0b80f79` partial 37건: `test_git_lifecycle`이 실행 중 쓴 pre-commit hook): 비 `.sample` hook은 **이번 실행이 만든 파일**이고
 (내용은 기록된 테스트 소스가 정함) 본문이 저장소 기준 상대 이름만 쓸 때(절대·드라이브·UNC·`..` 경로, `$`·`` ` ``·`~`·`%` 확장 없음, shebang은 `/bin/sh`·`bash`·`env sh|bash`)만
 면제한다. 실행 전부터 있던 hook이나 그 밖의 hook은 면제가 아니다. hook이 이름으로 호출하는 프로그램 자체의 내부 읽기는 RA-3(관측 경계 밖 읽기)에 속한다.
+**2026-11-17 사용자 결정으로 위 scratch-area git 면제 문단 전체(검토 반영 1~3차·hook 예외)를 대체한다:** 임시 영역 git 면제(`temp_git`)는 없다.
+ChatGPT Chat 정적 검토(`a03ba33`, 수렴 B, P1 계열 7: 결합형 옵션 `-f<path>`, 상대 symlink·저장소 내부 리디렉션, 원격 URL 상대 기준점, `[alias]` 실행,
+clone/push 대상 저장소, hook 본문의 암묵적 경로(`cd`→HOME, 링크된 `src`), `.local_runtime` 리디렉션)로 경로 분석형 면제가 수렴하지 않음이 확인됐다.
+기록 저장소의 plain `check-attr`(R5)과 임시 영역 `mklink /j`, 도구 `--help`/`--version` 예외만 남고, 그 밖의 git·비 Python 자식은 `CHILD_NOT_ALLOWED`(partial)다.
+따라서 git 자식 프로세스를 쓰는 suite는 `offline_suite`를 재사용하지 않고 매번 실행한다(안전 방향). 재사용 안전성 판정 규칙(R1–R6)은 그대로다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
