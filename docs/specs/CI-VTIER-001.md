@@ -45,6 +45,7 @@ V2는 위험 경로별 **필수 회귀 테스트 모듈**을 항상 포함한다
 | `.github/workflows/**` | `tests.test_ci_workflow` |
 | `src/baton/orchestrator.py`, `evidence.py`, `execution.py`, `managed.py`, `managed_cli.py`, `contracts.py` | `tests.test_managed_harness` |
 | `AGENTS.md`, `CLAUDE.md`, `docs/sdd.md`, `skills/**` | `tests.test_sdd`, `tests.test_ci_workflow` |
+| `README.md` | `tests.test_ci_workflow` (방법론 문장 검사) |
 | 그 밖의 `policy_reason` 경로 | 같은 이름 규칙 `tests/test_<stem>.py`가 있으면 그 모듈, 없으면 위 표 밖이라 V2는 V3 |
 
 변경된 검증기가 자기 자신을 통과시킨 결과만으로 검증기 무결성을 인정하지 않는다: 이 결과는 피드백이며 최종 판정은 변경 전과 같은 공식 V3·독립 검토·원격 CI다.
@@ -54,7 +55,8 @@ V2는 위험 경로별 **필수 회귀 테스트 모듈**을 항상 포함한다
 ### CI-VTIER-001-AC-03
 
 로컬 V1/V2에서 CBM 그래프 불완전·조회 실패·잘못된 root/generation/schema·매핑 불가 테스트 ID, 정적 인벤토리 불완전은 **V3로 올리지 않고 부분 검증**한다.
-선택 = (직접 변경된 테스트 파일의 테스트) ∪ (직접 변경 파일의 이름 규칙 `tests/test_<stem>.py`) ∪ (유효한 CBM 영향 테스트, 인벤토리에 있는 ID만) ∪ (Task/AC 필수 테스트) ∪ (AC-02 필수 회귀).
+선택 = (직접 변경된 테스트 파일의 테스트) ∪ (직접 변경 파일의 이름 규칙 `tests/test_<stem>.py`) ∪ (유효한 CBM 영향 테스트, 인벤토리에 있는 ID만) ∪ (Task/AC 필수 테스트) ∪ (V2만: AC-02 필수 회귀).
+이 합집합 규칙은 그래프가 완전한 로컬 V1/V2에도 같이 적용한다(이름 규칙 모듈은 그래프가 놓친 직접 관련 테스트를 보완한다).
 V2는 선택된 테스트의 **모듈 전체**와 Task-base SDD 검사를 실행한다. 잘못된 graph 결과는 폐기한다(선택에 쓰지 않음).
 부분 검증은 기존 출력 필드로 표시한다: `reasons`에 `PARTIAL_IMPACT_SCOPE`와 원래 사유(`INCOMPLETE_IMPACT_SCOPE`/`UNMAPPED_TEST`/graph reason)를 남기고, `unverified_scope`에 `transitive_impact`를 넣는다.
 새 상태 체계는 만들지 않는다.

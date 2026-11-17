@@ -561,7 +561,7 @@ class Orchestrator:
         self.store.observe(task["task_id"], "record_ci_validation", observation)
 
     def verify(self, task_id, *, base_sha=None, stage="task_complete"):
-        if stage not in {"checkpoint", "task_complete"}:
+        if stage not in {"in_progress", "checkpoint", "task_complete"}:  # CI-VTIER-001 AC-05
             raise HarnessError("invalid_validation_stage")
         from .runtime import execution_lock
         row = self.store.get(task_id)

@@ -95,6 +95,23 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         with execution_lock(self.root, "worktree", Path(tree).resolve()), self.assertRaisesRegex(HarnessError, "worker_busy"):
             Orchestrator(self.store).run("OTHER")
 
+    def test_orca_author_settlement_validates_at_checkpoint(self):
+        """CI-VTIER-001 AC-05: the Orca author's end of work runs a V2 checkpoint, not V3,
+        and still stops at REVIEW_REQUIRED (the evidence gate re-runs V3)."""
+        self.orca(); client = FakeOrca(self.root)
+        row = Orchestrator(self.store, runtime_client=client).run("ORCA")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        stages = []
+        original = Orchestrator.validate
+        def capture(runner, task, tree, stop, **kwargs):
+            stages.append(kwargs.get("stage", "task_complete"))
+            return original(runner, task, tree, stop, **kwargs)
+        with patch.object(Orchestrator, "validate", capture):
+            row = ingest(self.store, "ORCA", self.receipt(), client)
+        self.assertEqual(stages, ["checkpoint"])
+        self.assertEqual(row["state"], "REVIEW_REQUIRED")
+
     def test_orca_dispatch_notification_and_duplicate_are_idempotent(self):
         self.orca(); client = FakeOrca(self.root)
         row = Orchestrator(self.store, runtime_client=client).run("ORCA")

@@ -81,7 +81,7 @@ class MethodologyDocsTests(unittest.TestCase):
         for name in GUIDANCE_DOCS + ("docs/plans/ci-optimization.md",):
             text = read(name)
             for term in ("worker V1은 `Orchestrator._run` 직접 실행 피드백",
-                         "Orca author settle 경로는 현재 기본 V3로 보수적으로 실행",
+                         "Orca author settle 경로는 CI-VTIER-001(2026-11-17)부터 V2 checkpoint로 실행",
                          "`offline_suite` 재사용은 2026-11-16 `verify_environment.py --evidence-dir`와 Orchestrator V3 caller에 연결",
                          "재사용 절감은 실측 전이라 주장하지 않는다",
                          "부분 재실행(Re-run failed jobs)은 fail-closed", "Re-run all jobs가 필요",

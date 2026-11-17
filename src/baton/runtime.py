@@ -630,7 +630,10 @@ def ingest(store, task_id, receipt, client=None):
                 if observed["state"] == "succeeded" and not row["control"]:
                     from .orchestrator import Orchestrator
                     try:
-                        checks = Orchestrator(store).validate(row["task"], path, lambda: store.get(task_id)["control"])
+                        # CI-VTIER-001 AC-05: the author's end of work is a V2 checkpoint; the
+                        # completion/integration evidence gate (evidence._checks) still runs V3.
+                        checks = Orchestrator(store).validate(row["task"], path, lambda: store.get(task_id)["control"],
+                                                              stage="checkpoint")
                     except (HarnessError, OSError, ValueError):
                         checks = []
                     passed = bool(checks) and all(x["exit_code"] == 0 for x in checks)

@@ -1547,6 +1547,117 @@
         {"id": "CI-OPT-001-AC-12", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_exact_complete_v3_only_and_never_remote"}, {"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_every_identity_field_changed_unknown_partial_missing"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_zero_exit_with_cancel_or_timeout_never_records_full_success"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_cancel_on_final_official_process_is_partial_despite_success_summary"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_plan_identity_changed_before_execution_runs_no_checks"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_unread_doc_candidate_and_outside_section_change_reuse"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_inputs_that_must_invalidate"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_ignored_read_listing_outside_env_manifest_git_invalidate"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_unsuccessful_or_untrusted_sources_reject"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_non_reusable_tests_always_and_expiry"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_reproduces_2026_11_13_five_run_case"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_grandchildren_are_tokenized_and_attributed"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_ended_before_startup_rules"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_native_allowlist_ctypes_repo_load_and_mmap"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_alive_at_stop_and_nested_propagation"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_link_targets_resolver_and_missing_listing_are_inputs"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_execute_then_reuse_then_reexecute_after_input_change"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_failed_run_is_recorded_but_never_reused_and_sdd_failure_runs_nothing"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_suite_execution_combinations"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v3_reused_suite_is_recorded_without_counting_as_new_run"}]},
         {"id": "CI-OPT-001-AC-13", "tests": [{"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_events_preserve_status_unknowns_and_existing_report"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_rejects_untrusted_fields_and_invalid_values"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_large_ci_selection_keeps_full_set_digest_under_existing_payload_cap"}, {"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_measurements_preserve_unknowns_and_no_new_database"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task"}]}
       ]
+    },
+    {
+      "id": "CI-VTIER-001",
+      "spec": "docs/specs/CI-VTIER-001.md",
+      "requirements": [
+        {
+          "id": "CI-VTIER-001-REQ-01",
+          "acs": [
+            "CI-VTIER-001-AC-01",
+            "CI-VTIER-001-AC-02"
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-REQ-02",
+          "acs": [
+            "CI-VTIER-001-AC-03",
+            "CI-VTIER-001-AC-04"
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-REQ-03",
+          "acs": [
+            "CI-VTIER-001-AC-05",
+            "CI-VTIER-001-AC-06"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "CI-VTIER-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_policy_and_configuration_paths_always_raise"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_final_stages_and_events_do_not_depend_on_graph"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_risk_paths_add_required_regression_modules"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_v1_partial_failure_does_not_full_fallback_v2_does"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_unmapped_graph_id_is_not_trusted"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "SyntheticGitTests.test_failed_graph_v1_direct_checks_and_v2_full"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "ImpactedTestFileTests.test_impacted_unmapped_support_file_stays_incomplete_and_v2_falls_full"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_minimum_only_raises_scope_state_empty_and_limits"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_risk_paths_add_required_regression_modules"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_orca_author_settlement_validates_at_checkpoint"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_v1_partial_failure_does_not_full_fallback_v2_does"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_policy_and_configuration_paths_always_raise"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -499,13 +499,19 @@ class ManagedHarnessTests(unittest.TestCase):
             checkpoint = json.loads(out.getvalue())
             self.assertEqual(code, 0)
             self.assertEqual(checkpoint["state"], "REVIEW_REQUIRED")
+            with redirect_stdout(io.StringIO()) as out:  # CI-VTIER-001 AC-05: managed CLI V1
+                code = main(["--state-dir", ".local_runtime/harness-managed", "validate", "--task", "TASK-ONE",
+                             "--stage", "in_progress"], workspace=self.root)
+            fast = json.loads(out.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(fast["state"], "REVIEW_REQUIRED")
             with redirect_stdout(io.StringIO()) as out:
                 code = main(["--state-dir", ".local_runtime/harness-managed", "validate", "--task", "TASK-ONE"],
                             workspace=self.root)
             final = json.loads(out.getvalue())
             self.assertEqual(code, 0)
             self.assertEqual(final["state"], "REVIEW_REQUIRED")
-        self.assertEqual(stages, ["in_progress", "checkpoint", "task_complete"])
+        self.assertEqual(stages, ["in_progress", "checkpoint", "in_progress", "task_complete"])
 
     def test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task(self):
         from scripts import ci_plan

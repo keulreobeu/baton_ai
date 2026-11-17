@@ -55,9 +55,11 @@ class PolicyTests(unittest.TestCase):
         return cp.choose(stage, list(names), self.inv, kw.pop("graph", self.graph), **kw)
 
     def test_positive_v1_v2_expand_module_and_required_union(self):
-        fast = self.choose()
+        fast = self.choose(names=("src/other.py",))
         self.assertEqual(fast["effective_tier"], "V1")
         self.assertEqual(fast["selected_ids"], ["tests.test_value.T.test_one"])
+        # CI-VTIER-001 AC-03: a local V1 also includes the naming-convention module (src/value.py -> tests.test_value).
+        self.assertEqual(len(self.choose()["selected_ids"]), 2)
         impact = self.choose("checkpoint")
         self.assertEqual(impact["effective_tier"], "V2")
         self.assertEqual(len(impact["selected_ids"]), 2)
@@ -69,7 +71,11 @@ class PolicyTests(unittest.TestCase):
                       {"complete": False, "state": "failed", "selected": []}):
             with self.subTest(graph=graph):
                 self.assertEqual(self.choose(graph=graph)["effective_tier"], "V1")
-                self.assertEqual(self.choose("checkpoint", graph=graph)["effective_tier"], "V3")
+                # CI-VTIER-001 AC-03: a local V2 is partial, a remote draft V2 still falls back to V3.
+                local = self.choose("checkpoint", graph=graph)
+                self.assertEqual(local["effective_tier"], "V2")
+                self.assertIn("PARTIAL_IMPACT_SCOPE", local["reasons"])
+                self.assertEqual(self.choose("checkpoint", graph=graph, event="draft")["effective_tier"], "V3")
 
     def test_final_stages_and_events_do_not_depend_on_graph(self):
         for stage in ("task_complete", "pre_merge", "unknown"):
@@ -79,6 +85,8 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.choose(event="draft")["effective_tier"], "V2")
 
     def test_policy_and_configuration_paths_always_raise(self):
+        """CI-VTIER-001 AC-01: risk paths raise the final stage and remote events to V3;
+        a local V1 keeps its tier and records the reason."""
         paths = ["src/baton/provider.py", ".github/workflows/a.yml", "scripts/verify_environment.py",
                  "scripts/check_sdd.py", "scripts/ci_plan.py", "AGENTS.md", "CLAUDE.md", "docs/sdd.md",
                  "docs/sdd/x.md", "docs/templates/x.md", "skills/a/SKILL.md", "pyproject.toml",
@@ -86,7 +94,11 @@ class PolicyTests(unittest.TestCase):
                  "src/custom.config", "unknown.zzz"]
         for name in paths:
             with self.subTest(name=name):
-                self.assertEqual(self.choose(names=[name])["effective_tier"], "V3")
+                local = self.choose(names=[name])
+                self.assertEqual(local["effective_tier"], "V1")
+                self.assertTrue(set(local["reasons"]) & {"SDD_L3_PATH", "POLICY_PATH", "CONFIG_OR_TEST_PATH", "UNKNOWN_PATH"})
+                self.assertEqual(self.choose("task_complete", names=[name])["effective_tier"], "V3")
+                self.assertEqual(self.choose(names=[name], event="draft")["effective_tier"], "V3")
 
     def test_minimum_only_raises_scope_state_empty_and_limits(self):
         self.assertEqual(self.choose("checkpoint", minimum=1)["effective_tier"], "V2")
@@ -96,13 +108,43 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(self.choose(**kw)["effective_tier"], "V3")
         self.assertEqual(self.choose("checkpoint", names=[])["effective_tier"], "V3")
         self.assertEqual(self.choose(names=[], graph={"selected": [], "complete": False})["selected_ids"], [])
+        self.assertEqual(self.choose("checkpoint", minimum=3)["effective_tier"], "V3")
+        self.assertEqual(self.choose("checkpoint", minimum=7)["effective_tier"], "V3")
         self.inv["complete"] = False
-        self.assertEqual(self.choose("checkpoint")["effective_tier"], "V3")
+        partial = self.choose("checkpoint")  # CI-VTIER-001 AC-03: local V2 partial, not V3
+        self.assertEqual(partial["effective_tier"], "V2")
+        self.assertIn("PARTIAL_IMPACT_SCOPE", partial["reasons"])
+        self.assertEqual(self.choose("checkpoint", event="draft")["effective_tier"], "V3")
 
     def test_unmapped_graph_id_is_not_trusted(self):
         graph = {"selected": ["tests.not_real.T.test_bad"], "complete": True}
-        self.assertEqual(self.choose(graph=graph)["selected_ids"], [])
-        self.assertEqual(self.choose("checkpoint", graph=graph)["effective_tier"], "V3")
+        self.assertEqual(self.choose(graph=graph, names=("src/other.py",))["selected_ids"], [])
+        local = self.choose("checkpoint", graph=graph)
+        self.assertEqual(local["effective_tier"], "V2")
+        self.assertNotIn("tests.not_real.T.test_bad", local["selected_ids"])
+        self.assertTrue({"UNMAPPED_TEST", "PARTIAL_IMPACT_SCOPE"} <= set(local["reasons"]))
+        self.assertEqual(self.choose("checkpoint", graph=graph, event="draft")["effective_tier"], "V3")
+
+    def test_vtier_risk_paths_add_required_regression_modules(self):
+        """CI-VTIER-001 AC-02: a local V2 on a validator path runs its regression modules;
+        a risk path without known regression modules is V3."""
+        inv = {"tests": {}, "modules": {}, "complete": True, "issues": [], "count": 0}
+        for module in ("tests.test_ci_plan", "tests.test_ci_workflow", "tests.test_sdd", "tests.test_value"):
+            inv["modules"][module] = [module + ".T.test_a"]
+            inv["tests"][module + ".T.test_a"] = {"file": module.replace(".", "/") + ".py", "symbol": "T.test_a",
+                                                  "start": 1, "end": 1}
+        graph = {"selected": ["tests.test_value.T.test_a"], "complete": True}
+        plan = cp.choose("checkpoint", ["scripts/ci_plan.py"], inv, graph)
+        self.assertEqual(plan["effective_tier"], "V2")
+        self.assertTrue({"tests.test_ci_plan", "tests.test_ci_workflow"} <= set(plan["selected_modules"]))
+        self.assertIn("CONFIG_OR_TEST_PATH", plan["reasons"])
+        missing = cp.choose("checkpoint", ["scripts/verify_environment.py"], inv, graph)  # test_verify_environment absent
+        self.assertEqual(missing["effective_tier"], "V3")
+        self.assertIn("REGRESSION_UNMAPPED", missing["reasons"])
+        unknown = cp.choose("checkpoint", ["pyproject.toml"], inv, graph)
+        self.assertEqual(unknown["effective_tier"], "V3")
+        self.assertEqual(cp.choose("task_complete", ["scripts/ci_plan.py"], inv, graph)["effective_tier"], "V3")
+        self.assertEqual(cp.choose("checkpoint", [], inv, graph)["effective_tier"], "V3")  # nothing changed: V3
 
 
 class ReuseTests(unittest.TestCase):
@@ -636,9 +678,12 @@ class ImpactedTestFileTests(unittest.TestCase):
         impacted = [{"qn": self.P + "tests.support.fixture", "file": "tests/support.py"}]
         inv, graph = self.inspect(impacted, rows)
         self.assertFalse(graph["complete"])
-        choice = cp.choose("checkpoint", ["src/value.py"], inv, graph)
+        choice = cp.choose("checkpoint", ["src/value.py"], inv, graph, event="draft")
         self.assertEqual(choice["effective_tier"], "V3")
         self.assertIn("INCOMPLETE_IMPACT_SCOPE", choice["reasons"])
+        local = cp.choose("checkpoint", ["src/value.py"], inv, graph)  # CI-VTIER-001 AC-03
+        self.assertEqual(local["effective_tier"], "V2")
+        self.assertIn("PARTIAL_IMPACT_SCOPE", local["reasons"])
 
     def test_no_impacted_test_file_keeps_original_narrow_selection(self):
         rows = self.direct_call_case()
@@ -724,14 +769,19 @@ class SyntheticGitTests(unittest.TestCase):
         self.assertIn("src/value.py", [c["file"] for c in result["direct_checks"]])
         self.assertIn("transitive_impact", result["unverified_scope"])
         self.assertEqual(result["execution_status"], "NOT_RUN")
-        self.assertEqual(self.planner("checkpoint", Failed())["effective_tier"], "V3")
+        failed_v2 = self.planner("checkpoint", Failed())  # CI-VTIER-001 AC-03: partial V2, scope recorded
+        self.assertEqual(failed_v2["effective_tier"], "V2")
+        self.assertIn("PARTIAL_IMPACT_SCOPE", failed_v2["reasons"])
+        self.assertIn("transitive_impact", failed_v2["unverified_scope"])
+        self.assertIn("src/value.py", [c["file"] for c in failed_v2["direct_checks"]])
+        self.assertFalse(failed_v2["final_evidence_eligible"])
         class Partial:
             def inspect(self, *args):
                 return {"selected": ["tests.test_value.T.test_two"], "complete": False, "state": "partial"}
         partial = self.planner(adapter=Partial())
         self.assertEqual(partial["effective_tier"], "V1")
         self.assertEqual(len(partial["selected_ids"]), 2)
-        self.assertEqual(self.planner("checkpoint", Partial())["effective_tier"], "V3")
+        self.assertEqual(self.planner("checkpoint", Partial())["effective_tier"], "V2")
 
     def test_remote_actual_planner_absent_cbm_falls_back_and_checks_base(self):
         self.write("scripts/ci_plan.py", "# synthetic policy\n")

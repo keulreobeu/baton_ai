@@ -49,7 +49,7 @@ active는 작업 T1(계약 문서)이 이 Plan으로 진행 중이라는 뜻이�
 
 원격 E2E는 승인 시 draft 선택 범위·ready/main 실제 Windows 2 job 이름별 성공·gate 실패 전파·옛 draft 재실행을 확인한다.
 충돌 PR은 CI가 없으므로 검증된 것으로 보지 않는다. 결과를 안전하게 만들지 못하면 실패하며 SDD FAIL은 fallback으로 지워지지 않는다.
-현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 현재 기본 V3로 보수적으로 실행한다. `offline_suite` 재사용은 2026-11-16 `verify_environment.py --evidence-dir`와 Orchestrator V3 caller에 연결됐으며 재사용 절감은 실측 전이라 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
+현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 CI-VTIER-001(2026-11-17)부터 V2 checkpoint로 실행하며, 완료·통합 증거 기록은 지금처럼 V3를 다시 실행한다. managed CLI `validate --stage in_progress`로 V1을 직접 실행할 수 있다. `offline_suite` 재사용은 2026-11-16 `verify_environment.py --evidence-dir`와 Orchestrator V3 caller에 연결됐으며 재사용 절감은 실측 전이라 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
 원격 E2E 승인 시 부분 재실행 fail-closed와 Re-run all jobs 재생성 경로, plan/gate 로그 필드도 확인한다.
 
 ## 결정과 경계 — 2026-11-12

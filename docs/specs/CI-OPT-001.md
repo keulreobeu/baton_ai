@@ -92,6 +92,8 @@ base 이후 바뀐 파일만 changed이고 `basis.requested_base == base`. 실�
 
 ### CI-OPT-001-AC-07
 
+> 2026-11-17: 이 AC·AC-08·AC-09의 **로컬 중간 단계(stage in_progress/debugging/checkpoint, event local) 상향·fallback 규칙**은 [CI-VTIER-001](CI-VTIER-001.md)이 대체한다. 최종 단계·원격 event·증거 규칙은 이 Spec 그대로다.
+
 | stage | 기본 단계 | 범위 |
 |---|---|---|
 | in_progress / debugging | V1 | graph_affected: 가용 영향 테스트 + 전체 Task-base 직접 파일 검사 + Task/AC 필수 대상 테스트 |
