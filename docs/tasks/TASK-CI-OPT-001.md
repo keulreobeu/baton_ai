@@ -1078,3 +1078,9 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
 - 2026-11-17 E2E 1회차(`df93236`): 749 tests OK(1151.9 s), read set complete·stable.
 - 2026-11-17 Codex 11차 재검토(`df93236`, `ctx_a411ef07341a`): FAIL(P1 1: `mode=ro/rw` URI의 없는 파일을 출력으로 처리). 반영: 비생성 모드의 부재 파일은 부재 입력.
 - 2026-11-17 사용자 결정: 교차 검토 루프 종료 — "잔여 위험 분류 추가 후 종료". 관측 경계 밖 읽기 API를 Spec RA-3으로 분류(발견 시 관측 추가 또는 `NON_REUSABLE_TESTS`). 최종 verified는 원격 Windows CI 새 실행 필수(Q3) 유지.
+- **2026-11-17 Task 격리 branch 구성(로컬, 게시 전)**: `codex/ci-opt-001-r5` = 게시된 `b133bde`(PR #13 head) 위에 `b133bde..615e7d7`의
+  비병합 커밋 중 다른 Task 7개(T4-PREP `3465597`·`dd3121a`, REVIEW-READ `fa10f2a`, HOOK-QUAL `28d3cac`·`687069e`, JIPDAM-SKIP `627db24`·`ec65365`)와
+  병합 2개(`52ec9d9`·`99486ff`)를 뺀 47개를 `cherry-pick -x`로 순서대로 적용(CI-TIME `b2633db` 필수 의존 포함). 충돌 2건(`current.md`, `traceability.json`)은
+  원 branch 쪽을 택했다. 이후 `traceability.json`에서 다른 Task 문서·REVIEW-READ-001 feature·FLOW-001 REQ-05/06(AC-09~12)·HANDOFF-001 AC-05~07을
+  해당 커밋 diff 역적용으로 제거하고 `current.md`의 다른 Task 절 3개를 뺐다. 결과 tree와 `615e7d7`의 차이는 제외한 Task 파일 22개와 이 두 문서뿐이다.
+  `check_sdd.py --base 5c07aea` PASS. push·PR·원격 CI 0.
