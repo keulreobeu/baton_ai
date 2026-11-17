@@ -1139,3 +1139,6 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   P1: `GIT_DIR` 지정·bare 저장소의 config(`core.worktree`/`include`)·alternates 미검사. P2: 같은 줄 헤더·BOM config 판독 누락, `core.fsmonitor`·`gpgsign` 값 무제한.
   같은 불변식 4회째 → 근본 원인(경로 분석으로 git 동작 모사)을 지침대로 설계 수준에서 처리: 긍정 증명형 면제(인자·환경·실제 사용 저장소·config 키·URL·hooks),
   판단 불가 시 비면제. 회귀 `test_scratch_git_needs_positive_proof`(허용 5·거부 17, 경우별 판정 확인).
+- **2026-11-17 격리 branch 공식 V3·증거 기록(실행 SHA `f6c8969`)**: 731 tests OK, skips 0, eligible true, 1277.6 s, evidence `suite-570fd823….json`.
+  read set partial(`CHILD_NOT_ALLOWED` 4: 실제 suite의 `git --no-optional-locks -C <TEMP repo> --version`이 허용 목록 밖). 무해 옵션 `--version` 추가(I3, 과잉 차단 수정).
+  temp_git 16,610회, repo_check_attr 3. 이 V3는 `f6c8969`에만 결합되며 최종 증거가 아니다.

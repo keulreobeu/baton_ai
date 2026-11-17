@@ -1240,7 +1240,7 @@ def _audit(event, args):
 # not listed may move git's view (worktree, config includes, object stores) and
 # makes the call a non-exempt child.
 SCRATCH_GIT_FLAGS = {"--no-optional-locks", "--no-pager", "-P", "--literal-pathspecs", "--no-replace-objects",
-                     "--no-advice"}
+                     "--no-advice", "--version"}  # --version reads nothing (seen 4x in the real suite)
 SCRATCH_GIT_CONFIG_KEYS = {"user.name", "user.email", "commit.gpgsign", "tag.gpgsign", "core.quotepath",
                            "core.autocrlf", "core.safecrlf", "init.defaultbranch", "gc.auto", "maintenance.auto",
                            "core.fsmonitor", "color.ui", "advice.detachedhead"}

@@ -459,7 +459,8 @@ class ReadsetTests(unittest.TestCase):
                    (["git", "-C", str(ok), "push", "origin", "main"], clean),
                    (["git", "-C", str(bare_ok), "rev-parse", "HEAD"], clean),
                    (["git", "-C", str(scratch), "clone", str(bare_ok), str(scratch / "clone")], clean),
-                   (["git", "-C", str(ok), "status"], {**clean, "GIT_INDEX_FILE": str(scratch / "private.index")})]
+                   (["git", "-C", str(ok), "status"], {**clean, "GIT_INDEX_FILE": str(scratch / "private.index")}),
+                   (["git", "--no-optional-locks", "-C", str(ok), "--version"], clean)]  # real suite (V3 f6c8969)
         refused = [(["git", "-C", str(path), "status"], clean) for path in cases.values()]
         refused += [(["git", "-C", str(bare_alt), "log"], clean), (["git", "-C", str(hooked), "commit", "-m", "x"], clean),
                     (["git", "-C", str(ok), "status"], {**clean, "GIT_DIR": str(scratch / "ok" / ".git")}),
