@@ -262,7 +262,7 @@ class ReadsetTests(unittest.TestCase):
         git = temp / "git.exe"
         git.write_bytes(b"git")
         rec._child([str(git), "-C", str(temp), "status"], str(temp), None)
-        rec._child([str(git), "check-attr", "--", str(self.root / "x")], str(self.root), {})
+        rec._child(["git", "check-attr", "--", str(self.root / "x")], str(self.root), None)  # inherited env, PATH git
         rec._child(["cmd", "/c", "mklink", "/j", str(temp / "a"), str(temp / "b")], str(temp), None)
         # Final review P2 (d8ffcd0): a chained command is not the exempt mklink form.
         rec._child(["cmd", "/c", "type", str(self.root / "x"), "&", "mklink", "/j", str(temp / "c"), str(temp / "d")],
@@ -288,8 +288,9 @@ class ReadsetTests(unittest.TestCase):
         outer = readset.Recorder(repo)
         self.addCleanup(outer.stop)
         clean_env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_DIR")}
-        outer._child(["git", "-C", repo, "check-attr", "text", "--", "README.md"], repo, clean_env)
+        outer._child(["git", "-C", repo, "check-attr", "text", "--", "README.md"], repo, None)
         self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)
+
         refused = [(["git", "-C", repo, "check-attr", "--cached", "text", "--", "README.md"], clean_env),
                    (["git", "--git-dir", "C:/elsewhere/.git", "--work-tree", repo, "check-attr", "text", "--", "README.md"], clean_env),
                    (["git", "-C", repo, "-c", "core.attributesFile=C:/x", "check-attr", "text", "--", "README.md"], clean_env),
@@ -303,11 +304,25 @@ class ReadsetTests(unittest.TestCase):
                    (["git", "-C", repo, "--attr-source=HEAD~3", "check-attr", "text", "--", "README.md"], clean_env),
                    (["git", "-C", repo, "check-attr", "--source=HEAD~3", "text", "--", "README.md"], clean_env),
                    (["git", "-C", repo, "check-attr", "--stdin", "text", "--", "README.md"], clean_env),
-                   (["git", "-C", repo, "check-attr", "text", "README.md"], clean_env)]  # no "--"
+                   (["git", "-C", repo, "check-attr", "text", "README.md"], clean_env),  # no "--"
+                   # Final review 37b897a: only the inherited environment, the PATH git, the root's own repository.
+                   (["git", "-C", repo, "check-attr", "text", "--", "README.md"], clean_env),
+                   ([str(Path(tempfile.gettempdir()) / "other" / "git.exe"), "-C", repo, "check-attr", "text", "--", "README.md"], None)]
         for argv, env in refused:
             outer._child(argv, repo, env)
         self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)
         self.assertEqual(outer._children["disallowed_count"], len(refused))
+
+    def test_check_attr_in_a_nested_repository_is_not_exempt(self):
+        """Final review P3 (37b897a): git run below the root must discover the root's own repository."""
+        (self.root / "nested" / ".git").mkdir(parents=True)
+        (self.root / "plain").mkdir()
+        rec = self.recorder()
+        rec._child(["git", "-C", str(self.root / "plain"), "check-attr", "text", "--", "x"], str(self.root), None)
+        rec._child(["git", "-C", str(self.root / "nested"), "check-attr", "text", "--", "x"], str(self.root), None)
+        rec.stop()
+        self.assertEqual(rec._children["allowed"]["repo_check_attr"], 1)
+        self.assertEqual(rec._children["disallowed_count"], 1)
 
     def test_scratch_area_git_is_not_exempt(self):
         """2026-11-17 user decision (CI-OPT-001): after five rounds on one invariant the

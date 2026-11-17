@@ -826,12 +826,14 @@ class Recorder:
                       "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_INDEX_FILE"}
             child_env = os.environ if env is None else env
             plain = plain and not any(str(k).upper() in moving for k in child_env)
-            # Exact-form allow-list (final review P2, d8ffcd0): global options only -C /
+            # Exact-form allow-list (final reviews d8ffcd0, 37b897a): global options only -C /
             # --no-optional-locks, check-attr options only attribute names, -z, -a/--all,
-            # and the child's GIT_* variables a subset (same values) of this fingerprinted
-            # process's: dropping settings never adds reads, adding/changing them may.
-            plain = (plain and _check_attr_form_ok(parts[1:])
-                     and set(_git_env(child_env)) <= set(_git_env(os.environ)))
+            # the inherited (fingerprinted) environment only (env=None: removing a variable
+            # such as GIT_CONFIG_NOSYSTEM can add reads), the fingerprinted git executable,
+            # and no other repository between the location and the recorded root.
+            plain = (plain and env is None and _check_attr_form_ok(parts[1:])
+                     and exe is not None and exe == _canonical(shutil_which("git"))
+                     and effective is not None and _no_repository_between(effective, self.root))
             if subcommand == "check-attr" and plain:
                 separator = parts.index("--") + 1 if "--" in parts else len(parts)
                 targets = parts[separator:]
@@ -1171,8 +1173,17 @@ def _audit(event, args):
             r._audit_event(event, args)
 
 
-def _git_env(env):
-    return sorted((str(k).upper(), str(v)) for k, v in env.items() if str(k).upper().startswith("GIT_"))
+def _no_repository_between(location, root):
+    """git run at `location` (inside `root`) must discover `root`'s repository itself."""
+    current = location
+    while _under(current, root) and current != root:
+        if os.path.exists(os.path.join(current, ".git")):
+            return False
+        parent = os.path.dirname(current)
+        if parent == current:
+            return False
+        current = parent
+    return current == root
 
 
 def _check_attr_form_ok(arguments):

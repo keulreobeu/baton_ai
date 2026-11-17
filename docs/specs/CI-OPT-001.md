@@ -387,6 +387,9 @@ clone/push 대상 저장소, hook 본문의 암묵적 경로(`cd`→HOME, 링크
 지문에 들어간 기록 프로세스 환경의 부분집합(같은 값)이어야 한다(설정 주입 `GIT_CONFIG_*`·`GIT_CONFIG_PARAMETERS`·`--attr-source` 불허).
 `mklink`는 정확히 `cmd /c mklink /j <link> <target>`(연결 연산자 없음)만이다. `git` 지문의 attribute 후보에 system `gitattributes`(system config 옆,
 없으면 실행 파일 설치 경로의 `etc`)를 더한다.
+재검토 반영(2026-11-17, Claude `37b897a` PASS_WITH_FINDINGS: P1 0·P2 1·P3 2): "자식 `GIT_*`가 부모의 부분집합" 규칙은 전제가 틀렸다(`GIT_CONFIG_NOSYSTEM` 같은 억제
+변수를 빼면 읽기가 늘고 HOME 계열은 검사 밖). `check-attr` 면제는 **부모 환경을 그대로 물려받는 호출(`env=None`)만**, 지문에 들어간 PATH의 git 실행 파일만,
+실행 위치와 기록 저장소 사이에 다른 `.git`이 없을 때만이다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
