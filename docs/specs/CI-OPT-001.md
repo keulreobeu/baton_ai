@@ -362,6 +362,11 @@ plain `check-attr`만 허용"이다. TEMP·`.local_runtime` 예외는 기록 중
 최종 V3 반영(2026-11-17, `63cadd8` read set partial `CHILD_ALIVE_AT_STOP`: 끝난 자식의 pid를 Windows가 Chrome에 재배정): 자식 생존 판정은 pid와
 그 프로세스를 보고한 시점의 생성 시각(Windows `GetProcessTimes`)을 함께 쓴다. 같은 pid라도 생성 시각이 다르면 다른 프로세스이고, 생성 시각을
 알 수 없으면 종전대로 살아 있다고 본다(fail-closed).
+최종 독립 검토 2차 반영(2026-11-17, Claude `c0997f7` FAIL: P1 1·P3 1, 수렴 B — 같은 불변식 3회째): 예외 영역 git 판정을 **허용 목록형**으로 바꾼다.
+subcommand 앞 전역 옵션은 `-C`, 허용 목록 플래그, 허용 목록 키의 `-c`(`core.hooksPath`는 빈 값만)만 허용하고 `--git-dir`·`--work-tree`·
+`--config-env` 등은 예외가 아니다. 환경 설정은 `GIT_CONFIG_KEY_n`이 허용 목록 키일 때만(호스트가 넣는 `credential.*` 프롬프트 설정 포함),
+`GIT_CONFIG`/`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`은 null 장치일 때만, `GIT_CONFIG_PARAMETERS`는 불허다. 예외 저장소 자신의 config에
+`core.worktree`·`[include]`·`[includeIf]`가 있거나 object `alternates`가 있으면 예외가 아니다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

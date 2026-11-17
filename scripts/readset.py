@@ -691,6 +691,8 @@ class Recorder:
         areas = [d for d in (temp, local) if d]
         if not self._in_temp_area(effective, areas):
             return False
+        if not _scratch_git_env_config_ok(env):
+            return False  # configuration injected from outside the repository (core.worktree, include, ...)
         for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
                      "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
             value = next((v for k, v in env.items() if str(k).upper() == name), None)
@@ -733,14 +735,11 @@ class Recorder:
                     common = os.path.join(gitdir, handle.readline().strip())
                 if not os.path.isdir(common) or not inside(common):
                     return False
-            alternates = os.path.join(common, "objects", "info", "alternates")
-            if os.path.exists(alternates):
-                with open(alternates, encoding="utf-8") as handle:
-                    for entry in handle:
-                        entry = entry.strip()
-                        if entry and not entry.startswith("#") and not inside(
-                                os.path.join(common, "objects", entry)):
-                            return False
+            if os.path.exists(os.path.join(common, "objects", "info", "alternates")):
+                return False  # borrowed object stores (followed recursively by git) are not scratch-owned
+            for config in (os.path.join(common, "config"), os.path.join(gitdir, "config.worktree")):
+                if os.path.exists(config) and not _scratch_git_config_ok(config):
+                    return False
             return True
         except (OSError, UnicodeDecodeError, ValueError):
             return False
@@ -872,7 +871,7 @@ class Recorder:
         if basename in {"git", "git.exe"}:
             effective = _git_location(parts[1:], cwd or os.getcwd())
             child_env = os.environ if env is None else env
-            if effective and self._temp_git_ok(effective, temp, child_env):
+            if effective and _scratch_git_options_ok(parts[1:]) and self._temp_git_ok(effective, temp, child_env):
                 allowed = "temp_git"
             subcommand = _git_subcommand(parts[1:])
             plain = not any(p in {"--cached", "--source", "--git-dir", "--work-tree", "-c", "--namespace",
@@ -1224,6 +1223,91 @@ def _audit(event, args):
     for r in _active():
         if not r._is_quiet():
             r._audit_event(event, args)
+
+
+# Allow-list for git run in a scratch area (TEMP, <root>/.local_runtime): anything
+# not listed may move git's view (worktree, config includes, object stores) and
+# makes the call a non-exempt child.
+SCRATCH_GIT_FLAGS = {"--no-optional-locks", "--no-pager", "-P", "--literal-pathspecs", "--no-replace-objects",
+                     "--no-advice"}
+SCRATCH_GIT_CONFIG_KEYS = {"user.name", "user.email", "commit.gpgsign", "tag.gpgsign", "core.quotepath",
+                           "core.autocrlf", "core.safecrlf", "init.defaultbranch", "gc.auto", "maintenance.auto",
+                           "core.fsmonitor", "color.ui", "advice.detachedhead"}
+# Hosts (Orca, IDEs) inject credential prompt settings through GIT_CONFIG_COUNT/KEY_n.
+SCRATCH_GIT_ENV_CONFIG_KEYS = SCRATCH_GIT_CONFIG_KEYS | {"credential.guiprompt", "credential.interactive"}
+
+
+def _scratch_git_env_config_ok(env):
+    """Config from the environment: GIT_CONFIG_KEY_n only for allow-listed keys;
+    GIT_CONFIG/GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM only as the null device;
+    GIT_CONFIG_PARAMETERS not at all."""
+    upper = {str(k).upper(): v for k, v in env.items()}
+    if upper.get("GIT_CONFIG_PARAMETERS"):
+        return False
+    for name in ("GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
+        value = upper.get(name)
+        if value and os.path.normcase(str(value)) not in {os.path.normcase(os.devnull), "/dev/null", "nul"}:
+            return False
+    keys = [k for k in upper if k.startswith("GIT_CONFIG_KEY_")]
+    count = upper.get("GIT_CONFIG_COUNT")
+    if count or keys:
+        try:
+            number = int(count or 0)
+        except ValueError:
+            return False
+        if number < 0 or any(not k[len("GIT_CONFIG_KEY_"):].isdigit() or int(k[len("GIT_CONFIG_KEY_"):]) >= number
+                             for k in keys):
+            return False  # keys beyond the count are ignored by git; treat as ambiguous
+        for index in range(number):
+            key = str(upper.get("GIT_CONFIG_KEY_%d" % index, "")).strip().lower()
+            if key not in SCRATCH_GIT_ENV_CONFIG_KEYS:
+                return False
+    return True
+
+
+def _scratch_git_options_ok(arguments):
+    """Global options before the subcommand: only -C and allow-listed -c settings
+    (core.hooksPath only when emptied); --git-dir/--work-tree/--config-env/... are not exempt."""
+    index = 0
+    while index < len(arguments):
+        arg = str(arguments[index])
+        if arg == "-C" and index + 1 < len(arguments):
+            index += 2
+            continue
+        if arg == "-c" and index + 1 < len(arguments):
+            key, _, value = str(arguments[index + 1]).partition("=")
+            key = key.strip().lower()
+            if not (key in SCRATCH_GIT_CONFIG_KEYS or (key == "core.hookspath" and value == "")):
+                return False
+            index += 2
+            continue
+        if arg in SCRATCH_GIT_FLAGS:
+            index += 1
+            continue
+        if arg.startswith("-"):
+            return False
+        return True
+    return True
+
+
+def _scratch_git_config_ok(path):
+    """A scratch repository's own config must not redirect git: no core.worktree and
+    no [include]/[includeIf] sections."""
+    section = ""
+    with open(path, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith(("#", ";")):
+                continue
+            if line.startswith("["):
+                section = line[1:].split("]", 1)[0].strip().split()[0].strip('"').lower() if line[1:].strip() else ""
+                if section in {"include", "includeif"}:
+                    return False
+                continue
+            key = line.split("=", 1)[0].strip().lower()
+            if section == "core" and key == "worktree":
+                return False
+    return True
 
 
 def _git_location(arguments, cwd):

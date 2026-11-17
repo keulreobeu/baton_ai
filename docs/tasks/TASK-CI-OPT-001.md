@@ -1127,3 +1127,11 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   evidence `suite-be451e2f….json`. 그러나 read set partial(`CHILD_ALIVE_AT_STOP` pid 22324)이라 재사용 원본 자격 없음.
   원인(systematic-debugging): 그 pid가 증거 기록 7초 전 시작한 `chrome.exe`로 재사용됨 → 끝난 자식을 pid만으로 생존 판정한 오판(안전 방향, 가용성 결함).
   반영: 생성 시각으로 프로세스 동일성 판정, 알 수 없으면 fail-closed 유지, 회귀 테스트. 이 V3는 `63cadd8`에만 결합되며 코드 변경 후 최종 증거가 아니다.
+- **2026-11-17 격리 branch 공식 V3·증거 기록(실행 SHA `c0997f7`)**: PASS — 730 tests, failures/errors/skips 0, eligible true, **read set complete**,
+  state stable, 1307.6 s(동시 검토 부하), evidence `suite-db37f9c5….json`(재사용 원본 자격). 코드 변경 전 마지막 완전 증거.
+- 2026-11-17 Codex 주간 한도 소진(사용자 통보) → 수정분 재검토 `ctx_f461ff1e5a2c` 중단, 오늘 독립 검토는 별도 Claude 세션(같은 제공자, 작성자 맥락 없음).
+- 2026-11-17 Claude 최종 독립 검토(`c0997f7`, `ctx_4fb63076cfdc`, superpowers 3개 적용·receiving-code-review는 해당 없음): FAIL(P1 1, P3 1), 수렴 **B**.
+  격리 PASS, 앞 P1(gitdir/commondir) 해소, pid 생성 시각 수정은 fail-open 경로 없음. P1: 예외 영역 git이 `-c core.worktree`/`include.path`,
+  `--work-tree`(순서), 저장소 config의 `core.worktree`로 기록 저장소에 닿음(같은 불변식 3회째, 근본 원인 = 거부 목록형 판정). P3: 중첩 alternates.
+  반영(설계 변경): 허용 목록형 판정(전역 옵션·`-c` 키·환경 설정 키·저장소 config·alternates). 호스트가 주입하는 `GIT_CONFIG_KEY_0/1`
+  (`credential.interactive`·`credential.guiPrompt`)이 실제 환경에 있어 키 허용 목록으로 처리(무조건 거부 시 실제 V3 전체가 partial).

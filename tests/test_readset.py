@@ -378,6 +378,49 @@ class ReadsetTests(unittest.TestCase):
         else:
             self.assertIn("CHILD_ALIVE_AT_STOP", rec.partial_reasons)
 
+    def test_scratch_git_is_an_allow_list(self):
+        """Claude final review P1 (c0997f7): scratch git may only use -C, allow-listed -c
+        settings and its own unredirected storage; everything else is not exempt."""
+        scratch = Path(self.temp.name) / "scratch3"
+        (scratch / "plain" / ".git").mkdir(parents=True)
+        (scratch / "plain" / ".git" / "config").write_text("[core]\n\tbare = false\n[user]\n\tname = x\n", encoding="utf-8")
+        for name, text in {"wt": "[core]\n\tworktree = %s\n" % self.root,
+                           "inc": "[include]\n\tpath = %s\n" % (self.root / "cfg"),
+                           "incif": '[includeIf "gitdir:x/"]\n\tpath = y\n'}.items():
+            (scratch / name / ".git").mkdir(parents=True)
+            (scratch / name / ".git" / "config").write_text(text, encoding="utf-8")
+        (scratch / "alt" / ".git" / "objects" / "info").mkdir(parents=True)
+        (scratch / "alt" / ".git" / "objects" / "info" / "alternates").write_text(str(scratch / "plain" / ".git" / "objects") + "\n",
+                                                                                 encoding="utf-8")
+        plain = str(scratch / "plain")
+        rec = self.recorder()
+        clean = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
+        allowed = [["git", "-C", plain, "status"],
+                   ["git", "-C", plain, "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", "commit", "-m", "x"],
+                   ["git", "--no-optional-locks", "-C", plain, "-c", "core.quotePath=false", "status"]]
+        refused = [["git", "-C", plain, "-c", "core.worktree=%s" % self.root, "status"],
+                   ["git", "-C", plain, "-c", "include.path=%s" % (self.root / ".git" / "config"), "status"],
+                   ["git", "-C", plain, "-c", "core.hooksPath=%s" % self.root, "status"],
+                   ["git", "-C", plain, "--work-tree=%s" % self.root, "--git-dir=%s" % (scratch / "plain" / ".git"), "status"],
+                   ["git", "-C", plain, "--config-env=core.worktree=X", "status"],
+                   ["git", "-C", str(scratch / "wt"), "status"],
+                   ["git", "-C", str(scratch / "inc"), "status"],
+                   ["git", "-C", str(scratch / "incif"), "status"],
+                   ["git", "-C", str(scratch / "alt"), "status"]]
+        for argv in allowed + refused:
+            rec._child(argv, plain, clean)
+        for env in ({**clean, "GIT_CONFIG_PARAMETERS": "'core.worktree'='%s'" % self.root},
+                    {**clean, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.worktree"},
+                    {**clean, "GIT_CONFIG_GLOBAL": str(self.root / "cfg")}):
+            rec._child(["git", "-C", plain, "status"], plain, env)
+        # Hosts inject credential prompt settings this way: still exempt.
+        rec._child(["git", "-C", plain, "status"], plain,
+                   {**clean, "GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "credential.interactive",
+                    "GIT_CONFIG_VALUE_0": "false", "GIT_CONFIG_KEY_1": "credential.guiPrompt", "GIT_CONFIG_VALUE_1": "false"})
+        rec.stop()
+        self.assertEqual(rec._children["allowed"]["temp_git"], len(allowed) + 1)
+        self.assertEqual(rec._children["disallowed_count"], len(refused) + 3)
+
     def test_python_child_hook_and_log_cleanup(self):
         rec = self.recorder()
         child = subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True)
