@@ -367,6 +367,13 @@ subcommand 앞 전역 옵션은 `-C`, 허용 목록 플래그, 허용 목록 키
 `--config-env` 등은 예외가 아니다. 환경 설정은 `GIT_CONFIG_KEY_n`이 허용 목록 키일 때만(호스트가 넣는 `credential.*` 프롬프트 설정 포함),
 `GIT_CONFIG`/`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`은 null 장치일 때만, `GIT_CONFIG_PARAMETERS`는 불허다. 예외 저장소 자신의 config에
 `core.worktree`·`[include]`·`[includeIf]`가 있거나 object `alternates`가 있으면 예외가 아니다.
+최종 독립 검토 3차 반영(2026-11-17, Claude `f6c8969` FAIL: P1 1·P2 2, 수렴 B — 같은 불변식 4회째): 원인은 git의 실제 동작(어느 저장소·어떤 config를
+쓰는가)을 경로 분석으로 흉내 낸 것이다. 예외는 **긍정 증명형**이다: 위치, subcommand 뒤 경로형 인자(절대·드라이브·UNC·`..`·`file://`, 다른 URL은 불허),
+환경(저장소·저장 위치·프로그램을 바꾸는 `GIT_DIR`·`GIT_COMMON_DIR`·`GIT_EXEC_PATH`·`GIT_SSH*` 등 불허, `GIT_INDEX_FILE`·`GIT_TEMPLATE_DIR`은 영역 안),
+git이 실제로 쓸 저장소(`.git` 디렉터리·파일 또는 bare gitdir)와 그 `commondir`·config·hooks가 모두 영역 안이고 무해함을 확인할 때만 면제한다.
+config는 git 문법을 흉내 내지 않고 BOM·같은 줄 헤더를 포함해 키 부분의 금지 단어(`worktree`·`include`·`fsmonitor`·`hookspath`·`program`·`command`·`helper`·
+`insteadof`·`extensions` 등)로 판정하며, `url` 값은 영역 안 로컬 경로만, `gpgsign`·`core.fsmonitor`는 false 값만 허용한다. 비 `.sample` hook이 있으면 면제가 아니다.
+판단할 수 없으면 면제가 아니다(partial). 사용자 전역 git 설정은 기존 `git` 지문 구성요소로 비교한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 

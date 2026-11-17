@@ -683,43 +683,50 @@ class Recorder:
             return True
         return False
 
-    def _temp_git_ok(self, effective, temp, env):
-        """git in a scratch area may run freely only while it cannot reach the recorded
-        repository: no path-moving variable outside the area, and repository discovery
-        (git walks up to the first .git) must not leave the area."""
+    def _temp_git_ok(self, effective, temp, env, arguments=()):
+        """git in a scratch area (TEMP, <root>/.local_runtime) is exempt only on positive
+        proof that everything it can be pointed at is scratch-local: the location, every
+        path-like argument, the environment, and the repository git will use (found the
+        way git finds it: `.git` dir/file or a bare gitdir) with its storage pointers,
+        config and hooks. Anything unknown or unparsable is not exempt (fail-closed)."""
         local = _canonical(os.path.join(self.root, ".local_runtime"))
         areas = [d for d in (temp, local) if d]
-        if not self._in_temp_area(effective, areas):
+
+        def inside(path):
+            return bool(path) and self._in_temp_area(_canonical(path), areas)
+
+        if not inside(effective) or not _scratch_git_env_config_ok(env):
             return False
-        if not _scratch_git_env_config_ok(env):
-            return False  # configuration injected from outside the repository (core.worktree, include, ...)
-        for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-                     "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
-            value = next((v for k, v in env.items() if str(k).upper() == name), None)
-            if value:
-                for item in str(value).split(os.pathsep):
-                    target = _canonical(os.path.join(effective, item)) if item else None
-                    if item and not self._in_temp_area(target, areas):
-                        return False
+        upper = {str(k).upper(): v for k, v in env.items() if v}
+        if any(name in upper for name in SCRATCH_GIT_FORBIDDEN_ENV):
+            return False  # git told to use another repository/storage/program
+        for name in ("GIT_INDEX_FILE", "GIT_TEMPLATE_DIR"):
+            if name in upper and not inside(os.path.join(effective, str(upper[name]))):
+                return False
+        if not _scratch_git_arguments_ok(arguments, lambda p: inside(os.path.join(effective, p))):
+            return False
         current = effective
         while True:
             dotgit = os.path.join(current, ".git")
             if os.path.exists(dotgit):
-                return self._in_temp_area(current, areas) and self._git_storage_in_area(dotgit, areas)
+                return inside(current) and self._git_storage_in_area(dotgit, areas)
+            if _looks_like_gitdir(current):
+                return inside(current) and self._git_storage_in_area(current, areas, bare=True)
             parent = os.path.dirname(current)
             if parent == current:
                 return True  # no repository above: git reads nothing of ours
             current = parent
 
-    def _git_storage_in_area(self, dotgit, areas):
-        """Every Git storage location the repository uses must be scratch space too:
-        a `.git` file's `gitdir:` (linked worktree / submodule), the gitdir's
-        `commondir`, and object `alternates`. Anything unreadable is not scratch."""
+    def _git_storage_in_area(self, dotgit, areas, bare=False):
+        """The repository's gitdir (`.git` dir, `.git` file `gitdir:`, or a bare gitdir),
+        its `commondir`, config files and hooks must all be scratch-local and harmless:
+        no object alternates, no redirecting/program/URL config outside scratch, no
+        active hooks. Anything unreadable is not exempt."""
         def inside(path):
             return self._in_temp_area(_canonical(path), areas)
         try:
-            if os.path.isfile(dotgit):
-                with open(dotgit, encoding="utf-8") as handle:
+            if not bare and os.path.isfile(dotgit):
+                with open(dotgit, encoding="utf-8-sig") as handle:
                     line = handle.readline().strip()
                 if not line.startswith("gitdir:"):
                     return False
@@ -731,15 +738,18 @@ class Recorder:
             common = gitdir
             pointer = os.path.join(gitdir, "commondir")
             if os.path.exists(pointer):
-                with open(pointer, encoding="utf-8") as handle:
+                with open(pointer, encoding="utf-8-sig") as handle:
                     common = os.path.join(gitdir, handle.readline().strip())
                 if not os.path.isdir(common) or not inside(common):
                     return False
             if os.path.exists(os.path.join(common, "objects", "info", "alternates")):
                 return False  # borrowed object stores (followed recursively by git) are not scratch-owned
             for config in (os.path.join(common, "config"), os.path.join(gitdir, "config.worktree")):
-                if os.path.exists(config) and not _scratch_git_config_ok(config):
+                if os.path.exists(config) and not _scratch_git_config_ok(config, lambda p: inside(os.path.join(common, p))):
                     return False
+            for hooks in {os.path.join(gitdir, "hooks"), os.path.join(common, "hooks")}:
+                if os.path.isdir(hooks) and any(not name.endswith(".sample") for name in os.listdir(hooks)):
+                    return False  # an active hook is a program git runs outside the recorder
             return True
         except (OSError, UnicodeDecodeError, ValueError):
             return False
@@ -871,7 +881,8 @@ class Recorder:
         if basename in {"git", "git.exe"}:
             effective = _git_location(parts[1:], cwd or os.getcwd())
             child_env = os.environ if env is None else env
-            if effective and _scratch_git_options_ok(parts[1:]) and self._temp_git_ok(effective, temp, child_env):
+            if (effective and _scratch_git_options_ok(parts[1:])
+                    and self._temp_git_ok(effective, temp, child_env, _git_arguments_after_subcommand(parts[1:]))):
                 allowed = "temp_git"
             subcommand = _git_subcommand(parts[1:])
             plain = not any(p in {"--cached", "--source", "--git-dir", "--work-tree", "-c", "--namespace",
@@ -1233,6 +1244,17 @@ SCRATCH_GIT_FLAGS = {"--no-optional-locks", "--no-pager", "-P", "--literal-paths
 SCRATCH_GIT_CONFIG_KEYS = {"user.name", "user.email", "commit.gpgsign", "tag.gpgsign", "core.quotepath",
                            "core.autocrlf", "core.safecrlf", "init.defaultbranch", "gc.auto", "maintenance.auto",
                            "core.fsmonitor", "color.ui", "advice.detachedhead"}
+FALSE_VALUES = {"false", "0", "no", "off"}
+SCRATCH_GIT_FALSE_ONLY_KEYS = {"core.fsmonitor", "commit.gpgsign", "tag.gpgsign"}
+SCRATCH_GIT_FORBIDDEN_ENV = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+                             "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_EXEC_PATH", "GIT_NAMESPACE",
+                             "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_EXTERNAL_DIFF"}
+# Substrings (lower-case) that make a scratch repository's config non-exempt.
+SCRATCH_GIT_CONFIG_FORBIDDEN_WORDS = ("worktree", "include", "fsmonitor", "hookspath", "program", "command",
+                                      "alternate", "uploadpack", "receivepack", "helper", "insteadof",
+                                      "gitproxy", "textconv", "external", "sshcommand", "askpass", "editor",
+                                      "pager", "attributesfile", "excludesfile", "templatedir",
+                                      "sparse", "objectformat", "extensions")
 # Hosts (Orca, IDEs) inject credential prompt settings through GIT_CONFIG_COUNT/KEY_n.
 SCRATCH_GIT_ENV_CONFIG_KEYS = SCRATCH_GIT_CONFIG_KEYS | {"credential.guiprompt", "credential.interactive"}
 
@@ -1262,6 +1284,9 @@ def _scratch_git_env_config_ok(env):
             key = str(upper.get("GIT_CONFIG_KEY_%d" % index, "")).strip().lower()
             if key not in SCRATCH_GIT_ENV_CONFIG_KEYS:
                 return False
+            value = str(upper.get("GIT_CONFIG_VALUE_%d" % index, "")).strip().lower()
+            if key in SCRATCH_GIT_FALSE_ONLY_KEYS and value not in FALSE_VALUES:
+                return False
     return True
 
 
@@ -1279,6 +1304,8 @@ def _scratch_git_options_ok(arguments):
             key = key.strip().lower()
             if not (key in SCRATCH_GIT_CONFIG_KEYS or (key == "core.hookspath" and value == "")):
                 return False
+            if key in SCRATCH_GIT_FALSE_ONLY_KEYS and value.strip().lower() not in FALSE_VALUES:
+                return False
             index += 2
             continue
         if arg in SCRATCH_GIT_FLAGS:
@@ -1290,23 +1317,70 @@ def _scratch_git_options_ok(arguments):
     return True
 
 
-def _scratch_git_config_ok(path):
-    """A scratch repository's own config must not redirect git: no core.worktree and
-    no [include]/[includeIf] sections."""
-    section = ""
-    with open(path, encoding="utf-8") as handle:
-        for raw in handle:
-            line = raw.strip()
-            if not line or line.startswith(("#", ";")):
-                continue
-            if line.startswith("["):
-                section = line[1:].split("]", 1)[0].strip().split()[0].strip('"').lower() if line[1:].strip() else ""
-                if section in {"include", "includeif"}:
-                    return False
-                continue
-            key = line.split("=", 1)[0].strip().lower()
-            if section == "core" and key == "worktree":
+def _scratch_git_config_ok(path, inside):
+    """A scratch repository's own config, scanned without emulating git's grammar
+    (same-line headers, BOM, continuations): any redirecting, program-running or
+    include keyword makes it non-exempt; URL values must be scratch-local paths."""
+    with open(path, "rb") as handle:
+        text = handle.read().decode("utf-8-sig").lower()
+    for line in text.splitlines():
+        unquoted = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)  # section subsections, quoted values
+        key_part, has_value, _ = unquoted.partition("=")  # header and key, also "[core] worktree = x"
+        value = line.partition("=")[2].strip().strip('"') if has_value else "true"
+        if any(word in key_part for word in SCRATCH_GIT_CONFIG_FORBIDDEN_WORDS):
+            return False
+        if "gpgsign" in key_part and value not in FALSE_VALUES:
+            return False  # signing runs an external program
+        if re.search(r"(?:^|[\s.\]])(?:push)?url\s*$", key_part):
+            if value.startswith("file://"):
+                value = value[len("file://"):]
+                if os.name == "nt" and len(value) >= 3 and value[0] == "/" and value[2] == ":":
+                    value = value[1:]
+            if (not value or "://" in value or (":" in value and not re.match(r"^[a-z]:[\\/]", value))
+                    or not inside(value)):
                 return False
+    return True
+
+
+def _looks_like_gitdir(path):
+    """git also uses the current directory itself as a (bare) gitdir."""
+    return (os.path.isfile(os.path.join(path, "HEAD")) and os.path.isdir(os.path.join(path, "objects"))
+            and os.path.isdir(os.path.join(path, "refs")))
+
+
+def _git_arguments_after_subcommand(arguments):
+    index = 0
+    while index < len(arguments):
+        arg = str(arguments[index])
+        if arg in {"-C", "-c"} and index + 1 < len(arguments):
+            index += 2
+            continue
+        if arg.startswith("-"):
+            index += 1
+            continue
+        return [str(a) for a in arguments[index + 1:]]
+    return []
+
+
+def _scratch_git_arguments_ok(arguments, inside):
+    """Path-like arguments (absolute, drive, UNC, `..`, file:// or other URLs, also
+    after `--opt=`) must name scratch-local paths; plain words (refs, messages,
+    relative names) resolve under the scratch location."""
+    for arg in arguments:
+        value = arg.split("=", 1)[1] if arg.startswith("-") and "=" in arg else arg
+        if arg.startswith("-") and "=" not in arg:
+            continue
+        lowered = value.lower()
+        if lowered.startswith("file://"):
+            value = value[len("file://"):]
+            if os.name == "nt" and len(value) >= 3 and value[0] == "/" and value[2] == ":":
+                value = value[1:]
+        elif "://" in value or re.match(r"^[\w.-]+@[\w.-]+:", value):
+            return False  # remote transports are not scratch-local
+        pathlike = (os.path.isabs(value) or re.match(r"^[a-zA-Z]:", value) or value.startswith(("\\\\", "//"))
+                    or ".." in re.split(r"[\\/]", value))
+        if pathlike and not inside(value):
+            return False
     return True
 
 

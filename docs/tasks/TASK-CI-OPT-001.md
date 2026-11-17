@@ -1135,3 +1135,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   `--work-tree`(순서), 저장소 config의 `core.worktree`로 기록 저장소에 닿음(같은 불변식 3회째, 근본 원인 = 거부 목록형 판정). P3: 중첩 alternates.
   반영(설계 변경): 허용 목록형 판정(전역 옵션·`-c` 키·환경 설정 키·저장소 config·alternates). 호스트가 주입하는 `GIT_CONFIG_KEY_0/1`
   (`credential.interactive`·`credential.guiPrompt`)이 실제 환경에 있어 키 허용 목록으로 처리(무조건 거부 시 실제 V3 전체가 partial).
+- 2026-11-17 Claude 수정분 재검토(`f6c8969`, `ctx_e13ab07d1be0`): FAIL(P1 1, P2 2), 수렴 **B**, 앞 P1/P3 resolved(직전 우회 5종 모두 거부).
+  P1: `GIT_DIR` 지정·bare 저장소의 config(`core.worktree`/`include`)·alternates 미검사. P2: 같은 줄 헤더·BOM config 판독 누락, `core.fsmonitor`·`gpgsign` 값 무제한.
+  같은 불변식 4회째 → 근본 원인(경로 분석으로 git 동작 모사)을 지침대로 설계 수준에서 처리: 긍정 증명형 면제(인자·환경·실제 사용 저장소·config 키·URL·hooks),
+  판단 불가 시 비면제. 회귀 `test_scratch_git_needs_positive_proof`(허용 5·거부 17, 경우별 판정 확인).

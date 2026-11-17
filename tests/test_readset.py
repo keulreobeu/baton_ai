@@ -421,6 +421,62 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(rec._children["allowed"]["temp_git"], len(allowed) + 1)
         self.assertEqual(rec._children["disallowed_count"], len(refused) + 3)
 
+    def test_scratch_git_needs_positive_proof(self):
+        """Claude delta review P1/P2 (f6c8969), same invariant a fourth time: exemption
+        needs proof that argv, env, the repository git will use (also bare / GIT_DIR),
+        its config and hooks are scratch-local; unknown forms are not exempt."""
+        scratch = Path(self.temp.name) / "scratch4"
+
+        def repo(name, config="[core]\n\tbare = false\n", bare=False):
+            gitdir = scratch / name if bare else scratch / name / ".git"
+            (gitdir / "objects").mkdir(parents=True)
+            (gitdir / "refs").mkdir()
+            (gitdir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            (gitdir / "config").write_bytes(config.encode("utf-8") if isinstance(config, str) else config)
+            return scratch / name
+
+        ok = repo("ok", "[core]\n\tbare = false\n[commit]\n\tgpgsign = false\n"
+                        '[remote "origin"]\n\turl = %s\n' % (scratch / "remote.git"))
+        bare_ok = repo("remote.git", "[core]\n\tbare = true\n", bare=True)
+        cases = {
+            "same_line_header": repo("same", "[core] worktree = %s\n" % self.root),
+            "bom": repo("bom", b"\xef\xbb\xbf[core]\n\tworktree = " + str(self.root).encode() + b"\n"),
+            "bare_include": repo("bi.git", "[include]\n\tpath = %s\n" % (self.root / "cfg"), bare=True),
+            "remote_outside": repo("ro", '[remote "o"]\n\turl = %s\n' % self.root),
+            "remote_http": repo("rh", '[remote "o"]\n\turl = https://example.invalid/x\n'),
+            "gpgsign_true": repo("gs", "[commit]\n\tgpgsign = true\n"),
+        }
+        bare_alt = repo("ba.git", bare=True)
+        (bare_alt / "objects" / "info").mkdir()
+        (bare_alt / "objects" / "info" / "alternates").write_text(str(self.root / ".git" / "objects") + "\n", encoding="utf-8")
+        hooked = repo("hooked")
+        (hooked / ".git" / "hooks").mkdir()
+        (hooked / ".git" / "hooks" / "post-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+        (hooked / ".git" / "hooks" / "pre-push.sample").write_text("", encoding="utf-8")
+        rec = self.recorder()
+        clean = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
+        allowed = [(["git", "-C", str(ok), "commit", "-m", "fix a/b message"], clean),
+                   (["git", "-C", str(ok), "push", "origin", "main"], clean),
+                   (["git", "-C", str(bare_ok), "rev-parse", "HEAD"], clean),
+                   (["git", "-C", str(scratch), "clone", str(bare_ok), str(scratch / "clone")], clean),
+                   (["git", "-C", str(ok), "status"], {**clean, "GIT_INDEX_FILE": str(scratch / "private.index")})]
+        refused = [(["git", "-C", str(path), "status"], clean) for path in cases.values()]
+        refused += [(["git", "-C", str(bare_alt), "log"], clean), (["git", "-C", str(hooked), "commit", "-m", "x"], clean),
+                    (["git", "-C", str(ok), "status"], {**clean, "GIT_DIR": str(scratch / "ok" / ".git")}),
+                    (["git", "-C", str(ok), "status"], {**clean, "GIT_COMMON_DIR": str(scratch)}),
+                    (["git", "-C", str(ok), "-c", "core.fsmonitor=%s" % (self.root / "tool.exe"), "status"], clean),
+                    (["git", "-C", str(ok), "-c", "commit.gpgsign=true", "commit", "-m", "x"], clean),
+                    (["git", "-C", str(scratch), "clone", str(self.root), str(scratch / "c2")], clean),
+                    (["git", "-C", str(ok), "fetch", "file://%s" % self.root.as_posix()], clean),
+                    (["git", "-C", str(ok), "fetch", "https://example.invalid/r"], clean),
+                    (["git", "-C", str(ok), "diff", "--no-index", "../../%s" % self.root.name, "x"], clean),
+                    (["git", "-C", str(ok), "status"], {**clean, "GIT_COUNT_UNUSED": "", "GIT_EXEC_PATH": str(self.root)})]
+        for argv, env in allowed + refused:
+            rec._child(argv, str(scratch), env)
+        rec.stop()
+        self.assertEqual(rec._children["allowed"]["temp_git"], len(allowed))
+        self.assertEqual(rec._children["disallowed_count"], len(refused))
+
     def test_python_child_hook_and_log_cleanup(self):
         rec = self.recorder()
         child = subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True)
