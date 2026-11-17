@@ -826,6 +826,12 @@ class Recorder:
                       "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_INDEX_FILE"}
             child_env = os.environ if env is None else env
             plain = plain and not any(str(k).upper() in moving for k in child_env)
+            # Exact-form allow-list (final review P2, d8ffcd0): global options only -C /
+            # --no-optional-locks, check-attr options only attribute names, -z, -a/--all,
+            # and the child's GIT_* variables a subset (same values) of this fingerprinted
+            # process's: dropping settings never adds reads, adding/changing them may.
+            plain = (plain and _check_attr_form_ok(parts[1:])
+                     and set(_git_env(child_env)) <= set(_git_env(os.environ)))
             if subcommand == "check-attr" and plain:
                 separator = parts.index("--") + 1 if "--" in parts else len(parts)
                 targets = parts[separator:]
@@ -835,10 +841,11 @@ class Recorder:
                     allowed = "repo_check_attr"
         if basename in {"cmd.exe", "cmd"}:
             low = [p.casefold() for p in parts]
-            if "/c" in low and "mklink" in low and "/j" in low:
-                paths = [p for p in parts if os.path.isabs(p)]
-                if len(paths) >= 2 and temp and all(self._in_temp_area(_canonical(p), [temp]) for p in paths[-2:]):
-                    allowed = "temp_mklink"
+            # Exactly `cmd /c mklink /j <link> <target>` (no chained commands, final review P2).
+            if len(parts) == 6 and low[1:4] == ["/c", "mklink", "/j"] and temp and all(
+                    os.path.isabs(p) and not any(ch in p for ch in "&|<>^%!\"\n")
+                    and self._in_temp_area(_canonical(p), [temp]) for p in parts[4:]):
+                allowed = "temp_mklink"
         if allowed:
             self._children["allowed"][allowed] += 1
             return env
@@ -1162,6 +1169,30 @@ def _audit(event, args):
     for r in _active():
         if not r._is_quiet():
             r._audit_event(event, args)
+
+
+def _git_env(env):
+    return sorted((str(k).upper(), str(v)) for k, v in env.items() if str(k).upper().startswith("GIT_"))
+
+
+def _check_attr_form_ok(arguments):
+    """git [-C <dir>]... [--no-optional-locks] check-attr [-z] [-a|--all] [attr...] -- <path>..."""
+    index = 0
+    while index < len(arguments):
+        arg = str(arguments[index])
+        if arg == "-C" and index + 1 < len(arguments):
+            index += 2
+        elif arg == "--no-optional-locks":
+            index += 1
+        else:
+            break
+    if index >= len(arguments) or str(arguments[index]) != "check-attr":
+        return False
+    rest = [str(a) for a in arguments[index + 1:]]
+    if "--" not in rest:
+        return False
+    head = rest[:rest.index("--")]
+    return all(a in {"-z", "-a", "--all"} or not a.startswith("-") for a in head)
 
 
 def _git_location(arguments, cwd):

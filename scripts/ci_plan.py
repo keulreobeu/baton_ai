@@ -822,6 +822,7 @@ def git_identity(root):
                          capture_output=True, timeout=60)
     need(out.returncode == 0, "GIT_CONFIG_UNAVAILABLE")
     files = {}
+    system_dirs = set()
     # -z records: "<scope>\0<origin>\0<key>\n<value>\0" with --show-scope/--show-origin.
     fields = out.stdout.decode("utf-8", "replace").split("\0")
     need(len(fields) % 3 == 1 and fields[-1] == "", "GIT_CONFIG_UNPARSEABLE")
@@ -834,6 +835,8 @@ def git_identity(root):
             need(content is not None, "GIT_CONFIG_UNREADABLE")
             key = str(path.resolve())
             files[key.lower() if os.name == "nt" else key] = content
+            if fields[index] == "system":
+                system_dirs.add(path.resolve().parent)
         elif origin in {"command line:", "standard input:"} or origin.startswith("blob:"):
             files[origin] = "non-file-origin"
         else:
@@ -847,6 +850,11 @@ def git_identity(root):
         candidates.append(Path(configured.stdout.decode("utf-8", "replace").strip()))
     xdg = os.environ.get("XDG_CONFIG_HOME")
     candidates.append((Path(xdg) if xdg else Path.home() / ".config") / "git" / "attributes")
+    # System gitattributes sit next to the system gitconfig (Git for Windows: <Git>/etc);
+    # without a system config, try the install prefixes of the executable (final review P3).
+    real = Path(exe).resolve()
+    for directory in sorted(system_dirs) or [real.parent.parent / "etc", real.parent.parent.parent / "etc"]:
+        candidates.append(directory / "gitattributes")
     info = Path(sdd.git(root, "rev-parse", "--git-path", "info/attributes").strip())
     candidates.append(info if info.is_absolute() else root / info)
     for path in candidates:

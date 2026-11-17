@@ -1155,3 +1155,7 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   plain `check-attr`·`mklink /j`·도구 `--help`/`--version`. git 자식을 쓰는 suite(BATON 포함)는 `offline_suite` 재사용 없음(매번 실행). ADR·Spec 대체 문단 기록.
   관련 회귀 4개(면제 판정 전용) 삭제, `test_scratch_area_git_is_not_exempt` 추가. 후속 Task 후보 추가:
   6. 실행별 scratch 소유권 registry + git 하위 명령 계약(Chat 권장 설계, F01~F11 회귀 13종) 또는 자식 프로세스 I/O 격리·관측 — 재사용 효과 회복용.
+- 2026-11-17 Claude 공식 최종 검토(`d8ffcd0`, `ctx_b56b2702e835`, 같은 제공자): **PASS_WITH_FINDINGS(P1 0, P2 3, P3 1)**, 수렴 A(국소 수정).
+  면제 제거 완결·fail-closed, 이전 수정 유지, CI-TIME 변경(런처 우회 순서·진행 줄·timeout 25) 지문·계정 일치, 격리 PASS, 문서-코드 일치 확인.
+  P2: `check-attr`의 `GIT_CONFIG_*`/`GIT_CONFIG_PARAMETERS` 설정 주입·`--attr-source` 허용, `mklink` 연결 명령 허용. P3: system gitattributes 지문 누락.
+  반영: 두 예외를 정확한 형태 허용 목록으로, 자식 `GIT_*`는 부모 환경의 부분집합만, system gitattributes 지문 추가, 회귀 7종 추가.

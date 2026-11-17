@@ -264,6 +264,9 @@ class ReadsetTests(unittest.TestCase):
         rec._child([str(git), "-C", str(temp), "status"], str(temp), None)
         rec._child([str(git), "check-attr", "--", str(self.root / "x")], str(self.root), {})
         rec._child(["cmd", "/c", "mklink", "/j", str(temp / "a"), str(temp / "b")], str(temp), None)
+        # Final review P2 (d8ffcd0): a chained command is not the exempt mklink form.
+        rec._child(["cmd", "/c", "type", str(self.root / "x"), "&", "mklink", "/j", str(temp / "c"), str(temp / "d")],
+                   str(temp), None)
         tool = temp / "tool.exe"
         tool.write_bytes(b"fake tool")
         rec._child([str(tool), "--help"], str(temp), None)
@@ -291,7 +294,16 @@ class ReadsetTests(unittest.TestCase):
                    (["git", "--git-dir", "C:/elsewhere/.git", "--work-tree", repo, "check-attr", "text", "--", "README.md"], clean_env),
                    (["git", "-C", repo, "-c", "core.attributesFile=C:/x", "check-attr", "text", "--", "README.md"], clean_env),
                    (["git", "-C", repo, "check-attr", "text", "--", "README.md"], {**clean_env, "GIT_DIR": "C:/elsewhere/.git"}),
-                   (["git", "-C", temp_repo, "-C", repo, "status"], clean_env)]
+                   (["git", "-C", temp_repo, "-C", repo, "status"], clean_env),
+                   # Final review P2 (d8ffcd0): equivalent forms of refused settings.
+                   (["git", "-C", repo, "check-attr", "text", "--", "README.md"],
+                    {**clean_env, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.attributesFile", "GIT_CONFIG_VALUE_0": "C:/x"}),
+                   (["git", "-C", repo, "check-attr", "text", "--", "README.md"],
+                    {**clean_env, "GIT_CONFIG_PARAMETERS": "'core.attributesfile'='C:/x'"}),
+                   (["git", "-C", repo, "--attr-source=HEAD~3", "check-attr", "text", "--", "README.md"], clean_env),
+                   (["git", "-C", repo, "check-attr", "--source=HEAD~3", "text", "--", "README.md"], clean_env),
+                   (["git", "-C", repo, "check-attr", "--stdin", "text", "--", "README.md"], clean_env),
+                   (["git", "-C", repo, "check-attr", "text", "README.md"], clean_env)]  # no "--"
         for argv, env in refused:
             outer._child(argv, repo, env)
         self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)

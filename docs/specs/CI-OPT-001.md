@@ -382,6 +382,11 @@ ChatGPT Chat 정적 검토(`a03ba33`, 수렴 B, P1 계열 7: 결합형 옵션 `-
 clone/push 대상 저장소, hook 본문의 암묵적 경로(`cd`→HOME, 링크된 `src`), `.local_runtime` 리디렉션)로 경로 분석형 면제가 수렴하지 않음이 확인됐다.
 기록 저장소의 plain `check-attr`(R5)과 임시 영역 `mklink /j`, 도구 `--help`/`--version` 예외만 남고, 그 밖의 git·비 Python 자식은 `CHILD_NOT_ALLOWED`(partial)다.
 따라서 git 자식 프로세스를 쓰는 suite는 `offline_suite`를 재사용하지 않고 매번 실행한다(안전 방향). 재사용 안전성 판정 규칙(R1–R6)은 그대로다.
+최종 공식 검토 반영(2026-11-17, Claude `d8ffcd0` PASS_WITH_FINDINGS: P1 0·P2 3·P3 1): 남은 두 예외도 **정확한 형태 허용 목록**이다.
+`check-attr`는 전역 옵션 `-C`·`--no-optional-locks`만, subcommand 옵션은 속성 이름·`-z`·`-a`/`--all`만, `--` 뒤 경로 필수이며, 자식의 `GIT_*` 변수는
+지문에 들어간 기록 프로세스 환경의 부분집합(같은 값)이어야 한다(설정 주입 `GIT_CONFIG_*`·`GIT_CONFIG_PARAMETERS`·`--attr-source` 불허).
+`mklink`는 정확히 `cmd /c mklink /j <link> <target>`(연결 연산자 없음)만이다. `git` 지문의 attribute 후보에 system `gitattributes`(system config 옆,
+없으면 실행 파일 설치 경로의 `etc`)를 더한다.
 구현 보완(2026-11-16, 계약 PASS 뒤 실측 4회): R5의 git 실효 위치·숫자 loopback 조회·`cffi`·인터프리터+스크립트 도움말 조회·
 시작 전 종료된 직접 Python 자식·`hook_failed`·경로 없는 DLL 이름 문구를 실측에 맞춰 정밀화했다. 확인 검토 대상이다.
 
