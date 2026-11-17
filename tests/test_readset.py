@@ -274,9 +274,12 @@ class ReadsetTests(unittest.TestCase):
         self.assertIn("BATON_READSET_LOG", env)
         rec._child(["cmd.exe", "/c", "echo hi"], str(temp), None)
         rec.stop()
-        # The temp-area git call is no longer exempt (it counts as disallowed).
-        self.assertEqual(rec._children["allowed"], {"repo_check_attr": 1, "temp_mklink": 1, "tool_help": 1})
+        # CI-OPT-001 final cross review F01: no non-Python child is exempt any more
+        # (temp git, plain check-attr, cmd mklink, tool --help, chained cmd, echo).
+        self.assertEqual(rec._children["allowed"], {})
+        self.assertEqual(rec._children["disallowed_count"], 6)
         self.assertIn("CHILD_NOT_ALLOWED", rec.partial_reasons)
+        self.assertEqual(rec._children["tools"], [])
 
     def test_git_location_and_check_attr_forms(self):
         temp_repo = os.path.join(readset._real(tempfile.gettempdir()), "fixture")
@@ -289,7 +292,7 @@ class ReadsetTests(unittest.TestCase):
         self.addCleanup(outer.stop)
         clean_env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_DIR")}
         outer._child(["git", "-C", repo, "check-attr", "text", "--", "README.md"], repo, None)
-        self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)
+        self.assertEqual(outer._children["allowed"], {})  # F01: plain check-attr is not exempt either
 
         refused = [(["git", "-C", repo, "check-attr", "--cached", "text", "--", "README.md"], clean_env),
                    (["git", "--git-dir", "C:/elsewhere/.git", "--work-tree", repo, "check-attr", "text", "--", "README.md"], clean_env),
@@ -310,19 +313,49 @@ class ReadsetTests(unittest.TestCase):
                    ([str(Path(tempfile.gettempdir()) / "other" / "git.exe"), "-C", repo, "check-attr", "text", "--", "README.md"], None)]
         for argv, env in refused:
             outer._child(argv, repo, env)
-        self.assertEqual(outer._children["allowed"]["repo_check_attr"], 1)
-        self.assertEqual(outer._children["disallowed_count"], len(refused))
+        self.assertEqual(outer._children["allowed"], {})
+        self.assertEqual(outer._children["disallowed_count"], len(refused) + 1)
 
-    def test_check_attr_in_a_nested_repository_is_not_exempt(self):
-        """Final review P3 (37b897a): git run below the root must discover the root's own repository."""
-        (self.root / "nested" / ".git").mkdir(parents=True)
-        (self.root / "plain").mkdir()
+    def test_check_attr_mklink_and_tool_help_are_not_exempt(self):
+        """CI-OPT-001 final cross review F01: plain check-attr (ignored .gitattributes),
+        `cmd /c mklink /j` and tool --help/--version read inputs the fingerprint does not
+        cover, so they make the read set partial like any other non-Python child."""
+        temp = Path(self.temp.name) / "t"
+        temp.mkdir()
+        tool = temp / "tool.exe"
+        tool.write_bytes(b"x")
         rec = self.recorder()
-        rec._child(["git", "-C", str(self.root / "plain"), "check-attr", "text", "--", "x"], str(self.root), None)
-        rec._child(["git", "-C", str(self.root / "nested"), "check-attr", "text", "--", "x"], str(self.root), None)
+        rec._child(["git", "-C", str(self.root), "check-attr", "text", "--", "x"], str(self.root), None)
+        rec._child(["cmd", "/c", "mklink", "/j", str(temp / "a"), str(temp / "b")], str(temp), None)
+        rec._child([str(tool), "--version"], str(temp), None)
         rec.stop()
-        self.assertEqual(rec._children["allowed"]["repo_check_attr"], 1)
-        self.assertEqual(rec._children["disallowed_count"], 1)
+        self.assertEqual(rec._children["allowed"], {})
+        self.assertEqual(rec._children["disallowed_count"], 3)
+        self.assertFalse(rec.as_dict()["complete"])
+
+    def test_child_log_needs_its_exit_proof_and_every_sequence_number(self):
+        """CI-OPT-001 final cross review F03: a lost child event (write failed, then the
+        log recovered) or a missing exit proof makes the parent read set partial."""
+        rec = self.recorder()
+        log_dir = rec._log_targets()[0]
+        cases = {
+            "100.jsonl": [{"type": "trust_store", "seq": 1}, {"type": "exit", "pid": 100, "t": 1.0, "seq": 2,
+                                                            "partial": [], "write_failed": False}],   # complete
+            "101.jsonl": [{"type": "trust_store", "seq": 1}, {"type": "exit", "pid": 101, "t": 1.0, "seq": 3,
+                                                            "partial": [], "write_failed": False}],   # seq 2 lost
+            "102.jsonl": [{"type": "trust_store", "seq": 1}],                                           # no exit proof
+            "103.jsonl": [{"type": "exit", "pid": 103, "t": 1.0, "seq": 1, "partial": ["CHILD_NOT_ALLOWED"],
+                           "write_failed": True}],                                                      # child partial
+        }
+        for name, events in cases.items():
+            with open(os.path.join(log_dir, name), "w", encoding="utf-8") as stream:
+                for event in events:
+                    stream.write(json.dumps(event) + "\n")
+        rec.stop()
+        incomplete = rec.partial_samples.get("CHILD_LOG_INCOMPLETE", [])
+        self.assertEqual(sorted(incomplete), ["101.jsonl", "102.jsonl"])
+        self.assertTrue({"CHILD_LOG_INCOMPLETE", "CHILD_NOT_ALLOWED", "READSET_LOG_CORRUPT"} <= rec.partial_reasons)
+        self.assertFalse(rec.as_dict()["complete"])
 
     def test_scratch_area_git_is_not_exempt(self):
         """2026-11-17 user decision (CI-OPT-001): after five rounds on one invariant the

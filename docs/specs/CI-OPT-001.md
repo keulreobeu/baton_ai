@@ -383,6 +383,7 @@ hook 예외(2026-11-17, 공식 V3 `0b80f79` partial 37건: `test_git_lifecycle`�
 ChatGPT Chat 정적 검토(`a03ba33`, 수렴 B, P1 계열 7: 결합형 옵션 `-f<path>`, 상대 symlink·저장소 내부 리디렉션, 원격 URL 상대 기준점, `[alias]` 실행,
 clone/push 대상 저장소, hook 본문의 암묵적 경로(`cd`→HOME, 링크된 `src`), `.local_runtime` 리디렉션)로 경로 분석형 면제가 수렴하지 않음이 확인됐다.
 기록 저장소의 plain `check-attr`(R5)과 임시 영역 `mklink /j`, 도구 `--help`/`--version` 예외만 남고, 그 밖의 git·비 Python 자식은 `CHILD_NOT_ALLOWED`(partial)다.
+**2026-11-17 최종 이종 모델 교차 검토(ChatGPT, `762739f` FAIL: P1 3·P2 3·P3 1) 반영:** 위 문장의 남은 예외 3개도 없앤다(F01: 도구 실행 파일·스크립트의 SHA가 지문 구성요소가 아니었고, plain `check-attr`는 git이 무시하는 `.gitattributes`를 읽는다). 비 Python 자식은 모두 `CHILD_NOT_ALLOWED`다. 관측한 디렉터리 목록은 `verify_observed`에서 현재 목록과 같아야 하며 같은 경로의 관측끼리도 같아야 한다(F02). 자식 로그의 모든 이벤트는 순번을 갖고, 자식 종료 시 순번·자식 partial 사유·쓰기 실패 여부를 담은 exit 증명을 쓴다. 부모는 exit 증명이 없거나 순번 1..N이 하나라도 빠지면 `CHILD_LOG_INCOMPLETE`(partial)다(F03). 증거 잠금은 저장소(공통 git 디렉터리)당 하나다(F05). readset/1 필수 필드(`READSET_REQUIRED_FIELDS`)가 없거나 형이 다르면 무효다(F06). F04(mklink 실행 경계)는 예외 제거로 함께 해소되고, F07(실행 중 환경 변경)은 check-attr 예외 제거로 함께 해소된다.
 따라서 git 자식 프로세스를 쓰는 suite는 `offline_suite`를 재사용하지 않고 매번 실행한다(안전 방향). 재사용 안전성 판정 규칙(R1–R6)은 그대로다.
 최종 공식 검토 반영(2026-11-17, Claude `d8ffcd0` PASS_WITH_FINDINGS: P1 0·P2 3·P3 1): 남은 두 예외도 **정확한 형태 허용 목록**이다.
 `check-attr`는 전역 옵션 `-C`·`--no-optional-locks`만, subcommand 옵션은 속성 이름·`-z`·`-a`/`--all`만, `--` 뒤 경로 필수이며, 자식의 `GIT_*` 변수는

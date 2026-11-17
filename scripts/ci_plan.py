@@ -734,10 +734,19 @@ def _hash_or_none(value):
     return value is None or (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None)
 
 
+# CI-OPT-001 final cross review F06: fields a readset/1 record must carry.
+READSET_REQUIRED_FIELDS = {"schema", "complete", "partial_reasons", "repo_reads", "outside_reads", "env_reads",
+                           "listings", "aliases", "trust_store", "children"}
+
+
 def valid_readset(readset):
     """Structural check of a readset/1 record; unknown shapes are untrusted."""
     try:
         return (isinstance(readset, dict) and readset.get("schema") == READSET_SCHEMA
+                and READSET_REQUIRED_FIELDS <= set(readset)
+                and all(isinstance(readset[k], list) for k in ("repo_reads", "outside_reads", "env_reads",
+                                                               "listings", "aliases", "partial_reasons"))
+                and isinstance(readset["children"], dict)
                 and type(readset.get("complete")) is bool
                 and isinstance(readset.get("partial_reasons"), list)
                 and readset["complete"] == (not readset["partial_reasons"])
@@ -975,10 +984,18 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         need(content is not None, "FILE_UNREADABLE")
         check(fold(name), content)
         ignored.append([name, content])
-    listings = []
+    listings, observed_listing = [], {}
     for record in sorted(readset.get("listings", []), key=lambda r: (r["scope"], r["path"])):
         path = root / record["path"] if record["scope"] == "repo" else Path(record["path"])
-        listings.append([record["scope"], record["path"], _listing(path)])
+        current = _listing(path)
+        if verify_observed:
+            seen = {"ok": record.get("ok"), "entries": record.get("entries")}
+            key = (record["scope"], fold(record["path"]) if record["scope"] == "repo" else record["path"])
+            # CI-OPT-001 final cross review F02: what the suite listed must still be
+            # what is there, and repeated listings of one path must agree.
+            if observed_listing.setdefault(key, seen) != seen or seen != {"ok": current["ok"], "entries": current["entries"]}:
+                raise PlanError("INPUT_CHANGED_DURING_RUN")
+        listings.append([record["scope"], record["path"], current])
     outside = []
     for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):
         content = _content(Path(record["path"]))

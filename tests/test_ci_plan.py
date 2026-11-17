@@ -911,13 +911,45 @@ def readset(**overrides):
                              "sha256": "a" * 64},
                             {"path": "docs/specs/READ.md", "via": "open", "section_only": False, "sections": [],
                              "sha256": "a" * 64}],
-             "outside_reads": [], "listings": [], "added_env": ["BATON_READSET_LOG", "PYTHONPATH"]}
+             "outside_reads": [], "env_reads": [], "listings": [], "aliases": [], "trust_store": False,
+             "children": {"allowed": {}, "disallowed": [], "disallowed_count": 0},
+             "added_env": ["BATON_READSET_LOG", "PYTHONPATH"]}
     value.update(overrides)
     return value
 
 
 class SuiteReuseTests(unittest.TestCase):
     """CI-OPT-001-AC-12 revision 5: suite-fp/1 fingerprint and reuse decision (offline)."""
+
+    def test_listing_observed_during_the_run_must_still_hold(self):
+        """CI-OPT-001 final cross review F02: an outside directory listed as empty that
+        gains an entry before the end of the source run invalidates the evidence."""
+        outside = Path(self.temp.name) / "watched"
+        outside.mkdir()
+        rs = readset(repo_reads=[], listings=[{"path": str(outside), "scope": "outside", "ok": True, "entries": []}])
+        cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                             verify_observed=True)  # unchanged: accepted
+        (outside / "new.flag").write_text("x", encoding="utf-8")
+        with self.assertRaises(cp.PlanError) as caught:
+            cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                 verify_observed=True)
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        twice = readset(repo_reads=[], listings=[{"path": str(outside), "scope": "outside", "ok": True, "entries": [["new.flag", "file"]]},
+                                  {"path": str(outside), "scope": "outside", "ok": True, "entries": []}])
+        with self.assertRaises(cp.PlanError):  # two observations of one path disagree
+            cp.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                 verify_observed=True)
+
+    def test_readset_required_fields_are_not_defaulted(self):
+        """CI-OPT-001 final cross review F06: a record without its required fields is invalid."""
+        self.assertTrue(cp.valid_readset(readset()))
+        for key in sorted(cp.READSET_REQUIRED_FIELDS - {"schema"}):
+            broken = readset()
+            del broken[key]
+            with self.subTest(missing=key):
+                self.assertFalse(cp.valid_readset(broken))
+        self.assertFalse(cp.valid_readset({"schema": "readset/1", "complete": True, "partial_reasons": []}))
+        self.assertFalse(cp.valid_readset(readset(listings={})))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
