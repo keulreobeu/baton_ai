@@ -1098,3 +1098,24 @@ Phase 1 사실(읽기 전용 조회와 임시 worktree 시험, 시험 worktree�
   no-skip V3에 필요(제외 시 `b133bde`부터 있던 jipdam 설정 테스트 skip 재발). 충돌 1건(`traceability.json` 문서 목록)은 JIPDAM-SKIP Task 문서만 추가해 해소.
   남은 제외 대상: T4-PREP `3465597`·`dd3121a`, REVIEW-READ `fa10f2a`, HOOK-QUAL `28d3cac`·`687069e`, 병합 `52ec9d9`·`99486ff`.
   작업 실수 기록: `29eeeac` cherry-pick 때 충돌 표식이 남은 채 계속되어 `ce3a1a6`로 제거(amend 없이). 이후 계속 전에 표식 0을 확인한다.
+- **2026-11-17 격리 branch 공식 V3(실행 SHA `70d8844`, 순차 `verify_environment.py --base 5c07aea`)**: PASS — 728 tests, failures/errors/skips 0,
+  `verified_evidence_eligible=true`, state stable, 1278.6 s(exit 0). 로그 사본 외부 handoff `CI-OPT-001-v3-iso-70d8844.log`(SHA-256 `5539faf12dfb8017dd040a4af1a117f44757e75412eb46c4ddb94366f0021549`).
+  `--evidence-dir` 없이 실행해 offline_suite 재사용 증거는 없다. 이 결과는 `70d8844`에만 결합되며, 이후 HEAD 변경에는 새 V3(증거 기록)가 필요하다.
+- **2026-11-17 JIPDAM-SKIP 포함 정정·기록(사용자 결정 A안)**: JIPDAM-SKIP은 CI-OPT의 **기능 의존이 아니라 Skip 0 검증 게이트 의존**이다
+  (`70d8844` 커밋 제목·위 기록의 "필수 의존" 표현을 이 문구로 정정한다). Q2=B Task 격리 원칙의 **명시적 예외**다.
+  - 포함 커밋: `ea0d421`(= `627db24`, `tests/test_harness.py`의 jipdam 설정 전용 영구 skip 테스트 1개와 미사용 `tomllib` import 삭제,
+    비밀값 모양 fixture를 변수 조립으로 변경, traceability 문서 1줄), `bc20d21`(= `ec65365`, 그 Task의 검토·통합 기록 문서).
+  - 사유: skip 1개라도 있으면 evidence가 V3를 verified 근거로 쓰지 않는다. skip은 게시본 `b133bde`부터 있었고, 제거는 다른 Task 범위다.
+  - 범위 확인: `627db24` 변경 파일 3개는 TASK-JIPDAM-SKIP-001 선언 scope와 같다. 삭제 외 변경(import 제거, fixture 변수화)은 그 Task의
+    2026-11-12 사용자 결정·후속 결정 범위 안이다. `ec65365` 기록의 병합 `99486ff` 언급은 원 branch 이력이며 격리 branch에는 없다.
+  - 중복 병합 방지 의존 관계: CI-OPT 격리 PR이 먼저 병합되면 JIPDAM-SKIP 별도 PR/branch에서 `627db24`·`ec65365`를 제외(같은 patch, `-x` 출처 기록)한다.
+    JIPDAM-SKIP이 먼저 병합되면 CI-OPT branch를 갱신할 때 `ea0d421`·`bc20d21`을 제외한다. 두 경우 모두 `git cherry -v`/patch-id로 중복 여부를 확인한다.
+  - Skip 0을 위해 검증 범위를 줄이거나 다른 테스트를 삭제하지 않았다.
+- **후속 Task 후보(2026-11-17, 사용자 지침 기록·이번 Task 범위 밖)**:
+  1. Fail-closed 관측 구조 검토(RA-3 계열: 알 수 없는 읽기 경로 시 재사용 거부·허용 목록형·혼합 전략 비교).
+  2. CI-OPT-001 Spec 계약 정리(회차별 "검토 반영" 문단 통합, 불변식 명시, 필요 시 계약 재검토).
+  3. CI 최적화 효과 측정(재사용 성공/거부/실패, 절감 시간, 판정 오버헤드, 실측·추정 구분).
+  4. BATON branch 격리 정책: **기능 의존**과 **검증 게이트 의존**의 구분(이번 JIPDAM-SKIP 사례)과 다른 Task 커밋 포함 절차.
+  5. V1/V2 실효성: 실측(2026-11-17 `ci_plan.py` plan-only 4회)에서 `tests/`·`scripts/` 경로 정책(`CONFIG_OR_TEST_PATH`)으로 V1/V2 요청이 모두 V3로
+     상향, 실제 CBM 0.12.1은 coverage partial(2026-11-13 qualification) → V2는 V3 fallback. 경로 정책(계약 변경), CBM 완전성, V1 명령,
+     Orca 작업자 연결, 원격 CBM은 별도 결정·Task로 다룬다.
