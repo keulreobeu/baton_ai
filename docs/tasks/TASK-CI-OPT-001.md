@@ -1660,3 +1660,14 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     `check_sdd.py --base 5c07aea` PASS. 소켓 `ResourceWarning`은 기존과 같다.
   중첩 실행: 바깥 `Recorder(ROOT)` 아래에서 `tests.test_readset` 전체를 1회 실행했다. 결과는 37건 OK(실패·오류·skip 0)다. 바깥 partial은 `CHILD_NOT_ALLOWED`·`MUTATION_UNVERIFIABLE`·`OUTPUT_OWNERSHIP_UNCERTAIN`이고, `INPUT_CHANGED_DURING_RUN`은 없다. 별칭 2건 중 변경 0, 내용 변경 0이다.
   공식 V3는 재실행하지 않았다(재검토 뒤 지시). 남은 한계: 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-19 22차 독립 교차검토(Codex Orca worker, 대상 `b3a69cd`, 검토 HEAD `323002a`)**: **PASS_WITH_FINDINGS**(P1 0, P2 1, P3 0). 최종 코드 후보 `b3a69cd`(로컬 커밋, 미게시). RA-1~RA-4 유지.
+  판정:
+    - 중첩 시작 시각 수정: 공식 suite 실패 원인 해소. 2단·3단 표본과 손자에서 가장 늦은 시작이 전달되고, 사이에 만든 파일의 chmod·삭제가 안쪽 기록기에 남는다.
+    - junction fixture 수명 이동: 테스트 격리 수정. 공식 경로는 `recorder.stop` → 지문 → 증거 저장 순서이고 `atexit`은 그 뒤에 실행된다. 종료 뒤 별칭을 다시 검사하면 판정 규칙이 변경을 계속 잡는다.
+  검토자 실행:
+    - 외부 `Recorder(ROOT)` 아래 `tests.test_readset` 전체: 37 OK, 별칭·내용 변경 0, `suite_fingerprint(verify_observed=True)` 성공
+    - 영향 3모듈: 138 OK, 실패·오류·skip 0
+  R2201(P2, 알려진 한계로 기록, 이번 수정 없음, 코디네이터 결정): Python 자식이 훅의 `readset`과 별개로 `scripts.readset`을 import해 로컬 기록기를 만드는 경우다. 두 모듈의 Popen 래퍼가 서로 다른 launch token을 써서, 손자의 표적 chmod가 로컬 기록기에 전달되지 않는다.
+    결과는 로컬 기록기의 `CHILD_HOOK_MISSING` partial이다(fail-closed). 오재사용은 없고, 실제 `tests/`가 이 경로에 도달하지도 않는다. `a397217`부터 있던 한계다.
+    후속 수정 시 두 import 경로가 한 기록기 상태와 launch token을 공유하는지 검증한다. 재사용 범위 결정과 함께 사용자에게 보고한다.
+  로컬 V3는 이 기록 커밋을 최종 후보 HEAD로 두고 1회 실행한다.
