@@ -1565,7 +1565,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 연산 종류 판정은 감사 이벤트의 모드·플래그만 쓴다(감싼 호출 밖 생성은 기존 규칙).
     - ACL 등 다른 속성은 16차와 같이 없다.
     - 원격 Windows 두 조합은 확인하지 않았다.
-- **2026-11-18 18차 독립 교차검토(Codex Orca worker, 대상 `f077d3c`)**: **PASS_WITH_FINDINGS**(P2 1, P3 1). R1701 resolved. RA-1~RA-4 유지. 반영 코드 후보 ``(로컬 커밋, 미게시).
+- **2026-11-18 18차 독립 교차검토(Codex Orca worker, 대상 `f077d3c`)**: **PASS_WITH_FINDINGS**(P2 1, P3 1). R1701 resolved. RA-1~RA-4 유지. 반영 코드 후보 `c20ecbf`(로컬 커밋, 미게시).
   R1801(P2) 디렉터리에 대한 `sqlite3.connect(mode=ro)` 실패에서 경로 종류 누락 → `_record_read`의 디렉터리 분기(직접·자식 보고)가 비자체 기존 디렉터리를 `_directory_kind`로 `"dir"` 의존성에 남긴다(종료 시·지문 재검증). 자식 디렉터리 이벤트에 birth·객체 ID를 추가했다. 종류 불명은 partial.
   R1802(P3) `wb` 뒤 `ab`가 complete인데 Spec 문구("섞인 경우 partial")와 달라 보임 → 구현은 그대로 두고 17차 Spec 문구를 고쳤다(부재에서 만든 연산들로 판정, 자체 파일에 이어지는 쓰기는 영향 없음).
   회귀: 기존 AC-12 테스트에서 호출하는 `check_directory_kind_and_writes_after_creation` 추가. 다루는 사례:
@@ -1581,3 +1581,14 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
   정상 출력 partial 변화: 없음(기존 단언 변경 없음).
   남은 한계: 디렉터리 종류만 기록하고 그 안 항목은 목록 규칙을 따른다. ACL 등 다른 속성은 16차와 같다. 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 19차 독립 교차검토(Codex Orca worker, 대상 `c20ecbf`)**: **PASS_WITH_FINDINGS**(P2 1, P3 1). R1801·R1802 resolved. RA-1~RA-4 유지. 반영 코드 후보 `be31836`(로컬 커밋, 미게시).
+  R1901(P2) `_directory_kind`가 env_manifest 범위를 제외해, 실행 환경 경로의 디렉터리에 대한 SQLite 연결 실패에서 종류 누락 → 제외 조건 제거(기존 `_record_state`가 env_reads에 `"dir"` 기록, `suite_fingerprint`가 재검증).
+  R1902(P3) 18차 기록의 반영 코드 후보 필드가 비어 있음 → `c20ecbf` 기입.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_directory_kind_inside_the_runtime_environment` 추가(임시 venv 없이 `sys.prefix`를 fixture 경로로 대체, env_manifest 판정·env_reads `"dir"`·`valid_readset` 확인).
+  수정 전 코드 대조(`c20ecbf` scripts): env_reads에 `"dir"` 없음으로 실패, 수정 후 통과. 검토자 재현(env-directory, 기존 probe venv) 수정본: env_reads에 `"dir"`, 지문 변경, reuse 거부.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 없음(기존 단언 변경 없음).
