@@ -116,3 +116,5 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   영향 모듈 `test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability` 260 OK, check_sdd PASS.
 - **2026-11-18 6차 수정 후보 `c460275`(= CI-VTIER `c082cf5` + CI-OPT 6차 수정 `74eb9a6` 병합) V2**: 병합 뒤 `test_readset`·`test_ci_plan`·`test_verify_environment` 144 OK, check_sdd PASS.
   흐름에 따라 로컬 V3 생략(최종 후보에서 1회). 7차 재검토·게시는 승인 대기. verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 7차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`1b863c1`, 미게시 `f89ebfa`(CI-OPT branch에 게시됨)·`3b54906`·`1a6eac1`·`74eb9a6`·`c082cf5`·`c460275`·`02eeda2`·이 기록 커밋.
+  작성자 lwwde07, 허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `c460275` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만.
