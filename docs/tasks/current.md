@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-18 사용자 보고 명칭
+
+- [TASK-REPORT-001](TASK-REPORT-001.md) in_progress: 사용자 보고용 표시 명칭 사전과 브리핑 구성을 [docs/reporting.md](../reporting.md) 하나에 두고 AGENTS.md가 가리킨다. 내부 식별자는 유지. 원격 CI 미실행.
+
 ## 현재 작업 — 2026-11-10 저장소 busy
 
 - [TASK-STORE-BUSY-001](TASK-STORE-BUSY-001.md) in_progress: 스레드 10개가 SQLite 쓰기를 기다리다 Windows CI에서 `storage_unavailable_or_busy`로 실패하던 문제. 프로세스 내 대기열로 수정. 실제 CI 미실행.

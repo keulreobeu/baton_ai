@@ -30,7 +30,9 @@
     "docs/specs/MEMORY-001.md",
     "docs/plans/shared-memory.md",
     "docs/adr/ADR-MEMORY-001.md",
-    "docs/tasks/TASK-MEMORY-001.md"
+    "docs/tasks/TASK-MEMORY-001.md",
+    "docs/specs/REPORT-001.md",
+    "docs/tasks/TASK-REPORT-001.md"
   ],
   "features": [
     {
@@ -1359,6 +1361,52 @@
             {
               "file": "tests/test_memory.py",
               "symbol": "MemoryStoreTests.test_export_contains_every_active_entry_beyond_the_list_page"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REPORT-001",
+      "spec": "docs/specs/REPORT-001.md",
+      "requirements": [
+        {
+          "id": "REPORT-001-REQ-01",
+          "acs": [
+            "REPORT-001-AC-01"
+          ]
+        },
+        {
+          "id": "REPORT-001-REQ-02",
+          "acs": [
+            "REPORT-001-AC-02"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "REPORT-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_reporting_names.py",
+              "symbol": "ReportingNamesTests.test_dictionary_covers_tiers_levels_severities_and_every_state"
+            },
+            {
+              "file": "tests/test_reporting_names.py",
+              "symbol": "ReportingNamesTests.test_a_new_state_without_a_name_is_detected"
+            }
+          ]
+        },
+        {
+          "id": "REPORT-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_reporting_names.py",
+              "symbol": "ReportingNamesTests.test_common_guidance_points_to_the_dictionary_without_copying_it"
+            },
+            {
+              "file": "tests/test_reporting_names.py",
+              "symbol": "ReportingNamesTests.test_copied_rows_in_guidance_would_be_detected"
             }
           ]
         }
