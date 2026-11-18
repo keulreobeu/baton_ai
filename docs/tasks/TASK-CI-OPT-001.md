@@ -1254,3 +1254,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   회귀 6종(readset 4·ci_plan 1·verify_environment 1: A→B→A·삭제·미기록 출현·자식 생성 출력 정상·최종 병합 뒤 축소·재작성·hook pid·미실행 토큰·읽기 불가+변경).
   새 테스트 `test_input_read_again_must_still_be_what_was_first_read` 1개, 나머지는 같은 주제의 기존 AC-12 테스트에서 호출(AC당 참조 30개 상한).
   실제 venv 자식에서 로그 이름(인터프리터 pid)이 런처 pid와 다름을 확인 — 런처 pid 강제 없음 유지. 영향 3모듈 138 OK, check_sdd PASS.
+- **2026-11-18 4차 수정 후보 `8305a51` 공식 로컬 V3**: `verify_environment.py --base 5c07aea --evidence-dir`(단독) 743 tests OK, skips 0, failures/errors 0, eligible true,
+  state stable, 1215 s, evidence `22512da0…`(commit `8305a51`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 16,963·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` launched 195/hooked 194 —
+  기존과 같은 보수 원인). 새 재관측·로그 바이트·hook 소유 검사로 인한 `INPUT_CHANGED_DURING_RUN`·`READSET_LOG_CORRUPT` 없음(정상 실행 과잉 실패 없음). 로그 사본 `CI-OPT-001-v3-iso-8305a51.log`.
+  5차 재검토·게시는 승인 대기. verified·병합 아님.
