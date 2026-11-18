@@ -59,3 +59,6 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   `required_tests_executed` 통과(선택 332 ID 전부 기록 확인), 필수 회귀 7모듈, 520.6 s(CI-OPT V3와 동시 실행으로 느림), `final_evidence_eligible=false`, 사본 `CI-VTIER-001-v2-0120358.json`.
   공식 로컬 V3(`--base 762739f --evidence-dir`) 751 tests OK, skips 0, failures/errors 0, eligible true, state stable, 1233 s, evidence `263da800…`(commit `0120358`),
   read set partial(`CHILD_NOT_ALLOWED` 17,298·`CHILD_LOG_INCOMPLETE`), 사본 `CI-VTIER-001-v3-0120358.log`. 재검토·원격 CI 대기(push·PR 미승인). verified·병합 아님.
+- **2026-11-18 사용자 승인**: N05(V1 시간 상한 60~180 s) 보류 승인. 사유: 실측 V1 378 s(상한 도입 시 상시 timeout·재시도). 재검토 조건: V1 범위 최적화 후 단독 실행 재측정으로 결정.
+  장기·무한 실행 방지(Task 총 시간 예산 안의 planner 검사 timeout, timeout은 실패)는 유지. 이 기록 커밋은 문서만 바꾸며 코드 후보 `0120358`의 V2/V3 증거 범위는 그대로다.
+  같은 승인으로 원격 게시·CI-VTIER draft PR 생성·원격 CI·3차 교차검토 준비 진행(verified·main 병합·force push 불승인).
