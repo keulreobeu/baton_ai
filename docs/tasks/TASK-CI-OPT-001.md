@@ -1261,3 +1261,9 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 5차 패키지 모두")**: 원격 `codex/ci-opt-001-r5`=`d4d378b`, 미게시 `f707bf4`·`8305a51`·`5fdf500`·이 기록 커밋. 작성자 lwwde07(기존 게시와 같은 신원),
   허용 경로(scripts/tests/docs)만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `8305a51` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
 - **2026-11-18 원격 CI(`0c173c8`, PR #16)**: run `44248762600` plan·gate success, Windows 3.11·3.12 각 743 tests OK, failures/errors/skips 0, eligible true. `0c173c8`(코드 `8305a51`)에만 귀속. 5차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 5차 이종 모델 재검토(ChatGPT, 대상 `8305a51`)**: **FAIL**(P1 3, P2 2). R403 resolved, R401·R402·R404 partial. RA-1~RA-4 유지. 격리 재현(Linux 3.13.5).
+  R501(P1) `_open_event`가 생성 파일로 재분류한 기존 입력의 재관측을 건너뜀, 실패한 `r+`를 생성으로 분류 → 기록된 입력은 항상 재관측, 생성 의도는 w/a/x·O_CREAT만.
+  R502(P1) 재관측 해시 실패(1 GiB 초과 등)가 complete 유지 → `INPUT_UNHASHABLE`. R503(P1) 섹션 전용 문서의 관측 해시를 원본 지문에서 비교하지 않음(B로 읽고 A로 복원 시 재사용) → 원본 실행에서 전체 해시 비교, 섹션 읽기 실패 수집.
+  R504(P2) 자체 생성 출력(부재 확인 뒤 생성·SQLite 생성)이 기록기는 출력·지문은 입력 변경으로 판정 → 부재 기록 제거 + `OUTPUT_AT_ABSENT_INPUT` partial, SQLite 생성·`os.rename` 대상도 생성으로 기록.
+  R505(P2) 로그 하나의 hook 여러 개·hook 없는 로그·경로 없는 `created` 허용 → 로그당 hook 정확히 1개, 이벤트 필드 검사.
+  기존 합성 로그 fixture 2개(hook 없음)를 실제 종료 pid의 hook 포함으로 갱신. 회귀는 AC당 30개 상한으로 기존 AC-12 테스트의 검사 함수로 추가(수정 전 코드에서 5건 실패 확인). 영향 3모듈 138 OK.

@@ -899,6 +899,31 @@ class SuiteReuseTests(unittest.TestCase):
             fp(moved)
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
         self.check_unreadable_input_never_hides_another_input_change()  # 4th review R402
+        self.check_section_read_is_compared_with_what_was_read()  # 5th review R503
+
+    def check_section_read_is_compared_with_what_was_read(self):
+        """CI-OPT-001 5th review R503: a section-only document read as B and restored to A
+        before the end is a change in the source run; an unreadable section is reported
+        before a listing change."""
+        self.write("docs/tasks/TASK-X.md", "# T\n\n" + SECTION + "\nB\n")
+        seen = cp._content(self.root / "docs/tasks/TASK-X.md")
+        self.write("docs/tasks/TASK-X.md", "# T\n\n" + SECTION + "\nA\n")
+        record = {"path": "docs/tasks/TASK-X.md", "via": "open", "section_only": True, "sections": [SECTION], "sha256": seen}
+        fp = lambda rs: cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST,
+                                             git=FIXED_GIT, verify_observed=True)
+        with self.assertRaises(cp.PlanError) as caught:
+            fp(readset(repo_reads=[record]))
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        same = dict(record, sha256=cp._content(self.root / "docs/tasks/TASK-X.md"))
+        fp(readset(repo_reads=[same]))
+        watched = Path(self.temp.name) / "watched-r503"
+        watched.mkdir()
+        listing = [{"path": str(watched), "scope": "outside", "ok": True, "entries": []}]
+        (watched / "new.txt").write_text("x", encoding="utf-8")
+        with patch.object(cp.Path, "read_text", side_effect=OSError("locked")), \
+                self.assertRaises(cp.PlanError) as caught:
+            fp(readset(repo_reads=[same], listings=listing))
+        self.assertEqual(str(caught.exception), "FILE_UNREADABLE")
 
     def check_unreadable_input_never_hides_another_input_change(self):
         """CI-OPT-001 4th review R402: an unreadable input is noted and the other inputs

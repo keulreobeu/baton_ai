@@ -34,6 +34,13 @@ class ReadsetTests(unittest.TestCase):
         self.addCleanup(rec.stop)
         return rec
 
+    def hooked(self, rec, pid, seq):
+        """A hook record whose token this recorder launched (synthetic, one per log)."""
+        token = "tok-%d-%d" % (pid, seq)
+        rec._launch_tokens[token] = "python -c pass"
+        rec._python_launches += 1
+        return {"type": "hook_loaded", "pid": pid, "token": token, "created": None, "seq": seq}
+
     def exited_pid(self):
         """pid of a real, tracked, already finished Python child."""
         child = subprocess.Popen([sys.executable, "-c", "pass"], cwd=self.root)
@@ -335,22 +342,23 @@ class ReadsetTests(unittest.TestCase):
         log recovered) or a missing exit proof makes the parent read set partial."""
         rec = self.recorder()
         log_dir = rec._log_targets()[0]
+        # 5th review R505: every log starts with its own hook record (real, exited pids).
+        a, b, c, d = (self.exited_pid() for _ in range(4))
+        def end(pid, seq, **extra):
+            return {"type": "exit", "pid": pid, "t": 1.0, "seq": seq, "partial": [], "write_failed": False, **extra}
         cases = {
-            "100.jsonl": [{"type": "trust_store", "seq": 1}, {"type": "exit", "pid": 100, "t": 1.0, "seq": 2,
-                                                            "partial": [], "write_failed": False}],   # complete
-            "101.jsonl": [{"type": "trust_store", "seq": 1}, {"type": "exit", "pid": 101, "t": 1.0, "seq": 3,
-                                                            "partial": [], "write_failed": False}],   # seq 2 lost
-            "102.jsonl": [{"type": "trust_store", "seq": 1}],                                           # no exit proof
-            "103.jsonl": [{"type": "exit", "pid": 103, "t": 1.0, "seq": 1, "partial": ["CHILD_NOT_ALLOWED"],
-                           "write_failed": True}],                                                      # child partial
+            a: [self.hooked(rec, a, 1), {"type": "trust_store", "seq": 2}, end(a, 3)],          # complete
+            b: [self.hooked(rec, b, 1), {"type": "trust_store", "seq": 2}, end(b, 4)],          # seq 3 lost
+            c: [self.hooked(rec, c, 1), {"type": "trust_store", "seq": 2}],                     # no exit proof
+            d: [self.hooked(rec, d, 1), end(d, 2, partial=["CHILD_NOT_ALLOWED"], write_failed=True)],  # child partial
         }
-        for name, events in cases.items():
-            with open(os.path.join(log_dir, name), "w", encoding="utf-8") as stream:
+        for pid, events in cases.items():
+            with open(os.path.join(log_dir, "%d.jsonl" % pid), "w", encoding="utf-8") as stream:
                 for event in events:
                     stream.write(json.dumps(event) + "\n")
         rec.stop()
         incomplete = rec.partial_samples.get("CHILD_LOG_INCOMPLETE", [])
-        self.assertEqual(sorted(incomplete), ["101.jsonl", "102.jsonl"])
+        self.assertEqual(sorted(x for x in incomplete if not x.startswith("token ")), sorted(["%d.jsonl" % b, "%d.jsonl" % c]))
         self.assertTrue({"CHILD_LOG_INCOMPLETE", "CHILD_NOT_ALLOWED", "READSET_LOG_CORRUPT"} <= rec.partial_reasons)
         self.assertFalse(rec.as_dict()["complete"])
 
@@ -375,6 +383,10 @@ class ReadsetTests(unittest.TestCase):
         for name, (events, complete) in cases.items():  # one recorder each: samples are capped
             with self.subTest(log=name):
                 rec = self.recorder()
+                if complete:  # 5th review R505: a complete log holds its own hook record
+                    pid = self.exited_pid()
+                    name = "%d.jsonl" % pid
+                    events = [self.hooked(rec, pid, 1)] + [dict(e, seq=e["seq"] + 1) for e in events[:-1]] + [end(pid, 4)]
                 with open(os.path.join(rec._log_targets()[0], name), "w", encoding="utf-8") as stream:
                     for event in events:
                         stream.write(json.dumps(event) + "\n")
@@ -443,6 +455,7 @@ class ReadsetTests(unittest.TestCase):
         self.assertFalse(readset._exit_proof_ok({"pid": 0, "t": 1.0, "partial": [], "write_failed": False}, "0.jsonl"))
         self.assertTrue(readset._exit_proof_ok(end(1), name))
         self.check_hook_belongs_to_its_own_log_and_to_a_launch()  # 4th review R404
+        self.check_one_hook_per_log_and_event_fields()  # 5th review R505
 
     def test_input_read_again_must_still_be_what_was_first_read(self):
         """CI-OPT-001 4th review R401: A -> B -> A between reads, a deleted input and an
@@ -482,6 +495,93 @@ class ReadsetTests(unittest.TestCase):
         made.stop()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", made.partial_reasons)
         self.check_outputs_created_after_an_absent_probe_are_not_changes()
+        self.check_reobservation_is_never_skipped_or_unverified()  # 5th review R501/R502
+        self.check_own_outputs_at_absent_inputs_are_partial_not_changes()  # 5th review R504
+
+    def check_reobservation_is_never_skipped_or_unverified(self):
+        """CI-OPT-001 5th review R501/R502: an input deleted and recreated by the run is
+        still compared; a failed "r+" is no creation; a second look that cannot be hashed
+        leaves the read set unverifiable (partial), not complete."""
+        source = Path(self.temp.name) / "recreated-r501.cfg"
+        source.write_text("A", encoding="utf-8")
+        missing = self.root / "rplus-r501.cfg"
+        unhashable = Path(self.temp.name) / "unhashable-r502.cfg"
+        unhashable.write_text("A", encoding="utf-8")
+        time.sleep(0.03)
+        rec = self.recorder()
+        self.assertEqual(source.read_text(encoding="utf-8"), "A")
+        source.unlink()
+        source.write_text("B", encoding="utf-8")
+        self.assertEqual(source.read_text(encoding="utf-8"), "B")
+        source.write_text("A", encoding="utf-8")
+        rec.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
+        rplus = self.recorder()
+        with self.assertRaises(FileNotFoundError):
+            open(missing, "r+", encoding="utf-8")
+        with rplus._quiet():  # another writer creates it
+            missing.write_text("X", encoding="utf-8")
+        missing.read_text(encoding="utf-8")
+        with rplus._quiet():
+            missing.unlink()
+        rplus.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rplus.partial_reasons)
+        again = self.recorder()
+        unhashable.read_text(encoding="utf-8")
+        with patch.object(readset, "_sha", return_value=None):
+            unhashable.read_text(encoding="utf-8")
+        again.stop()
+        self.assertIn("INPUT_UNHASHABLE", again.partial_reasons)
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", again.partial_reasons)
+        self.assertFalse(again.as_dict()["complete"])
+
+    def check_own_outputs_at_absent_inputs_are_partial_not_changes(self):
+        """CI-OPT-001 5th review R504: the run's own file, SQLite database or file moved
+        into place at a path first seen absent is no input change; its absent record
+        leaves the read set (the fingerprint cannot disagree) and the evidence is partial."""
+        import sqlite3
+        own = self.root / "own-r504.txt"
+        db = self.root / "own-r504.sqlite"
+        moved = self.root / "moved-r504.txt"
+        rec = self.recorder()
+        for path in (own, moved):
+            with self.assertRaises(FileNotFoundError):
+                open(path, encoding="utf-8")
+        with self.assertRaises(sqlite3.OperationalError):
+            sqlite3.connect("file:%s?mode=ro" % db.as_posix(), uri=True).close()
+        own.write_text("x", encoding="utf-8")
+        connection = sqlite3.connect(db)
+        connection.execute("create table t (v)")
+        connection.commit()
+        connection.close()
+        sqlite3.connect("file:%s?mode=ro" % db.as_posix(), uri=True).close()
+        temporary = self.root / "moved-r504.tmp"
+        temporary.write_text("y", encoding="utf-8")
+        os.replace(temporary, moved)
+        self.assertEqual((own.read_text(encoding="utf-8"), moved.read_text(encoding="utf-8")), ("x", "y"))
+        rec.stop()
+        data = rec.as_dict()
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+        self.assertIn("OUTPUT_AT_ABSENT_INPUT", rec.partial_reasons)
+        self.assertFalse(any(r["path"].startswith(("own-r504", "moved-r504")) for r in data["repo_reads"]), data["repo_reads"])
+
+    def check_one_hook_per_log_and_event_fields(self):
+        """CI-OPT-001 5th review R505: two hook records in one log, a log without a hook
+        and a created event without a path are incomplete or corrupt."""
+        pid = self.exited_pid()
+        name = "%d.jsonl" % pid
+        end = lambda seq: {"type": "exit", "pid": pid, "t": 1.0, "seq": seq, "partial": [], "write_failed": False}
+        for label, events, reason in [
+                ("two_hooks", lambda r: [self.hooked(r, pid, 1), self.hooked(r, pid, 2), end(3)], "CHILD_LOG_INCOMPLETE"),
+                ("exit_only", lambda r: [end(1)], "CHILD_LOG_INCOMPLETE"),
+                ("created_without_path", lambda r: [self.hooked(r, pid, 1), {"type": "created", "path": None, "seq": 2},
+                                                    end(3)], "READSET_LOG_CORRUPT")]:
+            with self.subTest(case=label):
+                rec = self.recorder()
+                self.write_log(rec, name, events(rec))
+                rec.stop()
+                self.assertIn(reason, rec.partial_reasons, rec.partial_samples)
+                self.assertFalse(rec.as_dict()["complete"])
 
     def check_outputs_created_after_an_absent_probe_are_not_changes(self):
         """4th review R401 regression: the run probes a path, finds it absent and then
