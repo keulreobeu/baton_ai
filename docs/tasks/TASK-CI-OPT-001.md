@@ -1288,3 +1288,24 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   R704(P2) SQLite 래퍼·감사 중복 → 래퍼 안 감사 이벤트는 확정하지 않음. R705(P2) 섹션 읽기·디코딩 실패 분리.
   회귀: 기존 AC-12 테스트에 `check_call_outcome_and_order_decide_ownership`·섹션 비UTF-8 비교 추가. 영향 3모듈 138 OK, check_sdd PASS. 이번 회차 수정 전 코드 대조(돌연변이 확인)는 미실행.
   흐름 변경(2026-11-18 사용자): 다음 교차검토부터 Codex(Orca worker)로 진행하고, PASS까지 반복한다. 새 세션의 코디네이터가 이어받는다.
+- **2026-11-18 8차 독립 교차검토(Codex Orca worker, 대상 `e826341`)**: **FAIL**(P1 2, P2 2). R704·R705 resolved, R701~R703 partial. RA-1~RA-4 유지. 반영 코드 후보 `907b24c`(로컬 커밋, 미게시).
+  R801(P1) 실패한 생성 뒤 현재 파일 재조회로 경쟁 작성자 파일이 birth 기준 출력 제외, 비배타 생성 성공이 경쟁자 파일을 `_made`에 연결 → 시도 때 부재를 결과와 함께 보존(이후 출현은 입력 변경),
+  기존 내용 유지 생성은 연 파일이 비어 있지 않으면 `OUTPUT_OWNERSHIP_UNCERTAIN`. R802(P1) 실행 전 외부 파일을 자체 출력 위로 `os.replace`하면 이전 소유가 남아 새 내용 입력 제외 →
+  성공한 미소유 원본 이동에서 도착 경로의 이전 출력 소유 해제(이후 읽기는 입력), 원본 소유 미확인 이동은 종료 시 항상 partial. R803(P2) `os.remove` 감사 이벤트(호출 전)를 삭제 성공으로 기록 →
+  감싼 `os.remove`/`os.unlink` 실제 성공에서만 기록, 결과 미보고·경로 잔존은 `INPUT_UNHASHABLE`. R804(P2) 자식의 생성 전 부재가 부재 입력으로 저장돼 정상 자식 출력이 `OUTPUT_AT_ABSENT_INPUT` →
+  `precreate` 표시로 기존 입력 대조에만 사용, 다른 로그의 실행 전 birth 입력과 겹치면 partial. 독립 관측 부재의 기존 출력 규칙 유지.
+  회귀: 기존 AC-12 테스트 `test_input_read_again_must_still_be_what_was_first_read`에서 호출하는 `check_attempt_absence_and_moved_ownership`(R801/R802)·`check_removal_outcome_and_child_creation`(R803/R804) 추가,
+  R703 자체 이동 검사에 `repo_reads` 비포함 단언 추가(traceability 변경 없음). 수정 전 코드 대조(`e826341` scripts + 새 테스트, 결함별 분리 실행): R801 배타 실패 complete=True·사유 없음,
+  R801 `a+` complete=True, R802 complete=True·도착 경로 읽기 기록 없음, R802 종료 적용 사유 없음, R803 `INPUT_CHANGED_DURING_RUN`, R804 `OUTPUT_AT_ABSENT_INPUT`로 모두 실패, 수정 후 모두 통과.
+  자식이 먼저 부재를 읽은 뒤 만드는 경우의 `OUTPUT_AT_ABSENT_INPUT`은 전후 모두 유지. R703 보강 단언은 `74eb9a6` scripts에서 `own-r703.cfg`가 남아 실패, `e826341`·수정본 통과.
+  검토자 재현(r8_repro·r8_fingerprint)도 수정본에서 기대 판정(R802 reuse 거부, R801 경쟁 생성은 입력 변경). V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 로컬 V3는 이번 회차 미실행(최종 후보에서 1회).
+  남은 한계: 새 partial 사유(이동·비배타 생성·삭제 결과 미보고)의 전체 suite 빈도·성능, 원격 Windows 두 조합 미확인. dir_fd 상대 삭제는 기존과 같이 경로를 해석하지 않는다.
+- **2026-11-18 9차 독립 교차검토(Codex Orca worker, 대상 `907b24c`)**: **FAIL**(P1 2). R803·R804·R703 보강 resolved, R801·R802 partial. RA-1~RA-4 유지. 반영 코드 후보 `f72002b`(로컬 커밋, 미게시).
+  R901(P1) 출력 소유가 경로에 붙어 자체 unlink·이동 뒤 비워진 이름에 들어온 외부 파일 읽기가 빠지고, 비배타 `a+`는 크기 0이면 경쟁자 파일도 출력으로 확정 → 코디네이터 결정 원칙대로 파일 객체 식별(st_dev/st_ino)로만 소유 입증,
+  생성 이력과 현재 이름 소유 분리, 자체 삭제·이동 출발에서 이름 소유 해제, 이름/birth 추정 면제는 종료 시 식별 검증, 소유 불명 재점유는 입력 + partial, 비배타 생성은 읽기 가능 핸들이면 즉시·쓰기 전용이면 이후 읽기 때 partial.
+  코디네이터 결정 (A)(2026-11-18): SQLite 새 DB 생성 실행은 partial(재사용 거부)이며, 크기 0 소유 인정(B안)은 RA가 필요한 사용자 결정 사항으로 보류. 7차 R704 단언을 "OUTPUT_AT_ABSENT_INPUT 없음 + OUTPUT_OWNERSHIP_UNCERTAIN"으로 변경.
+  R902(P1) 실패한 생성이 정규화 대상만 다시 넘겨 junction 별칭을 잃음 → 감사 이벤트 때 원래 경로·해석 대상·별칭 스냅샷을 실패 확정에 함께 등록(자식 동일), 현재 별칭과 다르면 입력 변경.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_object_ownership_and_attempt_snapshot` 추가(재점유 unlink/이동, 빈 `a+` 경쟁, 쓰기 전용 `a` 뒤 읽기, `w`·`x`·mkstemp·자체 이동 정상 출력 complete, junction 실패 생성 직접·실제 자식). 8차 검사의 합성 이동 기록 형식 갱신.
+  수정 전 코드 대조(`907b24c` scripts + 새 테스트, 사례별 분리 실행): unlink·이동 재점유 complete=True·읽기 기록 없음, 빈 `a+`·`a` 뒤 읽기·SQLite 사유 없음, junction 직접·자식 aliases=[]로 모두 실패. 정상 출력 사례는 전후 모두 complete. 수정 후 모두 통과.
+  검토자 재현(r9_repro·r902_child) 수정본: R901 세 경우 complete=False·reuse 거부, R902 직접·자식 별칭 기록·지문 변경. V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 영향 3모듈에서 정상 출력이 partial로 바뀐 기존 사례는 SQLite 새 DB(R704)뿐. 로컬 V3 미실행.
+  남은 한계: 실제 suite에서 `OUTPUT_OWNERSHIP_UNCERTAIN`이 늘 가능성(SQLite·MetricsStore 계열, `a`/`touch` 파일 재읽기, 비 Python 자식(git 등)이 만든 파일 읽기, Windows CopyFile 경로 등 감싼 호출 밖 생성)과 성능 미측정. 공식 V3 read set은 현재 `CHILD_NOT_ALLOWED`로 이미 partial이라 당장 재사용 손실은 없다. 파일 ID가 없는 파일시스템에서는 식별 입증이 불가해 partial. 원격 Windows 두 조합 미확인.
