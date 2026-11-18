@@ -1258,3 +1258,5 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   state stable, 1215 s, evidence `22512da0…`(commit `8305a51`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 16,963·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` launched 195/hooked 194 —
   기존과 같은 보수 원인). 새 재관측·로그 바이트·hook 소유 검사로 인한 `INPUT_CHANGED_DURING_RUN`·`READSET_LOG_CORRUPT` 없음(정상 실행 과잉 실패 없음). 로그 사본 `CI-OPT-001-v3-iso-8305a51.log`.
   5차 재검토·게시는 승인 대기. verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 5차 패키지 모두")**: 원격 `codex/ci-opt-001-r5`=`d4d378b`, 미게시 `f707bf4`·`8305a51`·`5fdf500`·이 기록 커밋. 작성자 lwwde07(기존 게시와 같은 신원),
+  허용 경로(scripts/tests/docs)만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `8305a51` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
