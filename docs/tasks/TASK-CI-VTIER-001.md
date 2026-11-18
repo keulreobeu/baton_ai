@@ -143,3 +143,5 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   회귀 `test_pending_row_of_an_earlier_version_settles_without_a_pending_mark` 기대 사유 갱신(AC-04, 기존 symbol). 수정 전 코드(`75a7bcb` src)에서 실패 확인, 수정 후 통과.
   V2: 영향 5모듈 268 OK(skip 0), check_sdd `--base 762739f` PASS. 로컬 V3 생략(최종 후보에서 1회). CI-OPT 병합 없음. verified·병합 아님.
 - **2026-11-18 CI-OPT-001 13·14차 수정 병합 `18ca03d`(= CI-VTIER `adeb201` + CI-OPT 기록 `7bdaf48`, 코드 `88fb467`·`0a70599` 포함) V2**: 충돌 없음(`docs/specs/CI-OPT-001.md` 자동 병합). `test_readset`·`test_ci_plan`·`test_verify_environment`: 기본 Windows 환경(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정, `-X utf8` 없음, utf8_mode 0·stdout cp949) 144 OK, `PYTHONIOENCODING=utf-8`(utf8_mode 0) 144 OK. CI-VTIER 영향 5모듈(`-X utf8`) 268 OK, skip 0, check_sdd `--base 762739f` PASS. 로컬 V3 생략. verified·병합 아님.
+- **2026-11-18 10·11차 독립 검토 결과(Codex Orca worker)**: 10차(대상 `75a7bcb`) **PASS_WITH_FINDINGS**(P3 1, R1001 → `adeb201`에서 반영, 위 기록). 11차(대상 `18ca03d` = `adeb201` + CI-OPT `7bdaf48`) **PASS**(P1·P2·P3 0, 신규 finding 없음). R1001 해소, 영향·병합 회귀 7모듈 320 OK.
+  CI-OPT 쪽이 아직 검토 중이라 최종 후보는 CI-OPT 최종 수정 병합 뒤 확정되며, 공식 로컬 V3·원격 CI·verified는 그 뒤에 진행한다. verified·병합 아님.
