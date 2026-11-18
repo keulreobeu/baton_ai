@@ -1245,3 +1245,4 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   로그 사본 `CI-OPT-001-v3-iso-4244da7.log`(1회차)·`-rerun.log`. 이후 커밋 신원은 저장소 로컬 설정(lwwde07, 사용자 지시)으로 한다. 4차 재검토·게시는 승인 대기.
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 4차 패키지")**: 원격 `codex/ci-opt-001-r5`=`9c0b793`, 미게시 `4244da7`·`4c7a03b`·이 기록 커밋. 작성자 lwwde07(기존 게시 커밋과 같은 신원),
   허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `4244da7` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`d4d378b`, PR #16)**: run `44228670863` plan·gate success, Windows 3.11·3.12 각 742 tests OK, failures/errors/skips 0, eligible true. `d4d378b`(코드 `4244da7`)에만 귀속. 4차 재검토 대기. 이 기록 커밋은 로컬 전용.
