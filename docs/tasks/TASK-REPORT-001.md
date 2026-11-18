@@ -38,3 +38,5 @@ expected_failures = 0
 - 2026-11-18 최종 후보 `643e2ba` 전체 검증(`verify_environment.py --base 5c07aea`): 541 tests OK, failures/errors 0, skipped 1, 956 s, eligible false.
   skip 1개는 main에 원래 있는 선택 의존성 테스트(TASK-TEST-SPEED-001에 기록된 skip)이며 이번 변경과 무관하다. 그래서 verified는 불가하고 in_progress를 유지한다.
   첫 실행(`33604be`)은 언어 정책 반영을 위해 사용자 지시 직후 중단했다(결과 없음). 원격 CI·push는 미승인으로 미실행.
+- 게시 전 점검(2026-11-18, 사용자 승인 "push + draft PR 생성"): 원격에 `codex/report-names-001` 없음(신규), `origin/main`=`5c07aea`. 미게시 `33604be`·`643e2ba`·`fbfbd94`·이 기록 커밋.
+  작성자 lwwde07, scope 경로만, 비밀값·홈 경로·DB·로그 없음. 대상: 새 branch push와 main 대상 draft PR 생성만(병합 없음).
