@@ -1388,3 +1388,36 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 감싼 호출 안에서 중첩 생성 시도가 생기면 바깥 시도는 기존처럼 경로 상태로 확정되어 partial이다.
     - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 13차 독립 교차검토(Codex Orca worker, 대상 `ea89e2a`)**: **FAIL**(P1 1). R1201~R1204 resolved. RA-1~RA-4 유지. 반영 코드 후보 `88fb467`(로컬 커밋, 미게시).
+  R1301(P1) 저장소 밖 파일 삭제(직접·자식 × 초기 존재·부재)의 존재 여부와 결과가 재사용 증거에서 빠짐(c90e91c부터 있던 결함). 수정:
+    - 초기 부재 삭제: 부재를 입력으로 기록(다음 실행 전 지문 검증)
+    - 비자체 기존 파일 삭제 성공: 새 사유 `MUTATION_UNVERIFIABLE` partial
+    - 실패한 삭제: 남은 내용을 입력으로 기록(R803 유지)
+    - 자체 출력 판정: 이름 이력이 아니라 객체·birth 기준
+  같은 패턴 점검(감사 이벤트가 있는 상태 의존 변경). 막은 지점:
+    - `os.remove`/`os.unlink`: 위 규칙. 디렉터리 대상이나 dir_fd면 partial
+    - `os.rmdir`·`shutil.rmtree`·`os.chmod`·`os.utime`·`os.truncate`(경로)·`os.link`(원본): 대상이 없으면 부재 입력, 실행이 만들지 않은 기존 경로면 `MUTATION_UNVERIFIABLE`, dir_fd면 `PATH_UNNORMALIZABLE`
+  유지하고 한계로 남긴 지점:
+    - `os.mkdir`(exist_ok면 결과 상태가 같고, 기존 디렉터리의 존재는 read set으로 표현하지 않음)
+    - `os.truncate`/`os.ftruncate`의 파일 기술자 대상(경로 미상)
+    - `os.chown`·xattr(Windows 해당 없음)
+    - `shutil.copy*`: 감싼 `open`으로 관측됨
+    - `os.rename`/`os.replace`: 12차 규칙
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_removals_and_other_mutations_record_their_state` 추가. 다루는 사례:
+    - 삭제: 직접·실제 자식 × 존재·부재
+    - 실패한 삭제(Windows 열린 핸들)
+    - 자체 출력 정리(chmod·utime·truncate·unlink·rmdir·rmtree)는 complete
+    - 기존 경로 rmdir·rmtree·chmod·utime·truncate·link
+    - 없는 디렉터리 rmdir
+    - 자식 chmod
+  수정 전 코드 대조(`ea89e2a` scripts, 사례별 분리 실행): 12개 결함 사례 모두 complete=True이고 기록 없음. 자체 출력 정리는 전후 모두 complete. 검토자 재현(deletion 4건) 수정본: 부재 2건은 부재 입력·지문 변경, 존재 2건은 `MUTATION_UNVERIFIABLE`, 모두 reuse 거부. normal-owned-output은 reuse 허용 유지.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 기존 단언 변경 없음. 새로 partial이 되는 것은 실행이 만들지 않은 기존 경로를 지우거나 바꾸는 실행이다. 실행 시작 전 존재한 디렉터리를 테스트 정리에서 지우는 경우도 포함된다(중첩 기록기의 tearDown 정리는 기록기 종료 뒤라 영향 없음).
+  남은 한계:
+    - 실제 suite에서 `MUTATION_UNVERIFIABLE` 빈도는 측정하지 않았다.
+    - 위 유지 지점(mkdir, 파일 기술자 대상)이 남아 있다.
+    - 원격 Windows 두 조합은 확인하지 않았다.
