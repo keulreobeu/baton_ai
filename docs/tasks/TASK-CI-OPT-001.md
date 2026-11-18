@@ -1239,3 +1239,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   read set `INPUT_CHANGED_DURING_RUN`이면 stable false. R302(P1) 일부 병합 뒤 사라진 로그를 최종 검사가 놓침 → 병합한 모든 로그·hook 토큰의 자기 로그 검사, 사라짐·축소 partial.
   R303(P2) exit 시간 NaN·pid 값·중복 hook 토큰 → 유한 시간·양수 pid·토큰당 hook 1개. R304(P3) `re`·`PTH_IMPORT_LINES`·`_in_temp_area`·미사용 `temp`·폐기 주석 삭제.
   사용자 결정(2026-11-18): 테스트 코드의 의도적 증거 위조는 위협 모델에서 제외하고 RA-4로 명문화(Spec Risk Acceptance). 회귀 4종 추가. 영향 3모듈 137 OK.
+- **2026-11-18 3차 수정 후보 `4244da7` 공식 로컬 V3**: 1회차 742 tests OK이나 **FAIL**(state stable false, `FINGERPRINT_INPUT_CHANGED_DURING_RUN`): 실행 중(10:55) 사용자가 다른 작업으로
+  전역 `~/.gitconfig`에 신원을 추가 — R301 수정이 외부 입력 변경을 의도대로 검출(증거 `bc3c8eca…` 비적격, 그 SHA 증거로 쓰지 않음). 재실행: 742 tests OK, skips 0, eligible true,
+  state stable, 1366 s, evidence `fa02f4c0…`(commit `4244da7`), read set partial(`CHILD_NOT_ALLOWED` 16,877·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` launched 187/hooked 186).
+  로그 사본 `CI-OPT-001-v3-iso-4244da7.log`(1회차)·`-rerun.log`. 이후 커밋 신원은 저장소 로컬 설정(lwwde07, 사용자 지시)으로 한다. 4차 재검토·게시는 승인 대기.
