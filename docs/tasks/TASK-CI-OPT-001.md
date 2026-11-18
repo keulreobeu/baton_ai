@@ -1683,3 +1683,8 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     | `MUTATION_UNVERIFIABLE` | 5 | 열린 descriptor 4, `.local_runtime/harness-managed/test-tmp` mkdir 1 |
     | `OUTPUT_OWNERSHIP_UNCERTAIN` | 5 | 임시 lock·SQLite 파일 |
   이 증거의 read set은 partial이므로 다음 실행의 `offline_suite` 재사용 원본이 될 수 없다(재사용 범위는 사용자 결정 대상). 원격 Windows 두 조합은 확인하지 않았다. Task는 원격 CI 확인 전 verified로 올리지 않는다.
+- **2026-11-19 push 전 전체 커밋 점검(Git 게시 담당, 사용자 승인 push·원격 CI 확인)**: `git fetch` 뒤 원격 `codex/ci-opt-001-r5`=`e78b685`(지시값과 일치), 로컬 HEAD `11b7747`.
+  범위 `origin/codex/ci-opt-001-r5..codex/ci-opt-001-r5` 미게시 커밋 33개(`e826341`~`11b7747`, 병합 커밋 0), 작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`.
+  변경 파일 6개(`docs/specs/CI-OPT-001.md`, `docs/tasks/TASK-CI-OPT-001.md`, `scripts/ci_plan.py`, `scripts/readset.py`, `tests/test_ci_plan.py`, `tests/test_readset.py`). 추가 줄에서 홈 경로·이메일·키·토큰·DB·로그·runtime 파일 0건(저장소 상대 fixture 경로 언급만 있음). finding 없음.
+  최종 후보: 코드 `b3a69cd`, 최종 후보 HEAD `5f42d00` 공식 로컬 V3 PASS(743 OK, skip 0), 22차 독립 교차검토 PASS_WITH_FINDINGS(P1 0, R2201 알려진 한계). `5f42d00..11b7747`과 이 기록은 Task 문서만 바꾼다(테스트 재실행 없음).
+  push 대상은 이 기록 커밋까지 fast-forward만 한다. 원격 CI 결과는 SHA를 바꾸지 않도록 이 Task에 커밋하지 않고 보고로 넘긴다. Task는 verified로 올리지 않는다.
