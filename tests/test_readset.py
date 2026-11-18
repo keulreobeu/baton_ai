@@ -20,6 +20,34 @@ from unittest.mock import patch
 from scripts import readset
 
 
+# CI-OPT-001 final V3: a link a test passes in a failed move is kept as an input alias
+# by every active recorder, the official one too (12th review R1202 decides it as an
+# input's, ownership aside). Removing it before that recorder's fingerprint is taken
+# would be a change during the run, so such fixtures stay until the process exits.
+_HELD_DIRS, _HELD_LINKS = [], []
+
+
+def _remove_held():
+    for link in reversed(_HELD_LINKS):
+        try:
+            os.rmdir(link) if os.name == "nt" else os.unlink(link)
+        except OSError:
+            pass
+    import shutil
+    for directory in reversed(_HELD_DIRS):
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def _held_dir():
+    """A temporary directory removed at process exit, after any recorder has stopped."""
+    if not _HELD_DIRS:
+        import atexit
+        atexit.register(_remove_held)
+    path = Path(tempfile.mkdtemp(prefix="baton-readset-held-"))
+    _HELD_DIRS.append(path)
+    return path
+
+
 class ReadsetTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -517,6 +545,38 @@ class ReadsetTests(unittest.TestCase):
         self.check_directory_kind_and_writes_after_creation()  # 18th review R1801/R1802
         self.check_directory_kind_inside_the_runtime_environment()  # 19th review R1901
         self.check_listing_inside_the_runtime_environment()  # 20th review R2001
+        self.check_nested_recorders_give_a_child_the_latest_start()  # final V3
+
+    def check_nested_recorders_give_a_child_the_latest_start(self):
+        """CI-OPT-001 final V3: a child launched under nested recorders judges its own
+        changes against the latest start of them (the strictest). With the earliest, a file
+        made after the outer recorder started but before the inner one was presumed the
+        run's own in the child, and the inner recorder missed the change of a pre-existing
+        file (a real child's chmod, removal)."""
+        first = self.recorder()
+        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)
+        second = self.recorder()
+        for order in ((first, second), (second, first)):
+            with self.subTest(order="outer first" if order[0] is first else "inner first"):
+                env = None
+                for rec in order:
+                    env = rec._child([sys.executable, "-c", "pass"], str(self.root), env, "tok-latest")
+                self.assertEqual(env["BATON_READSET_STARTED"], second.started_utc)
+        first.stop()
+        second.stop()
+        outer = self.recorder()
+        outer._log_targets()  # its log directory exists before the inner recorder starts
+        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)
+        target = Path(tempfile.mkdtemp(dir=self.temp.name)) / "made-before-inner.cfg"
+        target.write_text("pre", encoding="utf-8")
+        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)
+        inner = self.recorder()
+        done = subprocess.run([sys.executable, "-c", "import os, sys; os.chmod(sys.argv[1], 0o644)", str(target)],
+                              cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        inner.stop()
+        outer.stop()
+        self.assertIn("MUTATION_UNVERIFIABLE", inner.partial_reasons, inner.partial_samples)
 
     def check_listing_inside_the_runtime_environment(self):
         """CI-OPT-001 20th review R2001: a listing of a directory inside the runtime
@@ -1146,19 +1206,22 @@ class ReadsetTests(unittest.TestCase):
         source are partial with their aliases kept (this process and a real child); a
         section read through a link records the alias; a real child's default-encoding
         creation, its codec imported inside the open, stays a proven output."""
-        def junction(link, target):
+        def junction(link, target, held=False):
             if os.name == "nt":
                 import _winapi
                 _winapi.CreateJunction(str(target), str(link))
             else:
                 os.symlink(target, link, target_is_directory=True)
+            if held:
+                _HELD_LINKS.append(link)  # a failed move's alias: kept until exit (see _HELD_DIRS)
+                return
             self.addCleanup(lambda: (os.rmdir(link) if os.name == "nt" else os.unlink(link))
                             if os.path.lexists(link) else None)
 
-        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        base = _held_dir()
         old, inner, outer = base / "old", base / "inner", base / "outer"
         (old / "sub").mkdir(parents=True)
-        junction(inner, old)
+        junction(inner, old, held=True)
         (old / "doc.md").write_text("# T\n\n## A\nbody\n", encoding="utf-8")
         (old / "dest.cfg").write_text("there", encoding="utf-8")
         time.sleep(0.03)

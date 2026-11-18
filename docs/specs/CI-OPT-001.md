@@ -427,6 +427,8 @@ clone/push 대상 저장소, hook 본문의 암묵적 경로(`cd`→HOME, 링크
 
 **2026-11-18 20차 독립 교차검토(Codex, `be31836` PASS_WITH_FINDINGS: P2 1) 반영:** 디렉터리 목록(`os.listdir`·`os.scandir`·glob 계열, 직접·자식 보고)도 실행 환경 범위(`sys.prefix` 아래, env_manifest)에서 기록한다. 실행 환경 manifest는 파일 내용을 해시하지만 디렉터리가 나열하는 항목은 덮지 않으므로, 그 범위를 일괄 제외하던 조건을 없앤다. 그런 목록은 기존 목록 재검증(`listings`, scope `outside`)에 절대 정규 경로로 남는다. 저장소 안의 `.venv`도 같은 절대 경로다. 실패한 목록 조회(`LISTING_ERRORS_AS_INPUT` 밖이면 `LISTING_FAILED`)와 실행이 만든 디렉터리의 면제·별칭은 기존 공통 판정을 그대로 거친다(R2001). `__pycache__`(derived) 제외는 그대로다. RA-1~RA-4는 바꾸지 않는다.
 
+**2026-11-19 최종 V3 반영(`a397217` FAIL: 743건 중 실패 2, state stable false):** 두 원인은 중첩 기록기에서만 드러났다. (1) 여러 기록기가 띄운 Python 자식은 하나의 시작 시각(`BATON_READSET_STARTED`)으로 자기 변경(삭제·chmod 등)의 소유를 판정한다. 그 값은 가장 이른 시작이 아니라 **가장 늦은 시작**이다. 어느 기록기의 시작보다 먼저 생긴 객체는 실행 산출물로 추정하지 않는다(가장 이른 값이면 안쪽 기록기 시작 전의 기존 파일 변경을 놓친다. 늦은 값은 바깥 기록기에 partial을 더할 수 있을 뿐이다, fail-closed). (2) 실패한 이동의 링크 별칭은 12차 R1202대로 소유와 무관하게 입력으로 남는다. 그래서 테스트가 그 링크를 바깥(공식) 기록기의 지문 전에 지우면 실행 중 변경이 된다. 판정 규칙은 그대로 두고, 그 테스트 fixture를 프로세스 종료 때 지운다. RA-1~RA-4는 바꾸지 않는다.
+
 최종 공식 검토 반영(2026-11-17, Claude `d8ffcd0` PASS_WITH_FINDINGS: P1 0·P2 3·P3 1): 남은 두 예외도 **정확한 형태 허용 목록**이다.
 `check-attr`는 전역 옵션 `-C`·`--no-optional-locks`만, subcommand 옵션은 속성 이름·`-z`·`-a`/`--all`만, `--` 뒤 경로 필수이며, 자식의 `GIT_*` 변수는
 지문에 들어간 기록 프로세스 환경의 부분집합(같은 값)이어야 한다(설정 주입 `GIT_CONFIG_*`·`GIT_CONFIG_PARAMETERS`·`--attr-source` 불허).

@@ -1617,3 +1617,69 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
   정상 출력 partial 변화: 없음(기존 단언 변경 없음). 실행 환경 디렉터리 목록이 read set에 새로 들어가므로 그 디렉터리의 항목이 바뀐 실행은 재사용되지 않는다(관측 증가, 새 partial 사유 없음).
   남은 한계: `__pycache__` 목록은 기존대로 제외한다. 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-19 21차 독립 교차검토(Codex Orca worker, 대상 `a3a5deb`, 검토 HEAD `686723c`)**: **PASS**(신규 finding P1/P2/P3 각 0). R2001 resolved, R1901·R1801 회귀 없음. RA-1~RA-4 유지. 최종 코드 후보 `a3a5deb`(로컬 커밋, 미게시).
+  근거 요지: 실제 임시 venv 기존 디렉터리에 항목을 추가하면 manifest 동일·목록 1건·지문 불일치·`FINGERPRINT_CHANGED`로 재사용 거부(수정 전 `be31836`은 목록 0건·재사용 허용). 실패 목록 조회(`FileNotFoundError` 기록)와 순차 자식의 `os.listdir`·`os.scandir`도 기록·거부. 같은 원인 점검(`readset.py`·`ci_plan.py`·`verify_environment.py`)에서 실행 환경 범위를 일괄 제외하는 다른 분기 없음, 새 partial 관찰 없음.
+  검토자 V2(영향 3모듈, Windows Python 3.12.10):
+    | 환경 | 결과 |
+    | `PYTHONIOENCODING` 미설정 | OK(138건, 실패·오류·skip 0) |
+    | `PYTHONIOENCODING=utf-8` | OK(138건, 실패·오류·skip 0) |
+    두 실행 모두 `tests/test_readset.py`의 소켓 `ResourceWarning` 1회 기록(실패 아님). 로컬 V3는 이 기록 커밋을 최종 후보 HEAD로 두고 별도 1회 실행한다.
+- **2026-11-19 최종 후보 `a397217`(코드 `a3a5deb`) 공식 로컬 V3**: **FAIL**. `verify_environment.py --base 5c07aea --evidence-dir --lock-home` 1회(작업 트리 clean, 실행 중 파일·전역 설정 변경 없음). 743 tests, failures 2, errors 0, skips 0, eligible false, state stable false, 1358 s(suite 1319.7 s), returncode 1.
+  evidence `suite-849c8710…3fba.json`(sha256 `849c871096b60ae050b9acf6d454dbfc5945ecc3aa19dec6c81918a299193fba`), suite fingerprint `f9078a18…2438`. `check_sdd.py --base 5c07aea` PASS.
+  reuse: rejected(`FINGERPRINT_CHANGED`, `SOURCE_READSET_PARTIAL`, `SOURCE_STATE_UNSTABLE`), 이번 실행은 executed.
+  read set complete false, partial 사유 6:
+    | 사유 | 표본 수 | 요지 |
+    | `CHILD_HOOK_MISSING` | 2 | `time.sleep(30)` 자식 1건(launched 234, hooked 233) |
+    | `CHILD_LOG_INCOMPLETE` | 5 | 자식 로그 5개 |
+    | `CHILD_NOT_ALLOWED` | 4 | 비 Python 자식(git 등, disallowed_count 17005) |
+    | `MUTATION_UNVERIFIABLE` | 5 | 열린 descriptor 4, `.local_runtime/harness-managed/test-tmp` mkdir 1 |
+    | `OUTPUT_OWNERSHIP_UNCERTAIN` | 5 | 임시 lock·SQLite 파일 |
+    | `FINGERPRINT_INPUT_CHANGED_DURING_RUN` | - | 아래 alias 변경 |
+  실패 1(테스트): `test_input_read_again_must_still_be_what_was_first_read`의 `check_removals_and_other_mutations_record_their_state`(13차 R1301 추가) 두 단언, `remove/child/True`(`tests/test_readset.py:1067`)와 실제 자식 chmod(`:1140`). 내부 기록기에 `MUTATION_UNVERIFIABLE`가 없고 partial 사유가 비었다.
+    진단: 외부 기록기가 켜진 상태에서만 재현된다. 같은 테스트를 단독 실행하면 통과, `scripts.readset.Recorder(ROOT)`를 먼저 시작한 뒤 같은 테스트만 실행하면 같은 2건이 결정적으로 실패한다(작업 트리 밖 임시 wrapper). 직접 실행(`remove/direct/True`)과 다른 mutation 사례는 통과한다. 따라서 중첩 기록기 아래에서 실제 Python 자식의 삭제·chmod가 내부 기록기에 기존 파일 변경으로 판정되지 않는다(자식이 받는 시작 시각 `BATON_READSET_STARTED`가 가장 이른 외부 기록기 기준이 되어 테스트 임시 파일을 실행 산출물로 보는 경로가 유력, 최소 재현으로는 미확정).
+  실패 2(state stable false): `FINGERPRINT_INPUT_CHANGED_DURING_RUN`. 사후 재계산에서 내용 변경은 0이고, alias 2건(`check_chains_failed_moves_sections_and_nested_events`의 테스트 임시 `inner/dest.cfg`, `inner/never.cfg`)의 대상이 테스트 정리 뒤 달라졌다. 외부 기록기가 테스트 내부 임시 영역의 alias를 입력으로 기록한 결과다.
+  두 원인 모두 12~13차 이후 추가된 테스트·기록이며, 직전 통과 V3(5차 `437dab7`)와 V2(영향 3모듈 단독 실행)에는 나타나지 않는 중첩 기록기 상호작용이다. 이 기록에서는 코드를 고치지 않았다. Task는 verified로 올리지 않는다.
+- **2026-11-19 최종 V3 실패 반영(대상 `aca5f0e`)**: 코드 후보 `b3a69cd`(로컬 커밋, 미게시).
+  최소 재현은 작업 트리 밖 임시 wrapper로 했다. `scripts.readset.Recorder(ROOT)`를 먼저 시작하고 `ReadsetTests`의 해당 check만 실행한 뒤, 바깥 기록기의 별칭과 내용을 사후 재계산했다.
+    | 대상 | `check_removals…`(13차) | `check_chains…`(12차) 바깥 alias |
+    | 수정 전 `aca5f0e`(2회) | `:1140` 실패(partial 없음) | 2건 중 2건 변경(`inner/dest.cfg`·`never.cfg`) |
+    | 수정 후 `b3a69cd`(2회) | 통과 | 2건 중 0건 변경, 내용 변경 0 |
+    | 수정 전 + `readset.py`만 수정 | 통과 | - |
+  근본 원인 1(코드): `Recorder._child`가 중첩 기록기 중 가장 이른 시작 시각을 자식에 넘겼다. 자식은 변경 연산의 소유를 `_is_created`(birth ≥ 시작)로 스스로 판정한다. 그래서 바깥 기록기 시작 뒤·안쪽 기록기 시작 전에 생긴 파일의 삭제·chmod를 실행 산출물로 보고, 안쪽 기록기에 `MUTATION_UNVERIFIABLE`이 없었다. 단독 실행에는 기록기가 하나라 나타나지 않는다. 테스트 격리 문제가 아니라 판정 입력 문제라서 코드에서 고쳤다.
+    수정: 가장 늦은 시작을 넘긴다(더 엄격). 바깥 기록기는 partial이 늘 수만 있고, complete 쪽으로 바뀌는 판정은 없다. 자식 읽기는 원래 birth를 보고하고 부모가 자기 시작 시각으로 판정하므로 영향이 없다.
+  근본 원인 2(테스트 배치): 12차 R1202 규칙상 실패한 이동의 별칭은 링크 소유와 관계없이 입력으로 남는다(바깥 공식 기록기 포함). 테스트 tearDown이 junction을 지우면, 지문의 별칭 재검증이 실행 중 변경(`INPUT_CHANGED_DURING_RUN`)으로 보아 unstable이 된다. 규칙은 넓히지 않았다.
+    수정: 이 fixture(`old`·`inner` junction)를 프로세스 종료 시(`atexit`, junction 먼저) 지우는 임시 폴더로 옮겼다. `verify_environment`의 지문 계산 뒤에 정리되며, 종료 후 잔여 폴더 0을 확인했다.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_nested_recorders_give_a_child_the_latest_start`를 추가했다(테스트 참조 수 변화 없음). 다루는 사례:
+    - 합성 `_child` 두 순서에서 넘기는 시작 시각이 늦은 쪽인지
+    - 바깥 기록기 시작 뒤·안쪽 기록기 시작 전에 만든 파일을 실제 자식이 chmod하면 안쪽 기록기가 `MUTATION_UNVERIFIABLE`인지(바깥 로그 폴더는 미리 생성)
+    수정 전 코드에서는 3건 실패, 수정 후 단독·중첩 모두 통과한다.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK(실패·오류·skip 0, 157 s) |
+    | `PYTHONIOENCODING=utf-8` | OK(실패·오류·skip 0, 155 s) |
+    `check_sdd.py --base 5c07aea` PASS. 소켓 `ResourceWarning`은 기존과 같다.
+  중첩 실행: 바깥 `Recorder(ROOT)` 아래에서 `tests.test_readset` 전체를 1회 실행했다. 결과는 37건 OK(실패·오류·skip 0)다. 바깥 partial은 `CHILD_NOT_ALLOWED`·`MUTATION_UNVERIFIABLE`·`OUTPUT_OWNERSHIP_UNCERTAIN`이고, `INPUT_CHANGED_DURING_RUN`은 없다. 별칭 2건 중 변경 0, 내용 변경 0이다.
+  공식 V3는 재실행하지 않았다(재검토 뒤 지시). 남은 한계: 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-19 22차 독립 교차검토(Codex Orca worker, 대상 `b3a69cd`, 검토 HEAD `323002a`)**: **PASS_WITH_FINDINGS**(P1 0, P2 1, P3 0). 최종 코드 후보 `b3a69cd`(로컬 커밋, 미게시). RA-1~RA-4 유지.
+  판정:
+    - 중첩 시작 시각 수정: 공식 suite 실패 원인 해소. 2단·3단 표본과 손자에서 가장 늦은 시작이 전달되고, 사이에 만든 파일의 chmod·삭제가 안쪽 기록기에 남는다.
+    - junction fixture 수명 이동: 테스트 격리 수정. 공식 경로는 `recorder.stop` → 지문 → 증거 저장 순서이고 `atexit`은 그 뒤에 실행된다. 종료 뒤 별칭을 다시 검사하면 판정 규칙이 변경을 계속 잡는다.
+  검토자 실행:
+    - 외부 `Recorder(ROOT)` 아래 `tests.test_readset` 전체: 37 OK, 별칭·내용 변경 0, `suite_fingerprint(verify_observed=True)` 성공
+    - 영향 3모듈: 138 OK, 실패·오류·skip 0
+  R2201(P2, 알려진 한계로 기록, 이번 수정 없음, 코디네이터 결정): Python 자식이 훅의 `readset`과 별개로 `scripts.readset`을 import해 로컬 기록기를 만드는 경우다. 두 모듈의 Popen 래퍼가 서로 다른 launch token을 써서, 손자의 표적 chmod가 로컬 기록기에 전달되지 않는다.
+    결과는 로컬 기록기의 `CHILD_HOOK_MISSING` partial이다(fail-closed). 오재사용은 없고, 실제 `tests/`가 이 경로에 도달하지도 않는다. `a397217`부터 있던 한계다.
+    후속 수정 시 두 import 경로가 한 기록기 상태와 launch token을 공유하는지 검증한다. 재사용 범위 결정과 함께 사용자에게 보고한다.
+  로컬 V3는 이 기록 커밋을 최종 후보 HEAD로 두고 1회 실행한다.
+- **2026-11-19 최종 후보 `5f42d00`(코드 `b3a69cd`) 공식 로컬 V3**: **PASS**. `verify_environment.py --base 5c07aea --evidence-dir --lock-home`를 1회 실행했다(작업 트리 clean, 실행 중 파일·git 설정 변경 없음).
+  결과: 743 tests OK, failures 0, errors 0, skips 0, eligible true, state stable true, returncode 0. 소요 1314 s(suite 1283.0 s).
+  evidence는 `suite-e1a72752…56d5.json`(sha256 `e1a727526a2ddfbc14a3759ad90ae3452f88b61386782f852cbba882859856d5`), suite fingerprint는 `5f62836c…b5ea`다. `check_sdd.py --base 5c07aea` PASS.
+  reuse: rejected(`FINGERPRINT_CHANGED`, `SOURCE_READSET_PARTIAL`, `SOURCE_STATE_UNSTABLE`, 직전 원본은 partial·unstable). 이번 실행은 executed이며 재사용 절감은 없다.
+  read set complete false, partial 사유 5(직전 FAIL의 `FINGERPRINT_INPUT_CHANGED_DURING_RUN`은 해소):
+    | 사유 | 표본 수 | 요지 |
+    | `CHILD_HOOK_MISSING` | 2 | `time.sleep(30)` 자식 1건(launched 244, hooked 243) |
+    | `CHILD_LOG_INCOMPLETE` | 5 | 자식 로그 5개 |
+    | `CHILD_NOT_ALLOWED` | 4 | 비 Python 자식(git 등, disallowed_count 17088) |
+    | `MUTATION_UNVERIFIABLE` | 5 | 열린 descriptor 4, `.local_runtime/harness-managed/test-tmp` mkdir 1 |
+    | `OUTPUT_OWNERSHIP_UNCERTAIN` | 5 | 임시 lock·SQLite 파일 |
+  이 증거의 read set은 partial이므로 다음 실행의 `offline_suite` 재사용 원본이 될 수 없다(재사용 범위는 사용자 결정 대상). 원격 Windows 두 조합은 확인하지 않았다. Task는 원격 CI 확인 전 verified로 올리지 않는다.
