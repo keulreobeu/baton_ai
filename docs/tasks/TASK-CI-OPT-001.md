@@ -1309,3 +1309,40 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   수정 전 코드 대조(`907b24c` scripts + 새 테스트, 사례별 분리 실행): unlink·이동 재점유 complete=True·읽기 기록 없음, 빈 `a+`·`a` 뒤 읽기·SQLite 사유 없음, junction 직접·자식 aliases=[]로 모두 실패. 정상 출력 사례는 전후 모두 complete. 수정 후 모두 통과.
   검토자 재현(r9_repro·r902_child) 수정본: R901 세 경우 complete=False·reuse 거부, R902 직접·자식 별칭 기록·지문 변경. V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 영향 3모듈에서 정상 출력이 partial로 바뀐 기존 사례는 SQLite 새 DB(R704)뿐. 로컬 V3 미실행.
   남은 한계: 실제 suite에서 `OUTPUT_OWNERSHIP_UNCERTAIN`이 늘 가능성(SQLite·MetricsStore 계열, `a`/`touch` 파일 재읽기, 비 Python 자식(git 등)이 만든 파일 읽기, Windows CopyFile 경로 등 감싼 호출 밖 생성)과 성능 미측정. 공식 V3 read set은 현재 `CHILD_NOT_ALLOWED`로 이미 partial이라 당장 재사용 손실은 없다. 파일 ID가 없는 파일시스템에서는 식별 입증이 불가해 partial. 원격 Windows 두 조합 미확인.
+- **2026-11-18 10차 독립 교차검토(Codex Orca worker, 대상 `f72002b`)**: **FAIL**(P1 2). 9차 R901·R902 재현 해소, RA-1~RA-4 유지. 반영 코드 후보 `6c9d5d5`(로컬 커밋, 미게시).
+  R1001(P1) 추정 면제를 이름별 첫 객체만 저장(`setdefault(canonical)`)해, 첫 객체 A가 자식 소유로 확인되면 같은 이름의 미소유 객체 B도 통과 → (이름, 관측 ID)마다 저장·종료 시 각각 검증(직접·자식 보고 동일, ID 미확인도 partial).
+  R1002(P1) 면제 분기가 별칭 기록보다 먼저 반환해 외부 junction 의존을 잃음((a) 실행이 만든 조상 아래 실패한 배타 생성, (b) ID로 입증한 출력 읽기) → 별칭을 면제와 분리한 `_keep_alias`. 입력은 항상, 면제 관측은 실행 전 링크일 때 기록. 링크 출처 불명은 partial. 자식은 `link_born` 보고.
+  같은 패턴 전수 점검(scripts/readset.py), 막은 지점:
+    (1) `_is_created` 추정 면제의 이름 단위 축약
+    (2) 자식 보고 추정 면제의 이름 단위 축약
+    (3) 종료 검증을 모든 (이름, ID)로
+    (4) `_open_event`가 면제 읽기에서 `_record_read`를 건너뜀
+    (5) 직접 읽기 면제 반환
+    (6) 직접 디렉터리 핸들 반환
+    (7) 직접 부재 면제(이름 소유·실행 생성 조상, 시도 스냅샷 포함)
+    (8) 자식 보고 면제 반환
+    (9) 자식 precreate 반환
+    (10) 자식 디렉터리 반환(자식 isdir 이벤트에 별칭 추가)
+    (11) `_listing` 직접·자식 면제 반환
+    (12) 성공한 생성의 시도 스냅샷 별칭(부모)
+    (13) `os.rename`/`os.replace` 출발·도착의 링크(감사 시점 스냅샷)
+  점검 후 유지한 지점과 이유:
+    - 장치·불가능 이름·`__pycache__`(파생) 조기 반환: 파일 의존이 아님
+    - `os.remove` 경로의 링크: 읽기·부재 관측이 아님
+    - `_removed`·`_unsure_removed`·`_appeared`·`_input_born`·`_record_absent`: 이름 사건이고 첫 관측으로 충분
+    - `_aliases`: 최신 값을 두고 변경을 검출
+    - `_created`/`_made`: 이름 소유와 생성 이력이고, 객체 입증은 `_owned_ids`
+    - 디렉터리 이름·birth 규칙: 9차 결정
+    - birth 없는 자식 보고: 이미 partial
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_every_exempt_object_and_link_is_kept` 추가. 다루는 사례:
+    - 실제 자식이 만든 객체 뒤 같은 이름의 두 번째 객체
+    - 자식 보고 두 ID(첫 ID는 나중에 입증)
+    - 실행 전 junction을 거친 실패 생성·입증 출력 읽기·자식 읽기·실행 생성 디렉터리 목록
+    - 실행이 만든 junction은 별칭 없이 complete
+  수정 전 코드 대조(`f72002b` scripts + 새 테스트, 사례별 분리 실행): 6개 결함 사례 모두 실패(사유 없음, aliases=[]). 실행 생성 링크 정상 사례는 전후 모두 complete·aliases=[]. 수정 후 모두 통과.
+  검토자 재현(r10_repro) 수정본: R1001 partial·reuse 거부, R1002a/b 별칭 기록·지문 변경·reuse 거부. 8·9차 재현 판정 유지. V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 기존 테스트 단언 변경 없음(정상 출력이 partial로 바뀐 기존 사례 없음). 로컬 V3 미실행.
+  남은 한계:
+    - 실행 시작 후 `CREATED_MARGIN_SECONDS`(0.05초) 안에 만든 링크는 실행 전 링크로 보고 기록한다. 실행이 끝나기 전에 그 링크를 지우면 지문 재확인에서 입력 변경이 될 수 있다(보수 방향).
+    - 실행 전 링크를 거친 출력 읽기가 실제 suite에서 별칭과 partial을 늘릴 수 있다. 빈도와 성능은 측정하지 않았다.
+    - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
+    - 원격 Windows 두 조합은 확인하지 않았다.
