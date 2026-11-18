@@ -83,6 +83,8 @@ V1/V2 결과(부분 여부와 무관)는 `final_evidence_eligible=false`이며 �
 
 **2026-11-18 7차 재검토 반영(ChatGPT `c460275` FAIL, P2 1):** R602~R605 resolved, R605·R603 정책 수용. 남은 R701: 통과 정착의 2단계가 실패해 `settlement_pending=true`와 lease가 남은 상태에서 제어(pause·cancel)가 오면, 시작 전 제어 정착(`_settle_unstarted_control`)이 이를 새 중단으로 보고 검증 결과를 지웠다. 이제는 그 분기가 먼저 남은 2단계를 마친다. 그러면 제어가 이미 정착된 유효 결과를 멈출 뿐이다. 2단계가 다시 실패하면 lease와 표시를 그대로 두고, 같은 종료 이벤트가 다시 와서 마친다. 불변식: `settlement_pending=true`이면 lease가 있다. 1단계 뒤 제어는 저장된 유효 결과를 무효화하지 않는다. 2단계 결과와 표시 해제 뒤에 lease·slot을 해제한다. 같은 종료 이벤트 재처리는 완료된 정착을 바꾸지 않는다.
 
+**2026-11-18 8차 재검토 반영(Codex `4a9e564` FAIL, P2 2):** R701 resolved. R801: 검사 결과는 검사가 본 파일 내용에만 유효하다. Orca author 정착(`ingest`)은 검사 전 스냅샷과 마지막 스냅샷이 다르면 `validation_state_changed`로 BLOCKED, 통과·상태 없음, 검사 결과는 상태 변경 표시(exit 2), Wiki 생략으로 처리한다. 로컬 `_run`·`_verify`도 검사 전 스냅샷과 마지막 스냅샷을 비교해 다르면 같은 사유로 BLOCKED다. R802: lease를 남기는 통과 정착 1단계는 2단계 Wiki 결과용 공간(`SETTLEMENT_HEADROOM` 2048바이트)을 남겨야 저장되고, 남지 않으면 즉시 compact fallback(BLOCKED, 통과 없음, lease·slot 해제)이다. 2단계의 전체 Wiki 결과가 영구적으로 거부(`unsafe_payload`)되면 완료 게이트가 쓰는 최소 Wiki 정보(`event_id`·`blocking`, 불명확하면 blocking)만 저장하고 기존 검증 결과는 그대로 둔 채 pending·lease를 같은 쓰기에서 해제한다. 그것도 거부되면 fail-closed(BLOCKED, 통과 없음, 해제)다. 일시적 I/O 실패는 기존처럼 lease·pending을 남겨 종료 이벤트 재수신·제어로 재시도한다.
+
 ## CI-VTIER-001-REQ-03 실행 경로
 
 ### CI-VTIER-001-AC-05

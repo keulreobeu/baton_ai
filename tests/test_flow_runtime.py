@@ -296,6 +296,152 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
                 self.assertEqual(result["wiki"]["reason"], "after-pause")
                 self.store.control(name, "cancel")  # release the scope for the next case
 
+    PASSING = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+
+    def slot_held(self, name):
+        directory = self.root / ".local_runtime/baton-locks"
+        return any(json.loads(p.read_text(encoding="utf-8")).get("task") == name for p in directory.glob("*.json"))
+
+    def test_edit_after_the_checks_is_no_validated_settlement(self):
+        """CI-VTIER-001 8th review R801: an allowed file whose contents change after the checks
+        (before the last snapshot) leaves no pass: BLOCKED, status null, checks marked as
+        state-changed, no Wiki verification; the lease and the slot are released."""
+        import baton.runtime as runtime_module
+        from baton.wiki_contracts import WIKI_DIR
+        policy = self.root / WIKI_DIR / "LIFECYCLE_POLICY.md"
+        policy.parent.mkdir(parents=True, exist_ok=True); policy.touch()
+        client = FakeOrca(self.root)
+        self.orca("ORCALATE")
+        row = Orchestrator(self.store, runtime_client=client).run("ORCALATE")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        real_snapshot = runtime_module.snapshot
+        def edit_before_final_snapshot(tree, *args, **kwargs):
+            if not args and not kwargs:  # the snapshot after validation
+                (path / "src/value.py").write_text("value = 3\n", encoding="utf-8")
+            return real_snapshot(tree, *args, **kwargs)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)), \
+                patch.object(runtime_module, "snapshot", edit_before_final_snapshot), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki for a changed tree")):
+            row = ingest(self.store, "ORCALATE", self.receipt(did), client)
+        result = row["result"]
+        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "validation_state_changed"))
+        self.assertIs(result["validation_passed"], False)
+        self.assertIsNone(result["validation_status"])
+        self.assertIsNone(result["wiki"])
+        self.assertNotIn("settlement_pending", result)
+        self.assertEqual([(c["exit_code"], c["stop_reason"]) for c in result["validation"]], [(2, "validation_state_changed")])
+        self.assertFalse(self.slot_held("ORCALATE"))
+
+    def test_local_run_and_verify_reject_an_edit_after_the_checks(self):
+        """CI-VTIER-001 8th review R801: the local _run and _verify paths compare the files the
+        checks ran on with the last snapshot; a change is BLOCKED with no pass."""
+        def edit_then_pass(runner, task, tree, stop, **kwargs):
+            (tree / "src/value.py").write_text("value = 7\n", encoding="utf-8")
+            return [{**deepcopy(self.PASSING[0]), "planner": None}]
+        self.assertEqual(self.author()["state"], "REVIEW_REQUIRED")
+        with patch.object(Orchestrator, "validate", edit_then_pass):
+            row = Orchestrator(self.store).verify("FLOW")
+        self.assertEqual((row["state"], row["result"].get("reason")), ("BLOCKED", "validation_state_changed"))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+        body = deepcopy(self.body); body["task_id"] = "FLOWRUN"
+        self.store.create(body)
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
+        with patch.object(Orchestrator, "validate", edit_then_pass):
+            row = Orchestrator(self.store, {"mock": Author()}).run("FLOWRUN")
+        self.assertEqual((row["state"], row["result"].get("reason")), ("BLOCKED", "validation_state_changed"))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+
+    def large_settlement(self, client, name, filler):
+        self.orca(name)
+        row = Orchestrator(self.store, runtime_client=client).run(name)
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id=?", (name,)).fetchone()[0])
+            values["filler"] = "x" * filler
+            c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (json.dumps(values), name))
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        return did
+
+    def test_second_step_refused_for_size_stores_a_compact_wiki_and_releases(self):
+        """CI-VTIER-001 8th review R802: a Wiki outcome too large for the stored record is kept as
+        its compact form (event_id, blocking) with the validation result unchanged, on the end
+        event and on a control after a failed step; the lease, the pending mark and the slot
+        are released and a repeated end event is a no-op."""
+        from baton.contracts import encode
+        from baton.runtime import request_control
+        large = {"event_id": "VALIDATED-" + "a" * 32, "action": "RECORD", "execution": "DONE",
+                 "blocking": False, "documents": ["d" * 130000]}
+        client = FakeOrca(self.root)
+        for number, via_control in enumerate((False, True)):
+            with self.subTest(via_control=via_control):
+                name = "ORCABIG%d" % number
+                did = self.large_settlement(client, name, 90000)
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)):
+                    if via_control:
+                        with patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+                            ingest(self.store, name, self.receipt(did), client)
+                        with patch("baton.wiki_cli.assess", return_value=deepcopy(large)):
+                            row = request_control(self.store, name, "cancel", client)
+                    else:
+                        with patch("baton.wiki_cli.assess", return_value=deepcopy(large)):
+                            row = ingest(self.store, name, self.receipt(did), client)
+                result = row["result"]
+                self.assertEqual(row["state"], "CANCELLED" if via_control else "REVIEW_REQUIRED")
+                self.assertIsNone(row["lease"])
+                self.assertIs(result["settlement_pending"], False)
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["validation_status"], "passed")
+                self.assertEqual(result["wiki"], {"event_id": large["event_id"], "action": "RECORD", "execution": "DONE",
+                                                  "blocking": False, "reason": "wiki_outcome_compacted", "compacted": True})
+                self.assertLessEqual(len(encode(result).encode()), 128000)
+                self.assertFalse(self.slot_held(name))
+                with patch("baton.wiki_cli.assess", side_effect=AssertionError("settled once")):
+                    self.assertEqual(ingest(self.store, name, self.receipt(did), client)["result"], result)
+                if not via_control:
+                    self.store.control(name, "cancel")  # release the scope for the next case
+
+    def test_first_step_without_room_for_the_wiki_outcome_falls_back_and_releases(self):
+        """CI-VTIER-001 8th review R802: a first settlement step that fits the limit but leaves
+        no room for the second step's Wiki outcome takes the compact fallback at once (BLOCKED,
+        no pass, lease and slot released), so no second step can be refused forever."""
+        from baton import managed, runtime as runtime_module
+        from baton.contracts import encode
+        from baton.runtime import request_control
+        # The limit and the reserve as defined (literal values only for a run against older code).
+        PAYLOAD_LIMIT = getattr(managed, "PAYLOAD_LIMIT", 128000)
+        SETTLEMENT_HEADROOM = getattr(runtime_module, "SETTLEMENT_HEADROOM", 2048)
+        client = FakeOrca(self.root)
+        # Measure the stored first step of an equal-sized record (same name length, same paths).
+        did = self.large_settlement(client, "ORCASIZE0", 100000)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)), \
+                patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+            ingest(self.store, "ORCASIZE0", self.receipt(did), client)
+        measured = len(encode(self.store.get("ORCASIZE0")["result"]).encode())
+        with patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "x", "blocking": False}):
+            request_control(self.store, "ORCASIZE0", "cancel", client)
+        filler = 100000 + PAYLOAD_LIMIT - measured - SETTLEMENT_HEADROOM // 2
+        did = self.large_settlement(client, "ORCASIZE1", filler)
+        wiki = {"event_id": "VALIDATED-" + "b" * 32, "action": "RECORD", "blocking": False, "documents": ["d" * 1500]}
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)), \
+                patch("baton.wiki_cli.assess", return_value=wiki):
+            row = ingest(self.store, "ORCASIZE1", self.receipt(did), client)
+            replay = ingest(self.store, "ORCASIZE1", self.receipt(did), client)
+        self.assertEqual((row["state"], row["lease"], row["result"]["reason"]), ("BLOCKED", None, "result_unrecordable"))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertNotEqual(row["result"].get("settlement_pending"), True)
+        self.assertEqual(replay["result"], row["result"])
+        self.assertFalse(self.slot_held("ORCASIZE1"))
+
     def test_orca_dispatch_notification_and_duplicate_are_idempotent(self):
         self.orca(); client = FakeOrca(self.root)
         row = Orchestrator(self.store, runtime_client=client).run("ORCA")

@@ -125,3 +125,8 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   흐름 변경(2026-11-18 사용자): 다음 교차검토부터 Codex(Orca worker)로 진행하고, PASS까지 반복한다. 새 세션의 코디네이터가 이어받는다.
 - **2026-11-18 7차 수정 후보 `4a9e564`(= CI-VTIER `1cb6cc7` + CI-OPT 7차 수정 `e826341` 병합) V2**: 병합 뒤 `test_readset`·`test_ci_plan`·`test_verify_environment` 144 OK, check_sdd PASS.
   로컬 V3는 최종 후보에서 1회. 8차 재검토(Codex)·게시는 새 세션 코디네이터가 진행. verified·병합 아님.
+- **2026-11-18 8차 이종 모델 재검토(Codex Orca worker, 대상 `4a9e564`)**: **FAIL**(P1 0, P2 2). R701 resolved, R605·R603 정책 유지, CI-OPT 병합 회귀 없음.
+  R801 검사 반환 뒤 마지막 스냅샷 전 허용 경로 내용 변경이 HEAD·scope 확인만 통과해 이전 검사 통과·Wiki verified로 저장 → `ingest`는 검사 전 스냅샷과 마지막 스냅샷이 다르면 `validation_state_changed` BLOCKED(통과·상태 없음, 검사 exit 2·상태 변경 표시, Wiki 생략). 로컬 `_run`·`_verify`도 같은 비교.
+  R802 1단계는 한도 안이나 Wiki 결과를 합친 2단계가 매번 `unsafe_payload` → lease·pending·슬롯 고립(제어로도 해소 안 됨) → 1단계에 `SETTLEMENT_HEADROOM`(2048바이트) 확보, 없으면 즉시 compact fallback. 2단계 전체 Wiki 영구 거부 시 최소 Wiki(`event_id`·`blocking`)만 저장하고 검증 결과 유지·pending·lease 동시 해제, 그것도 거부되면 fail-closed BLOCKED. 일시적 I/O 실패는 기존 재시도.
+  회귀 `test_edit_after_the_checks_is_no_validated_settlement`·`test_local_run_and_verify_reject_an_edit_after_the_checks`·`test_second_step_refused_for_size_stores_a_compact_wiki_and_releases`·`test_first_step_without_room_for_the_wiki_outcome_falls_back_and_releases`(AC-04). 수정 전 코드(`4a9e564` src)에서 4개 모두 실패 확인(`_run` 경로 별도 확인 포함), 수정 후 통과.
+  V2: 영향 모듈 `test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability` 265 OK(skip 0), check_sdd `--base 762739f` PASS. 로컬 V3 생략(최종 후보에서 1회). CI-OPT 8차 병합 전. 남은 한계: 로컬 `finish()` 2단계 Wiki 저장의 크기 거부는 이번 범위 밖(지적 대상은 Orca 경로). verified·병합 아님.

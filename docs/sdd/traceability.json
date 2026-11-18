@@ -1714,6 +1714,22 @@
               "symbol": "FlowRuntimeTests.test_control_after_a_failed_second_step_keeps_the_settled_result"
             },
             {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_edit_after_the_checks_is_no_validated_settlement"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_local_run_and_verify_reject_an_edit_after_the_checks"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_second_step_refused_for_size_stores_a_compact_wiki_and_releases"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_first_step_without_room_for_the_wiki_outcome_falls_back_and_releases"
+            },
+            {
               "file": "tests/test_managed_harness.py",
               "symbol": "ValidationPlannerIntegrationTests.test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time"
             },

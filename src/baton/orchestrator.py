@@ -123,6 +123,20 @@ def validation_stop_reason(checks):
     return None
 
 
+def mark_state_changed(results):
+    """A check result whose tree changed after it ran proves nothing about the current tree.
+    CI-VTIER-001 8th review R801: also applied when the change appears after validate returned."""
+    for result in results or []:
+        if not isinstance(result, dict):
+            continue
+        result["exit_code"] = 2
+        result["state_changed"] = True
+        # 6th review R603: a stop reason (pause/cancel/timeout) is kept.
+        if result.get("stop_reason") not in STOP_REASONS:
+            result["stop_reason"] = "validation_state_changed"
+    return results
+
+
 def official_v3_fields(checks, *, stopped=False):
     """CI-VTIER-001 3rd review R02: an unresolved official V3 failure is kept in the Task
     result apart from the latest validation. A V3 that failed sets it; only a complete,
@@ -434,6 +448,10 @@ class Orchestrator:
                                        **settled_validation(validation, stopped=True))
                 final_changes = snapshot(tree); check_scope(task, final_changes)
                 if git(tree, "rev-parse", "HEAD").strip() != base: raise HarnessError("worktree_head_changed")
+                if final_changes != after:
+                    # CI-VTIER-001 8th review R801: the checks ran on the files of `after`;
+                    # different file contents now are no validated tree (BLOCKED, no pass).
+                    raise HarnessError("validation_state_changed")
                 passed = all(c["exit_code"] == 0 for c in validation)
                 if passed:
                     state = "REVIEW_REQUIRED"  # Completion always requires independent evidence.
@@ -645,12 +663,7 @@ class Orchestrator:
             except Exception:
                 stable = False
             if not stable:
-                for result in results:
-                    result["exit_code"] = 2
-                    result["state_changed"] = True
-                    # 6th review R603: a stop reason (pause/cancel/timeout) is kept.
-                    if result.get("stop_reason") not in STOP_REASONS:
-                        result["stop_reason"] = "validation_state_changed"
+                mark_state_changed(results)
             if not results:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
@@ -853,7 +866,7 @@ class Orchestrator:
         started = time.monotonic()
         try:
             tree = prepare_worktree(self.store, row)
-            check_scope(task, snapshot(tree))
+            before = snapshot(tree); check_scope(task, before)
             # 4th review R402: a new validation replaces the previous result even when it
             # ends by an error or an interruption.
             self.store.update(task_id, lease, "VALIDATING", result=dict(CLEARED_VALIDATION))
@@ -868,6 +881,8 @@ class Orchestrator:
             changes = snapshot(tree); check_scope(task, changes)
             if git(tree, "rev-parse", "HEAD").strip() != row["result"].get("base_commit"):
                 raise HarnessError("worktree_head_changed")
+            if changes != before:
+                raise HarnessError("validation_state_changed")  # 8th review R801, as in _run.
             passed = bool(checks) and all(check["exit_code"] == 0 for check in checks)
             return self.finish(task_id, lease, "REVIEW_REQUIRED" if passed else "FAILED", validation=checks, validation_passed=passed,
                                changed_files=changes, **settled_validation(checks))

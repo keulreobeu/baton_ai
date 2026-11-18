@@ -653,7 +653,7 @@ def ingest(store, task_id, receipt, client=None):
                         checks = []
                     passed = bool(checks) and all(x["exit_code"] == 0 for x in checks)
                     control = store.get(task_id)["control"]
-                    from .orchestrator import validation_stop_reason
+                    from .orchestrator import mark_state_changed, validation_stop_reason
                     nested_stop = validation_stop_reason(checks)  # 5th review R502: nested stops too
                     passed = passed and not control and not nested_stop  # 4th review R402
                     state = ("CANCELLED" if control == "cancel" else "PAUSED" if control == "pause"
@@ -665,10 +665,17 @@ def ingest(store, task_id, receipt, client=None):
                         check_scope(row["task"], final_changes)
                         if git(path, "rev-parse", "HEAD").strip() != binding["base_sha"]:
                             raise HarnessError("worktree_head_changed")
+                        if final_changes != changes:
+                            # CI-VTIER-001 8th review R801: the checks ran on the file contents
+                            # of `changes`; a tree whose contents differ now is not the
+                            # validated one (no pass, no Wiki verification).
+                            raise HarnessError("validation_state_changed")
                     except (HarnessError, OSError) as exc:
                         failure = str(exc) if isinstance(exc, HarnessError) else "workspace_snapshot_failed"
                         passed = False
                         if not control: state = "BLOCKED"
+                        if failure == "validation_state_changed":
+                            mark_state_changed(checks)
                     from .wiki_cli import assess
                     from .orchestrator import settled_validation
                     # 5th review R503: a tree that is not the validated one (HEAD/scope changed
@@ -723,9 +730,34 @@ def _finish_author_settlement(store, task_id, lease):
         return row
     wiki = (assess(store, task_id, {"changed_files": result.get("changed_files"), "validation": result.get("validation")})
             if row["state"] == "REVIEW_REQUIRED" and result.get("validation_passed") is True else None)
-    return store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": wiki,
-                                                             "settlement_pending": False},
-                        release=True, settled_external=True)
+    try:
+        return store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": wiki,
+                                                                 "settlement_pending": False},
+                            release=True, settled_external=True)
+    except HarnessError as exc:
+        if str(exc) != "unsafe_payload": raise  # A transient failure keeps the retry by the end event.
+    # CI-VTIER-001 8th review R802: a permanent refusal of the full Wiki outcome stores only what
+    # the settlement and the completion gate (evidence: event_id, blocking) need, in the space
+    # the first step reserved; the stored validation result is kept as it is.
+    compact = None if wiki is None else {
+        "event_id": wiki.get("event_id") if isinstance(wiki.get("event_id"), str) and len(wiki["event_id"]) <= 100 else None,
+        "action": str(wiki.get("action"))[:40], "execution": str(wiki.get("execution"))[:40],
+        "blocking": wiki.get("blocking") is not False, "reason": "wiki_outcome_compacted", "compacted": True}
+    try:
+        return store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": compact,
+                                                                 "settlement_pending": False},
+                            release=True, settled_external=True)
+    except HarnessError as exc:
+        if str(exc) != "unsafe_payload": raise
+    # Still refused: fail closed (no pass), releasing the lease (the compact fallback shrinks the record).
+    return _settle_author(store, task_id, lease, "BLOCKED",
+                          {"runtime": result["runtime"], "wiki": None, "settlement_pending": False,
+                           "reason": "wiki_outcome_unrecordable"})
+
+
+# Bytes reserved by a pending first settlement step: the compact Wiki outcome (bounded fields)
+# and a stop request recorded on the binding in between, with margin.
+SETTLEMENT_HEADROOM = 2048
 
 
 def _settle_author(store, task_id, lease, state, result, **options):
@@ -735,8 +767,12 @@ def _settle_author(store, task_id, lease, state, result, **options):
     a path that did not validate the attempt leaves no pass and no status."""
     result = {"validation_passed": False, "validation_status": None, **result}
     release = options.pop("release", True)
+    # 8th review R802: a settlement that keeps its lease for the second step reserves the
+    # space that step's Wiki outcome needs; otherwise it takes the compact fallback now.
+    headroom = 0 if release else SETTLEMENT_HEADROOM
     try:
-        return store.update(task_id, lease, state, release=release, settled_external=True, result=result, **options)
+        return store.update(task_id, lease, state, release=release, settled_external=True, result=result,
+                            headroom=headroom, **options)
     except HarnessError as exc:
         if str(exc) != "unsafe_payload": raise
         # Stored fields count too, so the fallback must shrink the record, not only add to it.

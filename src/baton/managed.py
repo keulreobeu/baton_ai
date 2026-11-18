@@ -11,6 +11,8 @@ import uuid
 
 from .contracts import HarnessError, canonical_path, digest, encode, identifier, overlaps, replace_file, safe
 
+PAYLOAD_LIMIT = 128_000  # contracts.safe's size limit
+
 ACTIVE = {"PLANNING", "RUNNING", "VALIDATING", "RETRYING"}
 TERMINAL = {"COMPLETED", "CANCELLED"}
 STATES = ACTIVE | TERMINAL | {"CREATED", "READY", "REVIEW_REQUIRED", "FAILED", "BLOCKED", "PAUSED",
@@ -273,7 +275,7 @@ class ManagedStore:
         return self.get(task)
 
     def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False,
-               yield_to_control=False):
+               yield_to_control=False, headroom=0):
         overridden = False
         if state not in STATES:
             raise HarnessError("invalid_state")
@@ -321,6 +323,9 @@ class ManagedStore:
                 result["official_v3_unresolved"] = True
             values.update(result)
             safe(values)
+            if headroom and len(encode(values).encode()) + headroom > PAYLOAD_LIMIT:
+                # CI-VTIER-001 8th review R802: room a later write to this record must still have.
+                raise HarnessError("unsafe_payload")
             elapsed = r["elapsed"] + (max(0, time.time() - r["started"]) if release else 0)
             c.execute("UPDATE managed_tasks SET state=?,result=?,worktree=?,lease=?,pid=?,elapsed=? WHERE id=?", (state, encode(values), worktree or r["worktree"], None if release else lease, None if release else r["pid"], elapsed, task))
             self.event(c, task, state, result)
