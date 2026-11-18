@@ -55,3 +55,7 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   추가 테스트: 실제 unittest subprocess 음성 테스트(load_tests 축소·stdout 위조·stderr 접두·subTest 성공/실패·setUpClass 실패·skip), 기록 없음 실패, `validation_status`,
   실제 `ManagedStore` 경유 V3 실패 → `outside_failures` → V3 성공 → V1 복귀, 비정상 graph 8종, inventory 단독 불완전. CI-OPT 재검토 수정 `217fc73`을 merge `f0c0648`로 수용.
   대상 모듈 직접 실행: test_ci_plan 90 OK, test_managed_harness 49 OK.
+- **2026-11-18 재검토 수정 후보 `0120358`(= CI-OPT `217fc73` 병합 + CI-VTIER 수정) 실측**: 깨끗한 HEAD에서 실제 `Orchestrator.validate` V2(checkpoint) — 기록 실행기로 332 tests passed,
+  `required_tests_executed` 통과(선택 332 ID 전부 기록 확인), 필수 회귀 7모듈, 520.6 s(CI-OPT V3와 동시 실행으로 느림), `final_evidence_eligible=false`, 사본 `CI-VTIER-001-v2-0120358.json`.
+  공식 로컬 V3(`--base 762739f --evidence-dir`) 751 tests OK, skips 0, failures/errors 0, eligible true, state stable, 1233 s, evidence `263da800…`(commit `0120358`),
+  read set partial(`CHILD_NOT_ALLOWED` 17,298·`CHILD_LOG_INCOMPLETE`), 사본 `CI-VTIER-001-v3-0120358.log`. 재검토·원격 CI 대기(push·PR 미승인). verified·병합 아님.
