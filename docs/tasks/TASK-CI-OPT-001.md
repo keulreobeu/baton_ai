@@ -1243,3 +1243,5 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   전역 `~/.gitconfig`에 신원을 추가 — R301 수정이 외부 입력 변경을 의도대로 검출(증거 `bc3c8eca…` 비적격, 그 SHA 증거로 쓰지 않음). 재실행: 742 tests OK, skips 0, eligible true,
   state stable, 1366 s, evidence `fa02f4c0…`(commit `4244da7`), read set partial(`CHILD_NOT_ALLOWED` 16,877·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` launched 187/hooked 186).
   로그 사본 `CI-OPT-001-v3-iso-4244da7.log`(1회차)·`-rerun.log`. 이후 커밋 신원은 저장소 로컬 설정(lwwde07, 사용자 지시)으로 한다. 4차 재검토·게시는 승인 대기.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 4차 패키지")**: 원격 `codex/ci-opt-001-r5`=`9c0b793`, 미게시 `4244da7`·`4c7a03b`·이 기록 커밋. 작성자 lwwde07(기존 게시 커밋과 같은 신원),
+  허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `4244da7` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
