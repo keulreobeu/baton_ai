@@ -898,6 +898,37 @@ class SuiteReuseTests(unittest.TestCase):
         with self.assertRaises(cp.PlanError) as caught:
             fp(moved)
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        self.check_unreadable_input_never_hides_another_input_change()  # 4th review R402
+
+    def check_unreadable_input_never_hides_another_input_change(self):
+        """CI-OPT-001 4th review R402: an unreadable input is noted and the other inputs
+        are still compared: a change elsewhere is INPUT_CHANGED_DURING_RUN, with or
+        without a listing change; with no change the unreadable code is reported."""
+        watched = Path(self.temp.name) / "watched-r402"
+        watched.mkdir()
+        listing = [{"path": str(watched), "scope": "outside", "ok": True, "entries": []}]
+        first = Path(self.temp.name) / "a-r402.cfg"
+        second = Path(self.temp.name) / "b-r402.cfg"
+        for path in (first, second):
+            path.write_text("before", encoding="utf-8")
+        rs = readset(repo_reads=[], listings=listing,
+                     outside_reads=[{"path": str(p), "via": "open", "sha256": cp._content(p)} for p in (first, second)])
+        fp = lambda record: cp.suite_fingerprint(self.root, record, environ=self.env, manifest=FIXED_MANIFEST,
+                                                 git=FIXED_GIT, verify_observed=True)
+        real = cp._content
+        unreadable = lambda path: None if Path(path) == first else real(path)
+        with patch.object(cp, "_content", unreadable):
+            with self.assertRaises(cp.PlanError) as caught:
+                fp(rs)
+            self.assertEqual(str(caught.exception), "OUTSIDE_UNREADABLE")
+            second.write_text("after", encoding="utf-8")
+            with self.assertRaises(cp.PlanError) as caught:
+                fp(rs)
+            self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+            (watched / "new.txt").write_text("x", encoding="utf-8")
+            with self.assertRaises(cp.PlanError) as caught:
+                fp(rs)
+            self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
 
     def test_failed_listing_keeps_its_error_type(self):
         """CI-OPT-001 re-review N01: a listing that failed with FileNotFoundError during the

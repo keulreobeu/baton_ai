@@ -302,6 +302,7 @@ class EvidenceReuseTests(unittest.TestCase):
         """CI-OPT-001 3rd review R301 (reviewer's reproduction): a listing change and an
         outside content change in one run fail the run; a change the recorder itself saw
         (INPUT_CHANGED_DURING_RUN in its read set) fails it too."""
+        base = self.readset
         watched = Path(self.temp.name) / "watched"
         watched.mkdir()
         outside = Path(self.temp.name) / "outside.cfg"
@@ -318,6 +319,29 @@ class EvidenceReuseTests(unittest.TestCase):
         self.readset = dict(self.readset, listings=[], outside_reads=[], complete=False,
                             partial_reasons=["INPUT_CHANGED_DURING_RUN"])
         code, summary = self.run_main()
+        self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
+        self.check_unreadable_input_and_a_changed_input_is_unstable(base)  # 4th review R402
+
+    def check_unreadable_input_and_a_changed_input_is_unstable(self, base):
+        """CI-OPT-001 4th review R402 (reviewer's reproduction): one input becomes
+        unreadable, another changes and a listed directory gets a new file; the run
+        is unstable, not eligible evidence."""
+        watched = Path(self.temp.name) / "watched-r402"
+        watched.mkdir()
+        first = Path(self.temp.name) / "a.cfg"
+        second = Path(self.temp.name) / "b.cfg"
+        for path in (first, second):
+            path.write_text("before", encoding="utf-8")
+        self.readset = dict(base, listings=[{"path": str(watched), "scope": "outside", "ok": True, "entries": []}],
+                            outside_reads=[{"path": str(p), "via": "open", "sha256": self.cp._content(p)}
+                                           for p in (first, second)])
+        real = self.cp._content
+        def change():
+            (watched / "new.txt").write_text("x", encoding="utf-8")
+            second.write_text("after", encoding="utf-8")
+        self.during_suite = change
+        with patch.object(self.cp, "_content", lambda path: None if Path(path) == first else real(path)):
+            code, summary = self.run_main()
         self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
 
     def test_lock_home_requires_evidence_dir(self):

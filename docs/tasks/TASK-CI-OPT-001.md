@@ -1246,3 +1246,11 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 4차 패키지")**: 원격 `codex/ci-opt-001-r5`=`9c0b793`, 미게시 `4244da7`·`4c7a03b`·이 기록 커밋. 작성자 lwwde07(기존 게시 커밋과 같은 신원),
   허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `4244da7` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
 - **2026-11-18 원격 CI(`d4d378b`, PR #16)**: run `44228670863` plan·gate success, Windows 3.11·3.12 각 742 tests OK, failures/errors/skips 0, eligible true. `d4d378b`(코드 `4244da7`)에만 귀속. 4차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 4차 이종 모델 재검토(ChatGPT, 대상 `4244da7`)**: **FAIL**(P1 2, P2 2). R304 resolved, R301·R302·R303 partial. RA-4는 승인 가능 판정. 격리 재현(Linux 3.13.5).
+  R401(P1) 같은 입력의 반복 읽기에서 처음 해시만 유지 → A→B→A 변경이 PASS·재사용 → 재관측 값 비교(해시 차이·삭제는 즉시, 부재→출현은 종료 시 이 실행의 생성 기록과 대조).
+  R402(P1) 앞 입력의 `OUTSIDE_UNREADABLE`이 뒤 입력 변경을 가려 stable·eligible → 읽기 불가는 기록 후 계속 비교, 입력 변경 우선.
+  R403(P2) 최종 병합 뒤 로그 축소·같은 크기 재작성 미검출 → 종료 시 로그 = 병합 바이트(길이·SHA-256) 확인. R404(P2) hook pid와 로그 파일 불일치·미실행 토큰 hook 허용,
+  큰 정수 exit 시간 `OverflowError` → hook pid = 파일 pid·토큰 필수·hook 토큰 ⊆ 실행 토큰, 정수 시간은 그대로 유효(OverflowError도 손상으로 처리).
+  회귀 6종(readset 4·ci_plan 1·verify_environment 1: A→B→A·삭제·미기록 출현·자식 생성 출력 정상·최종 병합 뒤 축소·재작성·hook pid·미실행 토큰·읽기 불가+변경).
+  새 테스트 `test_input_read_again_must_still_be_what_was_first_read` 1개, 나머지는 같은 주제의 기존 AC-12 테스트에서 호출(AC당 참조 30개 상한).
+  실제 venv 자식에서 로그 이름(인터프리터 pid)이 런처 pid와 다름을 확인 — 런처 pid 강제 없음 유지. 영향 3모듈 138 OK, check_sdd PASS.

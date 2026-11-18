@@ -947,6 +947,15 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
             reads[key] = record
     names = set(sdd.git(root, "ls-files", "-co", "--exclude-standard", "-z").split("\0")) - {""}
     need(len(names) <= 20000, "MANIFEST_LIMIT")
+    # 4th review R402: an input that cannot be read is noted, not raised, so every
+    # other input is still compared; a change found anywhere takes precedence.
+    problem = {"changed": False, "error": None}
+
+    def soft_need(condition, code):
+        if not condition and problem["error"] is None:
+            problem["error"] = code
+        return condition
+
     files, sections = [], []
     for name in sorted(names):
         if complete and doc_candidate(name):
@@ -962,15 +971,15 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
                     sections.append([name, "*", "unreadable"])
                 continue
         content = _content(root / name)
-        need(content is not None, "FILE_UNREADABLE")
+        soft_need(content is not None, "FILE_UNREADABLE")
         files.append([name, content])
     observed = {fold(r["path"]): ("missing" if r.get("absent") else r.get("sha256"))
                 for r in readset.get("repo_reads", [])}
 
     def check(key, content):
         recorded = observed.get(key)
-        if verify_observed and recorded is not None and recorded != content:
-            raise PlanError("INPUT_CHANGED_DURING_RUN")
+        if verify_observed and recorded is not None and content is not None and recorded != content:
+            problem["changed"] = True
 
     for name, content in files:
         check(fold(name), content)
@@ -981,7 +990,7 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         if parts[0] == ".venv" or "__pycache__" in parts:
             continue
         content = _content(root / name)
-        need(content is not None, "FILE_UNREADABLE")
+        soft_need(content is not None, "FILE_UNREADABLE")
         check(fold(name), content)
         ignored.append([name, content])
     listings, observed_listing, listing_changed = [], {}, False
@@ -1009,29 +1018,35 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
     outside = []
     for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):
         content = _content(Path(record["path"]))
-        need(content is not None, "OUTSIDE_UNREADABLE")
+        soft_need(content is not None, "OUTSIDE_UNREADABLE")
         expected = "missing" if record.get("absent") else record.get("sha256")
-        if verify_observed and expected is not None and expected != content:
-            raise PlanError("INPUT_CHANGED_DURING_RUN")
+        if verify_observed and expected is not None and content is not None and expected != content:
+            problem["changed"] = True
         outside.append([record["path"], content])
     env_reads = []
     for record in sorted(readset.get("env_reads", []), key=lambda r: r["path"]):
         content = _content(Path(record["path"]))
-        need(content is not None, "ENV_INPUT_UNREADABLE")
+        soft_need(content is not None, "ENV_INPUT_UNREADABLE")
         expected = "missing" if record.get("absent") else record.get("sha256")
-        if verify_observed and expected is not None and expected != content:
-            raise PlanError("INPUT_CHANGED_DURING_RUN")
+        if verify_observed and expected is not None and content is not None and expected != content:
+            problem["changed"] = True
         env_reads.append([record["path"], content])
     aliases = []
     for record in sorted(readset.get("aliases", []), key=lambda r: r["path"]):
         try:
             target = os.path.realpath(record["path"])
         except (OSError, ValueError):
-            raise PlanError("ALIAS_UNRESOLVABLE") from None
+            soft_need(False, "ALIAS_UNRESOLVABLE")
+            aliases.append([record["path"], None])
+            continue
         same = (os.path.normcase(target) == os.path.normcase(record["target"])) if os.name == "nt" else target == record["target"]
         if verify_observed and not same:
-            raise PlanError("INPUT_CHANGED_DURING_RUN")  # the run read through another target
+            problem["changed"] = True  # the run read through another target
         aliases.append([record["path"], target])
+    if problem["changed"]:
+        raise PlanError("INPUT_CHANGED_DURING_RUN")
+    if problem["error"]:
+        raise PlanError(problem["error"])
     if listing_changed:
         raise PlanError("LISTING_CHANGED_DURING_RUN")
     # Staged content (mode, blob, path; no stat data) for Git reads of the

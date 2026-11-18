@@ -422,6 +422,7 @@ class ReadsetTests(unittest.TestCase):
         shrunk.stop()
         self.assertIn("shrunk " + name, shrunk.partial_samples.get("READSET_LOG_CORRUPT", []))
         self.assertFalse(shrunk.as_dict()["complete"])
+        self.check_log_changed_after_its_final_merge_is_corrupt()  # 4th review R403
 
     def test_exit_proof_values_and_duplicate_hook_tokens(self):
         """CI-OPT-001 3rd review R303: a non-finite exit time, a non-positive pid or a
@@ -441,6 +442,127 @@ class ReadsetTests(unittest.TestCase):
                 self.assertFalse(rec.as_dict()["complete"])
         self.assertFalse(readset._exit_proof_ok({"pid": 0, "t": 1.0, "partial": [], "write_failed": False}, "0.jsonl"))
         self.assertTrue(readset._exit_proof_ok(end(1), name))
+        self.check_hook_belongs_to_its_own_log_and_to_a_launch()  # 4th review R404
+
+    def test_input_read_again_must_still_be_what_was_first_read(self):
+        """CI-OPT-001 4th review R401: A -> B -> A between reads, a deleted input and an
+        input first seen absent that appears are changes; a path the run itself (or a
+        recorded child) created after seeing it absent is an output."""
+        source = Path(self.temp.name) / "again-r401.cfg"
+        source.write_text("A", encoding="utf-8")
+        time.sleep(0.03)
+        rec = self.recorder()
+        source.read_text(encoding="utf-8")
+        with rec._quiet():  # another process changes it (not this run)
+            source.write_text("B", encoding="utf-8")
+        source.read_text(encoding="utf-8")
+        with rec._quiet():
+            source.write_text("A", encoding="utf-8")
+        source.read_text(encoding="utf-8")
+        rec.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons)
+        self.assertFalse(rec.as_dict()["complete"])
+        relay = lambda r, **e: r._record_read(e.pop("path"), relayed=True, born=0.0, **e)
+        other = str(Path(self.temp.name) / "relayed-r401.cfg")
+        cases = {
+            "relayed_other_hash": [dict(path=other, digest="a" * 64), dict(path=other, digest="b" * 64)],
+            "deleted": [dict(path=other, digest="a" * 64), dict(path=other, absent=True)],
+            "appeared_unrecorded": [dict(path=other, absent=True), dict(path=other, digest="a" * 64)]}
+        for label, events in cases.items():
+            with self.subTest(case=label):
+                one = self.recorder()
+                for event in events:
+                    relay(one, **event)
+                one.stop()
+                self.assertIn("INPUT_CHANGED_DURING_RUN", one.partial_reasons)
+        made = self.recorder()
+        relay(made, path=other, absent=True)
+        made._apply({"type": "created", "path": readset._canonical(other)}, None)
+        relay(made, path=other, digest="a" * 64)
+        made.stop()
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", made.partial_reasons)
+        self.check_outputs_created_after_an_absent_probe_are_not_changes()
+
+    def check_outputs_created_after_an_absent_probe_are_not_changes(self):
+        """4th review R401 regression: the run probes a path, finds it absent and then
+        creates it (in this process or in a real Python child); reading it is not an
+        input change."""
+        own = self.root / "own-output.txt"
+        by_child = self.root / "child-output.txt"
+        rec = self.recorder()
+        for path in (own, by_child):
+            with self.assertRaises(FileNotFoundError):
+                open(path, encoding="utf-8")
+        own.write_text("x", encoding="utf-8")
+        code = "open(%r, 'w', encoding='utf-8').write('y')" % str(by_child)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual((own.read_text(encoding="utf-8"), by_child.read_text(encoding="utf-8")), ("x", "y"))
+        rec.stop()
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+        self.assertNotIn("CHILD_LOG_INCOMPLETE", rec.partial_reasons, rec.partial_samples)
+
+    def check_log_changed_after_its_final_merge_is_corrupt(self):
+        """CI-OPT-001 4th review R403: after the last merge a real child's log that
+        shrinks, or whose merged bytes are rewritten with the same size, is corrupt."""
+        for label in ("emptied", "same_size_rewrite"):
+            with self.subTest(case=label):
+                rec = self.recorder()
+                child = subprocess.Popen([sys.executable, "-c", "pass"], cwd=self.root); child.wait()
+                self.assertEqual(child.returncode, 0)
+                # The log is named by the interpreter's pid (a venv launcher may differ).
+                (name,) = os.listdir(rec._own_log_dir)
+                path = os.path.join(rec._own_log_dir, name)
+                merge = rec._merge_child_logs
+
+                def merge_then_change(path=path, merge=merge, label=label):
+                    merge()
+                    data = Path(path).read_bytes()
+                    if label == "emptied":
+                        Path(path).write_bytes(b"")
+                    else:
+                        Path(path).write_bytes(data.replace(b'"hook_loaded"', b'"hook_loadee"', 1))
+                rec._merge_child_logs = merge_then_change
+                rec.stop()
+                self.assertIn("READSET_LOG_CORRUPT", rec.partial_reasons, label)
+                self.assertFalse(rec.as_dict()["complete"])
+
+    def check_hook_belongs_to_its_own_log_and_to_a_launch(self):
+        """CI-OPT-001 4th review R404: a hook record naming another process's pid, a hook
+        token no launch announced and a very large exit time are incomplete or valid
+        without a verifier exception; two real children stay complete."""
+        rec = self.recorder()
+        for _ in range(2):
+            subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True, check=True)
+        # Logs are named by the interpreter's pid (a venv launcher's pid may differ).
+        names = sorted(os.listdir(rec._own_log_dir))
+        self.assertEqual(len(names), 2)
+        pids = [int(n.split(".")[0]) for n in names]
+        path = os.path.join(rec._own_log_dir, names[0])
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+        first = json.loads(lines[0])
+        self.assertEqual(first["type"], "hook_loaded")
+        lines[0] = json.dumps(dict(first, pid=pids[1]))
+        Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        rec.stop()
+        self.assertTrue(any(s.startswith("hook pid") for s in rec.partial_samples.get("CHILD_LOG_INCOMPLETE", [])),
+                        rec.partial_samples)
+        pid = self.exited_pid()
+        name = "%d.jsonl" % pid
+        stray = self.recorder()
+        self.write_log(stray, name, [
+            {"type": "hook_loaded", "pid": pid, "token": "never-launched", "created": None, "seq": 1},
+            {"type": "exit", "pid": pid, "t": 1.0, "seq": 2, "partial": [], "write_failed": False}])
+        stray.stop()
+        self.assertTrue(any(s.startswith("unlaunched token") for s in stray.partial_samples["CHILD_LOG_INCOMPLETE"]))
+        huge = {"type": "exit", "pid": pid, "t": 10 ** 400, "partial": [], "write_failed": False}
+        self.assertTrue(readset._exit_proof_ok(huge, name))
+        self.assertFalse(readset._exit_proof_ok(dict(huge, t=True), name))
+        normal = self.recorder()
+        for _ in range(2):
+            subprocess.run([sys.executable, "-c", "pass"], cwd=self.root, capture_output=True, check=True)
+        normal.stop()
+        self.assertTrue(normal.as_dict()["complete"], normal.as_dict()["partial_reasons"])
 
     def test_scratch_area_git_is_not_exempt(self):
         """2026-11-17 user decision (CI-OPT-001): after five rounds on one invariant the
