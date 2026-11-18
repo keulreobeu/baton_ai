@@ -516,6 +516,66 @@ class ReadsetTests(unittest.TestCase):
         self.check_kept_final_paths_need_a_repeatable_operation()  # 17th review R1701
         self.check_directory_kind_and_writes_after_creation()  # 18th review R1801/R1802
         self.check_directory_kind_inside_the_runtime_environment()  # 19th review R1901
+        self.check_listing_inside_the_runtime_environment()  # 20th review R2001
+
+    def check_listing_inside_the_runtime_environment(self):
+        """CI-OPT-001 20th review R2001: a listing of a directory inside the runtime
+        environment (under sys.prefix; a fixture prefix stands for it) is recorded with its
+        absolute path, also for a .venv inside the repository, so an entry added there while
+        the runtime manifest stays the same changes the fingerprint and refuses reuse. A
+        failed listing and the run's own directory there follow the common rules."""
+        from scripts import ci_plan
+        for where in ("outside", "repo .venv"):
+            with self.subTest(prefix=where):
+                prefix = (self.root / ".venv" if where != "outside"
+                          else Path(tempfile.mkdtemp(dir=self.temp.name)))
+                target = prefix / "Lib" / "listed"
+                target.mkdir(parents=True)
+                time.sleep(0.06)
+                with patch.object(sys, "prefix", str(prefix)):
+                    rec = self.recorder()
+                    self.assertEqual(rec._scope(readset._canonical(target)), "env_manifest")
+                    self.assertEqual(os.listdir(target), [])
+                    with self.assertRaises(FileNotFoundError):
+                        os.listdir(prefix / "Lib" / "missing")
+                    own = prefix / "Lib" / "own"
+                    own.mkdir()
+                    os.listdir(own)
+                    own.rmdir()  # the run's own directory, cleaned up
+                    rec.stop()
+                data = rec.as_dict()
+                self.assertTrue(data["complete"], rec.partial_samples)
+                self.assertTrue(ci_plan.valid_readset(data))
+                shown = {os.path.normcase(r["path"]): r for r in data["listings"]}
+                listed = shown.get(os.path.normcase(str(target)))
+                self.assertEqual((listed or {}).get("scope"), "outside", data["listings"])
+                self.assertEqual(listed["entries"], [])
+                missing = shown.get(os.path.normcase(str(prefix / "Lib" / "missing")))
+                self.assertEqual((missing or {}).get("error"), "FileNotFoundError", data["listings"])
+                self.assertNotIn(os.path.normcase(str(own)), shown)
+                fixed = dict(environ={"FIXTURE": "1"}, manifest={"digest": "f" * 64, "files": 1},
+                             git={"exe_sha256": "a" * 64, "version": "fixture", "config": "b" * 64},
+                             resolver="r" * 64, trust="t" * 64)
+                if not (self.root / ".git").exists():
+                    for args in (["init", "-q"], ["-c", "user.name=fixture", "-c", "user.email=f@example.invalid",
+                                                  "commit", "-q", "--allow-empty", "-m", "fixture"]):
+                        subprocess.run(["git", "-C", str(self.root), *args], check=True, capture_output=True)
+                source = ci_plan.suite_fingerprint(self.root, data, verify_observed=True, **fixed)
+                result = dict(tests_run=1, failures=0, errors=0, skipped=0, expected_failures=0,
+                              unexpected_successes=0)
+                evidence = ci_plan.suite_evidence(run_id="r2001", commit=source["head"], fingerprint_record=source,
+                                                  readset=data, result=result, returncode=0, state_stable=True,
+                                                  started_utc=rec.started_utc, finished_utc=rec.finished_utc)
+                raw = json.dumps(evidence).encode()
+                digest = __import__("hashlib").sha256(raw).hexdigest()
+                same = ci_plan.suite_fingerprint(self.root, data, **fixed)
+                self.assertTrue(ci_plan.decide_suite_reuse(same, evidence, digest, raw, now_utc=readset._utc_now(),
+                                                           non_reusable=[])["allowed"])
+                (target / "added.db").write_bytes(b"fixture")  # the manifest (fixed) is unchanged
+                current = ci_plan.suite_fingerprint(self.root, data, **fixed)
+                self.assertNotEqual(current["fingerprint"], source["fingerprint"])
+                self.assertFalse(ci_plan.decide_suite_reuse(current, evidence, digest, raw,
+                                                            now_utc=readset._utc_now(), non_reusable=[])["allowed"])
 
     def check_directory_kind_inside_the_runtime_environment(self):
         """CI-OPT-001 19th review R1901: a directory met by an SQLite connection inside the
