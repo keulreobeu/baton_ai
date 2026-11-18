@@ -1271,3 +1271,5 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   evidence `13e4b27e…`(commit `437dab7`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 16,988·`CHILD_LOG_INCOMPLETE`, Python 실행 200/hook 200). 새 규칙에 따른
   `INPUT_CHANGED_DURING_RUN`·`INPUT_UNHASHABLE`·`OUTPUT_AT_ABSENT_INPUT`·`READSET_LOG_CORRUPT` 없음. 시간은 일부 구간이 CI-VTIER 테스트와 동시 실행이라 성능 근거로 쓰지 않는다
   (사용자 지시 2026-11-18: 격리된 두 Task의 검증은 병렬, 성능 실측만 단독). 로그 사본 `CI-OPT-001-v3-iso-437dab7.log`. 6차 재검토·게시는 승인 대기. verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 6차 패키지 모두")**: 원격 `codex/ci-opt-001-r5`=`0c173c8`, 미게시 `c55a408`·`437dab7`·`dadd9ea`·이 기록 커밋. 작성자 lwwde07, 허용 경로만,
+  비밀값·홈 경로·DB·로그 없음. 검증 SHA `437dab7` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
