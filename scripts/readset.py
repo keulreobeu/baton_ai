@@ -1618,10 +1618,14 @@ class Recorder:
                 if directory not in logs:
                     logs.append(directory)
             childenv["BATON_READSET_LOG"] = os.pathsep.join(logs)
-            earliest = childenv.get("BATON_READSET_STARTED") if same_launch else None
-            if earliest is None or (_epoch(self.started_utc) or 0) < (_epoch(earliest) or float("inf")):
-                earliest = self.started_utc
-            childenv["BATON_READSET_STARTED"] = earliest
+            # CI-OPT-001 final V3: the child judges what it changes (removal, chmod, ...)
+            # against one start time for every recorder that launched it. The latest is the
+            # strictest: an object born before any of them is never presumed the run's own
+            # (the earliest let an inner recorder miss a pre-existing file; fail-closed).
+            latest = childenv.get("BATON_READSET_STARTED") if same_launch else None
+            if latest is None or (_epoch(self.started_utc) or float("inf")) > (_epoch(latest) or float("-inf")):
+                latest = self.started_utc
+            childenv["BATON_READSET_STARTED"] = latest
             childenv["BATON_READSET_TOKEN"] = token
             site = str(Path(__file__).resolve().parent / "readset_site")
             old = childenv.get("PYTHONPATH", "")
