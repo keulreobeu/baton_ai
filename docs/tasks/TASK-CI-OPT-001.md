@@ -1267,3 +1267,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   R504(P2) 자체 생성 출력(부재 확인 뒤 생성·SQLite 생성)이 기록기는 출력·지문은 입력 변경으로 판정 → 부재 기록 제거 + `OUTPUT_AT_ABSENT_INPUT` partial, SQLite 생성·`os.rename` 대상도 생성으로 기록.
   R505(P2) 로그 하나의 hook 여러 개·hook 없는 로그·경로 없는 `created` 허용 → 로그당 hook 정확히 1개, 이벤트 필드 검사.
   기존 합성 로그 fixture 2개(hook 없음)를 실제 종료 pid의 hook 포함으로 갱신. 회귀는 AC당 30개 상한으로 기존 AC-12 테스트의 검사 함수로 추가(수정 전 코드에서 5건 실패 확인). 영향 3모듈 138 OK.
+- **2026-11-18 5차 수정 후보 `437dab7` 공식 로컬 V3**: `verify_environment.py --base 5c07aea --evidence-dir` 743 tests OK, skips 0, failures/errors 0, eligible true, state stable,
+  evidence `13e4b27e…`(commit `437dab7`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 16,988·`CHILD_LOG_INCOMPLETE`, Python 실행 200/hook 200). 새 규칙에 따른
+  `INPUT_CHANGED_DURING_RUN`·`INPUT_UNHASHABLE`·`OUTPUT_AT_ABSENT_INPUT`·`READSET_LOG_CORRUPT` 없음. 시간은 일부 구간이 CI-VTIER 테스트와 동시 실행이라 성능 근거로 쓰지 않는다
+  (사용자 지시 2026-11-18: 격리된 두 Task의 검증은 병렬, 성능 실측만 단독). 로그 사본 `CI-OPT-001-v3-iso-437dab7.log`. 6차 재검토·게시는 승인 대기. verified·병합 아님.
