@@ -1239,3 +1239,22 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   read set `INPUT_CHANGED_DURING_RUN`이면 stable false. R302(P1) 일부 병합 뒤 사라진 로그를 최종 검사가 놓침 → 병합한 모든 로그·hook 토큰의 자기 로그 검사, 사라짐·축소 partial.
   R303(P2) exit 시간 NaN·pid 값·중복 hook 토큰 → 유한 시간·양수 pid·토큰당 hook 1개. R304(P3) `re`·`PTH_IMPORT_LINES`·`_in_temp_area`·미사용 `temp`·폐기 주석 삭제.
   사용자 결정(2026-11-18): 테스트 코드의 의도적 증거 위조는 위협 모델에서 제외하고 RA-4로 명문화(Spec Risk Acceptance). 회귀 4종 추가. 영향 3모듈 137 OK.
+- **2026-11-18 3차 수정 후보 `4244da7` 공식 로컬 V3**: 1회차 742 tests OK이나 **FAIL**(state stable false, `FINGERPRINT_INPUT_CHANGED_DURING_RUN`): 실행 중(10:55) 사용자가 다른 작업으로
+  전역 `~/.gitconfig`에 신원을 추가 — R301 수정이 외부 입력 변경을 의도대로 검출(증거 `bc3c8eca…` 비적격, 그 SHA 증거로 쓰지 않음). 재실행: 742 tests OK, skips 0, eligible true,
+  state stable, 1366 s, evidence `fa02f4c0…`(commit `4244da7`), read set partial(`CHILD_NOT_ALLOWED` 16,877·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` launched 187/hooked 186).
+  로그 사본 `CI-OPT-001-v3-iso-4244da7.log`(1회차)·`-rerun.log`. 이후 커밋 신원은 저장소 로컬 설정(lwwde07, 사용자 지시)으로 한다. 4차 재검토·게시는 승인 대기.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 4차 패키지")**: 원격 `codex/ci-opt-001-r5`=`9c0b793`, 미게시 `4244da7`·`4c7a03b`·이 기록 커밋. 작성자 lwwde07(기존 게시 커밋과 같은 신원),
+  허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `4244da7` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`d4d378b`, PR #16)**: run `44228670863` plan·gate success, Windows 3.11·3.12 각 742 tests OK, failures/errors/skips 0, eligible true. `d4d378b`(코드 `4244da7`)에만 귀속. 4차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 4차 이종 모델 재검토(ChatGPT, 대상 `4244da7`)**: **FAIL**(P1 2, P2 2). R304 resolved, R301·R302·R303 partial. RA-4는 승인 가능 판정. 격리 재현(Linux 3.13.5).
+  R401(P1) 같은 입력의 반복 읽기에서 처음 해시만 유지 → A→B→A 변경이 PASS·재사용 → 재관측 값 비교(해시 차이·삭제는 즉시, 부재→출현은 종료 시 이 실행의 생성 기록과 대조).
+  R402(P1) 앞 입력의 `OUTSIDE_UNREADABLE`이 뒤 입력 변경을 가려 stable·eligible → 읽기 불가는 기록 후 계속 비교, 입력 변경 우선.
+  R403(P2) 최종 병합 뒤 로그 축소·같은 크기 재작성 미검출 → 종료 시 로그 = 병합 바이트(길이·SHA-256) 확인. R404(P2) hook pid와 로그 파일 불일치·미실행 토큰 hook 허용,
+  큰 정수 exit 시간 `OverflowError` → hook pid = 파일 pid·토큰 필수·hook 토큰 ⊆ 실행 토큰, 정수 시간은 그대로 유효(OverflowError도 손상으로 처리).
+  회귀 6종(readset 4·ci_plan 1·verify_environment 1: A→B→A·삭제·미기록 출현·자식 생성 출력 정상·최종 병합 뒤 축소·재작성·hook pid·미실행 토큰·읽기 불가+변경).
+  새 테스트 `test_input_read_again_must_still_be_what_was_first_read` 1개, 나머지는 같은 주제의 기존 AC-12 테스트에서 호출(AC당 참조 30개 상한).
+  실제 venv 자식에서 로그 이름(인터프리터 pid)이 런처 pid와 다름을 확인 — 런처 pid 강제 없음 유지. 영향 3모듈 138 OK, check_sdd PASS.
+- **2026-11-18 4차 수정 후보 `8305a51` 공식 로컬 V3**: `verify_environment.py --base 5c07aea --evidence-dir`(단독) 743 tests OK, skips 0, failures/errors 0, eligible true,
+  state stable, 1215 s, evidence `22512da0…`(commit `8305a51`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 16,963·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` launched 195/hooked 194 —
+  기존과 같은 보수 원인). 새 재관측·로그 바이트·hook 소유 검사로 인한 `INPUT_CHANGED_DURING_RUN`·`READSET_LOG_CORRUPT` 없음(정상 실행 과잉 실패 없음). 로그 사본 `CI-OPT-001-v3-iso-8305a51.log`.
+  5차 재검토·게시는 승인 대기. verified·병합 아님.

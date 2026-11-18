@@ -318,6 +318,9 @@ class Recorder:
         self._spawned = {}
         self._created_at = {}  # (kind, token) -> creation stamp reported by the owner
         self._offsets = {}
+        self._merged = {}  # child log file -> sha256 of the bytes merged so far (4th review R403)
+        self._made = set()  # paths a recorded process of this run created (open with create, absent before)
+        self._appeared = {}  # inputs first seen absent and later present (4th review R401)
         self._created = set()
         self._install()
         if _child:
@@ -491,6 +494,7 @@ class Recorder:
                         "sha256": digest, "born": born, "alias": list(found) if found else found})
             return
         if relayed:
+            self._reobserved(scope, canonical, path, digest=digest, absent=absent)
             if canonical in self._created or (born is not None and born >= self._started_epoch):
                 return  # an output of this run (for an absent path: inside an area created by the run)
             self._note_alias(tuple(alias) if alias else alias, path)
@@ -502,14 +506,23 @@ class Recorder:
                 # A path probed but absent is an input too (it may appear later),
                 # unless its nearest existing ancestor was created by this run.
                 parent_born = _ancestor_born(canonical)
+                self._reobserved(scope, canonical, path, absent=True)
                 if canonical not in self._created and not (parent_born is not None and parent_born >= self._started_epoch):
                     # The observed path may reach the absent target through a
                     # symlink/junction: its retarget is a change too.
                     self._note_alias(self._alias_of(path, canonical), path)
                     self._record_absent(path, canonical, scope)
                 return
-            if self._is_created(canonical) or os.path.isdir(canonical):
-                return  # an output of this run, or a directory handle
+            exempt = self._is_created(canonical)
+            if os.path.isdir(canonical):
+                return  # a directory handle
+            if self._input_entry(scope, canonical) is not None:
+                if digest is None:
+                    with self._quiet():
+                        digest = _sha(canonical)
+                self._reobserved(scope, canonical, path, digest=digest)
+            if exempt:
+                return  # an output of this run
             self._note_alias(self._alias_of(path, canonical), path)  # only inputs carry aliases
             if digest is None:
                 with self._quiet():
@@ -531,6 +544,30 @@ class Recorder:
             entry["via"] = "sqlite"
         if not section_only:
             entry["section_only"] = False
+
+    def _input_entry(self, scope, canonical):
+        if scope == "env_manifest":
+            return self._env_reads.get(canonical)
+        return (self._repo if scope == "repo" else self._outside).get(canonical)
+
+    def _reobserved(self, scope, canonical, path, digest=None, absent=False):
+        """4th review R401: an input read again must still be what was first recorded.
+
+        A file that changed and was restored during the run (A -> B -> A) keeps the
+        first hash and would match at the end; a second observation that differs is
+        the change. An input that existed is changed when it is gone or has other
+        content (even when it now looks like an output: it was replaced). A path
+        first seen absent that appears is judged at stop: it is a change unless a
+        recorded process of the run created it (its creation event may arrive in a
+        child log merged later; birth time alone cannot tell it from another writer)."""
+        entry = self._input_entry(scope, canonical)
+        if entry is None:
+            return
+        if entry.get("absent"):
+            if not absent:
+                self._appeared.setdefault(canonical, path)
+        elif absent or (digest is not None and entry.get("sha256") is not None and digest != entry["sha256"]):
+            self._partial("INPUT_CHANGED_DURING_RUN", path)
 
     def _record_absent(self, path, canonical, scope):
         record = {"path": _real(path) or canonical, "sha256": None, "absent": True}
@@ -558,8 +595,12 @@ class Recorder:
         if self._is_child:
             if not (create and not os.path.exists(canonical)):
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
+            else:
+                self._emit({"type": "created", "path": canonical})
             return
         if create:
+            if not os.path.exists(canonical):
+                self._made.add(canonical)
             self._is_created(canonical, True)
         if not self._is_created(canonical):
             self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
@@ -902,13 +943,22 @@ class Recorder:
         if not alive:
             # Every writer has exited: bytes after the last newline are a
             # truncated event that would otherwise be lost silently.
+            # 4th review R403: the log must still be exactly the bytes merged (not
+            # shorter, no unmerged tail, and the merged prefix not rewritten).
             for name in self._log_names():
                 try:
-                    size = os.path.getsize(os.path.join(self._own_log_dir, name))
-                except OSError:
+                    with self._quiet(), open(os.path.join(self._own_log_dir, name), "rb") as stream:
+                        data = stream.read()
+                except OSError as exc:
+                    self._partial("READSET_LOG_CORRUPT", "%s %s" % (type(exc).__name__, name))
                     continue
-                if size > self._offsets.get(name, 0):
+                offset = self._offsets.get(name, 0)
+                if len(data) > offset:
                     self._partial("READSET_LOG_CORRUPT", "truncated %s" % name)
+                elif len(data) < offset:
+                    self._partial("READSET_LOG_CORRUPT", "shrunk %s" % name)
+                elif hashlib.sha256(data).digest() != self._merged.get(name, hashlib.sha256()).digest():
+                    self._partial("READSET_LOG_CORRUPT", "rewritten %s" % name)
             # Every child log must end with its exit proof, and the sequence numbers
             # 1..N of the events it emitted must all have arrived (none lost).
             # CI-OPT-001 re-review N04: in file order the numbers run 1, 2, ... with no
@@ -928,6 +978,9 @@ class Recorder:
                 seen = self._log_seq.get("%s.jsonl" % pid)
                 if not seen or seen["bad"] or seen["end"] is None:
                     self._partial("CHILD_LOG_INCOMPLETE", "token %s pid %s" % (str(token)[:12], pid))
+        for canonical, path in sorted(self._appeared.items()):
+            if canonical not in self._made:
+                self._partial("INPUT_CHANGED_DURING_RUN", path)
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
@@ -939,6 +992,10 @@ class Recorder:
         for token, command in self._launch_tokens.items():
             if token not in self._hooked:
                 self._partial("CHILD_HOOK_MISSING", command)
+        for token in sorted(self._hooked, key=str):
+            if token not in self._launch_tokens:
+                # 4th review R404: launch tokens and hook tokens correspond one to one.
+                self._partial("CHILD_LOG_INCOMPLETE", "unlaunched token %s" % str(token)[:12])
         if self._python_launches > self._python_hooks:
             self._partial("CHILD_HOOK_MISSING", f"launched={self._python_launches} hooked={self._python_hooks}")
 
@@ -967,6 +1024,7 @@ class Recorder:
                 continue
             complete = data[:data.rfind(b"\n") + 1]  # a partial last line is read on the next pass
             self._offsets[name] = self._offsets.get(name, 0) + len(complete)
+            self._merged.setdefault(name, hashlib.sha256()).update(complete)
             for raw in complete.decode("utf-8", "replace").splitlines():
                 if not raw.strip():
                     continue
@@ -981,14 +1039,20 @@ class Recorder:
                             seen["end"] = event
                         else:
                             seen["bad"] = True
-                    self._apply(event)
-                except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                    self._apply(event, name)
+                except (ValueError, KeyError, TypeError, AttributeError, OverflowError) as exc:
                     self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
 
-    def _apply(self, event):
+    def _apply(self, event, name=None):
         kind = event.get("type")
         if kind == "hook_loaded":
             self._python_hooks += 1
+            pid = event.get("pid")
+            if not (type(pid) is int and pid > 0 and name == "%d.jsonl" % pid):
+                # 4th review R404: the hook record is in its own process's log.
+                self._partial("CHILD_LOG_INCOMPLETE", "hook pid %s in %s" % (str(pid)[:20], name))
+            if not event.get("token"):
+                self._partial("CHILD_LOG_INCOMPLETE", "hook without token in %s" % name)
             if event.get("token") in self._hooked:
                 # 3rd review R303: one token is one process; a second hook record would
                 # also mask a missing one in the launched/hooked count.
@@ -1004,6 +1068,9 @@ class Recorder:
             self._python_launches += 1
             if event.get("token"):
                 self._launch_tokens[event["token"]] = str(event.get("command", ""))[:160]
+        elif kind == "created":
+            if isinstance(event.get("path"), str):
+                self._made.add(event["path"])
         elif kind == "hook_failed":
             self._partial("HOOK_FAILED", event.get("error", "unknown"))
         elif kind == "partial":
@@ -1378,7 +1445,7 @@ def _is_device(canonical):
 def _exit_proof_ok(event, name):
     """Exit proof shape (CI-OPT-001 re-review N04): its own pid matches the log file."""
     return (type(event.get("pid")) is int and event["pid"] > 0 and name == "%d.jsonl" % event["pid"]
-            and type(event.get("t")) in {int, float} and math.isfinite(event["t"])
+            and (type(event.get("t")) is int or (type(event.get("t")) is float and math.isfinite(event["t"])))
             and type(event.get("write_failed")) is bool
             and isinstance(event.get("partial"), list) and all(isinstance(r, str) for r in event["partial"]))
 
