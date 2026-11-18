@@ -103,3 +103,5 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   영향 모듈 5개 256 중 255 OK. 4차 회귀(`test_control_during_author_settlement_is_no_pass`)의 "저장 직전" 주입이 Wiki 판정 중이었는데, R501로 Wiki가 저장 뒤로 옮겨져
   그 주입은 "저장 뒤"가 됨 → 저장 직전은 검증 뒤 스냅샷 단계 주입으로 재현, 저장 뒤 제어(정착된 유효 결과를 멈춤, 무효화 아님)는 별도 사례로 추가. check_sdd PASS.
   흐름 변경(2026-11-18 사용자): 회차마다 로컬 V3를 돌리지 않고 V2 + 원격 CI, 공식 로컬 V3는 교차검토 PASS 뒤 최종 후보에 1회. 격리된 두 Task 검증은 병렬.
+- **2026-11-18 5차 수정 후보 `4cd979a`(= CI-VTIER `dcce235` + CI-OPT 5차 수정 `437dab7` 병합) V2**: 병합 뒤 `test_readset`·`test_ci_plan`·`test_verify_environment`·`test_flow_runtime` 203 OK, check_sdd PASS.
+  새 흐름에 따라 이번 회차 로컬 V3는 생략(최종 후보에서 1회). 6차 재검토·게시는 승인 대기. verified·병합 아님.
