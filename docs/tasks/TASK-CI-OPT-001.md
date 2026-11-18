@@ -1364,3 +1364,27 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - ctypes 등 감싼 호출 밖에서 만든 링크도 같다.
     - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
     - 실제 suite의 partial 빈도·성능, 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 12차 독립 교차검토(Codex Orca worker, 대상 `c90e91c`)**: **FAIL**(P1 3, P2 1). R1102 resolved, R1101 partial. RA-1~RA-4 유지. 반영 코드 후보 `ea89e2a`(로컬 커밋, 미게시).
+  R1201(P1) 중첩 junction(outer→inner/sub, inner→old)에서 링크 열거가 대상 안 링크를 보지 못함 → 코디네이터 결정대로 fail-closed. 링크 2개 이상, 링크 대상 경로의 다른 링크(`_links_on`의 chained), 대상 판독 불가면 partial. 체인 입증 로직은 두지 않았다.
+  R1202(P1) 실패 이동·원본 부재 이동이 시도·공통 판정에 도달하지 않음 → 원본 부재도 시도로 기록. 실패 이동은 결과 조건을 재구성하지 않고 partial로 두며, 관측 별칭은 입력 별칭으로 공통 판정(자식 `rename_failed`).
+  R1203(P1) 섹션 읽기가 정규화 경로로 열어 junction 별칭 누락 → 원래 경로로 열기.
+  R1204(P2) 자식의 기본 인코딩 `open('w')` 안의 `import encodings.cp949` 감사 이벤트가 결과 전에 pending을 추정 확정 → 감싼 호출 깊이(`_wrapped_call`) 동안 중첩 이벤트는 확정하지 않음. 테스트 자식 9곳의 텍스트 인코딩 명시.
+  이전 V2 환경 차이: 검토자 환경은 `PYTHONIOENCODING=utf-8`이라 자식의 cp949 코덱이 첫 `open` 안에서 지연 import됐다. 이전 V2 환경은 이 변수가 없어(`PYTHONUTF8`도 없음, 로캘 cp949) 자식 stdio 초기화 때 코덱이 미리 import되어 결함이 가려졌다. `codec_repro.py`로 같은 환경에서 두 결과를 모두 재현했다.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_chains_failed_moves_sections_and_nested_events` 추가. 다루는 사례:
+    - 자체 링크가 다른 링크로 들어가는 체인(직접·실제 자식)
+    - 실패 이동: 목적지가 이미 있는 경우(Windows), 원본이 없는 경우(직접·실제 자식)
+    - junction 경유 섹션 읽기
+    - `PYTHONIOENCODING=utf-8` 실제 자식의 기본 인코딩 생성
+  수정 전 코드 대조(`c90e91c` scripts, 사례별 분리 실행): 체인 2건·실패 이동 4건·섹션 1건은 complete=True·aliases=[], 코덱 사례는 partial로 8건 모두 기대와 다름. 수정 후 모두 기대대로. 검토자 재현(r12_repro) 수정본: nested·failed-rename(직접·자식) partial, section 별칭 기록·지문 변경, 모두 reuse 거부.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정(기본 Windows cp949) | OK |
+    | `PYTHONUTF8=1` | OK |
+    | `PYTHONIOENCODING=utf-8`(검토자 환경) | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 기존 단언 변경 없음. 새로 partial이 되는 것은 링크 체인을 거친 면제 관측과 실패한 이동(`os.rename`/`os.replace` 예외)이다. 영향 3모듈의 기존 정상 사례 중 바뀐 것은 없다.
+  남은 한계:
+    - 실패한 이동을 일부러 쓰는 테스트는 실제 suite에서 read set이 partial이 된다(빈도 미측정).
+    - 감싼 호출 안에서 중첩 생성 시도가 생기면 바깥 시도는 기존처럼 경로 상태로 확정되어 partial이다.
+    - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
+    - 원격 Windows 두 조합은 확인하지 않았다.
