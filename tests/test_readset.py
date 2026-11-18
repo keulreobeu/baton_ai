@@ -395,11 +395,58 @@ class ReadsetTests(unittest.TestCase):
         self.assertNotIn("CHILD_LOG_INCOMPLETE", rec.partial_reasons, rec.partial_samples)
         self.assertNotIn("CHILD_HOOK_MISSING", rec.partial_reasons)
 
+    def write_log(self, rec, name, events):
+        with open(os.path.join(rec._log_targets()[0], name), "w", encoding="utf-8") as stream:
+            for event in events:
+                stream.write(json.dumps(event) + "\n")
+
+    def test_log_lost_or_rewritten_after_a_partial_merge_is_incomplete(self):
+        """CI-OPT-001 3rd review R302: a log merged once (hook record only) that then
+        vanishes, or shrinks below what was merged, is incomplete/corrupt; a hooked token
+        whose own log never ended is incomplete as well."""
+        pid = self.exited_pid()
+        name = "%d.jsonl" % pid
+        hook = {"type": "hook_loaded", "pid": pid, "token": "tok-r302", "created": None, "seq": 1}
+        vanished = self.recorder()
+        self.write_log(vanished, name, [hook])
+        vanished._merge_child_logs()
+        os.remove(os.path.join(vanished._log_targets()[0], name))
+        vanished.stop()
+        self.assertIn("vanished " + name, vanished.partial_samples.get("CHILD_LOG_INCOMPLETE", []))
+        self.assertTrue(any(s.startswith("token ") for s in vanished.partial_samples["CHILD_LOG_INCOMPLETE"]))
+        self.assertFalse(vanished.as_dict()["complete"])
+        shrunk = self.recorder()
+        self.write_log(shrunk, name, [hook, {"type": "trust_store", "seq": 2}])
+        shrunk._merge_child_logs()
+        self.write_log(shrunk, name, [hook])
+        shrunk.stop()
+        self.assertIn("shrunk " + name, shrunk.partial_samples.get("READSET_LOG_CORRUPT", []))
+        self.assertFalse(shrunk.as_dict()["complete"])
+
+    def test_exit_proof_values_and_duplicate_hook_tokens(self):
+        """CI-OPT-001 3rd review R303: a non-finite exit time, a non-positive pid or a
+        second hook record for one token is incomplete."""
+        pid = self.exited_pid()
+        name = "%d.jsonl" % pid
+        def end(seq, **extra):
+            return {"type": "exit", "pid": pid, "t": 1.0, "seq": seq, "partial": [], "write_failed": False, **extra}
+        hook = {"type": "hook_loaded", "pid": pid, "token": "tok-r303", "created": None, "seq": 1}
+        for label, events in {"nan_time": [end(1, t=float("nan"))], "inf_time": [end(1, t=float("inf"))],
+                              "duplicate_token": [hook, dict(hook, seq=2), end(3)]}.items():
+            with self.subTest(case=label):
+                rec = self.recorder()
+                self.write_log(rec, name, events)
+                rec.stop()
+                self.assertIn("CHILD_LOG_INCOMPLETE", rec.partial_reasons)
+                self.assertFalse(rec.as_dict()["complete"])
+        self.assertFalse(readset._exit_proof_ok({"pid": 0, "t": 1.0, "partial": [], "write_failed": False}, "0.jsonl"))
+        self.assertTrue(readset._exit_proof_ok(end(1), name))
+
     def test_scratch_area_git_is_not_exempt(self):
         """2026-11-17 user decision (CI-OPT-001): after five rounds on one invariant the
         scratch-area git exemption was removed. Git reads are invisible to the recorder,
-        so any git child other than plain check-attr on the recorded repository is
-        CHILD_NOT_ALLOWED and the read set is partial (the suite runs, nothing is reused)."""
+        so every git child is CHILD_NOT_ALLOWED and the read set is partial (the suite
+        runs, nothing is reused)."""
         scratch = Path(self.temp.name) / "scratch"
         (scratch / ".git").mkdir(parents=True)
         rec = self.recorder()

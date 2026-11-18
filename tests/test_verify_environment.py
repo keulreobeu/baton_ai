@@ -298,6 +298,28 @@ class EvidenceReuseTests(unittest.TestCase):
         self.assertEqual(second["suite_execution"], "executed")
         self.assertEqual(len(self.suite_runs), 2)
 
+    def test_listing_and_content_change_together_is_unstable(self):
+        """CI-OPT-001 3rd review R301 (reviewer's reproduction): a listing change and an
+        outside content change in one run fail the run; a change the recorder itself saw
+        (INPUT_CHANGED_DURING_RUN in its read set) fails it too."""
+        watched = Path(self.temp.name) / "watched"
+        watched.mkdir()
+        outside = Path(self.temp.name) / "outside.cfg"
+        outside.write_text("before", encoding="utf-8")
+        self.readset = dict(self.readset, listings=[{"path": str(watched), "scope": "outside", "ok": True, "entries": []}],
+                            outside_reads=[{"path": str(outside), "via": "open", "sha256": self.cp._content(outside)}])
+        def change():
+            (watched / "new.txt").write_text("x", encoding="utf-8")
+            outside.write_text("after", encoding="utf-8")
+        self.during_suite = change
+        code, summary = self.run_main()
+        self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
+        self.during_suite = None
+        self.readset = dict(self.readset, listings=[], outside_reads=[], complete=False,
+                            partial_reasons=["INPUT_CHANGED_DURING_RUN"])
+        code, summary = self.run_main()
+        self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
+
     def test_lock_home_requires_evidence_dir(self):
         with patch.object(verify, "prepare_git_path"), contextlib.redirect_stderr(io.StringIO()), \
                 self.assertRaises(SystemExit):

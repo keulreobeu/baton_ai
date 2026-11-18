@@ -14,9 +14,9 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
-import re
 import socket
 import subprocess
 import sys
@@ -33,14 +33,6 @@ STDLIB_NATIVE_ALLOWED = ("_asyncio", "_bz2", "_ctypes", "_decimal", "_elementtre
 # Variables the recorder itself puts into child environments; nothing else may
 # be declared in ``added_env``.
 ADDED_ENV_ALLOWED = ("BATON_READSET_LOG", "BATON_READSET_STARTED", "BATON_READSET_TOKEN", "PYTHONPATH")
-# .pth files whose import lines run before sitecustomize. Only these known
-# installer files (their code is in the hashed runtime manifest) keep the
-# "ended before startup" exception available.
-PTH_IMPORT_LINES = (
-    re.compile(r"import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, 'local'\) == 'local'; "
-               r"enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?"),
-    re.compile(r"import (__editable___[A-Za-z0-9_]+_finder); \1\.install\([^()]*\)"),
-)
 # A failed listing with these errors is itself a recorded input (the directory
 # is absent); other failures make the read set partial.
 LISTING_ERRORS_AS_INPUT = {"FileNotFoundError", "NotADirectoryError"}
@@ -643,20 +635,6 @@ class Recorder:
                 if name.split(".")[0] not in self._native_allowed and not name.startswith("cryptography"):
                     self._partial("NATIVE_MODULE_NOT_ALLOWED", name)
 
-    def _in_temp_area(self, path, areas):
-        """Inside a scratch area (TEMP or <root>/.local_runtime) but never the recorded
-        repository itself, even when the repository lives under TEMP."""
-        if not path:
-            return False
-        local = _canonical(os.path.join(self.root, ".local_runtime"))
-        for area in areas:
-            if not area or not _under(path, area):
-                continue
-            if area != local and _under(path, self.root) and not (local and _under(path, local)):
-                continue  # the repository under TEMP is not scratch space
-            return True
-        return False
-
     def _sqlite(self, database, uri):
         kind, value = _sqlite_target(database, uri)
         if kind == "memory":
@@ -744,7 +722,6 @@ class Recorder:
         parts = [str(x) for x in command]
         exe = _canonical(parts[0]) if os.path.isabs(parts[0]) or os.path.sep in parts[0] else _canonical(shutil_which(parts[0]))
         basename = Path(parts[0]).name.casefold()
-        temp = _canonical(os.environ.get("TEMP") or os.environ.get("TMP") or os.getcwd())
         summary = " ".join(parts)
         for prefix in {os.path.expanduser("~"), os.environ.get("USERPROFILE") or ""}:
             if prefix and prefix != "~":
@@ -937,10 +914,20 @@ class Recorder:
             # CI-OPT-001 re-review N04: in file order the numbers run 1, 2, ... with no
             # gap, repeat or reordering, and exactly one well-formed exit proof is the
             # last event (a reused pid appending a second process's log breaks this).
-            for name in self._log_names():
+            # CI-OPT-001 3rd review R302: the check covers every log merged at any
+            # point (a log that vanished after a partial merge is incomplete) and the
+            # own log of every hooked token.
+            present = set(self._log_names())
+            for name in sorted(present | set(self._log_seq)):
                 seen = self._log_seq.get(name)
-                if not seen or seen["bad"] or seen["end"] is None:
+                if name not in present:
+                    self._partial("CHILD_LOG_INCOMPLETE", "vanished %s" % name)
+                elif not seen or seen["bad"] or seen["end"] is None:
                     self._partial("CHILD_LOG_INCOMPLETE", name)
+            for token, pid in sorted(self._hooked.items(), key=lambda item: str(item[0])):
+                seen = self._log_seq.get("%s.jsonl" % pid)
+                if not seen or seen["bad"] or seen["end"] is None:
+                    self._partial("CHILD_LOG_INCOMPLETE", "token %s pid %s" % (str(token)[:12], pid))
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
@@ -969,6 +956,10 @@ class Recorder:
             path = os.path.join(self._own_log_dir, name)
             try:
                 with self._quiet(), open(path, "rb") as stream:
+                    if os.fstat(stream.fileno()).st_size < self._offsets.get(name, 0):
+                        # R302: a log shorter than what was already merged was rewritten.
+                        self._partial("READSET_LOG_CORRUPT", "shrunk %s" % name)
+                        continue
                     stream.seek(self._offsets.get(name, 0))
                     data = stream.read()
             except OSError as exc:
@@ -998,6 +989,10 @@ class Recorder:
         kind = event.get("type")
         if kind == "hook_loaded":
             self._python_hooks += 1
+            if event.get("token") in self._hooked:
+                # 3rd review R303: one token is one process; a second hook record would
+                # also mask a missing one in the launched/hooked count.
+                self._partial("CHILD_LOG_INCOMPLETE", "duplicate token %s" % str(event["token"])[:12])
             if event.get("token"):
                 self._hooked[event["token"]] = event.get("pid")
                 self._created_at[("hooked", event["token"])] = _stamp(event.get("created"))
@@ -1382,8 +1377,9 @@ def _is_device(canonical):
 
 def _exit_proof_ok(event, name):
     """Exit proof shape (CI-OPT-001 re-review N04): its own pid matches the log file."""
-    return (type(event.get("pid")) is int and name == "%d.jsonl" % event["pid"]
-            and type(event.get("t")) in {int, float} and type(event.get("write_failed")) is bool
+    return (type(event.get("pid")) is int and event["pid"] > 0 and name == "%d.jsonl" % event["pid"]
+            and type(event.get("t")) in {int, float} and math.isfinite(event["t"])
+            and type(event.get("write_failed")) is bool
             and isinstance(event.get("partial"), list) and all(isinstance(r, str) for r in event["partial"]))
 
 
