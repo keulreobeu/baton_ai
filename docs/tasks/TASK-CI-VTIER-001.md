@@ -87,3 +87,6 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   회귀: 기록 불일치 1종+실제 unittest 결과 누락, 예외·인터럽트 뒤 상태, 레거시 V3 실패 이전, 증거 게이트 V3 실패, Orca 정착 중 pause·저장 직전 cancel, CBM 응답 7종.
   영향 모듈 `test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability` 252 중 251 OK(새 Orca 테스트 fixture 오류: FakeOrca 재생성으로 작업 공간 경로 충돌 → 하나로 공유, 재실행 `test_flow_runtime` 58 OK), check_sdd PASS.
   `managed.py`·`evidence.py`를 쓰는 다른 모듈은 공식 V3에서 확인한다.
+- **2026-11-18 4차 수정 후보 `94f2316`(= CI-VTIER `4c2de5d` + CI-OPT 4차 수정 `8305a51` 병합) 공식 로컬 V3**: `--base 762739f --evidence-dir`(단독) 761 tests OK, skips 0, failures/errors 0,
+  eligible true, state stable, 1428 s, evidence `3b7d47b4…`(commit `94f2316`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 18,246·`CHILD_LOG_INCOMPLETE`, Python 실행 205/hook 205).
+  로그 사본 `CI-VTIER-001-v3-94f2316.log`. 5차 재검토·게시는 승인 대기. verified·병합 아님.
