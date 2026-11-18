@@ -503,6 +503,80 @@ class ReadsetTests(unittest.TestCase):
         self.check_attempt_absence_and_moved_ownership()  # 8th review R801/R802
         self.check_removal_outcome_and_child_creation()  # 8th review R803/R804
         self.check_object_ownership_and_attempt_snapshot()  # 9th review R901/R902
+        self.check_every_exempt_object_and_link_is_kept()  # 10th review R1001/R1002
+
+    def check_every_exempt_object_and_link_is_kept(self):
+        """CI-OPT-001 10th review R1001/R1002: every exempted observation is verified by its
+        own object (a second, unproven object at a name whose first object a real child made
+        is partial; also from child reports); a link that existed before the run stays a
+        dependency when what it reaches is exempt (a failed creation under a directory the
+        run made, a proven output read, a child's read, a listing of the run's directory),
+        while a link the run made itself adds nothing and the read set stays complete."""
+        target = Path(self.temp.name) / "two-objects-r1001.cfg"
+        rec = self.recorder()
+        code = "from pathlib import Path; Path(%r).write_text('mine', encoding='utf-8')" % str(target)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8"), "mine")
+        swap = Path(self.temp.name) / "swap-r1001.cfg"
+        with rec._quiet():  # another writer puts a second object at the name
+            swap.write_text("theirs", encoding="utf-8")
+            os.replace(swap, target)
+        self.assertEqual(target.read_text(encoding="utf-8"), "theirs")
+        rec.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", rec.partial_reasons, rec.partial_samples)
+        relayed = self.recorder()
+        name = readset._canonical(Path(self.temp.name) / "relayed-r1001.cfg")
+        now = time.time() + 1
+        relayed._record_read(name, relayed=True, born=now, digest="a" * 64, ident=(7, 1))
+        relayed._record_read(name, relayed=True, born=now, digest="b" * 64, ident=(7, 2))
+        relayed._apply({"type": "created", "path": name, "id": [7, 1]}, None)  # the first one is proven later
+        relayed.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", relayed.partial_reasons)
+        old = Path(self.temp.name) / "old-r1002"
+        old.mkdir()
+        link = Path(self.temp.name) / "junction-r1002"
+
+        def point(source, target):
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(target), str(source))
+            else:
+                os.symlink(target, source, target_is_directory=True)
+            self.addCleanup(lambda: (os.rmdir(source) if os.name == "nt" else os.unlink(source))
+                            if os.path.lexists(source) else None)
+
+        point(link, old)
+        time.sleep(0.03)
+        cases = self.recorder()
+        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)  # directories made clearly after the start
+        (old / "created").mkdir()
+        missing = link / "created" / "sub" / "target-r1002.cfg"
+        with self.assertRaises(FileNotFoundError):
+            missing.open("x").close()
+        (old / "proven-r1002.cfg").write_text("own", encoding="utf-8")
+        self.assertEqual((link / "proven-r1002.cfg").read_text(encoding="utf-8"), "own")
+        (old / "child-r1002.cfg").write_text("own", encoding="utf-8")
+        code = "open(%r, encoding='utf-8').read()" % str(link / "child-r1002.cfg")
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        (old / "listed").mkdir()
+        os.listdir(link / "listed")
+        cases.stop()
+        recorded = {a["path"] for a in cases.as_dict()["aliases"]}
+        for observed in (missing, link / "proven-r1002.cfg", link / "child-r1002.cfg", link / "listed"):
+            self.assertIn(os.path.abspath(str(observed)), recorded)
+        own_link = self.root / "own-junction-r1002"
+        made = self.recorder()
+        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)  # clearly after the start
+        area = self.root / "own-area-r1002"
+        area.mkdir()
+        point(own_link, area)
+        (area / "out.cfg").write_text("own", encoding="utf-8")
+        self.assertEqual((own_link / "out.cfg").read_text(encoding="utf-8"), "own")
+        made.stop()
+        self.assertEqual(made.as_dict()["aliases"], [])
+        self.assertTrue(made.as_dict()["complete"], made.partial_samples)
 
     def check_object_ownership_and_attempt_snapshot(self):
         """CI-OPT-001 9th review R901/R902: ownership belongs to the file object. After the

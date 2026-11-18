@@ -18,6 +18,7 @@ import math
 import os
 from pathlib import Path
 import socket
+import stat as _stat_mod
 import subprocess
 import sys
 import threading
@@ -176,6 +177,40 @@ def _file_id(path=None, handle=None):
         return _ident_of(os.stat(path))
     except (OSError, ValueError, AttributeError, TypeError):
         return None
+
+
+_UNSET = object()
+
+
+def _link_born(observed):
+    """10th review R1002: the oldest birth time among the links (symlinks, junctions) on
+    the observed path; "none" when it passes through none (e.g. an 8.3 short name), None
+    when that cannot be told."""
+    try:
+        current = os.path.abspath(observed)
+    except (OSError, ValueError, TypeError):
+        return None
+    oldest = "none"
+    while True:
+        try:
+            stat = os.lstat(current)
+        except FileNotFoundError:
+            stat = None
+        except (OSError, ValueError):
+            return None
+        if stat is not None:
+            link = _stat_mod.S_ISLNK(stat.st_mode) or (
+                getattr(stat, "st_file_attributes", 0) & getattr(_stat_mod, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+                and getattr(stat, "st_reparse_tag", 0) in (0xA000000C, 0xA0000003))  # symlink, mount point
+            if link:
+                stamp = _stamp_of(stat)
+                if stamp is None:
+                    return None
+                oldest = stamp if oldest == "none" else min(oldest, stamp)
+        parent = os.path.dirname(current)
+        if parent == current:
+            return oldest
+        current = parent
 
 
 def _id_list(ident):
@@ -375,7 +410,9 @@ class Recorder:
         # history (names a recorded process created); _created holds the names currently
         # claimed by this process; _owned_ids the objects whose creation was observed.
         self._owned_ids = set()
-        self._presumed = {}  # name -> (object id, path): exempt without proof, verified at stop
+        # 10th review R1001: every exempted observation (name, object id) -> path, so a later
+        # object at the same name is verified on its own.
+        self._presumed = {}
         self._created = set()
         self._install()
         if _child:
@@ -501,7 +538,7 @@ class Recorder:
             return True
         if canonical in self._created or born_in_run:
             if presume:
-                self._presumed.setdefault(canonical, (ident, canonical))
+                self._presumed.setdefault((canonical, ident), canonical)
             return True
         return False
 
@@ -522,6 +559,40 @@ class Recorder:
         target = _real(observed)
         return False if target is None else (observed, target)
 
+    def _keep_alias(self, alias, path, exempt, link_born=_UNSET):
+        """10th review R1002: the mapping of an observed alias is a dependency of its own,
+        kept apart from the content or absence exemption. An input always carries it; an
+        output (or an absence inside the run's area) reached through a link that existed
+        before the run carries it too (the next run may reach another target); a link the
+        run created is reproduced by the run; a link whose origin cannot be told is partial."""
+        if not exempt:
+            self._note_alias(alias, path)
+            return
+        if alias is False:
+            self._partial("PATH_UNNORMALIZABLE", path)
+            return
+        if not alias:
+            return
+        alias = tuple(alias)
+        if link_born is _UNSET:
+            with self._quiet():
+                link_born = _link_born(alias[0])
+        if link_born == "none":
+            return
+        if not isinstance(link_born, (int, float)) or isinstance(link_born, bool):
+            self._partial("PATH_UNNORMALIZABLE", path)
+            return
+        if link_born < self._started_epoch:
+            self._note_alias(alias, path)
+
+    def _alias_event(self, found):
+        """A child's alias report carries the birth of the links it passed (10th review R1002)."""
+        payload = {"alias": list(found) if found else found}
+        if found:
+            with self._quiet():
+                payload["link_born"] = _link_born(found[0])
+        return payload
+
     def _note_alias(self, alias, path):
         """Record an alias of an input; a retarget within the run is a change."""
         if alias is False:
@@ -537,7 +608,8 @@ class Recorder:
         self._aliases[key] = {"path": observed, "target": target}
 
     def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None,
-                     absent=False, isdir=False, precreate=False, seen_absent=False, seen=None, ident=None):
+                     absent=False, isdir=False, precreate=False, seen_absent=False, seen=None, ident=None,
+                     link_born=_UNSET):
         """precreate: a child's absence seen only to create the file (8th review R804);
         seen_absent: the absence seen when a creation that then failed was attempted
         (8th review R801), kept even if another writer has made the path since; seen: that
@@ -562,27 +634,27 @@ class Recorder:
                     parent_born = _ancestor_born(canonical)
                 found = seen[1] if seen else self._alias_of(path, canonical)
                 event = {"type": "read", "path": canonical, "via": via, "absent": True, "born": parent_born,
-                         "alias": list(found) if found else found}
+                         **self._alias_event(found)}
                 if precreate:
                     event["precreate"] = True
                 self._emit(event)
                 if seen:
                     now = self._alias_of(path, canonical)
                     if now != found:  # 9th review R902: retargeted since the attempt (a change)
-                        self._emit(dict(event, alias=list(now) if now else now))
+                        self._emit(dict(event, **self._alias_event(now)))
                 if not (seen_absent and os.path.exists(canonical)):
                     return
                 # 8th review R801: what another writer put there since is reported too.
             if os.path.isdir(canonical):
                 # 6th review R603: report it, so a recorded input turned directory is seen.
-                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True})
+                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True,
+                            **self._alias_event(self._alias_of(path, canonical))})  # 10th review R1002
                 return
             with self._quiet():
                 digest, born, ident = _sha(canonical), _born(canonical), _file_id(canonical)
             found = self._alias_of(path, canonical)
             self._emit({"type": "read", "path": canonical, "via": via, "section_only": bool(section_only),
-                        "sha256": digest, "born": born, "alias": list(found) if found else found,
-                        "id": _id_list(ident)})
+                        "sha256": digest, "born": born, **self._alias_event(found), "id": _id_list(ident)})
             return
         if relayed and precreate:
             # 8th review R804: the absence a child saw only to create the file is compared
@@ -591,9 +663,11 @@ class Recorder:
             # judged at stop.
             self._reobserved(scope, canonical, path, absent=True)
             self._precreated.setdefault(canonical, path)
+            self._keep_alias(alias, path, exempt=True, link_born=link_born)  # 10th review R1002
             return
         if relayed and isdir:
             self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
+            self._keep_alias(alias, path, exempt=True, link_born=link_born)  # 10th review R1002
             return
         if relayed:
             self._reobserved(scope, canonical, path, digest=digest, absent=absent)
@@ -605,14 +679,14 @@ class Recorder:
             elif born is not None:
                 exempt = born >= self._started_epoch
                 if exempt and not absent:
-                    self._presumed.setdefault(canonical, (ident, path))  # verified at stop
+                    self._presumed.setdefault((canonical, ident), path)  # verified at stop (R1001)
             else:
                 exempt = canonical in self._created
                 if exempt and not absent:
                     self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", path)
+            self._keep_alias(alias, path, exempt=exempt, link_born=link_born)  # 10th review R1002
             if exempt:
                 return  # an output of this run (for an absent path: inside an area created by the run)
-            self._note_alias(tuple(alias) if alias else alias, path)
             if absent:
                 self._record_absent(path, canonical, scope)
                 return
@@ -622,12 +696,14 @@ class Recorder:
                 # unless its nearest existing ancestor was created by this run.
                 parent_born = _ancestor_born(canonical)
                 self._reobserved(scope, canonical, path, absent=True)
-                if canonical not in self._created and not (parent_born is not None and parent_born >= self._started_epoch):
-                    # The observed path may reach the absent target through a
-                    # symlink/junction: its retarget is a change too.
-                    if seen:
-                        self._note_alias(seen[1], path)  # 9th review R902: as seen at the attempt
-                    self._note_alias(self._alias_of(path, canonical), path)
+                exempt = canonical in self._created or (parent_born is not None and parent_born >= self._started_epoch)
+                # The observed path may reach the absent target through a symlink/junction:
+                # its retarget is a change too (10th review R1002: also when the absence is
+                # exempt, for a link that existed before the run).
+                if seen:
+                    self._keep_alias(seen[1], path, exempt)  # 9th review R902: as seen at the attempt
+                self._keep_alias(self._alias_of(path, canonical), path, exempt)
+                if not exempt:
                     self._record_absent(path, canonical, scope)
                     entry = self._input_entry(scope, canonical)
                     if seen_absent and os.path.exists(canonical) and entry is not None and entry.get("absent"):
@@ -636,6 +712,8 @@ class Recorder:
                         self._appeared.setdefault(canonical, path)
                 return
             exempt = self._is_created(canonical)
+            # 10th review R1002: the alias first, whatever the exemption below.
+            self._keep_alias(self._alias_of(path, canonical), path, exempt or os.path.isdir(canonical))
             if os.path.isdir(canonical):
                 self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
                 return  # a directory handle
@@ -646,7 +724,6 @@ class Recorder:
                 self._reobserved(scope, canonical, path, digest=digest)
             if exempt:
                 return  # an output of this run
-            self._note_alias(self._alias_of(path, canonical), path)  # only inputs carry aliases
             if digest is None:
                 with self._quiet():
                     digest = _sha(canonical)
@@ -784,6 +861,8 @@ class Recorder:
         if op[0] == "create":
             self._made.add(op[1])
             self._created.add(op[1])
+            if not self._is_child and "path" in meta:
+                self._keep_alias(meta.get("alias"), meta["path"], exempt=True)  # 10th review R1002
             if ident is not None:
                 self._owned_ids.add(ident)
             elif certain and meta.get("readable"):
@@ -795,6 +874,10 @@ class Recorder:
                 self._emit({"type": "created", "path": op[1], "id": _id_list(ident)})
             return
         src, dst = op[1], op[2]
+        if not self._is_child:
+            for key in ("src_alias", "dst_alias"):  # 10th review R1002: moves through links
+                if meta.get(key):
+                    self._keep_alias(meta[key][1], meta[key][0], exempt=True)
         with self._quiet():
             moved = _file_id(dst)  # a move keeps the object (and its identity)
         owned = (moved is not None and moved in self._owned_ids) or src in self._created
@@ -895,12 +978,12 @@ class Recorder:
             self._attempt(("create", canonical), keeps=keeps, readable=readable,  # after the re-observation
                           path=path, alias=self._alias_of(path, canonical))  # 9th review R902: snapshot
             return
-        if not self._is_created(canonical) or self._input_entry(self._scope(canonical), canonical) is not None:
-            # 5th review R501: an input recorded earlier is compared again even when the
-            # path now looks like an output (deleted and recreated, replaced).
-            self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
+        # 5th review R501: an input recorded earlier is compared again even when the path
+        # now looks like an output (deleted and recreated, replaced). 10th review R1002: an
+        # output read goes through the same observation, so its alias is not skipped.
+        self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
 
-    def _listing(self, path, ok, entries, error=None, born=None, relayed=False, alias=None):
+    def _listing(self, path, ok, entries, error=None, born=None, relayed=False, alias=None, link_born=_UNSET):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
@@ -913,17 +996,19 @@ class Recorder:
                 born = _born(canonical)
             found = self._alias_of(path, canonical)
             self._emit({"type": "listing", "path": canonical, "ok": bool(ok), "error": error, "born": born,
-                        "alias": list(found) if found else found,
+                        **self._alias_event(found),
                         "entries": sorted([[str(n), str(k)] for n, k in entries]) if ok else []})
             return
+        # 10th review R1002: the alias is kept apart from the exemption of a listing of the
+        # run's own directory.
         if relayed:
-            if canonical in self._created or (born is not None and born >= self._started_epoch):
-                return
-            self._note_alias(tuple(alias) if alias else alias, path)
-        elif self._is_created(canonical):
-            return
+            exempt = canonical in self._created or (born is not None and born >= self._started_epoch)
+            self._keep_alias(alias, path, exempt, link_born=link_born)
         else:
-            self._note_alias(self._alias_of(path, canonical), path)
+            exempt = self._is_created(canonical)
+            self._keep_alias(self._alias_of(path, canonical), path, exempt)
+        if exempt:
+            return
         if not ok and error not in LISTING_ERRORS_AS_INPUT:
             self._partial("LISTING_FAILED", "%s %s" % (error, path))
         normalized = sorted([[str(n), str(k)] for n, k in entries]) if ok else []
@@ -976,7 +1061,13 @@ class Recorder:
                 with self._quiet():
                     src_exists = os.path.lexists(src)
                 if src_exists:  # a rename of a missing source fails: no attempt to settle
-                    self._attempt(("rename", src, dst))  # 6th review R601/R605
+                    # 10th review R1002: the paths as observed, for the links they pass.
+                    snap = {}
+                    for key, raw, canonical in (("src_alias", args[0], src), ("dst_alias", args[1], dst)):
+                        found = self._alias_of(raw, canonical)
+                        if found is not None:
+                            snap[key] = (raw, found)
+                    self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
         elif event == "mmap.__new__":
@@ -1337,7 +1428,7 @@ class Recorder:
             for canonical, entry in sorted(store.items()):
                 if not entry.get("absent") and canonical in self._made:
                     self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", entry.get("path"))
-        for canonical, (ident, path) in sorted(self._presumed.items()):
+        for (canonical, ident), path in sorted(self._presumed.items(), key=lambda item: (item[0][0], str(item[0][1]))):
             # 9th review R901: a read exempted by a name claim or a birth time only, whose
             # object no observed creation of the run proves.
             if ident is None or ident not in self._owned_ids:
@@ -1469,10 +1560,11 @@ class Recorder:
                               event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"),
                               absent=event.get("absent") is True, isdir=event.get("isdir") is True,
                               precreate=event.get("absent") is True and event.get("precreate") is True,
-                              ident=_id_tuple(event.get("id")))
+                              ident=_id_tuple(event.get("id")), link_born=event.get("link_born", _UNSET))
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
-                          born=event.get("born"), relayed=True, alias=event.get("alias"))
+                          born=event.get("born"), relayed=True, alias=event.get("alias"),
+                          link_born=event.get("link_born", _UNSET))
         elif kind == "trust_store":
             self._trust_store = True
         elif kind == "exit":
