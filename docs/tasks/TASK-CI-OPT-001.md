@@ -1231,3 +1231,5 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   state stable, 1279 s(CI-VTIER 실측 V2와 일부 동시 실행), evidence `9a593f73…`(commit `217fc73`), reuse rejected(`FINGERPRINT_CHANGED`·`SOURCE_READSET_PARTIAL`).
   read set partial: `CHILD_NOT_ALLOWED` 16,744, `CHILD_LOG_INCOMPLETE`, `CHILD_HOOK_MISSING`(Python 실행 185 / hook 184 — N02로 면제가 없어진 시작 전 종료 자식, 의도한 보수 동작).
   로그 사본 `CI-OPT-001-v3-iso-217fc73.log`. 이종 모델 재검토·원격 CI는 대기(새 push는 미승인). verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "원격 게시 승인")**: 원격 `codex/ci-opt-001-r5`=`1c08857`, 미게시 `217fc73`·`d18c013`·이 기록 커밋. 작성자 lwwde07, 허용 경로(scripts/tests/docs)만,
+  비밀값·홈 경로·DB·로그 없음. 검증 SHA `217fc73` 이후 변경은 Task 문서뿐(V3 증거의 코드 범위 유지, 원격 CI는 게시 HEAD에서 재실행). 대상: PR #16 branch fast-forward push만(force·main 병합 없음).
