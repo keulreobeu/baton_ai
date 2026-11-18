@@ -76,3 +76,4 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   사본 `CI-VTIER-001-v3-50c95c1.log`·`CI-VTIER-001-v2-50c95c1.json`. 커밋 신원은 저장소 로컬 설정(lwwde07). 4차 재검토·게시는 승인 대기. verified·병합 아님.
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 4차 패키지")**: 원격 `codex/ci-vtier-001`=`57c8ff5`, 미게시 `4244da7`·`097a7e3`·`50c95c1`·`11c27da`·이 기록 커밋. 작성자 lwwde07,
   허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `50c95c1` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`36e5bbc`, draft PR #17)**: run `44228682519` plan·gate success, Windows 3.11·3.12 각 757 tests OK, failures/errors/skips 0, eligible true. `36e5bbc`(코드 `50c95c1`)에만 귀속. 4차 재검토 대기. 이 기록 커밋은 로컬 전용.
