@@ -500,6 +500,113 @@ class ReadsetTests(unittest.TestCase):
         self.check_only_done_creations_and_renames_are_outputs()  # 6th review R601/R604/R605
         self.check_input_turned_directory_is_a_change()  # 6th review R603
         self.check_call_outcome_and_order_decide_ownership()  # 7th review R701-R704
+        self.check_attempt_absence_and_moved_ownership()  # 8th review R801/R802
+        self.check_removal_outcome_and_child_creation()  # 8th review R803/R804
+
+    def check_attempt_absence_and_moved_ownership(self):
+        """CI-OPT-001 8th review R801/R802: a failed exclusive creation keeps the absence it
+        saw (another writer's file appearing after it is a change); a creation keeping
+        existing content that opened a non-empty file is uncertain; an existing file the
+        run did not make, moved over the run's own output, is read as an input and the
+        read set is partial (its source path was the dependency)."""
+        race = Path(self.temp.name) / "race-r801.cfg"
+        exclusive = self.recorder()
+        exclusive._audit_event("open", (str(race), "x", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        with exclusive._quiet():  # another writer wins between the event and the call
+            race.write_text("external", encoding="utf-8")
+        exclusive._settle_by_call("create", [race], False)
+        exclusive.stop()
+        self.assertNotIn(readset._canonical(race), exclusive._made)
+        self.assertIn("INPUT_CHANGED_DURING_RUN", exclusive.partial_reasons, exclusive.partial_samples)
+        self.assertFalse(exclusive.as_dict()["complete"])
+        shared = Path(self.temp.name) / "append-r801.cfg"
+        keeping = self.recorder()
+        keeping._audit_event("open", (str(shared), "a+", os.O_CREAT | os.O_APPEND | os.O_RDWR))
+        with keeping._quiet():
+            shared.write_text("outside content", encoding="utf-8")
+            handle = open(shared, "a+", encoding="utf-8")
+        try:
+            keeping._settle_by_call("create", [shared], True, handle=handle)
+        finally:
+            handle.close()
+        keeping.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", keeping.partial_reasons, keeping.partial_samples)
+        own = Path(self.temp.name) / "own-append-r801.cfg"
+        appended = self.recorder()
+        with open(own, "a", encoding="utf-8") as stream:
+            stream.write("mine")
+        appended.stop()
+        self.assertNotIn("OUTPUT_OWNERSHIP_UNCERTAIN", appended.partial_reasons, appended.partial_samples)
+        self.assertIn(readset._canonical(own), appended._made)
+        supply = Path(self.temp.name) / "supply-r802.cfg"
+        supply.write_text("accepted", encoding="utf-8")
+        time.sleep(0.03)
+        replaced = self.recorder()
+        target = Path(self.temp.name) / "target-r802.cfg"
+        target.write_text("own", encoding="utf-8")
+        os.replace(supply, target)
+        self.assertEqual(target.read_text(encoding="utf-8"), "accepted")
+        replaced.stop()
+        data = replaced.as_dict()
+        self.assertFalse(data["complete"])
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", replaced.partial_reasons, replaced.partial_samples)
+        self.assertIn(readset._real(target), [r["path"] for r in data["outside_reads"]])
+        late = self.recorder()
+        late._renames.append((readset._canonical(supply), readset._canonical(target), None))
+        late._made.add(readset._canonical(target))  # an earlier own output at the destination
+        late.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", late.partial_reasons)
+
+    def check_removal_outcome_and_child_creation(self):
+        """CI-OPT-001 8th review R803/R804: a removal that failed (the file open on Windows)
+        is no change; one no wrapped call reported, the input still there, is unverifiable;
+        a real child creating a new file in an existing directory is no absent input, while
+        a child that probed the path absent first still leaves the read set partial."""
+        watched = Path(self.temp.name) / "locked-r803.cfg"
+        watched.write_text("unchanged", encoding="utf-8")
+        time.sleep(0.03)
+        held = self.recorder()
+        if os.name == "nt":
+            with watched.open("r", encoding="utf-8") as stream:
+                stream.read()
+                with self.assertRaises(PermissionError):
+                    watched.unlink()
+        else:
+            watched.read_text(encoding="utf-8")
+            def refused(path, *args, **kwargs):
+                sys.audit("os.remove", path, -1)
+                raise PermissionError(13, "in use", str(path))
+            with patch.object(readset, "_ORIGINAL_OS_UNLINK", refused), self.assertRaises(PermissionError):
+                watched.unlink()
+        self.assertEqual(watched.read_text(encoding="utf-8"), "unchanged")
+        held.stop()
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", held.partial_reasons, held.partial_samples)
+        self.assertTrue(held.as_dict()["complete"], held.partial_samples)
+        unsure = self.recorder()
+        watched.read_text(encoding="utf-8")
+        unsure._audit_event("os.remove", (str(watched), -1))
+        unsure._settle_pending()
+        unsure.stop()
+        self.assertIn("INPUT_UNHASHABLE", unsure.partial_reasons)
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", unsure.partial_reasons, unsure.partial_samples)
+        made = self.root / "child-made-r804.cfg"
+        probed = self.root / "child-probed-r804.cfg"
+        time.sleep(0.03)
+        rec = self.recorder()
+        code = "from pathlib import Path; Path(%r).write_text('own', encoding='utf-8')" % str(made)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        rec.stop()
+        self.assertIn(readset._canonical(made), rec._made)
+        self.assertNotIn("OUTPUT_AT_ABSENT_INPUT", rec.partial_reasons, rec.partial_samples)
+        self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+        probe = self.recorder()
+        code = ("from pathlib import Path\ntry:\n    open(%r).close()\nexcept FileNotFoundError:\n    pass\n"
+                "Path(%r).write_text('own', encoding='utf-8')" % (str(probed), str(probed)))
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        probe.stop()
+        self.assertIn("OUTPUT_AT_ABSENT_INPUT", probe.partial_reasons, probe.partial_samples)
 
     def check_call_outcome_and_order_decide_ownership(self):
         """CI-OPT-001 7th review R701-R704: an attempt settled only by the path's state is
@@ -535,6 +642,9 @@ class ReadsetTests(unittest.TestCase):
         dst.unlink()
         moved.stop()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", moved.partial_reasons, moved.partial_samples)
+        # 8th review: the moved own output is no input either (no read record left).
+        self.assertFalse(any(r["path"].startswith("own-r703") for r in moved.as_dict()["repo_reads"]),
+                         moved.as_dict()["repo_reads"])
         foreign = Path(self.temp.name) / "foreign-r703.cfg"
         foreign.write_text("theirs", encoding="utf-8")
         landing = self.root / "landing-r703.cfg"

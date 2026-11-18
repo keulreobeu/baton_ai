@@ -54,6 +54,9 @@ _ORIGINAL_IO_OPEN = None
 _ORIGINAL_OS_OPEN = None
 _ORIGINAL_OS_RENAME = None
 _ORIGINAL_OS_REPLACE = None
+# 8th review R803: removals too (the os.remove audit event comes before the call).
+_ORIGINAL_OS_REMOVE = None
+_ORIGINAL_OS_UNLINK = None
 _IN_SQLITE_WRAPPER = threading.local()
 _ORIGINAL_CFFI_DLOPEN = None
 _SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
@@ -331,10 +334,13 @@ class Recorder:
         # 6th review R601/R605: an audit event comes before the operation, so a creation
         # or a rename is only an attempt until the next event of the same thread (or stop)
         # finds it done; confirmed renames are applied after every child log is merged.
-        self._pending_ops = {}  # thread id -> ("create", path) | ("rename", src, dst)
+        self._pending_ops = {}  # thread id -> ("create", path) | ("rename", src, dst) | ("remove", path)
+        self._pending_meta = {}  # thread id -> attempt details (8th review R801/R803)
         self._renames = []  # (src, dst, owned) confirmed renames; owned None = owner unknown
         self._input_born = {}  # input path -> birth time when first recorded (before the run)
         self._removed = {}  # pre-existing (not run-created) paths this run removed (7th review R702)
+        self._unsure_removed = {}  # removals whose outcome no wrapped call reported (8th review R803)
+        self._precreated = {}  # paths a child reported absent just before creating them (8th review R804)
         self._created = set()
         self._install()
         if _child:
@@ -368,12 +374,15 @@ class Recorder:
                 except Exception:
                     pass
                 global _ORIGINAL_IO_OPEN, _ORIGINAL_OS_OPEN, _ORIGINAL_OS_RENAME, _ORIGINAL_OS_REPLACE
+                global _ORIGINAL_OS_REMOVE, _ORIGINAL_OS_UNLINK
                 import builtins
                 import io
                 _ORIGINAL_IO_OPEN, _ORIGINAL_OS_OPEN = io.open, os.open
                 _ORIGINAL_OS_RENAME, _ORIGINAL_OS_REPLACE = os.rename, os.replace
+                _ORIGINAL_OS_REMOVE, _ORIGINAL_OS_UNLINK = os.remove, os.unlink
                 io.open = builtins.open = _tracked_io_open
                 os.open, os.rename, os.replace = _tracked_os_open, _tracked_os_rename, _tracked_os_replace
+                os.remove, os.unlink = _tracked_os_remove, _tracked_os_unlink
                 os.listdir = _tracked_listdir
                 os.scandir = _tracked_scandir
                 subprocess.Popen = _TrackedPopen
@@ -486,7 +495,10 @@ class Recorder:
         self._aliases[key] = {"path": observed, "target": target}
 
     def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None,
-                     absent=False, isdir=False):
+                     absent=False, isdir=False, precreate=False, seen_absent=False):
+        """precreate: a child's absence seen only to create the file (8th review R804);
+        seen_absent: the absence seen when a creation that then failed was attempted
+        (8th review R801), kept even if another writer has made the path since."""
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
@@ -501,13 +513,18 @@ class Recorder:
         if self._is_child:
             # A child judges nothing: it reports content and birth time, and
             # every recorder applies its own start time (nested recorders).
-            if not os.path.exists(canonical):
+            if seen_absent or not os.path.exists(canonical):
                 with self._quiet():
                     parent_born = _ancestor_born(canonical)
                 found = self._alias_of(path, canonical)
-                self._emit({"type": "read", "path": canonical, "via": via, "absent": True, "born": parent_born,
-                            "alias": list(found) if found else found})
-                return
+                event = {"type": "read", "path": canonical, "via": via, "absent": True, "born": parent_born,
+                         "alias": list(found) if found else found}
+                if precreate:
+                    event["precreate"] = True
+                self._emit(event)
+                if not (seen_absent and os.path.exists(canonical)):
+                    return
+                # 8th review R801: what another writer put there since is reported too.
             if os.path.isdir(canonical):
                 # 6th review R603: report it, so a recorded input turned directory is seen.
                 self._emit({"type": "read", "path": canonical, "via": via, "isdir": True})
@@ -517,6 +534,14 @@ class Recorder:
             found = self._alias_of(path, canonical)
             self._emit({"type": "read", "path": canonical, "via": via, "section_only": bool(section_only),
                         "sha256": digest, "born": born, "alias": list(found) if found else found})
+            return
+        if relayed and precreate:
+            # 8th review R804: the absence a child saw only to create the file is compared
+            # with an input recorded earlier, but is no new absent input. Whether an input
+            # recorded from a later-merged log was read before or after the creation is
+            # judged at stop.
+            self._reobserved(scope, canonical, path, absent=True)
+            self._precreated.setdefault(canonical, path)
             return
         if relayed and isdir:
             self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
@@ -539,7 +564,7 @@ class Recorder:
                 self._record_absent(path, canonical, scope)
                 return
         else:
-            if not os.path.exists(canonical):
+            if seen_absent or not os.path.exists(canonical):
                 # A path probed but absent is an input too (it may appear later),
                 # unless its nearest existing ancestor was created by this run.
                 parent_born = _ancestor_born(canonical)
@@ -549,6 +574,11 @@ class Recorder:
                     # symlink/junction: its retarget is a change too.
                     self._note_alias(self._alias_of(path, canonical), path)
                     self._record_absent(path, canonical, scope)
+                    entry = self._input_entry(scope, canonical)
+                    if seen_absent and os.path.exists(canonical) and entry is not None and entry.get("absent"):
+                        # 8th review R801: another writer made it after the failed attempt saw
+                        # it absent (a change unless a recorded process of the run made it).
+                        self._appeared.setdefault(canonical, path)
                 return
             exempt = self._is_created(canonical)
             if os.path.isdir(canonical):
@@ -619,12 +649,13 @@ class Recorder:
             # cannot be reused (the run itself is not judged unstable).
             self._partial("INPUT_UNHASHABLE", path)
 
-    def _attempt(self, op):
-        """Hold a creation/rename attempt; the previous one of this thread is settled first."""
+    def _attempt(self, op, **meta):
+        """Hold a creation/rename/removal attempt; the previous one of this thread is settled first."""
         self._settle_pending(threading.get_ident())
         self._pending_ops[threading.get_ident()] = op
+        self._pending_meta[threading.get_ident()] = meta
 
-    def _settle_by_call(self, kind, paths, ok):
+    def _settle_by_call(self, kind, paths, ok, handle=None):
         """7th review R701: the wrapped call returned (ok) or raised: that is the outcome."""
         op = self._pending_ops.get(threading.get_ident())
         if op is None or op[0] != kind:
@@ -633,7 +664,27 @@ class Recorder:
         if list(op[1:]) != wanted:
             return  # another path (e.g. the recorder's own log write): not this attempt
         del self._pending_ops[threading.get_ident()]
-        self._conclude(op, ok, certain=True)
+        meta = self._pending_meta.pop(threading.get_ident(), {})
+        certain = True
+        if ok and kind == "create" and meta.get("keeps"):
+            # 8th review R801: a creation that keeps existing content ("a", O_CREAT without
+            # O_EXCL/O_TRUNC, SQLite) also succeeds on a file another writer made after the
+            # absence was seen; only an empty file shows nothing foreign was opened.
+            certain = self._opened_empty(handle, op[1])
+        self._conclude(op, ok, certain=certain, meta=meta)
+
+    def _opened_empty(self, handle, canonical):
+        with self._quiet():
+            try:
+                if isinstance(handle, int):
+                    return os.fstat(handle).st_size == 0
+                if handle is not None and hasattr(handle, "fileno"):
+                    return os.fstat(handle.fileno()).st_size == 0
+                return os.stat(canonical).st_size == 0
+            except FileNotFoundError:
+                return handle is None  # nothing at the path (e.g. SQLite not written yet)
+            except (OSError, ValueError, AttributeError):
+                return False
 
     def _settle_pending(self, ident=None):
         """Settle attempts no wrapped call concluded (one thread, or all at stop) from the
@@ -641,21 +692,41 @@ class Recorder:
         an ownership is uncertain and the evidence is not reusable."""
         for key in ([ident] if ident is not None else list(self._pending_ops)):
             op = self._pending_ops.pop(key, None)
+            meta = self._pending_meta.pop(key, {})
             if op is None:
                 continue
             with self._quiet():
                 if op[0] == "create":
                     done = os.path.lexists(op[1])
+                elif op[0] == "remove":
+                    done = not os.path.lexists(op[1])
                 else:
                     done = os.path.lexists(op[2]) and (op[1] == op[2] or not os.path.lexists(op[1]))
-            self._conclude(op, done, certain=False)
+            self._conclude(op, done, certain=False, meta=meta)
 
-    def _conclude(self, op, done, certain):
+    def _conclude(self, op, done, certain, meta=None):
+        meta = meta or {}
+        if op[0] == "remove":
+            # 8th review R803: a removal is recorded once it is known to have happened; a
+            # path still there whose removal no wrapped call reported may have been removed
+            # and recreated (unverifiable, not a confirmed change).
+            if done:
+                if self._is_child:
+                    self._emit({"type": "removed", "path": op[1]})
+                else:
+                    self._removed.setdefault(op[1], meta.get("text") or op[1])
+            elif not certain:
+                if self._is_child:
+                    self._emit({"type": "removed", "path": op[1], "confirmed": False})
+                else:
+                    self._unsure_removed.setdefault(op[1], meta.get("text") or op[1])
+            return
         if not done:
             if op[0] == "create":
-                # The creation failed: the path was absent when the run looked, which is
-                # an observation (a later appearance by another writer is a change).
-                self._record_read(op[1])
+                # The creation failed: the path was absent when the attempt looked, which is
+                # the observation (8th review R801: kept even if another writer has made the
+                # path since; its appearance is a change).
+                self._record_read(op[1], seen_absent=True)
             return  # the open/rename failed: no ownership
         if not certain:
             self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", op[-1])
@@ -676,25 +747,36 @@ class Recorder:
             # the moved output right after is an output read.
             self._made.add(dst)
             self._created.add(dst)
-        elif not self._is_child:
-            self._renames.append((src, dst, None))
+        else:
+            # 8th review R802: the destination now holds content this process did not make,
+            # so an earlier output there no longer exempts its reads (they are inputs again).
+            self._created.discard(dst)
+            if not self._is_child:
+                self._renames.append((src, dst, None))
 
     def _apply_renames(self):
         """At stop, after every log is merged: moves whose source owner was not known when
         they happened (another process created it). Applying them is order-uncertain, so
-        an applied one leaves the read set partial (7th review R703)."""
+        an applied one leaves the read set partial (7th review R703). A move whose source
+        no recorded process made (a file that existed before the run, another writer's)
+        carried content whose dependency is the source path, which the destination does
+        not record: the read set is partial (8th review R802), whatever was at the
+        destination before."""
+        pending = list(self._renames)
         changed = True
         while changed:
             changed = False
-            for src, dst, owned in self._renames:
-                if dst in self._made:
-                    continue
-                if owned is True or (owned is None and (src in self._made or src in self._created)):
-                    if owned is None:
+            for item in list(pending):
+                src, dst, owned = item
+                if owned is True or src in self._made or src in self._created:
+                    if owned is not True:
                         self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", dst)
                     self._made.add(dst)
                     self._created.add(dst)
+                    pending.remove(item)
                     changed = True
+        for src, dst, owned in pending:
+            self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", dst)
 
     def _record_absent(self, path, canonical, scope):
         record = {"path": _real(path) or canonical, "sha256": None, "absent": True}
@@ -716,6 +798,12 @@ class Recorder:
         # 5th review R501: "r+" (and O_TRUNC alone) never creates a missing file.
         create = bool((isinstance(mode, str) and any(c in mode for c in "wax"))
                       or (isinstance(flags, int) and flags & os.O_CREAT))
+        # 8th review R801: a creation that keeps an existing file's content (no exclusive
+        # or truncating flag) can open what another writer made after the absence was seen.
+        if isinstance(flags, int):
+            keeps = bool(flags & os.O_CREAT and not flags & (os.O_EXCL | os.O_TRUNC))
+        else:
+            keeps = isinstance(mode, str) and "a" in mode and not any(c in mode for c in "wx")
         if _is_device(canonical) or self._scope(canonical) == "derived":
             return
         # The original path (not the resolved one) goes on, so symlink and
@@ -725,15 +813,16 @@ class Recorder:
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
             else:
                 # 7th review R702: the absence is reported first, so a parent that recorded
-                # this path as an input sees it gone before it is recreated.
-                self._record_read(path)
-                self._attempt(("create", canonical))  # 6th review R601
+                # this path as an input sees it gone before it is recreated. 8th review R804:
+                # marked as seen for the creation, so it is no absent input by itself.
+                self._record_read(path, precreate=True)
+                self._attempt(("create", canonical), keeps=keeps)  # 6th review R601
             return
         if create and not os.path.exists(canonical):
             # 6th review R601: an output only once the file exists after the open.
             if self._input_entry(self._scope(canonical), canonical) is not None:
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
-            self._attempt(("create", canonical))  # after the re-observation (it settles older attempts)
+            self._attempt(("create", canonical), keeps=keeps)  # after the re-observation (it settles older attempts)
             return
         if not self._is_created(canonical) or self._input_entry(self._scope(canonical), canonical) is not None:
             # 5th review R501: an input recorded earlier is compared again even when the
@@ -800,10 +889,9 @@ class Recorder:
                 with self._quiet():
                     existed = os.path.lexists(canonical) and not os.path.isdir(canonical)
                 if existed and not self._is_created(canonical) and canonical not in self._made:
-                    if self._is_child:
-                        self._emit({"type": "removed", "path": canonical})
-                    else:
-                        self._removed.setdefault(canonical, _path_text(target))
+                    # 8th review R803: the event comes before the call, so this is an attempt
+                    # settled by the wrapped os.remove/os.unlink outcome (or the path's state).
+                    self._attempt(("remove", canonical), text=_path_text(target))
         elif event == "os.rename":
             # 5th review R504: an output moved into place (atomic write) is an output.
             src = _canonical(_path_text(args[0])) if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
@@ -855,7 +943,7 @@ class Recorder:
             self._partial("PATH_UNNORMALIZABLE", value)
         elif not os.path.exists(canonical) and _sqlite_mode(database, uri) == "rwc":
             # A new database file is an output once it exists (5th R504, 6th R601).
-            self._attempt(("create", canonical))
+            self._attempt(("create", canonical), keeps=True)  # 8th review R801: opens an existing file too
         else:
             # Existing file, or a non-creating mode (ro/rw) on a missing file:
             # the file's content or absence is an input.
@@ -1162,6 +1250,19 @@ class Recorder:
             entry = self._input_entry(self._scope(canonical), canonical)
             if entry is not None and not entry.get("absent"):
                 self._partial("INPUT_CHANGED_DURING_RUN", path)
+        for canonical, path in sorted(self._unsure_removed.items()):
+            # 8th review R803: a removal of an input with no reported outcome, the path still
+            # there: unverifiable (not reusable), not a confirmed change.
+            entry = self._input_entry(self._scope(canonical), canonical)
+            if entry is not None and not entry.get("absent") and canonical not in self._removed:
+                self._partial("INPUT_UNHASHABLE", path)
+        for canonical, path in sorted(self._precreated.items()):
+            # 8th review R804: a child created the file after seeing it absent, and an input
+            # born before the run was recorded there from a log merged in no time order:
+            # read before (a change) or after the creation cannot be told apart.
+            entry = self._input_entry(self._scope(canonical), canonical)
+            if entry is not None and not entry.get("absent") and canonical in self._made:
+                self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", path)
         for canonical, path in sorted(self._appeared.items()):
             if canonical not in self._made:
                 self._partial("INPUT_CHANGED_DURING_RUN", path)
@@ -1268,7 +1369,10 @@ class Recorder:
         elif kind == "removed":
             if not (isinstance(event.get("path"), str) and event["path"]):
                 raise ValueError("removed event without path")
-            self._removed.setdefault(event["path"], event["path"])
+            if event.get("confirmed") is False:  # 8th review R803
+                self._unsure_removed.setdefault(event["path"], event["path"])
+            else:
+                self._removed.setdefault(event["path"], event["path"])
         elif kind == "renamed":
             if not all(isinstance(event.get(k), str) and event[k] for k in ("src", "dst")):
                 raise ValueError("renamed event without paths")
@@ -1281,7 +1385,8 @@ class Recorder:
         elif kind == "read":
             self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
                               event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"),
-                              absent=event.get("absent") is True, isdir=event.get("isdir") is True)
+                              absent=event.get("absent") is True, isdir=event.get("isdir") is True,
+                              precreate=event.get("absent") is True and event.get("precreate") is True)
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
                           born=event.get("born"), relayed=True, alias=event.get("alias"))
@@ -1564,10 +1669,10 @@ def _tracked_sqlite_connect(*args, **kwargs):
     return connection
 
 
-def _settle_calls(kind, paths, ok):
+def _settle_calls(kind, paths, ok, handle=None):
     for r in _active():
         if not r._is_quiet():
-            r._settle_by_call(kind, paths, ok)
+            r._settle_by_call(kind, paths, ok, handle=handle)
 
 
 def _tracked_io_open(file, *args, **kwargs):
@@ -1576,7 +1681,7 @@ def _tracked_io_open(file, *args, **kwargs):
     except BaseException:
         _settle_calls("create", [file], False)
         raise
-    _settle_calls("create", [file], True)
+    _settle_calls("create", [file], True, handle=result)
     return result
 
 
@@ -1586,7 +1691,27 @@ def _tracked_os_open(path, *args, **kwargs):
     except BaseException:
         _settle_calls("create", [path], False)
         raise
-    _settle_calls("create", [path], True)
+    _settle_calls("create", [path], True, handle=result)
+    return result
+
+
+def _tracked_os_remove(path, *args, **kwargs):
+    try:
+        result = _ORIGINAL_OS_REMOVE(path, *args, **kwargs)
+    except BaseException:
+        _settle_calls("remove", [path], False)
+        raise
+    _settle_calls("remove", [path], True)
+    return result
+
+
+def _tracked_os_unlink(path, *args, **kwargs):
+    try:
+        result = _ORIGINAL_OS_UNLINK(path, *args, **kwargs)
+    except BaseException:
+        _settle_calls("remove", [path], False)
+        raise
+    _settle_calls("remove", [path], True)
     return result
 
 
