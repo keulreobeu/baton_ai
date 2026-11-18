@@ -15,6 +15,76 @@ from .isolation import check_scope, git, pack_context, prepare_worktree, reposit
 from .managed import ACTIVE, ManagedStore
 
 
+# CI-VTIER-001 re-review N01: planner unittest checks record what actually ran through
+# unittest's own TestResult callbacks instead of parsing console text (test bodies can
+# print look-alike lines, and a prefix without a newline hides a real one).
+_RECORDED_UNITTEST = r'''
+import json, sys, unittest
+out, names = sys.argv[1], sys.argv[2:]
+record = {"schema": "unittest-record/1", "started": [], "passed": [], "failed": [], "skipped": []}
+class Result(unittest.TextTestResult):
+    def startTest(self, test):
+        record["started"].append(test.id()); super().startTest(test)
+    def addSuccess(self, test):
+        record["passed"].append(test.id()); super().addSuccess(test)
+    def addFailure(self, test, err):
+        record["failed"].append(test.id()); super().addFailure(test, err)
+    def addError(self, test, err):
+        record["failed"].append(test.id()); super().addError(test, err)
+    def addSkip(self, test, reason):
+        record["skipped"].append(test.id()); super().addSkip(test, reason)
+    def addSubTest(self, test, subtest, err):
+        if err is not None: record["failed"].append(test.id())
+        super().addSubTest(test, subtest, err)
+    def addExpectedFailure(self, test, err):
+        record["failed"].append(test.id()); super().addExpectedFailure(test, err)
+    def addUnexpectedSuccess(self, test):
+        record["failed"].append(test.id()); super().addUnexpectedSuccess(test)
+result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(
+    unittest.defaultTestLoader.loadTestsFromNames(names))
+record.update(tests_run=result.testsRun, failures=len(result.failures), errors=len(result.errors),
+              skipped_count=len(result.skipped), expected_failures=len(result.expectedFailures),
+              unexpected_successes=len(result.unexpectedSuccesses), successful=result.wasSuccessful())
+with open(out, "w", encoding="utf-8") as stream:
+    json.dump(record, stream)
+sys.exit(0 if result.wasSuccessful() else 1)
+'''
+
+
+def read_unittest_record(path):
+    """The recorded run, or None when missing or malformed (never a pass)."""
+    try:
+        with open(path, encoding="utf-8") as stream:
+            record = json.load(stream)
+    except (OSError, ValueError):
+        return None
+    lists = ("started", "passed", "failed", "skipped")
+    counts = ("tests_run", "failures", "errors", "skipped_count", "expected_failures", "unexpected_successes")
+    if not (isinstance(record, dict) and record.get("schema") == "unittest-record/1"
+            and all(isinstance(record.get(k), list) and all(isinstance(i, str) for i in record[k]) for k in lists)
+            and all(type(record.get(k)) is int and record[k] >= 0 for k in counts)
+            and type(record.get("successful")) is bool):
+        return None
+    return record
+
+
+def proven_tests(record):
+    """IDs that started, succeeded and never failed (a failed subTest is a failure)."""
+    return (set(record["started"]) & set(record["passed"])) - set(record["failed"]) - set(record["skipped"])
+
+
+def validation_status(checks):
+    """CI-VTIER-001 re-review N04: what the planner's own tests showed, apart from
+    validation_passed (no declared or planner check failed). "not_run" means no planner
+    test ran and is never test evidence; None means no planner (generic root)."""
+    for check in checks or []:
+        planner = check.get("planner") if isinstance(check, dict) else None
+        if isinstance(planner, dict):
+            status = planner.get("actual_status")
+            return status if status in {"passed", "failed", "not_run"} else "failed"
+    return None
+
+
 def persisted_text(value):
     from .execution import redact
     value = redact(value)
@@ -276,13 +346,16 @@ class Orchestrator:
                 passed = all(c["exit_code"] == 0 for c in validation)
                 if passed:
                     state = "REVIEW_REQUIRED"  # Completion always requires independent evidence.
-                    return self.finish(task_id, lease, state, validation=validation, validation_passed=True, changed_files=final_changes)
+                    return self.finish(task_id, lease, state, validation=validation, validation_passed=True,
+                                       validation_status=validation_status(validation), changed_files=final_changes)
                 if row["attempt"] < task["execution"]["max_attempts"]:
-                    self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False, "retry_cause": "validation_failed"}, release=True)
+                    self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False,
+                                                                      "validation_status": validation_status(validation), "retry_cause": "validation_failed"}, release=True)
                     close_metrics()
                     self.store.ready(task_id, automatic=True)
                     return self._run(task_id)
-                return self.finish(task_id, lease, "FAILED", reason="validation_failed", validation=validation, validation_passed=False)
+                return self.finish(task_id, lease, "FAILED", reason="validation_failed", validation=validation, validation_passed=False,
+                                   validation_status=validation_status(validation))
         except HarnessError as exc:
             if self.store.get(task_id)["lease"] != lease:
                 return self.store.export(task_id)
@@ -358,8 +431,9 @@ class Orchestrator:
                         batch.append(target); size += len(target) + 1
                     if batch: batches.append(batch)
                     for batch in batches:
-                        # -v prints each executed test ID, checked against the plan below.
-                        internal.append({"argv": ["python", "-m", "unittest", "-v", *batch], "acs": []})
+                        # Runs through _RECORDED_UNITTEST; the recorded IDs are checked
+                        # against the plan below (re-review N01).
+                        internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": [], "recorded": True})
                 if tier == "V2":
                     internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/check_sdd.py"), "--base", target_base], "acs": []})
                 for direct in local_plan["direct_checks"]:
@@ -405,8 +479,21 @@ class Orchestrator:
                 # CI-VTIER-001 review P2: planner checks (a V2 module run can exceed 300 s)
                 # are bounded by the Task's remaining total time, like the official V3.
                 timeout = max(0.05, total - (time.monotonic() - started))
-            rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
-                                              env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
+            record = None
+            if check.get("recorded"):
+                import shutil
+                import tempfile
+                record_dir = tempfile.mkdtemp(prefix="baton-unittest-")
+                record_path = os.path.join(record_dir, "record.json")
+                argv = [sys.executable, "-X", "utf8", "-c", _RECORDED_UNITTEST, record_path, *argv[3:]]
+            try:
+                rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
+                                                  env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
+                if check.get("recorded"):
+                    record = read_unittest_record(record_path)
+            finally:
+                if check.get("recorded"):
+                    shutil.rmtree(record_dir, ignore_errors=True)
             output = out + "\n" + err
             counts = re.findall(r"Ran (\d+) tests?", output) if argv[1:3] == ["-m", "unittest"] else re.findall(r"(\d+) passed", output) if argv[1:3] == ["-m", "pytest"] else []
             skipped = sum(int(n) for n in re.findall(r"(?:skipped[= ]|skip=)(\d+)", output))
@@ -415,6 +502,14 @@ class Orchestrator:
             expected += sum(int(n) for n in re.findall(r"(\d+) xfailed", output))
             unexpected = sum(int(count) for pair in re.findall(r"(\d+) xpassed|unexpected successes[= ](\d+)", output) for count in pair if count)
             code = rc if rc is not None else -1
+            if check.get("recorded"):
+                # Counts come from the record only; a missing/malformed record is a failure.
+                counts = [str(record["tests_run"])] if record else []
+                skipped = record["skipped_count"] if record else 0
+                expected = record["expected_failures"] if record else 0
+                unexpected = record["unexpected_successes"] if record else 0
+                if record is None or not record["successful"] or record["tests_run"] <= 0 or skipped or expected or unexpected:
+                    code = code or 2
             if check.get("official"):
                 summary = None
                 for line in output.splitlines():
@@ -445,8 +540,8 @@ class Orchestrator:
                 results[-1]["suite"] = suite
             if local_plan is not None:
                 results[-1]["_planner_internal"] = id(check) in internal_ids
-                if id(check) in internal_ids and argv[1:3] == ["-m", "unittest"]:
-                    executed_ids.update(re.findall(r"^\w+ \(([\w.]+)\)", output, re.M))
+                if id(check) in internal_ids and record is not None:
+                    executed_ids.update(proven_tests(record))
             if reason: break
         if local_plan is not None:
             try:
@@ -462,12 +557,15 @@ class Orchestrator:
                 raise HarnessError("validation_not_run")
             coverage = None
             if local_plan["effective_tier"] != "V3" and not any(r.get("stop_reason") for r in results):
-                # CI-VTIER-001 review P1: every required test (Task/AC) and every required
-                # regression module must have actually run; a module emptied at load time
-                # or a missing ID fails the check instead of passing on the total count.
-                missing = sorted(set(local_plan.get("required_ids", [])) - executed_ids)
-                missing += sorted(m for m in local_plan.get("required_modules", [])
-                                  if not any(i.startswith(m + ".") for i in executed_ids))
+                # CI-VTIER-001 review P1 / re-review N01: every selected and required test
+                # ID (a V2 selection is every inventoried test of its modules, required
+                # regression modules included) must be recorded as run and passed; a test
+                # dropped by load_tests or never started fails the check.
+                wanted = set(local_plan.get("selected_ids", [])) | set(local_plan.get("required_ids", []))
+                missing = sorted(wanted - executed_ids)
+                missing = sorted({m for m in local_plan.get("required_modules", [])
+                                  if any(i.startswith(m + ".") for i in missing)
+                                  or not any(i.startswith(m + ".") for i in executed_ids)}) + missing
                 coverage = {"argv": ["required_tests_executed"], "acs": [], "exit_code": 2 if missing else 0,
                             "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
                             "output": ("required_tests_not_executed: " + " ".join(missing[:20])) if missing
@@ -664,7 +762,8 @@ class Orchestrator:
             if git(tree, "rev-parse", "HEAD").strip() != row["result"].get("base_commit"):
                 raise HarnessError("worktree_head_changed")
             passed = bool(checks) and all(check["exit_code"] == 0 for check in checks)
-            return self.finish(task_id, lease, "REVIEW_REQUIRED" if passed else "FAILED", validation=checks, validation_passed=passed, changed_files=changes)
+            return self.finish(task_id, lease, "REVIEW_REQUIRED" if passed else "FAILED", validation=checks, validation_passed=passed,
+                               validation_status=validation_status(checks), changed_files=changes)
         except HarnessError as exc:
             return self.finish(task_id, lease, "BLOCKED", reason=str(exc))
         except BaseException as exc:

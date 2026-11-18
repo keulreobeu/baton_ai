@@ -1306,6 +1306,13 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
         if local_mid:
             partial = True
             reasons.append("PARTIAL_IMPACT_SCOPE")
+    if tier == 1 and not inv["complete"]:
+        # Re-review N03: an incomplete inventory is a partial V1 on its own, whatever
+        # the graph says.
+        reasons.append("INCOMPLETE_INVENTORY")
+        if local_mid:
+            partial = True
+            reasons.append("PARTIAL_IMPACT_SCOPE")
     selected = set(required)
     required_modules = set()
     if tier < 3:
@@ -1394,8 +1401,9 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
                 for ref in ac["tests"]:
                     required.add(ref["file"][:-3].replace("/", ".") + "." + ref["symbol"])
     inv = inventory(root)
-    graph = {"state": "not_run", "complete": False, "selected": [], "seconds": None,
-             "index_id": None, "generation": None, "freshness": "unknown", "coverage": "unknown"}
+    empty_graph = {"state": "not_run", "complete": False, "selected": [], "seconds": None,
+                   "index_id": None, "generation": None, "freshness": "unknown", "coverage": "unknown"}
+    graph = dict(empty_graph)
     # V2's preliminary incompleteness is expected before querying. Risk paths,
     # final stages/events and explicit minimum=3 do not need graph service.
     query_needed = STAGES.get(stage, 3) < 3 and minimum != 3 and event in {"local", "draft"}
@@ -1405,12 +1413,14 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
         try:
             graph = (adapter or CbmCLI(root, should_stop=should_stop)).inspect(names, sdd.commit(root, base), inv)
             # CI-VTIER-001 review P2: validity is checked apart from completeness.
+            # Re-review N02: "complete" is a required field (no default).
             need(isinstance(graph, dict) and isinstance(graph.get("selected"), list)
                  and all(isinstance(item, str) for item in graph["selected"])
-                 and type(graph.get("complete", False)) is bool, "CBM_UNKNOWN_SCHEMA")
+                 and type(graph.get("complete")) is bool, "CBM_UNKNOWN_SCHEMA")
         except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
-            graph = {**graph, "state": "failed", "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA",
-                     "selected": [], "complete": False}
+            # Re-review N02: a malformed (possibly non-dict) answer is discarded, never merged.
+            graph = {**empty_graph, "state": "failed",
+                     "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA"}
     stable = before == freeze(root)
     result = choose(stage, names, inv, graph, required, minimum=minimum, event=event,
                     outside_failures=outside_failures, state_stable=stable)
@@ -1433,7 +1443,7 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
                   reuse=reuse_v3(current_identity, prior_evidence, remote=event != "local"))
     if graph.get("reason"):
         result["reasons"] = sorted(set(result["reasons"]) | {graph["reason"]})
-    if (tier == "V1" and not graph.get("complete")) or "PARTIAL_IMPACT_SCOPE" in result["reasons"]:
+    if (tier == "V1" and not (graph.get("complete") and inv["complete"])) or "PARTIAL_IMPACT_SCOPE" in result["reasons"]:
         result["unverified_scope"] = sorted(set(result["unverified_scope"]) | {"transitive_impact"})
     # Bounded output must fail, rather than silently truncate a test/check list.
     need(len(json.dumps(result).encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")

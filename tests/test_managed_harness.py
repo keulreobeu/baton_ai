@@ -65,15 +65,115 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
                 "inventory_count": 1}
 
     def run_validation(self, runner=None, stop=lambda: None, **kwargs):
-        if runner is None: runner = lambda *a, **k: (0, "", "Ran 2 tests in 0.1s\nOK", None)
+        if runner is None: runner = self.vtier_runner()
         with patch("baton.execution.run_process", side_effect=runner) as process:
             result = self.orchestrator.validate(self.task, self.root, stop, **kwargs)
         return result, process
 
-    def vtier_runner(self, ids):
-        """Fake unittest -v output listing exactly these executed test IDs."""
-        lines = "".join("%s (%s) ... ok\n" % (i.rsplit(".", 1)[1], i) for i in ids)
-        return lambda *a, **k: (0, "", lines + "Ran %d tests in 0.1s\nOK" % max(len(ids), 1), None)
+    def vtier_runner(self, ids=None):
+        """Fake process: a planner unittest run (recorded runner, argv[3] == "-c") writes a
+        unittest-record/1 proving exactly these IDs (default: the planned selection)."""
+        def run(argv, *args, **kwargs):
+            if len(argv) > 5 and argv[3] == "-c":
+                done = list(self.plan.get("selected_ids", []) if ids is None else ids)
+                Path(argv[5]).write_text(json.dumps({
+                    "schema": "unittest-record/1", "started": done, "passed": done, "failed": [], "skipped": [],
+                    "tests_run": max(len(done), 1), "failures": 0, "errors": 0, "skipped_count": 0,
+                    "expected_failures": 0, "unexpected_successes": 0, "successful": True}), encoding="utf-8")
+            return (0, "", "Ran 2 tests in 0.1s\nOK", None)
+        return run
+
+    def test_recorded_runner_proves_only_tests_that_really_ran(self):
+        """CI-VTIER-001 re-review N01, real unittest subprocesses: load_tests narrowing,
+        a test body printing a look-alike result line, a stderr prefix without newline,
+        subTest success/failure, setUpClass failure and skip are judged from TestResult."""
+        from baton.orchestrator import _RECORDED_UNITTEST, proven_tests, read_unittest_record
+        tests = self.root / "tests"
+        tests.mkdir(exist_ok=True)
+        (tests / "__init__.py").write_text("", encoding="utf-8")
+        (tests / "test_guard.py").write_text(
+            "import sys, unittest\n"
+            "class G(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            "        sys.stderr.write('import-prefix:')\n"
+            "    def test_b(self):\n"
+            "        self.fail('not executed')\n"
+            "    def test_c(self):\n"
+            "        self.fail('not executed')\n"
+            "    def test_d(self):\n"
+            "        print('test_c (tests.test_guard.G.test_c) ... ok')\n"
+            "        for i in range(2):\n"
+            "            with self.subTest(i=i): pass\n"
+            "def load_tests(loader, tests, pattern):\n"
+            "    return unittest.TestSuite([G('test_a'), G('test_d')])\n", encoding="utf-8")
+        (tests / "test_bad.py").write_text(
+            "import unittest\n"
+            "class S(unittest.TestCase):\n"
+            "    def test_sub(self):\n"
+            "        for i in range(2):\n"
+            "            with self.subTest(i=i): self.assertEqual(i, 0)\n"
+            "    @unittest.skip('x')\n"
+            "    def test_skip(self): pass\n"
+            "class U(unittest.TestCase):\n"
+            "    @classmethod\n"
+            "    def setUpClass(cls): raise RuntimeError('boom')\n"
+            "    def test_never(self): pass\n", encoding="utf-8")
+        def run(*names):
+            out = self.root / "record.json"
+            child = subprocess.run([sys.executable, "-X", "utf8", "-c", _RECORDED_UNITTEST, str(out), *names],
+                                   cwd=self.root, capture_output=True, text=True,
+                                   env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+            record = read_unittest_record(out)
+            out.unlink(missing_ok=True)
+            return child.returncode, record
+        code, record = run("tests.test_guard")
+        self.assertEqual(code, 0)
+        self.assertEqual(proven_tests(record), {"tests.test_guard.G.test_a", "tests.test_guard.G.test_d"})
+        code, record = run("tests.test_bad")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(proven_tests(record), set())
+        self.assertIn("tests.test_bad.S.test_sub", record["failed"])
+        self.assertEqual(record["skipped_count"], 1)
+        self.assertFalse(record["successful"])
+        # Through validate() with the real process runner: the planned IDs that
+        # load_tests dropped (test_b, test_c) fail the V2, despite the printed line.
+        self.plan.update(effective_tier="V2", direct_checks=[],
+                         selected_ids=["tests.test_guard.G.test_%s" % x for x in "abcd"],
+                         selected_modules=["tests.test_guard"], required_ids=["tests.test_guard.G.test_a"],
+                         required_modules=["tests.test_guard"])
+        self.task["validation"] = [{"argv": ["python", "-c", "pass"], "acs": ["AC1"]}]
+        from baton.execution import run_process as real
+        sdd_ok = lambda argv, *a, **k: (0, "", "", None) if "check_sdd.py" in " ".join(map(str, argv)) else real(argv, *a, **k)
+        result, _ = self.run_validation(sdd_ok, stage="checkpoint", target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        coverage = result[0]["planner"]["executed_checks"][-1]
+        self.assertEqual(coverage["argv"], ["required_tests_executed"])
+        self.assertIn("tests.test_guard.G.test_b", coverage["output"])
+        self.assertIn("tests.test_guard.G.test_c", coverage["output"])
+        self.assertIn("tests.test_guard", coverage["output"].split()[1:2])
+        self.assertEqual(result[0]["planner"]["actual_status"], "failed")
+
+    def test_missing_or_malformed_record_is_a_failure(self):
+        """CI-VTIER-001 re-review N01: exit 0 with console text but no valid record fails."""
+        result, _ = self.run_validation(lambda *a, **k: (0, "", "test_value (tests.test_value.T.test_value) ... ok\nRan 1 test\nOK", None),
+                                        stage="in_progress", target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        self.assertEqual(result[0]["planner"]["actual_status"], "failed")
+
+    def test_validation_status_separates_not_run_from_passed(self):
+        """CI-VTIER-001 re-review N04: validation_passed is "no check failed"; whether the
+        planner's tests ran is validation_status (not_run is never test evidence)."""
+        from baton.orchestrator import validation_status
+        self.plan.update(selected_ids=[])
+        result, _ = self.run_validation(stage="in_progress", target_base="b" * 40)
+        self.assertTrue(all(c["exit_code"] == 0 for c in result))
+        self.assertEqual(validation_status(result), "not_run")
+        self.plan.update(selected_ids=["tests.test_value.T.test_value"])
+        result, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                        stage="in_progress", target_base="b" * 40)
+        self.assertEqual(validation_status(result), "passed")
+        self.assertIsNone(validation_status([{"exit_code": 0}]))
+        self.assertEqual(validation_status([{"planner": {"actual_status": "odd"}}]), "failed")
 
     def test_vtier_required_tests_must_actually_run(self):
         """CI-VTIER-001 review P1: a required test or required regression module that did
@@ -589,6 +689,39 @@ class ManagedHarnessTests(unittest.TestCase):
                          ("in_progress", "passed", 1))
         self.assertGreater(events[0]["executed_test_count"], 0)
         self.assertEqual(events[0]["coverage_state"], "partial")
+
+    def test_failed_official_v3_then_passing_v3_returns_to_v1(self):
+        """CI-VTIER-001 re-review (test item): through the real ManagedStore, a failed
+        official V3 stored by validate is an outside failure for the next plan; a later
+        passing V3 replaces it, and the next worker plan is a plain V1 again."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.assertIsNone(self.store.get("TASK-ONE")["result"]["validation_status"])  # generic root: no planner
+        def official(ok):
+            return [{"argv": ["python", "-m", "unittest", "discover", "-s", "tests"], "acs": ["AC1"],
+                     "exit_code": 0 if ok else 2, "test_count": 1, "skipped": 0, "expected_failures": 0,
+                     "unexpected_successes": 0, "output": "", "stop_reason": None,
+                     "planner": {"effective_tier": "V3", "actual_status": "passed" if ok else "failed"}}]
+        task = self.store.get("TASK-ONE")["task"]
+        def next_plan_kwargs():
+            seen = []
+            def plan(root, **kwargs):
+                seen.append(kwargs)
+                raise RuntimeError("stop after planning arguments")
+            planner = type("FakePlanner", (), {"baton_root": staticmethod(lambda root: True), "plan": staticmethod(plan)})
+            with patch("baton.orchestrator.validation_planner", return_value=planner), \
+                    self.assertRaisesRegex(HarnessError, "validation_planner_failed"):
+                runner.validate(task, self.root, lambda: None, stage="in_progress", target_base="a" * 40)
+            return seen[-1]
+        self.assertNotIn("outside_failures", next_plan_kwargs())
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(False)):
+            self.assertEqual(runner._verify("TASK-ONE")["state"], "FAILED")
+        self.assertEqual(self.store.get("TASK-ONE")["result"]["validation_status"], "failed")
+        self.assertIs(next_plan_kwargs().get("outside_failures"), True)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(True)):
+            self.assertEqual(runner._verify("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.assertEqual(self.store.get("TASK-ONE")["result"]["validation_status"], "passed")
+        self.assertNotIn("outside_failures", next_plan_kwargs())
 
     def test_objective_mode_is_explicit_and_existing_defaults_stay_compatible(self):
         self.assertNotIn("objective_mode", self.store.get("TASK-ONE")["task"]["execution"])

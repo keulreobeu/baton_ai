@@ -77,6 +77,15 @@ class PolicyTests(unittest.TestCase):
                 self.assertIn("PARTIAL_IMPACT_SCOPE", local["reasons"])
                 self.assertEqual(self.choose("checkpoint", graph=graph, event="draft")["effective_tier"], "V3")
 
+    def test_incomplete_inventory_alone_gives_partial_local_v1(self):
+        """CI-VTIER-001 re-review N03: inventory incomplete + graph complete is a partial V1."""
+        graph = {"complete": True, "selected": ["tests.test_value.T.test_one"]}
+        complete = cp.choose("in_progress", ["src/value.py"], {**self.inv, "complete": True}, graph)
+        self.assertNotIn("PARTIAL_IMPACT_SCOPE", complete["reasons"])
+        partial = cp.choose("in_progress", ["src/value.py"], {**self.inv, "complete": False}, graph)
+        self.assertEqual(partial["effective_tier"], "V1")
+        self.assertTrue({"INCOMPLETE_INVENTORY", "PARTIAL_IMPACT_SCOPE"} <= set(partial["reasons"]))
+
     def test_final_stages_and_events_do_not_depend_on_graph(self):
         for stage in ("task_complete", "pre_merge", "unknown"):
             self.assertEqual(self.choose(stage, graph={})["effective_tier"], "V3")
@@ -805,6 +814,25 @@ class SyntheticGitTests(unittest.TestCase):
         self.assertEqual(partial["effective_tier"], "V1")
         self.assertEqual(len(partial["selected_ids"]), 2)
         self.assertEqual(self.planner("checkpoint", Partial())["effective_tier"], "V2")
+
+    def test_malformed_graph_answer_is_discarded_not_merged(self):
+        """CI-VTIER-001 re-review N02: a non-dict answer or one without "complete" becomes a
+        failed graph (partial local V1/V2), never a planner exception or a defaulted field."""
+        self.write("src/value.py", "def value(): return 2\n")
+        for answer in (None, [], "text", 3, {"selected": ["tests.test_value.T.test_two"]},
+                       {"selected": "tests.test_value.T.test_two", "complete": True},
+                       {"selected": [1], "complete": True}, {"selected": [], "complete": "yes"}):
+            class Bad:
+                def inspect(self, *args, answer=answer): return answer
+            with self.subTest(answer=answer):
+                fast = self.planner(adapter=Bad())
+                self.assertEqual(fast["effective_tier"], "V1")
+                self.assertEqual(fast["graph"]["state"], "failed")
+                self.assertIn("CBM_UNKNOWN_SCHEMA", fast["reasons"])
+                self.assertIn("transitive_impact", fast["unverified_scope"])
+                local = self.planner("checkpoint", Bad())
+                self.assertEqual(local["effective_tier"], "V2")
+                self.assertIn("PARTIAL_IMPACT_SCOPE", local["reasons"])
 
     def test_remote_actual_planner_absent_cbm_falls_back_and_checks_base(self):
         self.write("scripts/ci_plan.py", "# synthetic policy\n")

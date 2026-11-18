@@ -1622,6 +1622,14 @@
             },
             {
               "file": "tests/test_ci_plan.py",
+              "symbol": "SyntheticGitTests.test_malformed_graph_answer_is_discarded_not_merged"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_incomplete_inventory_alone_gives_partial_local_v1"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
               "symbol": "ImpactedTestFileTests.test_impacted_unmapped_support_file_stays_incomplete_and_v2_falls_full"
             }
           ]
@@ -1632,6 +1640,22 @@
             {
               "file": "tests/test_managed_harness.py",
               "symbol": "ValidationPlannerIntegrationTests.test_vtier_required_tests_must_actually_run"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_recorded_runner_proves_only_tests_that_really_ran"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_missing_or_malformed_record_is_a_failure"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_validation_status_separates_not_run_from_passed"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_failed_official_v3_then_passing_v3_returns_to_v1"
             },
             {
               "file": "tests/test_managed_harness.py",
