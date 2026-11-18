@@ -1671,3 +1671,15 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     결과는 로컬 기록기의 `CHILD_HOOK_MISSING` partial이다(fail-closed). 오재사용은 없고, 실제 `tests/`가 이 경로에 도달하지도 않는다. `a397217`부터 있던 한계다.
     후속 수정 시 두 import 경로가 한 기록기 상태와 launch token을 공유하는지 검증한다. 재사용 범위 결정과 함께 사용자에게 보고한다.
   로컬 V3는 이 기록 커밋을 최종 후보 HEAD로 두고 1회 실행한다.
+- **2026-11-19 최종 후보 `5f42d00`(코드 `b3a69cd`) 공식 로컬 V3**: **PASS**. `verify_environment.py --base 5c07aea --evidence-dir --lock-home`를 1회 실행했다(작업 트리 clean, 실행 중 파일·git 설정 변경 없음).
+  결과: 743 tests OK, failures 0, errors 0, skips 0, eligible true, state stable true, returncode 0. 소요 1314 s(suite 1283.0 s).
+  evidence는 `suite-e1a72752…56d5.json`(sha256 `e1a727526a2ddfbc14a3759ad90ae3452f88b61386782f852cbba882859856d5`), suite fingerprint는 `5f62836c…b5ea`다. `check_sdd.py --base 5c07aea` PASS.
+  reuse: rejected(`FINGERPRINT_CHANGED`, `SOURCE_READSET_PARTIAL`, `SOURCE_STATE_UNSTABLE`, 직전 원본은 partial·unstable). 이번 실행은 executed이며 재사용 절감은 없다.
+  read set complete false, partial 사유 5(직전 FAIL의 `FINGERPRINT_INPUT_CHANGED_DURING_RUN`은 해소):
+    | 사유 | 표본 수 | 요지 |
+    | `CHILD_HOOK_MISSING` | 2 | `time.sleep(30)` 자식 1건(launched 244, hooked 243) |
+    | `CHILD_LOG_INCOMPLETE` | 5 | 자식 로그 5개 |
+    | `CHILD_NOT_ALLOWED` | 4 | 비 Python 자식(git 등, disallowed_count 17088) |
+    | `MUTATION_UNVERIFIABLE` | 5 | 열린 descriptor 4, `.local_runtime/harness-managed/test-tmp` mkdir 1 |
+    | `OUTPUT_OWNERSHIP_UNCERTAIN` | 5 | 임시 lock·SQLite 파일 |
+  이 증거의 read set은 partial이므로 다음 실행의 `offline_suite` 재사용 원본이 될 수 없다(재사용 범위는 사용자 결정 대상). 원격 Windows 두 조합은 확인하지 않았다. Task는 원격 CI 확인 전 verified로 올리지 않는다.
