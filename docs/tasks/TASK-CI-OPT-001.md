@@ -1288,3 +1288,15 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   R704(P2) SQLite 래퍼·감사 중복 → 래퍼 안 감사 이벤트는 확정하지 않음. R705(P2) 섹션 읽기·디코딩 실패 분리.
   회귀: 기존 AC-12 테스트에 `check_call_outcome_and_order_decide_ownership`·섹션 비UTF-8 비교 추가. 영향 3모듈 138 OK, check_sdd PASS. 이번 회차 수정 전 코드 대조(돌연변이 확인)는 미실행.
   흐름 변경(2026-11-18 사용자): 다음 교차검토부터 Codex(Orca worker)로 진행하고, PASS까지 반복한다. 새 세션의 코디네이터가 이어받는다.
+- **2026-11-18 8차 독립 교차검토(Codex Orca worker, 대상 `e826341`)**: **FAIL**(P1 2, P2 2). R704·R705 resolved, R701~R703 partial. RA-1~RA-4 유지. 반영 코드 후보 `907b24c`(로컬 커밋, 미게시).
+  R801(P1) 실패한 생성 뒤 현재 파일 재조회로 경쟁 작성자 파일이 birth 기준 출력 제외, 비배타 생성 성공이 경쟁자 파일을 `_made`에 연결 → 시도 때 부재를 결과와 함께 보존(이후 출현은 입력 변경),
+  기존 내용 유지 생성은 연 파일이 비어 있지 않으면 `OUTPUT_OWNERSHIP_UNCERTAIN`. R802(P1) 실행 전 외부 파일을 자체 출력 위로 `os.replace`하면 이전 소유가 남아 새 내용 입력 제외 →
+  성공한 미소유 원본 이동에서 도착 경로의 이전 출력 소유 해제(이후 읽기는 입력), 원본 소유 미확인 이동은 종료 시 항상 partial. R803(P2) `os.remove` 감사 이벤트(호출 전)를 삭제 성공으로 기록 →
+  감싼 `os.remove`/`os.unlink` 실제 성공에서만 기록, 결과 미보고·경로 잔존은 `INPUT_UNHASHABLE`. R804(P2) 자식의 생성 전 부재가 부재 입력으로 저장돼 정상 자식 출력이 `OUTPUT_AT_ABSENT_INPUT` →
+  `precreate` 표시로 기존 입력 대조에만 사용, 다른 로그의 실행 전 birth 입력과 겹치면 partial. 독립 관측 부재의 기존 출력 규칙 유지.
+  회귀: 기존 AC-12 테스트 `test_input_read_again_must_still_be_what_was_first_read`에서 호출하는 `check_attempt_absence_and_moved_ownership`(R801/R802)·`check_removal_outcome_and_child_creation`(R803/R804) 추가,
+  R703 자체 이동 검사에 `repo_reads` 비포함 단언 추가(traceability 변경 없음). 수정 전 코드 대조(`e826341` scripts + 새 테스트, 결함별 분리 실행): R801 배타 실패 complete=True·사유 없음,
+  R801 `a+` complete=True, R802 complete=True·도착 경로 읽기 기록 없음, R802 종료 적용 사유 없음, R803 `INPUT_CHANGED_DURING_RUN`, R804 `OUTPUT_AT_ABSENT_INPUT`로 모두 실패, 수정 후 모두 통과.
+  자식이 먼저 부재를 읽은 뒤 만드는 경우의 `OUTPUT_AT_ABSENT_INPUT`은 전후 모두 유지. R703 보강 단언은 `74eb9a6` scripts에서 `own-r703.cfg`가 남아 실패, `e826341`·수정본 통과.
+  검토자 재현(r8_repro·r8_fingerprint)도 수정본에서 기대 판정(R802 reuse 거부, R801 경쟁 생성은 입력 변경). V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 로컬 V3는 이번 회차 미실행(최종 후보에서 1회).
+  남은 한계: 새 partial 사유(이동·비배타 생성·삭제 결과 미보고)의 전체 suite 빈도·성능, 원격 Windows 두 조합 미확인. dir_fd 상대 삭제는 기존과 같이 경로를 해석하지 않는다.
