@@ -321,6 +321,11 @@ class Recorder:
         self._merged = {}  # child log file -> sha256 of the bytes merged so far (4th review R403)
         self._made = set()  # paths a recorded process of this run created (open with create, absent before)
         self._appeared = {}  # inputs first seen absent and later present (4th review R401)
+        # 6th review R601/R605: an audit event comes before the operation, so a creation
+        # or a rename is only an attempt until the next event of the same thread (or stop)
+        # finds it done; confirmed renames are applied after every child log is merged.
+        self._pending_ops = {}  # thread id -> ("create", path) | ("rename", src, dst)
+        self._renames = []  # confirmed (src, dst) of this process and of children
         self._created = set()
         self._install()
         if _child:
@@ -465,7 +470,7 @@ class Recorder:
         self._aliases[key] = {"path": observed, "target": target}
 
     def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None,
-                     absent=False):
+                     absent=False, isdir=False):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
@@ -475,6 +480,8 @@ class Recorder:
         scope = self._scope(canonical)
         if scope == "derived":
             return
+        if not relayed and self._pending_ops:
+            self._settle_pending(threading.get_ident())  # this thread's previous attempt first
         if self._is_child:
             # A child judges nothing: it reports content and birth time, and
             # every recorder applies its own start time (nested recorders).
@@ -486,12 +493,17 @@ class Recorder:
                             "alias": list(found) if found else found})
                 return
             if os.path.isdir(canonical):
+                # 6th review R603: report it, so a recorded input turned directory is seen.
+                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True})
                 return
             with self._quiet():
                 digest, born = _sha(canonical), _born(canonical)
             found = self._alias_of(path, canonical)
             self._emit({"type": "read", "path": canonical, "via": via, "section_only": bool(section_only),
                         "sha256": digest, "born": born, "alias": list(found) if found else found})
+            return
+        if relayed and isdir:
+            self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
             return
         if relayed:
             self._reobserved(scope, canonical, path, digest=digest, absent=absent)
@@ -515,6 +527,7 @@ class Recorder:
                 return
             exempt = self._is_created(canonical)
             if os.path.isdir(canonical):
+                self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
                 return  # a directory handle
             if self._input_entry(scope, canonical) is not None:
                 if digest is None:
@@ -550,7 +563,7 @@ class Recorder:
             return self._env_reads.get(canonical)
         return (self._repo if scope == "repo" else self._outside).get(canonical)
 
-    def _reobserved(self, scope, canonical, path, digest=None, absent=False):
+    def _reobserved(self, scope, canonical, path, digest=None, absent=False, isdir=False):
         """4th review R401: an input read again must still be what was first recorded.
 
         A file that changed and was restored during the run (A -> B -> A) keeps the
@@ -566,6 +579,9 @@ class Recorder:
         if entry.get("absent"):
             if not absent:
                 self._appeared.setdefault(canonical, path)
+        elif isdir:
+            # 6th review R603: a file input that is now a directory changed during the run.
+            self._partial("INPUT_CHANGED_DURING_RUN", path)
         elif absent or (digest is not None and entry.get("sha256") is not None and digest != entry["sha256"]):
             self._partial("INPUT_CHANGED_DURING_RUN", path)
         elif digest is None:
@@ -573,10 +589,49 @@ class Recorder:
             # cannot be reused (the run itself is not judged unstable).
             self._partial("INPUT_UNHASHABLE", path)
 
-    def _renamed(self, src, dst):
-        if src in self._made or src in self._created:
-            self._made.add(dst)
-            self._created.add(dst)
+    def _attempt(self, op):
+        """Hold a creation/rename attempt; the previous one of this thread is settled first."""
+        self._settle_pending(threading.get_ident())
+        self._pending_ops[threading.get_ident()] = op
+
+    def _settle_pending(self, ident=None):
+        """Settle attempts (one thread, or all at stop): only a done operation counts."""
+        for key in ([ident] if ident is not None else list(self._pending_ops)):
+            op = self._pending_ops.pop(key, None)
+            if op is None:
+                continue
+            with self._quiet():
+                if op[0] == "create":
+                    done = os.path.lexists(op[1])
+                else:
+                    done = os.path.lexists(op[2]) and (op[1] == op[2] or not os.path.lexists(op[1]))
+            if not done:
+                if op[0] == "create":
+                    # The creation failed: the path was absent when the run looked, which is
+                    # an observation (a later appearance by another writer is a change).
+                    self._record_read(op[1])
+                continue  # the open/rename failed: no ownership
+            if op[0] == "create":
+                if self._is_child:
+                    self._emit({"type": "created", "path": op[1]})
+                else:
+                    self._made.add(op[1])
+                    self._created.add(op[1])
+            elif self._is_child:
+                self._emit({"type": "renamed", "src": op[1], "dst": op[2]})
+            else:
+                self._renames.append((op[1], op[2]))
+
+    def _apply_renames(self):
+        """At stop, after every log is merged: a rename of an output gives an output."""
+        changed = True
+        while changed:
+            changed = False
+            for src, dst in self._renames:
+                if (src in self._made or src in self._created) and dst not in self._made:
+                    self._made.add(dst)
+                    self._created.add(dst)
+                    changed = True
 
     def _record_absent(self, path, canonical, scope):
         record = {"path": _real(path) or canonical, "sha256": None, "absent": True}
@@ -606,12 +661,14 @@ class Recorder:
             if not (create and not os.path.exists(canonical)):
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
             else:
-                self._emit({"type": "created", "path": canonical})
+                self._attempt(("create", canonical))  # 6th review R601
             return
-        if create:
-            if not os.path.exists(canonical):
-                self._made.add(canonical)
-            self._is_created(canonical, True)
+        if create and not os.path.exists(canonical):
+            # 6th review R601: an output only once the file exists after the open.
+            if self._input_entry(self._scope(canonical), canonical) is not None:
+                self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
+            self._attempt(("create", canonical))  # after the re-observation (it settles older attempts)
+            return
         if not self._is_created(canonical) or self._input_entry(self._scope(canonical), canonical) is not None:
             # 5th review R501: an input recorded earlier is compared again even when the
             # path now looks like an output (deleted and recreated, replaced).
@@ -652,6 +709,8 @@ class Recorder:
 
     def _audit_event(self, event, args):
         """One recorder's handling of a CPython audit event."""
+        if self._pending_ops:
+            self._settle_pending(threading.get_ident())
         if event == "open":
             self._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
                              args[2] if len(args) > 2 else None)
@@ -665,11 +724,14 @@ class Recorder:
             # 5th review R504: an output moved into place (atomic write) is an output.
             src = _canonical(_path_text(args[0])) if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
             dst = _canonical(_path_text(args[1])) if len(args) > 1 and isinstance(args[1], (str, bytes, os.PathLike)) else None
-            if src and dst:
-                if self._is_child:
-                    self._emit({"type": "renamed", "src": src, "dst": dst})
-                else:
-                    self._renamed(src, dst)
+            if any(isinstance(fd, int) and fd >= 0 for fd in args[2:4]):
+                # 6th review R604: paths relative to a directory descriptor are not resolved.
+                self._partial("RENAME_DIR_FD_UNRESOLVED", "%s -> %s" % (args[0], args[1]))
+            elif src and dst:
+                with self._quiet():
+                    src_exists = os.path.lexists(src)
+                if src_exists:  # a rename of a missing source fails: no attempt to settle
+                    self._attempt(("rename", src, dst))  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
         elif event == "mmap.__new__":
@@ -708,10 +770,8 @@ class Recorder:
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", value)
         elif not os.path.exists(canonical) and _sqlite_mode(database, uri) == "rwc":
-            self._created.add(canonical)  # a new database file is an output
-            self._made.add(canonical)  # 5th review R504: same rule as a created file
-            if self._is_child:
-                self._emit({"type": "created", "path": canonical})
+            # A new database file is an output once it exists (5th R504, 6th R601).
+            self._attempt(("create", canonical))
         else:
             # Existing file, or a non-creating mode (ro/rw) on a missing file:
             # the file's content or absence is an input.
@@ -941,6 +1001,7 @@ class Recorder:
             _ACTIVE.remove(self)
         except ValueError:
             pass
+        self._settle_pending()  # 6th review R601: last attempts of every thread
         if self._is_child:
             return
         if self._audited_launches > self._tracked_launches:
@@ -1005,6 +1066,7 @@ class Recorder:
                 seen = self._log_seq.get("%s.jsonl" % pid)
                 if not seen or seen["bad"] or seen["end"] is None:
                     self._partial("CHILD_LOG_INCOMPLETE", "token %s pid %s" % (str(token)[:12], pid))
+        self._apply_renames()
         for canonical, path in sorted(self._appeared.items()):
             if canonical not in self._made:
                 self._partial("INPUT_CHANGED_DURING_RUN", path)
@@ -1111,7 +1173,7 @@ class Recorder:
         elif kind == "renamed":
             if not all(isinstance(event.get(k), str) and event[k] for k in ("src", "dst")):
                 raise ValueError("renamed event without paths")
-            self._renamed(event["src"], event["dst"])
+            self._renames.append((event["src"], event["dst"]))  # applied at stop (R605)
         elif kind == "hook_failed":
             self._partial("HOOK_FAILED", event.get("error", "unknown"))
         elif kind == "partial":
@@ -1119,7 +1181,7 @@ class Recorder:
         elif kind == "read":
             self._record_read(event["path"], event.get("via", "open"), event.get("section_only", False),
                               event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"),
-                              absent=event.get("absent") is True)
+                              absent=event.get("absent") is True, isdir=event.get("isdir") is True)
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
                           born=event.get("born"), relayed=True, alias=event.get("alias"))
@@ -1501,6 +1563,9 @@ def _record_child_log(path):
     # sequence number equals the count of events it emitted, and it carries the
     # child's own partial reasons and write-failure flag. Without it the parent
     # cannot know the log is complete.
-    atexit.register(lambda: recorder._emit({"type": "exit", "pid": os.getpid(), "t": _now(),
-                                            "partial": sorted(recorder.partial_reasons),
-                                            "write_failed": bool(getattr(recorder, "_write_failed", False))}))
+    def end():
+        recorder._settle_pending()  # 6th review R601: a last creation/rename attempt
+        recorder._emit({"type": "exit", "pid": os.getpid(), "t": _now(),
+                        "partial": sorted(recorder.partial_reasons),
+                        "write_failed": bool(getattr(recorder, "_write_failed", False))})
+    atexit.register(end)

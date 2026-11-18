@@ -1271,3 +1271,12 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   evidence `13e4b27e…`(commit `437dab7`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 16,988·`CHILD_LOG_INCOMPLETE`, Python 실행 200/hook 200). 새 규칙에 따른
   `INPUT_CHANGED_DURING_RUN`·`INPUT_UNHASHABLE`·`OUTPUT_AT_ABSENT_INPUT`·`READSET_LOG_CORRUPT` 없음. 시간은 일부 구간이 CI-VTIER 테스트와 동시 실행이라 성능 근거로 쓰지 않는다
   (사용자 지시 2026-11-18: 격리된 두 Task의 검증은 병렬, 성능 실측만 단독). 로그 사본 `CI-OPT-001-v3-iso-437dab7.log`. 6차 재검토·게시는 승인 대기. verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 6차 패키지 모두")**: 원격 `codex/ci-opt-001-r5`=`0c173c8`, 미게시 `c55a408`·`437dab7`·`dadd9ea`·이 기록 커밋. 작성자 lwwde07, 허용 경로만,
+  비밀값·홈 경로·DB·로그 없음. 검증 SHA `437dab7` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`f89ebfa`, PR #16)**: run `44258932840` plan·gate success, Windows 3.11·3.12 각 743 tests OK, failures/errors/skips 0, eligible true. `f89ebfa`(코드 `437dab7`)에만 귀속. 6차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 6차 이종 모델 재검토(ChatGPT, 대상 `437dab7`)**: **FAIL**(P1 3, P2 2). R502·R505 resolved, R501·R503·R504 partial. RA-1~RA-4 유지, 다음 회차 V3 불필요(사용자 흐름) 판정. 격리 재현(Linux 3.13.5).
+  R601(P1) 실패한 `os.replace`·생성이 외부 입력을 출력으로 분류 → 생성·이동은 시도로 보류, 완료 확인 뒤에만 출력, 실패한 생성은 부재 관측.
+  R602(P1) 섹션 지문과 관측 해시가 별도 읽기 → 한 번 읽은 바이트로 둘 다 계산. R603(P1) 파일 입력이 디렉터리로 바뀌면 재관측 생략 → 입력 변경(자식 보고 포함).
+  R604(P2) `os.rename` dir_fd 미처리 → partial. R605(P2) 자식 생성 → 부모 이동이 병합 순서로 입력 변경 → 이동은 종료 시 모든 로그 병합 뒤 적용.
+  기존 테스트 2개의 전제 갱신(쓰기 open 이벤트만으로 출력 기대 → 실제 생성, 섹션 읽기 실패 주입 지점). 회귀는 기존 AC-12 테스트의 검사 함수로 추가(수정 전 코드에서 실패 확인).
+  영향 3모듈 138 OK, check_sdd PASS. 흐름에 따라 이번 회차 로컬 V3 생략(최종 후보에서 1회).
