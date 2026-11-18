@@ -107,3 +107,4 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   새 흐름에 따라 이번 회차 로컬 V3는 생략(최종 후보에서 1회). 6차 재검토·게시는 승인 대기. verified·병합 아님.
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 6차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`9681949`, 미게시 `0c173c8`(CI-OPT branch에 게시됨)·`c55a408`·`2f6b432`·`437dab7`·`dadd9ea`·`dcce235`·`4cd979a`·`45cec37`·이 기록 커밋.
   작성자 lwwde07, 허용 경로만(이번 범위 추가분 `managed.py`·`evidence.py` 포함), 비밀값·홈 경로·DB·로그 없음. 검증 SHA `4cd979a` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만.
+- **2026-11-18 원격 CI(`1b863c1`, draft PR #17)**: run `44258934841` plan·gate success, Windows 3.11·3.12 각 765 tests OK, failures/errors/skips 0, eligible true. `1b863c1`(코드 `4cd979a`)에만 귀속. 6차 재검토 대기. 이 기록 커밋은 로컬 전용.
