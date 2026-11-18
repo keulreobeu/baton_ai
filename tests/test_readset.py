@@ -504,6 +504,115 @@ class ReadsetTests(unittest.TestCase):
         self.check_removal_outcome_and_child_creation()  # 8th review R803/R804
         self.check_object_ownership_and_attempt_snapshot()  # 9th review R901/R902
         self.check_every_exempt_object_and_link_is_kept()  # 10th review R1001/R1002
+        self.check_one_alias_decision_for_every_observation()  # 11th review R1101/R1102
+
+    def check_one_alias_decision_for_every_observation(self):
+        """CI-OPT-001 11th review R1101/R1102: every exempt observation (output read, absence
+        under the run's directory, listing of the run's directory, failed and successful
+        creation, move) by this process, by a real child, and moves by both, goes through the
+        one alias decision: a link that existed before the run keeps its mapping; a link a
+        recorded process was observed to create adds nothing (complete); a link made during
+        the run by no recorded creation (birth time is no proof of its maker) is partial."""
+        child_code = {
+            "read": "open(sys.argv[1] + '/f.cfg', encoding='utf-8').read()",
+            "absent": "import os\ntry:\n    open(sys.argv[1] + '/made/x.cfg')\nexcept FileNotFoundError:\n    pass",
+            "listing": "import os; os.listdir(sys.argv[1] + '/dir')",
+            "failed": "from pathlib import Path\ntry:\n    Path(sys.argv[1] + '/made/sub/x.cfg').open('x')\nexcept FileNotFoundError:\n    pass",
+            "created": "open(sys.argv[1] + '/new.cfg', 'w', encoding='utf-8').write('c')",
+            "move": "import os; open(sys.argv[2] + '/s.cfg', 'w').write('s'); os.replace(sys.argv[2] + '/s.cfg', sys.argv[1] + '/moved.cfg')",
+        }
+        observed = {"read": "f.cfg", "absent": "made/x.cfg", "listing": "dir", "failed": "made/sub/x.cfg",
+                    "created": "new.cfg", "move": "moved.cfg"}
+
+        def prepare(kind, old):
+            if kind == "read":
+                (old / "f.cfg").write_text("own", encoding="utf-8")
+            elif kind in ("absent", "failed"):
+                (old / "made").mkdir()
+            elif kind == "listing":
+                (old / "dir").mkdir()
+
+        def direct(kind, link, old):
+            if kind == "read":
+                (link / "f.cfg").read_text(encoding="utf-8")
+            elif kind == "absent":
+                with self.assertRaises(FileNotFoundError):
+                    open(link / "made" / "x.cfg")
+            elif kind == "listing":
+                os.listdir(link / "dir")
+            elif kind == "failed":
+                with self.assertRaises(FileNotFoundError):
+                    (link / "made" / "sub" / "x.cfg").open("x")
+            elif kind == "created":
+                (link / "new.cfg").write_text("c", encoding="utf-8")
+            else:
+                (old / "s.cfg").write_text("s", encoding="utf-8")
+                os.replace(old / "s.cfg", link / "moved.cfg")
+
+        def make_link(link, old):
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(old), str(link))
+            else:
+                os.symlink(old, link, target_is_directory=True)
+
+        table = {}
+        for origin in ("before", "own", "unproven"):
+            for actor in ("direct", "child"):
+                for kind in child_code:
+                    label = "%s/%s/%s" % (origin, actor, kind)
+                    with self.subTest(case=label):
+                        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+                        old, link = base / "old", base / "link"
+                        old.mkdir()
+                        self.addCleanup(lambda l=link: (os.rmdir(l) if os.name == "nt" else os.unlink(l))
+                                        if os.path.lexists(l) else None)
+                        if origin == "before":
+                            make_link(link, old)
+                            time.sleep(0.02)
+                        rec = self.recorder()
+                        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)  # directories clearly in the run
+                        if origin == "own":
+                            make_link(link, old)
+                        elif origin == "unproven":
+                            with rec._quiet():  # another process makes the link
+                                make_link(link, old)
+                        prepare(kind, old)
+                        if actor == "direct":
+                            direct(kind, link, old)
+                        else:
+                            done = subprocess.run([sys.executable, "-c", "import sys\n" + child_code[kind], str(link), str(old)],
+                                                  cwd=self.root, capture_output=True, text=True)
+                            self.assertEqual(done.returncode, 0, done.stderr)
+                        rec.stop()
+                        data = rec.as_dict()
+                        aliases = [a["path"] for a in data["aliases"]]
+                        target = os.path.abspath(str(link / observed[kind]))
+                        if origin == "before":
+                            self.assertIn(target, aliases)
+                            self.assertNotIn("OUTPUT_OWNERSHIP_UNCERTAIN", rec.partial_reasons, rec.partial_samples)
+                        elif origin == "own":
+                            self.assertEqual(aliases, [])
+                            self.assertTrue(data["complete"], rec.partial_samples)
+                        else:
+                            self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", rec.partial_reasons, rec.partial_samples)
+                        table[label] = "alias" if target in aliases else ("partial" if not data["complete"] else "none")
+        self.assertEqual(len(table), 36)
+        # A link a real child made itself is proven the same way (its "linked" report).
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        (base / "old").mkdir()
+        rec = self.recorder()
+        maker = ("import os, sys\nif os.name == 'nt':\n    import _winapi; _winapi.CreateJunction(sys.argv[2], sys.argv[1])\n"
+                 "else:\n    os.symlink(sys.argv[2], sys.argv[1], target_is_directory=True)\n"
+                 "open(sys.argv[2] + '/f.cfg', 'w').write('c'); open(sys.argv[1] + '/f.cfg').read()")
+        done = subprocess.run([sys.executable, "-c", maker, str(base / "link"), str(base / "old")], cwd=self.root,
+                              capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.addCleanup(lambda: (os.rmdir(base / "link") if os.name == "nt" else os.unlink(base / "link"))
+                        if os.path.lexists(base / "link") else None)
+        rec.stop()
+        self.assertEqual(rec.as_dict()["aliases"], [])
+        self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
 
     def check_every_exempt_object_and_link_is_kept(self):
         """CI-OPT-001 10th review R1001/R1002: every exempted observation is verified by its
