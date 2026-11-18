@@ -81,6 +81,8 @@ V1/V2 결과(부분 여부와 무관)는 `final_evidence_eligible=false`이며 �
 
 **2026-11-18 6차 재검토 반영(ChatGPT `4cd979a` FAIL, P2 5):** Orca author의 통과 정착 1단계는 `settlement_pending=true`로 저장하고, 2단계(Wiki 결과 저장과 lease 해제)는 그 표시가 있고 lease가 남아 있을 때만 실행하는 멱등 함수로 한다. 2단계가 실패하면 같은 종료 이벤트가 다시 와서 2단계만 마친다. 1단계가 기록 불가 fallback으로 이미 해제됐으면 2단계를 실행하지 않는다(R601). `yield_to_control` 정착은 최신 제어가 최종 상태를 정한다: PAUSED·INTERRUPTED로 정했어도 그 뒤 cancel이 오면 CANCELLED다(R602). 중단 판정은 모든 최상위 검사(두 번째 선언 검사, planner 없는 프로젝트 포함)와 planner 중첩 검사를 본다. 그래서 선언 검사가 자기 timeout에 걸려도 실패가 아니라 중단으로 처리한다. 실행 상태 변경은 기존 중단 사유를 덮어쓰지 않고 `state_changed`로 따로 기록한다(R603). 미해결 공식 V3 실패가 있는 구성원은 integration에 묶이지 않고(`_member_proofs`), 승인 트랜잭션(`validate_member_records`)에서도 거부된다(R604). integration 트리의 공식 V3 실패는 integration을 요청한 Task에 기록하고 구성원 증거(COMPLETED 포함)는 지우지 않는다. 구성원 자기 실패는 구성원 자기 검증이 기록한다(R605).
 
+**2026-11-18 7차 재검토 반영(ChatGPT `c460275` FAIL, P2 1):** R602~R605 resolved, R605·R603 정책 수용. 남은 R701: 통과 정착의 2단계가 실패해 `settlement_pending=true`와 lease가 남은 상태에서 제어(pause·cancel)가 오면, 시작 전 제어 정착(`_settle_unstarted_control`)이 이를 새 중단으로 보고 검증 결과를 지웠다. 이제는 그 분기가 먼저 남은 2단계를 마친다. 그러면 제어가 이미 정착된 유효 결과를 멈출 뿐이다. 2단계가 다시 실패하면 lease와 표시를 그대로 두고, 같은 종료 이벤트가 다시 와서 마친다. 불변식: `settlement_pending=true`이면 lease가 있다. 1단계 뒤 제어는 저장된 유효 결과를 무효화하지 않는다. 2단계 결과와 표시 해제 뒤에 lease·slot을 해제한다. 같은 종료 이벤트 재처리는 완료된 정착을 바꾸지 않는다.
+
 ## CI-VTIER-001-REQ-03 실행 경로
 
 ### CI-VTIER-001-AC-05

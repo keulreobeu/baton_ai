@@ -255,6 +255,47 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         self.assertEqual(row["state"], "BLOCKED")
         self.assertIsNone(row["lease"])
 
+    def test_control_after_a_failed_second_step_keeps_the_settled_result(self):
+        """CI-VTIER-001 7th review R701: a pause after the Wiki step failed completes that
+        step and pauses the stored valid result (pending cleared, lease released); if the
+        step fails again the lease and the pending mark stay, and the repeated end event
+        completes it."""
+        from baton.runtime import request_control
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        client = FakeOrca(self.root)
+        for number, second_failure in enumerate((False, True)):
+            with self.subTest(second_step_fails_again=second_failure):
+                name = "ORCAPEND%d" % number
+                self.orca(name)
+                row = Orchestrator(self.store, runtime_client=client).run(name)
+                path = Path(row["worktree"]); (path / "src/value.py").write_text("value = %d\n" % (20 + number), encoding="utf-8")
+                did = row["result"]["runtime"]["dispatch_id"]
+                client.settle(did)
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(passing)), \
+                        patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+                    ingest(self.store, name, self.receipt(did), client)
+                again = OSError("still down") if second_failure else None
+                ok = {"action": "SKIP", "reason": "after-pause", "blocking": False}
+                with patch("baton.wiki_cli.assess", side_effect=again, return_value=ok):
+                    row = request_control(self.store, name, "pause", client)
+                result = row["result"]
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["validation_status"], "passed")
+                if second_failure:
+                    self.assertIsNotNone(row["lease"])
+                    self.assertIs(result["settlement_pending"], True)
+                    with patch("baton.wiki_cli.assess", return_value=ok):
+                        row = ingest(self.store, name, self.receipt(did), client)
+                    result = row["result"]
+                self.assertEqual(row["state"], "PAUSED")
+                self.assertIsNone(row["lease"])
+                self.assertIs(result["settlement_pending"], False)
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["wiki"]["reason"], "after-pause")
+                self.store.control(name, "cancel")  # release the scope for the next case
+
     def test_orca_dispatch_notification_and_duplicate_are_idempotent(self):
         self.orca(); client = FakeOrca(self.root)
         row = Orchestrator(self.store, runtime_client=client).run("ORCA")

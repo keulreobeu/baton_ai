@@ -118,3 +118,8 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   흐름에 따라 로컬 V3 생략(최종 후보에서 1회). 7차 재검토·게시는 승인 대기. verified·병합 아님.
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 7차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`1b863c1`, 미게시 `f89ebfa`(CI-OPT branch에 게시됨)·`3b54906`·`1a6eac1`·`74eb9a6`·`c082cf5`·`c460275`·`02eeda2`·이 기록 커밋.
   작성자 lwwde07, 허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `c460275` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만.
+- **2026-11-18 7차 이종 모델 재검토(ChatGPT, 대상 `c460275`)**: **FAIL**(P1 0, P2 1). R602·R603·R604·R605 resolved, R601 partial → R701. R605 정책·R603 timeout 중단 처리 수용, CI-OPT 병합 회귀 없음.
+  R701 2단계 정착 실패 뒤 pause가 시작 전 제어 정착으로 처리되어 검증 결과 삭제·pending 고립 → 그 분기에서 pending 2단계를 먼저 완료(유효 결과 유지), 재실패 시 lease·pending 유지.
+  회귀 `test_control_after_a_failed_second_step_keeps_the_settled_result`(수정 전 코드에서 실패 확인).
+  영향 모듈 `test_flow_runtime`·`test_managed_harness`·`test_flow_evidence` 132 OK, check_sdd PASS.
+  흐름 변경(2026-11-18 사용자): 다음 교차검토부터 Codex(Orca worker)로 진행하고, PASS까지 반복한다. 새 세션의 코디네이터가 이어받는다.

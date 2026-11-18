@@ -357,6 +357,17 @@ def _settle_unstarted_control(store, task_id):
             final = "CANCELLED" if row["control"] == "cancel" else "PAUSED"
             for key, role in (("runtime", "author"), ("review_runtime", "reviewer")):
                 binding = row["result"].get(key, {})
+                if key == "runtime" and row["lease"] and row["result"].get("settlement_pending") is True:
+                    # CI-VTIER-001 7th review R701: a stored passing settlement whose second
+                    # step failed is completed (the control then pauses/cancels a valid
+                    # result), never replaced by a pre-start stop. If the step fails again,
+                    # the lease and the pending mark stay for the repeated end event.
+                    try:
+                        _finish_author_settlement(store, task_id, row["lease"])
+                    except Exception:
+                        continue
+                    _reserve_slot(store, task_id, role, row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
+                    continue
                 pre_start = binding.get("phase") in {"intent", "workspace"}
                 if key == "runtime" and row["lease"] and (not binding or binding.get("settled")):
                     pre_start = True
