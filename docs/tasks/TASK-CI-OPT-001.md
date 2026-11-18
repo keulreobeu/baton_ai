@@ -1624,3 +1624,18 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     | `PYTHONIOENCODING` 미설정 | OK(138건, 실패·오류·skip 0) |
     | `PYTHONIOENCODING=utf-8` | OK(138건, 실패·오류·skip 0) |
     두 실행 모두 `tests/test_readset.py`의 소켓 `ResourceWarning` 1회 기록(실패 아님). 로컬 V3는 이 기록 커밋을 최종 후보 HEAD로 두고 별도 1회 실행한다.
+- **2026-11-19 최종 후보 `a397217`(코드 `a3a5deb`) 공식 로컬 V3**: **FAIL**. `verify_environment.py --base 5c07aea --evidence-dir --lock-home` 1회(작업 트리 clean, 실행 중 파일·전역 설정 변경 없음). 743 tests, failures 2, errors 0, skips 0, eligible false, state stable false, 1358 s(suite 1319.7 s), returncode 1.
+  evidence `suite-849c8710…3fba.json`(sha256 `849c871096b60ae050b9acf6d454dbfc5945ecc3aa19dec6c81918a299193fba`), suite fingerprint `f9078a18…2438`. `check_sdd.py --base 5c07aea` PASS.
+  reuse: rejected(`FINGERPRINT_CHANGED`, `SOURCE_READSET_PARTIAL`, `SOURCE_STATE_UNSTABLE`), 이번 실행은 executed.
+  read set complete false, partial 사유 6:
+    | 사유 | 표본 수 | 요지 |
+    | `CHILD_HOOK_MISSING` | 2 | `time.sleep(30)` 자식 1건(launched 234, hooked 233) |
+    | `CHILD_LOG_INCOMPLETE` | 5 | 자식 로그 5개 |
+    | `CHILD_NOT_ALLOWED` | 4 | 비 Python 자식(git 등, disallowed_count 17005) |
+    | `MUTATION_UNVERIFIABLE` | 5 | 열린 descriptor 4, `.local_runtime/harness-managed/test-tmp` mkdir 1 |
+    | `OUTPUT_OWNERSHIP_UNCERTAIN` | 5 | 임시 lock·SQLite 파일 |
+    | `FINGERPRINT_INPUT_CHANGED_DURING_RUN` | - | 아래 alias 변경 |
+  실패 1(테스트): `test_input_read_again_must_still_be_what_was_first_read`의 `check_removals_and_other_mutations_record_their_state`(13차 R1301 추가) 두 단언, `remove/child/True`(`tests/test_readset.py:1067`)와 실제 자식 chmod(`:1140`). 내부 기록기에 `MUTATION_UNVERIFIABLE`가 없고 partial 사유가 비었다.
+    진단: 외부 기록기가 켜진 상태에서만 재현된다. 같은 테스트를 단독 실행하면 통과, `scripts.readset.Recorder(ROOT)`를 먼저 시작한 뒤 같은 테스트만 실행하면 같은 2건이 결정적으로 실패한다(작업 트리 밖 임시 wrapper). 직접 실행(`remove/direct/True`)과 다른 mutation 사례는 통과한다. 따라서 중첩 기록기 아래에서 실제 Python 자식의 삭제·chmod가 내부 기록기에 기존 파일 변경으로 판정되지 않는다(자식이 받는 시작 시각 `BATON_READSET_STARTED`가 가장 이른 외부 기록기 기준이 되어 테스트 임시 파일을 실행 산출물로 보는 경로가 유력, 최소 재현으로는 미확정).
+  실패 2(state stable false): `FINGERPRINT_INPUT_CHANGED_DURING_RUN`. 사후 재계산에서 내용 변경은 0이고, alias 2건(`check_chains_failed_moves_sections_and_nested_events`의 테스트 임시 `inner/dest.cfg`, `inner/never.cfg`)의 대상이 테스트 정리 뒤 달라졌다. 외부 기록기가 테스트 내부 임시 영역의 alias를 입력으로 기록한 결과다.
+  두 원인 모두 12~13차 이후 추가된 테스트·기록이며, 직전 통과 V3(5차 `437dab7`)와 V2(영향 3모듈 단독 실행)에는 나타나지 않는 중첩 기록기 상호작용이다. 이 기록에서는 코드를 고치지 않았다. Task는 verified로 올리지 않는다.
