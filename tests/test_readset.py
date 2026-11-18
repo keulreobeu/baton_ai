@@ -508,6 +508,111 @@ class ReadsetTests(unittest.TestCase):
         self.check_chains_failed_moves_sections_and_nested_events()  # 12th review R1201-R1204
         self.check_removals_and_other_mutations_record_their_state()  # 13th review R1301
         self.check_preconditions_of_state_dependent_operations()  # 14th review R1401-R1405
+        self.check_ancestor_chain_and_failed_writes()  # 15th review R1501/R1502
+
+    def check_ancestor_chain_and_failed_writes(self):
+        """CI-OPT-001 15th review R1501/R1502: an operation on a missing path records every
+        missing component up to the nearest existing ancestor (absent) and that ancestor's
+        kind ("dir" or a file's digest), so a parent created, replaced or removed before the
+        next run changes the fingerprint (this process and a real child); an ancestor
+        changed during the run is partial; any failed write-mode open of an existing file
+        the run did not make is partial (no input change), whatever the cause."""
+        from scripts import ci_plan
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        filed = base / "file-parent"
+        filed.write_bytes(b"parent input")
+        kept = base / "kept-parent"
+        kept.mkdir()
+        readonly = base / "readonly.bin"
+        readonly.write_bytes(b"ro")
+        os.chmod(readonly, 0o444)
+        time.sleep(0.03)
+
+        def entries(rec):
+            return {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
+                    for r in rec.as_dict()["outside_reads"]}
+
+        def key(path):
+            return os.path.normcase(str(path))
+
+        def exclusive(target):
+            with open(target, "xb") as stream:
+                stream.write(b"output")
+
+        try:
+            for actor in ("direct", "child"):
+                for label, operation in (("mkdir", "os.mkdir"), ("open-x", "exclusive")):
+                    with self.subTest(case="%s/%s/missing-parent" % (actor, label)):
+                        target = base / ("missing-%s-%s" % (actor, label)) / "target"
+                        rec = self.recorder()
+                        if actor == "direct":
+                            with self.assertRaises(OSError):
+                                os.mkdir(target) if operation == "os.mkdir" else exclusive(target)
+                        else:
+                            code = ("import os, sys\ntry:\n    %s\nexcept OSError:\n    pass"
+                                    % ("os.mkdir(sys.argv[1])" if operation == "os.mkdir"
+                                       else "open(sys.argv[1], 'xb').write(b'o')"))
+                            done = subprocess.run([sys.executable, "-c", code, str(target)], cwd=self.root,
+                                                  capture_output=True, text=True)
+                            self.assertEqual(done.returncode, 0, done.stderr)
+                        rec.stop()
+                        seen = entries(rec)
+                        self.assertEqual(seen.get(key(target)), "missing", seen)
+                        self.assertEqual(seen.get(key(target.parent)), "missing", seen)
+                        self.assertEqual(seen.get(key(base)), "dir", seen)
+                        self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                    with self.subTest(case="%s/%s/file-parent" % (actor, label)):
+                        target = filed / ("%s-%s" % (actor, label))
+                        rec = self.recorder()
+                        if actor == "direct":
+                            with self.assertRaises(OSError):
+                                os.mkdir(target) if operation == "os.mkdir" else exclusive(target)
+                        else:
+                            done = subprocess.run([sys.executable, "-c", code, str(target)], cwd=self.root,
+                                                  capture_output=True, text=True)
+                            self.assertEqual(done.returncode, 0, done.stderr)
+                        rec.stop()
+                        self.assertEqual(entries(rec).get(key(filed)), readset._sha(str(filed)), entries(rec))
+            with self.subTest(case="created and cleaned under an existing parent"):
+                rec = self.recorder()
+                (kept / "made").mkdir()
+                (kept / "made").rmdir()
+                with open(kept / "w.cfg", "w", encoding="utf-8") as stream:  # a plain creation: ancestors only
+                    stream.write("w")
+                rec.stop()
+                self.assertEqual(entries(rec).get(key(kept)), "dir", entries(rec))
+                self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+                self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+            with self.subTest(case="ancestor changed during the run"):
+                moving = base / "moving-parent"
+                moving.mkdir()
+                time.sleep(0.03)
+                rec = self.recorder()
+                (moving / "made").mkdir()
+                (moving / "made").rmdir()
+                with rec._quiet():  # another writer removes the parent before the end
+                    moving.rmdir()
+                rec.stop()
+                self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+            if os.name == "nt":
+                for mode in ("wb", "r+b", "ab"):
+                    with self.subTest(case="failed open %s" % mode):
+                        rec = self.recorder()
+                        with self.assertRaises(PermissionError):
+                            open(readonly, mode).close()
+                        rec.stop()
+                        self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+                        self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+                with self.subTest(case="child failed open ab"):
+                    rec = self.recorder()
+                    code = "import sys\ntry:\n    open(sys.argv[1], 'ab').close()\nexcept PermissionError:\n    pass"
+                    done = subprocess.run([sys.executable, "-c", code, str(readonly)], cwd=self.root,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    rec.stop()
+                    self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+        finally:
+            os.chmod(readonly, 0o644)
 
     def check_preconditions_of_state_dependent_operations(self):
         """CI-OPT-001 14th review R1401-R1405, one precondition rule: an exclusive creation

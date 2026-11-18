@@ -736,7 +736,10 @@ def _abs_path(value):
 
 
 def _hash_or_none(value):
-    return value is None or (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None)
+    # CI-OPT-001 15th review R1501: "dir" records a directory's kind (an ancestor a creation
+    # depended on); _content gives the same value, so the fingerprint checks it alike.
+    return value is None or value == "dir" or (
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None)
 
 
 # CI-OPT-001 final cross review F06: fields a readset/1 record must carry.
