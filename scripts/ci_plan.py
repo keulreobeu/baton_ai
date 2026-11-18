@@ -970,13 +970,19 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
             if record.get("section_only") and record.get("sections"):
                 # 6th review R602: one read; the section fingerprints and the whole-file hash
                 # compared with the observation come from the same bytes.
+                # 7th review R705: a read failure and a decode/section failure are apart, so
+                # bytes that were read are always compared with the observation.
                 try:
                     raw = _read_document(root / name)
+                except OSError:
+                    raw = None
+                try:
+                    if raw is None:
+                        raise ValueError("unreadable")
                     text = raw.decode("utf-8")
                     for heading in sorted(set(record["sections"])):
                         sections.append([name, heading, fingerprint(extract_section(text, heading))])
-                except (OSError, ValueError, UnicodeDecodeError):
-                    raw = None
+                except (ValueError, UnicodeDecodeError):
                     sections.append([name, "*", "unreadable"])
                     soft_need(False, "FILE_UNREADABLE")  # 5th review R503
                 if verify_observed and raw is not None:

@@ -499,6 +499,61 @@ class ReadsetTests(unittest.TestCase):
         self.check_own_outputs_at_absent_inputs_are_partial_not_changes()  # 5th review R504
         self.check_only_done_creations_and_renames_are_outputs()  # 6th review R601/R604/R605
         self.check_input_turned_directory_is_a_change()  # 6th review R603
+        self.check_call_outcome_and_order_decide_ownership()  # 7th review R701-R704
+
+    def check_call_outcome_and_order_decide_ownership(self):
+        """CI-OPT-001 7th review R701-R704: an attempt settled only by the path's state is
+        uncertain (partial); a pre-existing input read by a real child and then recreated
+        by this process with the same content is a change; a moved own output read and
+        deleted is no input; a move of a file this process did not own, whose source the
+        run creates later, is uncertain; a plain new SQLite database is no absent input."""
+        import sqlite3
+        guessed = self.recorder()
+        target = self.root / "guessed-r701.cfg"
+        guessed._attempt(("create", readset._canonical(target)))
+        with guessed._quiet():
+            target.write_text("someone", encoding="utf-8")
+        guessed._settle_pending()
+        guessed.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", guessed.partial_reasons)
+        source = Path(self.temp.name) / "child-read-r702.cfg"
+        source.write_text("A", encoding="utf-8")
+        time.sleep(0.03)
+        rec = self.recorder()
+        code = "open(%r, encoding='utf-8').read()" % str(source)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        source.unlink()
+        source.write_text("A", encoding="utf-8")
+        rec.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+        moved = self.recorder()
+        src, dst = self.root / "own-r703.tmp", self.root / "own-r703.cfg"
+        src.write_text("output", encoding="utf-8")
+        os.replace(src, dst)
+        self.assertEqual(dst.read_text(encoding="utf-8"), "output")
+        dst.unlink()
+        moved.stop()
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", moved.partial_reasons, moved.partial_samples)
+        foreign = Path(self.temp.name) / "foreign-r703.cfg"
+        foreign.write_text("theirs", encoding="utf-8")
+        landing = self.root / "landing-r703.cfg"
+        time.sleep(0.03)
+        order = self.recorder()
+        with self.assertRaises(FileNotFoundError):
+            open(landing, encoding="utf-8")
+        os.replace(foreign, landing)
+        foreign.write_text("mine", encoding="utf-8")
+        order.stop()
+        self.assertFalse(order.as_dict()["complete"])
+        self.assertTrue({"OUTPUT_OWNERSHIP_UNCERTAIN", "INPUT_CHANGED_DURING_RUN"} & order.partial_reasons,
+                        order.partial_samples)
+        db = self.root / "plain-r704.sqlite"
+        plain = self.recorder()
+        sqlite3.connect(db).close()
+        plain.stop()
+        self.assertNotIn("OUTPUT_AT_ABSENT_INPUT", plain.partial_reasons, plain.partial_samples)
+        self.assertNotIn("OUTPUT_OWNERSHIP_UNCERTAIN", plain.partial_reasons, plain.partial_samples)
 
     def check_only_done_creations_and_renames_are_outputs(self):
         """CI-OPT-001 6th review R601/R604/R605: a failed os.replace or a failed creation

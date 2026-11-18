@@ -926,6 +926,11 @@ class SuiteReuseTests(unittest.TestCase):
         with patch.object(cp, "_read_document", return_value=b_bytes), self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[same]))
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        # 7th review R705: bytes that were read but do not decode are still compared.
+        with patch.object(cp, "_read_document", return_value=b"\xff\xfe not utf-8"), \
+                self.assertRaises(cp.PlanError) as caught:
+            fp(readset(repo_reads=[same]))
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
         with patch.object(cp, "_read_document", side_effect=OSError("locked")), \
                 self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[same], listings=listing))
