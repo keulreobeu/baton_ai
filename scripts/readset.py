@@ -1113,7 +1113,7 @@ class Recorder:
             return
         self._record_read(target)
 
-    def _absent_chain(self, target, canonical, include_target):
+    def _absent_chain(self, target, canonical, include_target, final=None):
         """15th review R1501: an operation on a missing path depends on the path's missing
         components (each must still be absent) and on the nearest existing ancestor (its
         kind must still be the same); a creation that need not find the target absent
@@ -1132,13 +1132,14 @@ class Recorder:
         if self._is_child:
             self._emit({"type": "needs_absent", "path": canonical, "text": text, "born": born,
                         "ancestor": ancestor, "kind": kind, "ancestor_id": _id_list(ident), "missing": missing,
-                        "absent_input": bool(include_target),
+                        "absent_input": bool(include_target), "final": final,
                         **self._alias_event(found)})
             return
-        self._judge_chain(text, canonical, found, ancestor, missing, kind, born, ident, absent_input=include_target)
+        self._judge_chain(text, canonical, found, ancestor, missing, kind, born, ident, absent_input=include_target,
+                          final=final)
 
     def _judge_chain(self, text, canonical, found, ancestor, missing, kind, born, ident, links=_UNSET,
-                     absent_input=True):
+                     absent_input=True, final=None):
         exempt = (ident is not None and ident in self._owned_ids) or (
             isinstance(born, (int, float)) and born >= self._started_epoch)
         # The common alias decision (11th review): an absence that is an input carries its
@@ -1151,7 +1152,10 @@ class Recorder:
         if not absent_input:
             # 16th review R1601: the final path of a plain write or overwriting move was absent:
             # at stop it must be absent again (an absent input) or the run's own output.
-            self._needs_absent_or_own.setdefault(canonical, text)
+            # 17th review R1701: with how the final path was written ("truncate": w/wb/O_TRUNC,
+            # "replace": os.replace or POSIX rename, "append": a/ab/O_APPEND or O_CREAT alone).
+            entry = self._needs_absent_or_own.setdefault(canonical, [text, set()])
+            entry[1].add(final if final in ("truncate", "replace") else "append")
         if ancestor != self.root:  # the repository itself is the Git identity's dependency
             self._needs_state.setdefault(ancestor, kind)
 
@@ -1303,7 +1307,8 @@ class Recorder:
                 # marked as seen for the creation, so it is no absent input by itself.
                 self._record_read(path, precreate=True)
                 if not exclusive:
-                    self._absent_chain(path, canonical, include_target=False)  # 15th review R1501
+                    self._absent_chain(path, canonical, include_target=False,  # 15th review R1501
+                                       final="append" if keeps else "truncate")  # 17th review R1701
                 self._attempt(("create", canonical), keeps=keeps, readable=readable,  # 6th review R601
                               path=path, alias=self._alias_of(path, canonical))  # 9th review R902
             return
@@ -1312,7 +1317,8 @@ class Recorder:
             if self._input_entry(self._scope(canonical), canonical) is not None:
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
             if not exclusive:
-                self._absent_chain(path, canonical, include_target=False)  # 15th review R1501
+                self._absent_chain(path, canonical, include_target=False,  # 15th review R1501
+                                   final="append" if keeps else "truncate")  # 17th review R1701
             self._attempt(("create", canonical), keeps=keeps, readable=readable,  # after the re-observation
                           path=path, alias=self._alias_of(path, canonical))  # 9th review R902: snapshot
             return
@@ -1445,7 +1451,7 @@ class Recorder:
                     with self._quiet():
                         dst_there = os.path.lexists(dst)
                     if not dst_there:
-                        self._absent_chain(args[1], dst, include_target=False)  # 15th review R1501
+                        self._absent_chain(args[1], dst, include_target=False, final="replace")  # R1501/R1701
                     else:
                         # 16th review R1601: overwriting an existing destination the run did not make.
                         self._precondition("os.replace", args[1], dst, changes=True)
@@ -1489,7 +1495,7 @@ class Recorder:
             self._partial("PATH_UNNORMALIZABLE", value)
         elif not os.path.exists(canonical) and _sqlite_mode(database, uri) == "rwc":
             # A new database file is an output once it exists (5th R504, 6th R601).
-            self._absent_chain(value, canonical, include_target=False)  # 15th review R1501
+            self._absent_chain(value, canonical, include_target=False, final="append")  # R1501/R1701
             self._attempt(("create", canonical), keeps=True, readable=True,  # 8th review R801
                           path=value, alias=self._alias_of(value, canonical))  # 9th review R902
         else:
@@ -1837,10 +1843,14 @@ class Recorder:
                 self._partial("MUTATION_UNVERIFIABLE", "kept %s" % self._display(text))
             elif self._input_entry(self._scope(canonical), canonical) is None:
                 self._record_absent(text, canonical, self._scope(canonical))
-        for canonical, text in sorted(self._needs_absent_or_own.items()):
+        for canonical, (text, finals) in sorted(self._needs_absent_or_own.items()):
             # 16th review R1601: absent again (an absent input), or the run's own output, whose
             # state at the end (a file the next run's write must be able to replace) is recorded
-            # so the fingerprint checks it before the next run.
+            # so the fingerprint checks it before the next run. 17th review R1701: that end state
+            # stands for the start state only when the next run repeats the same operation with
+            # the same result over it: a writable file written by truncation or moved into place
+            # by os.replace. A file appended to (or created without truncation), or left
+            # read-only, is partial.
             with self._quiet():
                 present = os.path.lexists(canonical)
                 state = None
@@ -1849,8 +1859,9 @@ class Recorder:
             if not present:
                 if self._input_entry(self._scope(canonical), canonical) is None:
                     self._record_absent(text, canonical, self._scope(canonical))
-            elif not self._is_created(canonical, presume=False) or state is None:
-                self._partial("MUTATION_UNVERIFIABLE", "replaced %s" % self._display(text))
+            elif (not self._is_created(canonical, presume=False) or state is None or state.startswith("ro:")
+                    or not finals <= {"truncate", "replace"}):
+                self._partial("MUTATION_UNVERIFIABLE", "kept %s" % self._display(text))
             elif self._input_entry(self._scope(canonical), canonical) is None:
                 self._record_state(canonical, state)
         for canonical, kind in sorted(self._needs_state.items()):
@@ -1986,7 +1997,7 @@ class Recorder:
             self._judge_chain(event.get("text") or event["path"], event["path"], event.get("alias"),
                               event["ancestor"], missing, event["kind"], event.get("born"),
                               _id_tuple(event.get("ancestor_id")), links=event.get("links", _UNSET),
-                              absent_input=event.get("absent_input") is not False)
+                              absent_input=event.get("absent_input") is not False, final=event.get("final"))
         elif kind == "rename_failed":
             for key in ("src_alias", "dst_alias"):  # 12th review R1202: decided as the parent's
                 if key in event:

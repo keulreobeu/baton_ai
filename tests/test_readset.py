@@ -513,6 +513,79 @@ class ReadsetTests(unittest.TestCase):
         self.check_preconditions_of_state_dependent_operations()  # 14th review R1401-R1405
         self.check_ancestor_chain_and_failed_writes()  # 15th review R1501/R1502
         self.check_file_state_includes_writability()  # 16th review R1601-R1604
+        self.check_kept_final_paths_need_a_repeatable_operation()  # 17th review R1701
+
+    def check_kept_final_paths_need_a_repeatable_operation(self):
+        """CI-OPT-001 17th review R1701: a file the run leaves at a path that was absent stands
+        for the next run's start state only when the next run repeats the same operation with
+        the same result: a writable file written by truncation or moved into place by
+        os.replace (complete, its end state recorded). Appended to or created without
+        truncation (this process and a real child), or left read-only, it is partial; cleaned
+        up, its absence is recorded."""
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        time.sleep(0.03)
+
+        def append_kept(path):
+            with open(path, "ab") as stream:
+                stream.write(b"abc")
+
+        def create_only_kept(path):
+            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)))
+
+        def write_then_read_only(path):
+            path.write_bytes(b"same")
+            os.chmod(path, 0o444)
+
+        def replace_read_only(path):
+            source = base / "own-source-ro.bin"  # the run's own file, made read-only
+            source.write_bytes(b"same")
+            os.chmod(source, 0o444)
+            os.replace(source, path)
+
+        def write_kept(path):
+            path.write_bytes(b"same")
+
+        def replace_kept(path):
+            (base / "replace-src.bin").write_bytes(b"same")
+            os.replace(base / "replace-src.bin", path)
+
+        def append_cleaned(path):
+            append_kept(path)
+            path.unlink()
+
+        cases = {"append kept": (append_kept, False), "created without truncation kept": (create_only_kept, False),
+                 "written then read-only": (write_then_read_only, False), "read-only moved in": (replace_read_only, False),
+                 "written writable kept": (write_kept, True), "replaced writable kept": (replace_kept, True),
+                 "appended then cleaned": (append_cleaned, True)}
+        try:
+            for label, (action, reusable) in cases.items():
+                with self.subTest(case=label):
+                    target = base / ("final-%s.bin" % label.replace(" ", "-"))
+                    rec = self.recorder()
+                    action(target)
+                    rec.stop()
+                    if reusable:
+                        self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+                        expected = "missing" if not target.exists() else readset._sha(str(target))
+                        seen = {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
+                                for r in rec.as_dict()["outside_reads"]}
+                        self.assertEqual(seen.get(os.path.normcase(str(target))), expected, seen)
+                    else:
+                        self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+                    if target.exists():
+                        os.chmod(target, 0o644)
+            with self.subTest(case="child append kept"):
+                target = base / "child-append.bin"
+                rec = self.recorder()
+                done = subprocess.run([sys.executable, "-c", "import sys; open(sys.argv[1], 'ab').write(b'abc')",
+                                       str(target)], cwd=self.root, capture_output=True, text=True)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+        finally:
+            for path in base.iterdir():
+                if path.is_file():
+                    os.chmod(path, 0o644)
 
     def check_file_state_includes_writability(self):
         """CI-OPT-001 16th review R1601-R1604: a file input's state is its kind, content and
