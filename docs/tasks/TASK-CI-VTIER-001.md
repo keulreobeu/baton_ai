@@ -90,3 +90,5 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - **2026-11-18 4차 수정 후보 `94f2316`(= CI-VTIER `4c2de5d` + CI-OPT 4차 수정 `8305a51` 병합) 공식 로컬 V3**: `--base 762739f --evidence-dir`(단독) 761 tests OK, skips 0, failures/errors 0,
   eligible true, state stable, 1428 s, evidence `3b7d47b4…`(commit `94f2316`), reuse rejected. read set partial(`CHILD_NOT_ALLOWED` 18,246·`CHILD_LOG_INCOMPLETE`, Python 실행 205/hook 205).
   로그 사본 `CI-VTIER-001-v3-94f2316.log`. 5차 재검토·게시는 승인 대기. verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "push + 5차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`36e5bbc`, 미게시 `4c7a03b`·`d4d378b`(CI-OPT branch에 게시됨)·`f707bf4`·`3f41836`·`8305a51`·`5fdf500`·`4c2de5d`·`94f2316`·`9166d40`·이 기록 커밋.
+  작성자 lwwde07, 허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `94f2316` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만(force·main 병합 없음).
