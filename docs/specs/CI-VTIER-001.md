@@ -85,6 +85,8 @@ V1/V2 결과(부분 여부와 무관)는 `final_evidence_eligible=false`이며 �
 
 **2026-11-18 8차 재검토 반영(Codex `4a9e564` FAIL, P2 2):** R701 resolved. R801: 검사 결과는 검사가 본 파일 내용에만 유효하다. Orca author 정착(`ingest`)은 검사 전 스냅샷과 마지막 스냅샷이 다르면 `validation_state_changed`로 BLOCKED, 통과·상태 없음, 검사 결과는 상태 변경 표시(exit 2), Wiki 생략으로 처리한다. 로컬 `_run`·`_verify`도 검사 전 스냅샷과 마지막 스냅샷을 비교해 다르면 같은 사유로 BLOCKED다. R802: lease를 남기는 통과 정착 1단계는 2단계 Wiki 결과용 공간(`SETTLEMENT_HEADROOM` 2048바이트)을 남겨야 저장되고, 남지 않으면 즉시 compact fallback(BLOCKED, 통과 없음, lease·slot 해제)이다. 2단계의 전체 Wiki 결과가 영구적으로 거부(`unsafe_payload`)되면 완료 게이트가 쓰는 최소 Wiki 정보(`event_id`·`blocking`, 불명확하면 blocking)만 저장하고 기존 검증 결과는 그대로 둔 채 pending·lease를 같은 쓰기에서 해제한다. 그것도 거부되면 fail-closed(BLOCKED, 통과 없음, 해제)다. 일시적 I/O 실패는 기존처럼 lease·pending을 남겨 종료 이벤트 재수신·제어로 재시도한다.
 
+**2026-11-18 9차 재검토 반영(Codex `6d66a14` FAIL, P2 1·P3 1):** R801 resolved, R802 partial. R901: 로컬 정착(`Orchestrator.finish`, `_run`·`_verify` 공통)도 Orca 경로와 같은 규칙을 쓴다. lease를 남기는 1단계는 `SETTLEMENT_HEADROOM`을 남겨야 저장되고, 남지 않거나 저장이 크기로 거부되면 Wiki 평가 전에 통과 없음·검증·진단 필드 축소·lease 해제를 한 쓰기로 처리한다(BLOCKED `result_unrecordable`). 2단계는 Orca와 같은 `store_wiki_outcome`을 쓴다. 전체 Wiki 결과가 크기로 거부되면 축약 Wiki(`event_id`·`blocking`)를 저장하고, 그것도 거부되면 통과 없음·lease 해제와 함께 이미 기록된 Wiki 이벤트의 blocking 참조를 남긴다(`wiki_outcome_unrecordable`). 따라서 Task가 통과를 잃으면 Wiki 검증은 blocking 참조로 남는다. R902: Orca 축약 fallback은 `settlement_pending=false`를 명시한다(lease를 해제하므로 2단계가 남지 않는다). 이전 버전이 예약 없이 저장한 pending 행도 새 버전이 읽어 이 규칙으로 정착한다.
+
 ## CI-VTIER-001-REQ-03 실행 경로
 
 ### CI-VTIER-001-AC-05

@@ -730,29 +730,41 @@ def _finish_author_settlement(store, task_id, lease):
         return row
     wiki = (assess(store, task_id, {"changed_files": result.get("changed_files"), "validation": result.get("validation")})
             if row["state"] == "REVIEW_REQUIRED" and result.get("validation_passed") is True else None)
-    try:
-        return store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": wiki,
-                                                                 "settlement_pending": False},
-                            release=True, settled_external=True)
-    except HarnessError as exc:
-        if str(exc) != "unsafe_payload": raise  # A transient failure keeps the retry by the end event.
-    # CI-VTIER-001 8th review R802: a permanent refusal of the full Wiki outcome stores only what
-    # the settlement and the completion gate (evidence: event_id, blocking) need, in the space
-    # the first step reserved; the stored validation result is kept as it is.
-    compact = None if wiki is None else {
-        "event_id": wiki.get("event_id") if isinstance(wiki.get("event_id"), str) and len(wiki["event_id"]) <= 100 else None,
-        "action": str(wiki.get("action"))[:40], "execution": str(wiki.get("execution"))[:40],
-        "blocking": wiki.get("blocking") is not False, "reason": "wiki_outcome_compacted", "compacted": True}
-    try:
-        return store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": compact,
-                                                                 "settlement_pending": False},
-                            release=True, settled_external=True)
-    except HarnessError as exc:
-        if str(exc) != "unsafe_payload": raise
-    # Still refused: fail closed (no pass), releasing the lease (the compact fallback shrinks the record).
-    return _settle_author(store, task_id, lease, "BLOCKED",
-                          {"runtime": result["runtime"], "wiki": None, "settlement_pending": False,
-                           "reason": "wiki_outcome_unrecordable"})
+    # A transient failure (not unsafe_payload) keeps the retry by the end event.
+    return store_wiki_outcome(
+        lambda outcome: store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": outcome,
+                                                                          "settlement_pending": False},
+                                     release=True, settled_external=True),
+        wiki,
+        lambda outcome: _settle_author(store, task_id, lease, "BLOCKED",
+                                       {"runtime": result["runtime"], "wiki": outcome, "settlement_pending": False,
+                                        "reason": "wiki_outcome_unrecordable"}))
+
+
+def compact_wiki(wiki, *, blocking=False):
+    """The Wiki outcome fields the settlement and the completion gate (evidence: event_id,
+    blocking) need, bounded in size. An unclear blocking value is blocking."""
+    if wiki is None:
+        return None
+    event_id = wiki.get("event_id")
+    return {"event_id": event_id if isinstance(event_id, str) and len(event_id) <= 100 else None,
+            "action": str(wiki.get("action"))[:40], "execution": str(wiki.get("execution"))[:40],
+            "blocking": True if blocking else wiki.get("blocking") is not False,
+            "reason": "wiki_outcome_compacted", "compacted": True}
+
+
+def store_wiki_outcome(write, wiki, fail_closed):
+    """Second settlement step shared by the Orca author and the local controller (CI-VTIER-001
+    8th review R802 / 9th review R901). write(outcome) stores the Wiki outcome and releases the
+    lease. A permanent size refusal (unsafe_payload) stores the compact outcome, which fits the
+    space the first step reserved; if that is refused too, fail_closed(outcome) settles with no
+    pass and releases, keeping a blocking reference to a Wiki event already recorded."""
+    for outcome in ([wiki, compact_wiki(wiki)] if wiki is not None else [None]):
+        try:
+            return write(outcome)
+        except HarnessError as exc:
+            if str(exc) != "unsafe_payload": raise
+    return fail_closed(compact_wiki(wiki, blocking=True))
 
 
 # Bytes reserved by a pending first settlement step: the compact Wiki outcome (bounded fields)
@@ -781,7 +793,11 @@ def _settle_author(store, task_id, lease, state, result, **options):
         compact = {"runtime": result["runtime"], "validation_passed": False, "validation_status": None,
                    **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
                    "reason": "result_unrecordable",
-                   "changed_files": {}, "validation": [], "resume_point": None, "wiki": None,
+                   "changed_files": {}, "validation": [], "resume_point": None,
+                   # 9th review R902: the fallback releases the lease, so no second step is pending;
+                   # a compact Wiki reference (blocking) of an event already recorded is kept.
+                   "settlement_pending": False,
+                   "wiki": result["wiki"] if isinstance(result.get("wiki"), dict) and result["wiki"].get("compacted") else None,
                    "candidate": None, "review_evidence": None, "integration_evidence": None,
                    "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
         if review:

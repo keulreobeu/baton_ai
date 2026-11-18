@@ -1730,6 +1730,18 @@
               "symbol": "FlowRuntimeTests.test_first_step_without_room_for_the_wiki_outcome_falls_back_and_releases"
             },
             {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_local_first_step_without_room_for_the_wiki_outcome_settles_unrecordable"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_local_wiki_outcome_too_large_is_stored_compact_or_fails_closed"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_pending_row_of_an_earlier_version_settles_without_a_pending_mark"
+            },
+            {
               "file": "tests/test_managed_harness.py",
               "symbol": "ValidationPlannerIntegrationTests.test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time"
             },

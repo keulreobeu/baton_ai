@@ -302,7 +302,15 @@ class Orchestrator:
         # 5th review R501: a control that arrived after the last stop check turns this
         # settlement into PAUSED/CANCELLED in the same transaction (no validation result,
         # lease released) instead of failing and leaving the lease held.
-        row = self.store.update(task, lease, state, result=result, release=not wiki_due, yield_to_control=True)
+        from .runtime import SETTLEMENT_HEADROOM, store_wiki_outcome
+        try:
+            # CI-VTIER-001 9th review R901: as on the Orca path, a first step that keeps the
+            # lease for the Wiki outcome reserves that outcome's space.
+            row = self.store.update(task, lease, state, result=result, release=not wiki_due, yield_to_control=True,
+                                    headroom=SETTLEMENT_HEADROOM if wiki_due else 0)
+        except HarnessError as exc:
+            if str(exc) != "unsafe_payload": raise
+            row, wiki_due = self._settle_unrecordable(task, lease, result, None, "result_unrecordable"), False
         if wiki_due:
             # The Wiki records a verification only once the validation result is stored as
             # the settled result; the lease is held until the Wiki outcome is stored too.
@@ -312,14 +320,31 @@ class Orchestrator:
                 wiki = assess(self.store, task, result)
                 if state == "COMPLETED" and wiki.get("blocking"):
                     state = "REVIEW_REQUIRED"
-            row = self.store.update(task, lease, state if wiki else row["state"], result={"wiki": wiki},
-                                    release=True, yield_to_control=True)
+            final = state if wiki else row["state"]
+            row = store_wiki_outcome(
+                lambda outcome: self.store.update(task, lease, final, result={"wiki": outcome},
+                                                  release=True, yield_to_control=True),
+                wiki,
+                lambda outcome: self._settle_unrecordable(task, lease, result, outcome, "wiki_outcome_unrecordable"))
         state = row["state"]
         self.store.observe_idle_state(task)
         if state == "COMPLETED":
             from .autocommit import auto_commit_task
             return auto_commit_task(self.store, task)
         return self.store.export(task)
+
+    def _settle_unrecordable(self, task, lease, result, wiki, reason):
+        """CI-VTIER-001 9th review R901: a settlement the record cannot hold ends with no pass,
+        in one write that also releases the lease. Stored fields count too, so the large
+        validation and diagnostic fields are cleared (as in the Orca compact fallback)."""
+        stored = self.store.get(task)["result"]
+        compact = {"validation_passed": False, "validation_status": None, "reason": reason,
+                   **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
+                   "validation": [], "changed_files": {}, "summary": None, "provider_events": [],
+                   "resume_point": None, "wiki": wiki,
+                   "candidate": None, "review_evidence": None, "integration_evidence": None,
+                   "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
+        return self.store.update(task, lease, "BLOCKED", result=compact, release=True, yield_to_control=True)
 
     def run(self, task_id):
         from .runtime import dispatch, execution_lock
