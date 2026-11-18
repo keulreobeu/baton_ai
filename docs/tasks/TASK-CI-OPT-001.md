@@ -1454,3 +1454,130 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 실행 영역 밖(TEMP 루트 등)에 정리하지 않고 남긴 `mkdtemp`·`mkstemp`·배타 생성은 실제 suite에서 partial이 되고, 정리된 것은 부재 입력 항목이 늘어난다(빈도·지문 크기 미측정).
     - 다른 프로세스가 연 핸들 등 실패 원인은 기록하지 않고 partial로만 처리한다.
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 15차 독립 교차검토(Codex Orca worker, 대상 `0a70599`)**: **FAIL**(P1 2, P3 1). R1401~R1405 resolved. RA-1~RA-4 유지. 반영 코드 후보 `7c0bc78`(로컬 커밋, 미게시).
+  지적:
+    - R1501(P1): 사전조건이 대상 부재만 기록해 부모 존재·종류를 놓쳤다(mkdir·`open xb`의 없는 부모, 파일 부모, 정리 뒤 부모 삭제).
+    - R1502(P1): 기존 비자체 파일의 쓰기 모드 open 실패(읽기 전용)에서 내용만 남았다.
+    - R1503(P3) 관찰: `tests/test_managed_providers.py`의 고정 fixture `.local_runtime/harness-managed/test-tmp` 생성·재호출이 전체 suite에서 `MUTATION_UNVERIFIABLE` partial 경로다(첫 실행은 남긴 세 디렉터리, 재실행은 기존 경로 mkdir). 지시대로 수정하지 않았고 fixture도 바꾸지 않았다.
+  수정:
+    - `_precondition`의 부재 분기와 비배타 생성이 `_absent_chain`·`_judge_chain`을 거친다.
+    - 종료 판정은 `_needs_absent`·`_needs_state`(자식은 `needs_absent`에 조상 사슬을 함께 보고)가 맡는다.
+    - 감싼 `open`/`os.open` 실패는 `_open_failed` → `_precondition(changes=True)`로 간다.
+    - `ci_plan._hash_or_none`이 `"dir"`을 허용한다.
+  API 표 갱신(14차 표에 더함):
+    | API | 추가 사전 상태 | 기록 / partial |
+    | 모든 부재 대상 연산(`open x`·mkdir·rename 목적지·부재 대상 remove/rmdir/chmod/utime/truncate·link 새 이름) | 없는 상위 구성요소와 가장 가까운 기존 조상의 종류 | 없는 구성요소는 각각 부재 입력, 조상은 `"dir"`/내용 해시 입력. 종료 시 다르면 partial |
+    | `open` `w`·`a`(새 파일), SQLite 새 DB, `os.replace`·POSIX rename(새 목적지) | 조상 종류 | 같다(대상 부재 조건은 없음) |
+    | 쓰기 모드 `open`/`os.open` 실패(기존 비자체 파일) | 속성·잠금 | 일괄 partial. 내용 입력 유지, 입력 변경 없음 |
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_ancestor_chain_and_failed_writes` 추가. 다루는 사례:
+    - 없는 부모·파일 부모: mkdir·`open xb` × 직접·실제 자식
+    - 기존 부모 아래 생성 후 정리, `w` 생성(complete, `"dir"` 기록, `valid_readset`)
+    - 실행 중 부모 삭제(partial)
+    - 읽기 전용 파일의 `wb`·`r+b`·`ab` 실패와 자식 `ab` 실패
+  수정 전 코드 대조(`0a70599` scripts, 사례별 분리 실행): 14건 모두 기대와 다름(부모·조상 기록 없음, 사유 없음). 수정 후 모두 기대대로.
+  검토자 재현(수정본):
+    - r1501 6건: 지문 변경·reuse 거부
+    - r1502 3건: partial·reuse 거부
+    - owned_output: reuse 허용 유지
+    - temp_probe: 판정 유지(관찰)
+    - 14차 r14_repro 10건·13차 삭제 4건·12차 재현: reuse 거부 유지
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화:
+    - 이번 회차 기존 단언 변경 없음.
+    - 정상 생성은 실행 영역 밖이면 부모 `"dir"` 입력(예: TEMP 루트)이 하나씩 늘 뿐 complete다.
+    - 실행 중 부모가 바뀌는 경우만 새로 partial이다.
+  남은 한계:
+    - R1503 fixture 경로와 TEMP 루트에 남긴 임시 경로는 실제 suite에서 partial이다.
+    - 정상 생성은 부재·조상 입력 항목이 늘어난다(지문 크기·빈도 미측정).
+    - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 16차 독립 교차검토(Codex Orca worker, 대상 `7c0bc78`)**: **FAIL**(P1 4). R1501·R1502 resolved. RA-1~RA-4 유지. 반영 코드 후보 `100a8ee`(로컬 커밋, 미게시).
+  공통 원인: "파일 입력 상태 = 내용만"이라는 가정.
+  수정:
+    - `readset._sha`와 `ci_plan._content`(`_file_state`)가 쓰기 불가 파일을 `ro:<digest>`로 표시한다.
+    - 섹션 문서 관측 해시 대조도 같은 상태값을 쓴다.
+    - `ci_plan._hash_or_none`이 `ro:` 표시를 허용한다.
+    - 실행이 만들지 않은 기존 파일의 쓰기 모드 open은 `_precondition(changes=True)`로 partial이다.
+    - 비배타 쓰기·덮어쓰기 이동의 부재 최종 경로는 `_needs_absent_or_own`으로 종료 시 판정한다(부재 → 부재 입력, 자체 파일 → 종료 상태 입력, 그 밖 → partial).
+    - 기존 비자체 목적지 `os.replace`는 partial이다.
+  지문 schema: `suite-fp/1` 유지(값 안의 표시로 확장, 이전 증거는 코드 변경으로 지문 불일치).
+  API 표 갱신(14·15차 표에 더함):
+    | API | 상태값 / 추가 사전 상태 | 기록 / partial |
+    | 모든 파일 입력·사전조건 기록(읽기, 조상 파일, SQLite 기존 DB, `shutil.copy` 원본) | 종류·내용·쓰기 가능 여부 | `ro:` 표시 포함 상태 입력 |
+    | 기존 비자체 파일의 쓰기 모드 open(`wb`·`ab`·`r+b`·`os.open` 쓰기) | 쓰기 가능 여부 | 성공·실패 모두 partial, 상태 입력 유지 |
+    | 부재 최종 경로에 `w`·`a`·`O_CREAT\|O_TRUNC`, `os.replace`·POSIX rename | 최종 경로 부재 | 종료 시 부재 → 부재 입력, 자체 파일 → 종료 상태 입력, 그 밖 → partial |
+    | 기존 비자체 목적지 `os.replace` | 덮어쓸 대상 | partial |
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_file_state_includes_writability` 추가. 다루는 사례:
+    - `ro:` 표시의 read set·지문 일치
+    - 기존 파일 `wb`·`ab`·`r+b` 쓰기 열기
+    - SQLite rw 연결과 `shutil.copy` 원본: 속성만 바꿔도 지문이 다름, `valid_readset`
+    - 부재 경로에 쓰고 정리(직접·실제 자식)
+    - 남긴 쓰기와 부재 목적지 `os.replace`: 종료 상태 기록, complete
+    - 기존 비자체 목적지 `os.replace`: partial
+  수정 전 코드 대조(`7c0bc78` scripts, 사례별 분리 실행): 10건 모두 기대와 다름(`ro` 표시 없음, 사유 없음, 최종 경로 기록 없음). 수정 후 모두 기대대로.
+  검토자 재현(수정본):
+    - r16_repro 결함 11건, copy_repro 2건: 모두 reuse 거부
+    - 비창조 부모 `rb`·`r+b` 대조군 2건: reuse 허용 유지
+    - owned_output: reuse 허용 유지
+    - 13~15차 재현: reuse 거부 유지
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: partial로 바뀐 기존 정상 사례 없음. 기존 단언 2곳은 실행 영역 밖에 남은 자체 출력의 종료 상태(또는 정리된 자체 출력의 부재)가 read set에 남는 것으로 갱신했다(`test_repo_outside_and_created_paths`의 `new.txt`, 5차 R504 검사). 실행 영역 안 출력은 여전히 기록하지 않는다.
+  남은 한계:
+    - ACL·소유자·숨김·시스템 속성과 다른 프로세스의 잠금은 상태값에 없다.
+    - 실행 영역 밖에 남긴 자체 출력은 종료 상태가 입력이 된다. 정리(git clean 등) 뒤에는 재사용이 거부된다(보수 방향).
+    - 실제 suite의 입력 항목 증가량과 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 17차 독립 교차검토(Codex Orca worker, 대상 `100a8ee`)**: **FAIL**(P1 1, P3 1). R1601~R1604 resolved. RA-1~RA-4 유지. 반영 코드 후보 `f077d3c`(로컬 커밋, 미게시).
+  지적:
+    - R1701(P1): 부재로 시작한 경로의 종료 상태를 다음 실행의 등가 입력으로 보았다(`ab`로 남긴 파일, `wb` 뒤 읽기 전용, 읽기 전용 자체 소스의 `os.replace`).
+    - R1702(P3) 관찰: `tests/test_managed_providers.py:37–38` 고정 fixture partial(R1503 재측정). 지시대로 수정하지 않았다.
+  수정: `_needs_absent_or_own`가 경로마다 쓰기 방식(`truncate`·`replace`·`append`)을 기억한다(기존 생성 시도의 모드·플래그, 자식은 `needs_absent`의 `final`). 종료 시 자체 파일이 남은 경우의 판정:
+    - 쓰기 방식이 모두 `truncate`/`replace`이고 쓰기 가능하면 종료 상태 입력
+    - 그 밖이면 `MUTATION_UNVERIFIABLE`
+  API 표 갱신(16차 표의 최종 경로 행):
+    | API | 남은 자체 파일 | 기록 / partial |
+    | `w`·`wb`·`O_TRUNC`, `os.replace`·POSIX rename(부재 목적지) | 쓰기 가능 | 종료 상태 입력 |
+    | 같은 경우 | 읽기 전용 | partial |
+    | `a`·`ab`·`O_APPEND`, `O_CREAT`만, SQLite 새 DB | 무관 | partial |
+    | 모든 방식 | 정리되어 부재 | 부재 입력 |
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_kept_final_paths_need_a_repeatable_operation` 추가. 다루는 사례:
+    - partial: `ab` 남김, `O_CREAT`만 남김, `wb` 뒤 읽기 전용, 자체 읽기 전용 소스 `os.replace`, 실제 자식 `ab` 남김
+    - complete(상태 기록 확인): 쓰기 가능 `wb` 남김, 쓰기 가능 `os.replace` 남김
+    - 정리된 `ab`: 부재 입력
+  수정 전 코드 대조(`100a8ee` scripts, 사례별 분리 실행): 결함 5건 모두 complete=True이고 사유 없음. 정상 3건은 전후 모두 complete. 수정 후 결함 5건 모두 partial.
+  검토자 재현(수정본):
+    - r17_kept 결함 4건: reuse 거부
+    - 쓰기 가능 `wb`·`os.replace` 대조군: reuse 허용 유지
+    - 16차 r16_repro·copy_repro: 판정 유지
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 기존 단언 변경 없음. 실행 영역 밖에 `a`/`ab`(로그 등)나 SQLite 새 DB를 남기는 실행은 새로 partial이다(SQLite 새 DB는 9차부터 이미 partial).
+  남은 한계:
+    - 연산 종류 판정은 감사 이벤트의 모드·플래그만 쓴다(감싼 호출 밖 생성은 기존 규칙).
+    - ACL 등 다른 속성은 16차와 같이 없다.
+    - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 18차 독립 교차검토(Codex Orca worker, 대상 `f077d3c`)**: **PASS_WITH_FINDINGS**(P2 1, P3 1). R1701 resolved. RA-1~RA-4 유지. 반영 코드 후보 ``(로컬 커밋, 미게시).
+  R1801(P2) 디렉터리에 대한 `sqlite3.connect(mode=ro)` 실패에서 경로 종류 누락 → `_record_read`의 디렉터리 분기(직접·자식 보고)가 비자체 기존 디렉터리를 `_directory_kind`로 `"dir"` 의존성에 남긴다(종료 시·지문 재검증). 자식 디렉터리 이벤트에 birth·객체 ID를 추가했다. 종류 불명은 partial.
+  R1802(P3) `wb` 뒤 `ab`가 complete인데 Spec 문구("섞인 경우 partial")와 달라 보임 → 구현은 그대로 두고 17차 Spec 문구를 고쳤다(부재에서 만든 연산들로 판정, 자체 파일에 이어지는 쓰기는 영향 없음).
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_directory_kind_and_writes_after_creation` 추가. 다루는 사례:
+    - 디렉터리에 SQLite ro 연결 실패(직접·실제 자식): `"dir"` 기록, `valid_readset`, 디렉터리를 DB로 바꾸면 지문 값 변경
+    - 실행이 만든 디렉터리: 기록 없음·complete
+    - `wb` 뒤 `ab`: complete
+    - 정리 뒤 `ab` 재생성: partial
+  수정 전 코드 대조(`f077d3c` scripts): 디렉터리 SQLite 직접·자식 2건 모두 `"dir"` 기록 없음, 수정 후 기록. 검토자 재현 수정본: sqlite-directory는 지문 변경·reuse 거부, mixed(`wb` 뒤 `ab`)는 reuse 허용·결과 일치 유지.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 없음(기존 단언 변경 없음).
+  남은 한계: 디렉터리 종류만 기록하고 그 안 항목은 목록 규칙을 따른다. ACL 등 다른 속성은 16차와 같다. 원격 Windows 두 조합은 확인하지 않았다.

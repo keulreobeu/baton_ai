@@ -64,9 +64,12 @@ class ReadsetTests(unittest.TestCase):
         rec._record_read(created)
         rec.stop()
         data = rec.as_dict()
-        # Review P1 (3a7d63b): a probed but absent path is an input too.
+        # Review P1 (3a7d63b): a probed but absent path is an input too. 16th review R1601: the
+        # run's own new file is no input read, but its final state is recorded (the next run's
+        # write depends on what is at that path).
         self.assertEqual([(x["path"], x.get("absent", False)) for x in data["repo_reads"]],
-                         [("in.txt", False), ("never-existed.txt", True)])
+                         [("in.txt", False), ("never-existed.txt", True), ("new.txt", False)])
+        self.assertEqual(data["repo_reads"][2]["sha256"], readset._sha(str(created)))
         self.assertEqual(data["outside_reads"][0]["path"], readset._real(outside))
         self.assertRegex(data["outside_reads"][0]["sha256"], r"^[0-9a-f]{64}$")
         self.assertTrue(data["complete"])
@@ -508,6 +511,348 @@ class ReadsetTests(unittest.TestCase):
         self.check_chains_failed_moves_sections_and_nested_events()  # 12th review R1201-R1204
         self.check_removals_and_other_mutations_record_their_state()  # 13th review R1301
         self.check_preconditions_of_state_dependent_operations()  # 14th review R1401-R1405
+        self.check_ancestor_chain_and_failed_writes()  # 15th review R1501/R1502
+        self.check_file_state_includes_writability()  # 16th review R1601-R1604
+        self.check_kept_final_paths_need_a_repeatable_operation()  # 17th review R1701
+        self.check_directory_kind_and_writes_after_creation()  # 18th review R1801/R1802
+
+    def check_directory_kind_and_writes_after_creation(self):
+        """CI-OPT-001 18th review R1801/R1802: an SQLite connection that fails on an existing
+        directory records the directory's kind ("dir"), so a directory turned into a
+        database changes the fingerprint (this process and a real child); a directory the
+        run made adds nothing. The way a kept path was written is decided by the operations
+        that created it from absence: appending to the run's own file after a truncating
+        creation repeats with the same result (complete); creating it again by appending
+        after it was removed is partial."""
+        import sqlite3
+        from scripts import ci_plan
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        for actor in ("direct", "child"):
+            with self.subTest(case="sqlite on a directory/%s" % actor):
+                target = base / ("fixture-%s.db" % actor)
+                target.mkdir()
+                time.sleep(0.03)
+                rec = self.recorder()
+                if actor == "direct":
+                    with self.assertRaises(sqlite3.OperationalError):
+                        sqlite3.connect(target.as_uri() + "?mode=ro", uri=True)
+                else:
+                    code = ("import sqlite3, sys\ntry:\n    sqlite3.connect(sys.argv[1], uri=True)\n"
+                            "except sqlite3.OperationalError:\n    pass")
+                    done = subprocess.run([sys.executable, "-c", code, target.as_uri() + "?mode=ro"], cwd=self.root,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                seen = {os.path.normcase(r["path"]): r["sha256"] for r in rec.as_dict()["outside_reads"]}
+                self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", seen)
+                self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                target.rmdir()
+                target.write_bytes(b"database")
+                self.assertNotEqual(ci_plan._content(target), "dir")
+        with self.subTest(case="sqlite on the run's own directory"):
+            rec = self.recorder()
+            own = base / "own.db"
+            own.mkdir()
+            with self.assertRaises(sqlite3.OperationalError):
+                sqlite3.connect(own.as_uri() + "?mode=ro", uri=True)
+            own.rmdir()
+            rec.stop()
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+            self.assertFalse(any(r.get("sha256") == "dir" and r["path"].endswith("own.db")
+                                 for r in rec.as_dict()["outside_reads"]))
+        with self.subTest(case="append after a truncating creation"):
+            kept = base / "truncate-then-append.bin"
+            rec = self.recorder()
+            kept.write_bytes(b"one")
+            with open(kept, "ab") as stream:
+                stream.write(b"two")
+            rec.stop()
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+        with self.subTest(case="created again by appending"):
+            again = base / "recreated-by-append.bin"
+            rec = self.recorder()
+            again.write_bytes(b"one")
+            again.unlink()
+            with open(again, "ab") as stream:
+                stream.write(b"two")
+            rec.stop()
+            self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+
+    def check_kept_final_paths_need_a_repeatable_operation(self):
+        """CI-OPT-001 17th review R1701: a file the run leaves at a path that was absent stands
+        for the next run's start state only when the next run repeats the same operation with
+        the same result: a writable file written by truncation or moved into place by
+        os.replace (complete, its end state recorded). Appended to or created without
+        truncation (this process and a real child), or left read-only, it is partial; cleaned
+        up, its absence is recorded."""
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        time.sleep(0.03)
+
+        def append_kept(path):
+            with open(path, "ab") as stream:
+                stream.write(b"abc")
+
+        def create_only_kept(path):
+            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)))
+
+        def write_then_read_only(path):
+            path.write_bytes(b"same")
+            os.chmod(path, 0o444)
+
+        def replace_read_only(path):
+            source = base / "own-source-ro.bin"  # the run's own file, made read-only
+            source.write_bytes(b"same")
+            os.chmod(source, 0o444)
+            os.replace(source, path)
+
+        def write_kept(path):
+            path.write_bytes(b"same")
+
+        def replace_kept(path):
+            (base / "replace-src.bin").write_bytes(b"same")
+            os.replace(base / "replace-src.bin", path)
+
+        def append_cleaned(path):
+            append_kept(path)
+            path.unlink()
+
+        cases = {"append kept": (append_kept, False), "created without truncation kept": (create_only_kept, False),
+                 "written then read-only": (write_then_read_only, False), "read-only moved in": (replace_read_only, False),
+                 "written writable kept": (write_kept, True), "replaced writable kept": (replace_kept, True),
+                 "appended then cleaned": (append_cleaned, True)}
+        try:
+            for label, (action, reusable) in cases.items():
+                with self.subTest(case=label):
+                    target = base / ("final-%s.bin" % label.replace(" ", "-"))
+                    rec = self.recorder()
+                    action(target)
+                    rec.stop()
+                    if reusable:
+                        self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+                        expected = "missing" if not target.exists() else readset._sha(str(target))
+                        seen = {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
+                                for r in rec.as_dict()["outside_reads"]}
+                        self.assertEqual(seen.get(os.path.normcase(str(target))), expected, seen)
+                    else:
+                        self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+                    if target.exists():
+                        os.chmod(target, 0o644)
+            with self.subTest(case="child append kept"):
+                target = base / "child-append.bin"
+                rec = self.recorder()
+                done = subprocess.run([sys.executable, "-c", "import sys; open(sys.argv[1], 'ab').write(b'abc')",
+                                       str(target)], cwd=self.root, capture_output=True, text=True)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+        finally:
+            for path in base.iterdir():
+                if path.is_file():
+                    os.chmod(path, 0o644)
+
+    def check_file_state_includes_writability(self):
+        """CI-OPT-001 16th review R1601-R1604: a file input's state is its kind, content and
+        writability, alike in the read set and the fingerprint (a read-only file is marked);
+        a write-mode open of an existing file the run did not make is partial; a written or
+        overwriting move's final path that was absent is recorded at the end as absent again
+        or as the run's own file's state (this process and a real child); an existing SQLite
+        database or a copied source is recorded with its writability."""
+        import shutil
+        import sqlite3
+        from scripts import ci_plan
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        marked = base / "marked.cfg"
+        marked.write_text("same", encoding="utf-8")
+        writable_state = readset._sha(str(marked))
+        os.chmod(marked, 0o444)
+        try:
+            self.assertEqual(readset._sha(str(marked)), "ro:" + writable_state)
+            self.assertEqual(ci_plan._content(marked), readset._sha(str(marked)))
+        finally:
+            os.chmod(marked, 0o644)
+        existing = base / "existing.bin"
+        existing.write_bytes(b"same")
+        db = base / "existing.sqlite"
+        with sqlite3.connect(db) as connection:
+            connection.execute("create table t (i)")
+        connection.close()
+        source = base / "copy-source.cfg"
+        source.write_text("copied", encoding="utf-8")
+        time.sleep(0.03)
+
+        def entries(rec):
+            return {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
+                    for r in rec.as_dict()["outside_reads"]}
+
+        def key(path):
+            return os.path.normcase(str(path))
+
+        for mode in ("wb", "ab", "r+b"):
+            with self.subTest(case="write open %s" % mode):
+                rec = self.recorder()
+                with open(existing, mode) as stream:
+                    if mode != "ab":
+                        stream.write(b"same")
+                rec.stop()
+                self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+                self.assertEqual(entries(rec).get(key(existing)), readset._sha(str(existing)))
+        with self.subTest(case="sqlite rw and copy source keep their state"):
+            rec = self.recorder()
+            connection = sqlite3.connect(db.as_uri() + "?mode=rw", uri=True)
+            connection.execute("insert into t values (1)")
+            connection.rollback()
+            connection.close()
+            shutil.copy(source, base / "copy-target.cfg")
+            os.unlink(base / "copy-target.cfg")
+            rec.stop()
+            seen = entries(rec)
+            self.assertEqual(seen.get(key(db)), readset._sha(str(db)), seen)
+            self.assertEqual(seen.get(key(source)), readset._sha(str(source)), seen)
+            for path in (db, source):  # only the read-only attribute changes: the fingerprint differs
+                os.chmod(path, 0o444)
+                try:
+                    self.assertNotEqual(ci_plan._content(path), seen[key(path)])
+                finally:
+                    os.chmod(path, 0o644)
+            self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+        for actor in ("direct", "child"):
+            with self.subTest(case="%s written then cleaned" % actor):
+                leaf = base / ("leaf-%s.bin" % actor)
+                rec = self.recorder()
+                if actor == "direct":
+                    leaf.write_bytes(b"same")
+                    leaf.unlink()
+                else:
+                    code = "import os, sys; open(sys.argv[1], 'wb').write(b'same'); os.unlink(sys.argv[1])"
+                    done = subprocess.run([sys.executable, "-c", code, str(leaf)], cwd=self.root,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                self.assertEqual(entries(rec).get(key(leaf)), "missing", entries(rec))
+        with self.subTest(case="written and kept, replaced onto an absent destination"):
+            kept, moved = base / "kept.bin", base / "replaced.bin"
+            rec = self.recorder()
+            kept.write_bytes(b"same")
+            (base / "src.bin").write_bytes(b"same")
+            os.replace(base / "src.bin", moved)
+            rec.stop()
+            seen = entries(rec)
+            self.assertEqual(seen.get(key(kept)), readset._sha(str(kept)), seen)
+            self.assertEqual(seen.get(key(moved)), readset._sha(str(moved)), seen)
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+        with self.subTest(case="replaced onto an existing file the run did not make"):
+            target = base / "pre-existing-target.bin"
+            target.write_bytes(b"theirs")
+            time.sleep(0.03)
+            rec = self.recorder()
+            (base / "src2.bin").write_bytes(b"same")
+            os.replace(base / "src2.bin", target)
+            rec.stop()
+            self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+
+    def check_ancestor_chain_and_failed_writes(self):
+        """CI-OPT-001 15th review R1501/R1502: an operation on a missing path records every
+        missing component up to the nearest existing ancestor (absent) and that ancestor's
+        kind ("dir" or a file's digest), so a parent created, replaced or removed before the
+        next run changes the fingerprint (this process and a real child); an ancestor
+        changed during the run is partial; any failed write-mode open of an existing file
+        the run did not make is partial (no input change), whatever the cause."""
+        from scripts import ci_plan
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        filed = base / "file-parent"
+        filed.write_bytes(b"parent input")
+        kept = base / "kept-parent"
+        kept.mkdir()
+        readonly = base / "readonly.bin"
+        readonly.write_bytes(b"ro")
+        os.chmod(readonly, 0o444)
+        time.sleep(0.03)
+
+        def entries(rec):
+            return {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
+                    for r in rec.as_dict()["outside_reads"]}
+
+        def key(path):
+            return os.path.normcase(str(path))
+
+        def exclusive(target):
+            with open(target, "xb") as stream:
+                stream.write(b"output")
+
+        try:
+            for actor in ("direct", "child"):
+                for label, operation in (("mkdir", "os.mkdir"), ("open-x", "exclusive")):
+                    with self.subTest(case="%s/%s/missing-parent" % (actor, label)):
+                        target = base / ("missing-%s-%s" % (actor, label)) / "target"
+                        rec = self.recorder()
+                        if actor == "direct":
+                            with self.assertRaises(OSError):
+                                os.mkdir(target) if operation == "os.mkdir" else exclusive(target)
+                        else:
+                            code = ("import os, sys\ntry:\n    %s\nexcept OSError:\n    pass"
+                                    % ("os.mkdir(sys.argv[1])" if operation == "os.mkdir"
+                                       else "open(sys.argv[1], 'xb').write(b'o')"))
+                            done = subprocess.run([sys.executable, "-c", code, str(target)], cwd=self.root,
+                                                  capture_output=True, text=True)
+                            self.assertEqual(done.returncode, 0, done.stderr)
+                        rec.stop()
+                        seen = entries(rec)
+                        self.assertEqual(seen.get(key(target)), "missing", seen)
+                        self.assertEqual(seen.get(key(target.parent)), "missing", seen)
+                        self.assertEqual(seen.get(key(base)), "dir", seen)
+                        self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                    with self.subTest(case="%s/%s/file-parent" % (actor, label)):
+                        target = filed / ("%s-%s" % (actor, label))
+                        rec = self.recorder()
+                        if actor == "direct":
+                            with self.assertRaises(OSError):
+                                os.mkdir(target) if operation == "os.mkdir" else exclusive(target)
+                        else:
+                            done = subprocess.run([sys.executable, "-c", code, str(target)], cwd=self.root,
+                                                  capture_output=True, text=True)
+                            self.assertEqual(done.returncode, 0, done.stderr)
+                        rec.stop()
+                        self.assertEqual(entries(rec).get(key(filed)), readset._sha(str(filed)), entries(rec))
+            with self.subTest(case="created and cleaned under an existing parent"):
+                rec = self.recorder()
+                (kept / "made").mkdir()
+                (kept / "made").rmdir()
+                with open(kept / "w.cfg", "w", encoding="utf-8") as stream:  # a plain creation: ancestors only
+                    stream.write("w")
+                rec.stop()
+                self.assertEqual(entries(rec).get(key(kept)), "dir", entries(rec))
+                self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+                self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+            with self.subTest(case="ancestor changed during the run"):
+                moving = base / "moving-parent"
+                moving.mkdir()
+                time.sleep(0.03)
+                rec = self.recorder()
+                (moving / "made").mkdir()
+                (moving / "made").rmdir()
+                with rec._quiet():  # another writer removes the parent before the end
+                    moving.rmdir()
+                rec.stop()
+                self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+            if os.name == "nt":
+                for mode in ("wb", "r+b", "ab"):
+                    with self.subTest(case="failed open %s" % mode):
+                        rec = self.recorder()
+                        with self.assertRaises(PermissionError):
+                            open(readonly, mode).close()
+                        rec.stop()
+                        self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+                        self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+                with self.subTest(case="child failed open ab"):
+                    rec = self.recorder()
+                    code = "import sys\ntry:\n    open(sys.argv[1], 'ab').close()\nexcept PermissionError:\n    pass"
+                    done = subprocess.run([sys.executable, "-c", code, str(readonly)], cwd=self.root,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    rec.stop()
+                    self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+        finally:
+            os.chmod(readonly, 0o644)
 
     def check_preconditions_of_state_dependent_operations(self):
         """CI-OPT-001 14th review R1401-R1405, one precondition rule: an exclusive creation
@@ -1205,7 +1550,9 @@ class ReadsetTests(unittest.TestCase):
         moved.stop()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", moved.partial_reasons, moved.partial_samples)
         # 8th review: the moved own output is no input either (no read record left).
-        self.assertFalse(any(r["path"].startswith("own-r703") for r in moved.as_dict()["repo_reads"]),
+        # 16th review R1601: a cleaned-up own output leaves only an absent input (its final path).
+        self.assertFalse(any(r["path"].startswith("own-r703") and not r.get("absent")
+                             for r in moved.as_dict()["repo_reads"]),
                          moved.as_dict()["repo_reads"])
         foreign = Path(self.temp.name) / "foreign-r703.cfg"
         foreign.write_text("theirs", encoding="utf-8")
@@ -1365,7 +1712,10 @@ class ReadsetTests(unittest.TestCase):
         data = rec.as_dict()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
         self.assertIn("OUTPUT_AT_ABSENT_INPUT", rec.partial_reasons)
-        self.assertFalse(any(r["path"].startswith(("own-r504", "moved-r504")) for r in data["repo_reads"]), data["repo_reads"])
+        # 16th review R1601: the run's own outputs leave only their final state (or absence).
+        for r in data["repo_reads"]:
+            if r["path"].startswith(("own-r504", "moved-r504")) and not r.get("absent"):
+                self.assertEqual(r["sha256"], readset._sha(str(self.root / r["path"])), r)
 
     def check_one_hook_per_log_and_event_fields(self):
         """CI-OPT-001 5th review R505: two hook records in one log, a log without a hook

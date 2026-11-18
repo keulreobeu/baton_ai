@@ -141,7 +141,10 @@ def _under(path, parent):
 
 
 def _sha(path):
-    """Content digest at observation time; None if unreadable or too large."""
+    """A file's input state at observation time: its content digest, marked "ro:" when the
+    file is not writable (16th review: a file input's state is its kind, content and
+    writability, alike in the read set and the fingerprint); None if unreadable or too
+    large."""
     try:
         if os.path.getsize(path) > HASH_LIMIT:
             return None
@@ -149,9 +152,15 @@ def _sha(path):
         with open(path, "rb") as stream:
             for chunk in iter(lambda: stream.read(1 << 20), b""):
                 digest.update(chunk)
-        return digest.hexdigest()
+        return ("ro:" if _read_only(path) else "") + digest.hexdigest()
     except OSError:
         return None
+
+
+def _read_only(path):
+    """16th review R1602-R1604: not writable (Windows read-only attribute / no write bit)."""
+    stat = os.stat(path)
+    return bool(getattr(stat, "st_file_attributes", 0) & 1) or not stat.st_mode & _stat_mod.S_IWRITE
 
 
 _PRECISE = None
@@ -284,6 +293,28 @@ def _impossible_name(path):
     if os.name != "nt":
         return False
     return any(ch in part for part in Path(str(path)).parts[1:] for ch in '<>"|?*')
+
+
+def _ancestor_chain(canonical):
+    """15th review R1501: the path components a creation depends on: the missing ones from
+    the target's parent up, and the nearest existing ancestor with its kind ("dir" or the
+    file's digest), birth time and object id. None when that cannot be told."""
+    missing = []
+    current = os.path.dirname(canonical)
+    while not os.path.lexists(current):
+        missing.append(current)
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
+    try:
+        stat = os.stat(current)
+    except (OSError, ValueError):
+        return None
+    kind = "dir" if _stat_mod.S_ISDIR(stat.st_mode) else _sha(current)
+    if kind is None:
+        return None
+    return current, missing, kind, _stamp_of(stat), _ident_of(stat)
 
 
 def _ancestor_born(path):
@@ -469,6 +500,8 @@ class Recorder:
         # object at the same name is verified on its own.
         self._presumed = {}
         self._needs_absent = {}  # 14th review: preconditions "nothing at this path", judged at stop
+        self._needs_state = {}  # 15th review R1501: nearest existing ancestor -> its kind, judged at stop
+        self._needs_absent_or_own = {}  # 16th review R1601: written final paths absent before the run
         self._opened_ids = set()  # 14th review R1403: regular files opened through tracked calls
         self._owned_links = set()  # 11th review R1101: link objects (lstat ids) a recorded process made
         self._created = set()
@@ -779,8 +812,10 @@ class Recorder:
                 # 8th review R801: what another writer put there since is reported too.
             if os.path.isdir(canonical):
                 # 6th review R603: report it, so a recorded input turned directory is seen.
-                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True,
-                            **self._alias_event(self._alias_of(path, canonical))})  # 10th review R1002
+                with self._quiet():
+                    born, ident = _born(canonical), _file_id(canonical)  # 18th review R1801
+                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True, "born": born,
+                            "id": _id_list(ident), **self._alias_event(self._alias_of(path, canonical))})  # R1002
                 return
             with self._quiet():
                 digest, born, ident = _sha(canonical), _born(canonical), _file_id(canonical)
@@ -800,6 +835,12 @@ class Recorder:
         if relayed and isdir:
             self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
             self._keep_alias(alias, path, exempt=True, links=links)  # 10th review R1002
+            own = (ident is not None and ident in self._owned_ids) or (
+                isinstance(born, (int, float)) and born >= self._started_epoch)
+            if born is None and ident is None:
+                self._partial("PATH_UNNORMALIZABLE", "directory kind %s" % path)  # 18th review R1801
+            elif not own:
+                self._directory_kind(canonical)
             return
         if relayed:
             self._reobserved(scope, canonical, path, digest=digest, absent=absent)
@@ -848,6 +889,8 @@ class Recorder:
             self._keep_alias(self._alias_of(path, canonical), path, exempt or os.path.isdir(canonical))
             if os.path.isdir(canonical):
                 self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
+                if not exempt:
+                    self._directory_kind(canonical)  # 18th review R1801
                 return  # a directory handle
             if self._input_entry(scope, canonical) is not None:
                 if digest is None:
@@ -1071,17 +1114,7 @@ class Recorder:
         if not exists:
             if canonical in self._created:
                 return
-            with self._quiet():
-                born = _ancestor_born(canonical)
-            found = self._alias_of(target, canonical)
-            if self._is_child:
-                self._emit({"type": "needs_absent", "path": canonical, "text": _path_text(target), "born": born,
-                            **self._alias_event(found)})
-                return
-            exempt = born is not None and born >= self._started_epoch
-            self._keep_alias(found, target, exempt=exempt)  # the common alias decision (11th review)
-            if not exempt:
-                self._needs_absent.setdefault(canonical, _path_text(target))
+            self._absent_chain(target, canonical, include_target=True)
             return
         if self._is_created(canonical, presume=False):
             return
@@ -1089,6 +1122,77 @@ class Recorder:
             self._partial("MUTATION_UNVERIFIABLE", "%s %s" % (event, _path_text(target)))
             return
         self._record_read(target)
+
+    def _absent_chain(self, target, canonical, include_target, final=None):
+        """15th review R1501: an operation on a missing path depends on the path's missing
+        components (each must still be absent) and on the nearest existing ancestor (its
+        kind must still be the same); a creation that need not find the target absent
+        ("w", "a", os.replace) depends on the ancestors only. Inside an ancestor the run
+        made, nothing is recorded."""
+        with self._quiet():
+            chain = _ancestor_chain(canonical)
+        found = self._alias_of(target, canonical)
+        if chain is None:
+            self._partial("PATH_UNNORMALIZABLE", target)
+            return
+        ancestor, missing, kind, born, ident = chain
+        if include_target:
+            missing = [canonical] + missing
+        text = _path_text(target)
+        if self._is_child:
+            self._emit({"type": "needs_absent", "path": canonical, "text": text, "born": born,
+                        "ancestor": ancestor, "kind": kind, "ancestor_id": _id_list(ident), "missing": missing,
+                        "absent_input": bool(include_target), "final": final,
+                        **self._alias_event(found)})
+            return
+        self._judge_chain(text, canonical, found, ancestor, missing, kind, born, ident, absent_input=include_target,
+                          final=final)
+
+    def _judge_chain(self, text, canonical, found, ancestor, missing, kind, born, ident, links=_UNSET,
+                     absent_input=True, final=None):
+        exempt = (ident is not None and ident in self._owned_ids) or (
+            isinstance(born, (int, float)) and born >= self._started_epoch)
+        # The common alias decision (11th review): an absence that is an input carries its
+        # alias as an input's; a creation (an output) through a link follows the link rule.
+        self._keep_alias(found, text, exempt=exempt or not absent_input, links=links)
+        if exempt:
+            return
+        for path in missing:
+            self._needs_absent.setdefault(path, text if path == canonical else path)
+        if not absent_input:
+            # 16th review R1601: the final path of a plain write or overwriting move was absent:
+            # at stop it must be absent again (an absent input) or the run's own output.
+            # 17th review R1701: with how the final path was written ("truncate": w/wb/O_TRUNC,
+            # "replace": os.replace or POSIX rename, "append": a/ab/O_APPEND or O_CREAT alone).
+            entry = self._needs_absent_or_own.setdefault(canonical, [text, set()])
+            entry[1].add(final if final in ("truncate", "replace") else "append")
+        if ancestor != self.root:  # the repository itself is the Git identity's dependency
+            self._needs_state.setdefault(ancestor, kind)
+
+    def _directory_kind(self, canonical):
+        """18th review R1801: a directory found where a file was asked for (an open or an
+        SQLite connection that fails because of it) is a kind dependency: "dir", checked at
+        stop and by the fingerprint like an ancestor's kind (15th review)."""
+        if canonical != self.root and self._scope(canonical) != "env_manifest":
+            self._needs_state.setdefault(canonical, "dir")
+
+    def _open_failed(self, file, mode=None, flags=None):
+        """15th review R1502: a failed open for writing of an existing file the run did not
+        make depends on state the read set does not record (attributes, locks): partial,
+        whatever the cause; its content is kept as recorded (no input change)."""
+        if isinstance(file, int):
+            return
+        write = bool((isinstance(mode, str) and any(c in mode for c in "wax+")) or (
+            isinstance(flags, int) and flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC)))
+        if not write:
+            return
+        canonical = _canonical(_path_text(file))
+        if canonical is None or _is_device(canonical) or self._scope(canonical) == "derived":
+            return
+        with self._quiet():
+            present = os.path.lexists(canonical)
+        if present:
+            self._precondition("open for writing", file, canonical, changes=True)
 
     def _descriptor(self, event, fd, changes):
         """14th review R1403: an operation through a file descriptor without a path. A
@@ -1153,6 +1257,19 @@ class Recorder:
         for src, dst, owned, moved in pending:
             self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", dst)
 
+    def _record_state(self, canonical, kind):
+        """15th review R1501: an ancestor's kind as an input ("dir", or a file's digest)."""
+        scope = self._scope(canonical)
+        shown = _real(canonical) or canonical
+        if scope == "env_manifest":
+            self._env_reads.setdefault(canonical, {"path": shown, "sha256": kind})
+        elif scope == "repo":
+            self._repo.setdefault(canonical, {"path": self._display(shown), "via": "open", "section_only": False,
+                                              "sections": set(), "sha256": kind})
+        else:
+            self._outside.setdefault(canonical, {"path": shown, "via": "open", "section_only": False,
+                                                 "sections": set(), "sha256": kind})
+
     def _record_absent(self, path, canonical, scope):
         record = {"path": _real(path) or canonical, "sha256": None, "absent": True}
         if scope == "env_manifest":
@@ -1191,6 +1308,11 @@ class Recorder:
             there = os.path.lexists(canonical)
         if (exclusive and not there) or (there and os.path.isdir(canonical)):
             self._precondition("open", path, canonical)
+        elif there and (create or (isinstance(mode, str) and "+" in mode) or (
+                isinstance(flags, int) and flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_TRUNC))):
+            # 16th review R1602: opening an existing file the run did not make for writing
+            # changes it and depends on its writability: partial (its state is still recorded).
+            self._precondition("open for writing", path, canonical, changes=True)
         # The original path (not the resolved one) goes on, so symlink and
         # junction aliases are recorded with their observed target.
         if self._is_child:
@@ -1201,6 +1323,9 @@ class Recorder:
                 # this path as an input sees it gone before it is recreated. 8th review R804:
                 # marked as seen for the creation, so it is no absent input by itself.
                 self._record_read(path, precreate=True)
+                if not exclusive:
+                    self._absent_chain(path, canonical, include_target=False,  # 15th review R1501
+                                       final="append" if keeps else "truncate")  # 17th review R1701
                 self._attempt(("create", canonical), keeps=keeps, readable=readable,  # 6th review R601
                               path=path, alias=self._alias_of(path, canonical))  # 9th review R902
             return
@@ -1208,6 +1333,9 @@ class Recorder:
             # 6th review R601: an output only once the file exists after the open.
             if self._input_entry(self._scope(canonical), canonical) is not None:
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
+            if not exclusive:
+                self._absent_chain(path, canonical, include_target=False,  # 15th review R1501
+                                   final="append" if keeps else "truncate")  # 17th review R1701
             self._attempt(("create", canonical), keeps=keeps, readable=readable,  # after the re-observation
                           path=path, alias=self._alias_of(path, canonical))  # 9th review R902: snapshot
             return
@@ -1336,6 +1464,14 @@ class Recorder:
                     # 14th review R1405: os.rename does not overwrite on Windows: its success
                     # depends on nothing being at the destination (os.replace does not).
                     self._precondition("os.rename", args[1], dst)
+                else:
+                    with self._quiet():
+                        dst_there = os.path.lexists(dst)
+                    if not dst_there:
+                        self._absent_chain(args[1], dst, include_target=False, final="replace")  # R1501/R1701
+                    else:
+                        # 16th review R1601: overwriting an existing destination the run did not make.
+                        self._precondition("os.replace", args[1], dst, changes=True)
                 self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
@@ -1376,6 +1512,7 @@ class Recorder:
             self._partial("PATH_UNNORMALIZABLE", value)
         elif not os.path.exists(canonical) and _sqlite_mode(database, uri) == "rwc":
             # A new database file is an output once it exists (5th R504, 6th R601).
+            self._absent_chain(value, canonical, include_target=False, final="append")  # R1501/R1701
             self._attempt(("create", canonical), keeps=True, readable=True,  # 8th review R801
                           path=value, alias=self._alias_of(value, canonical))  # 9th review R902
         else:
@@ -1723,6 +1860,38 @@ class Recorder:
                 self._partial("MUTATION_UNVERIFIABLE", "kept %s" % self._display(text))
             elif self._input_entry(self._scope(canonical), canonical) is None:
                 self._record_absent(text, canonical, self._scope(canonical))
+        for canonical, (text, finals) in sorted(self._needs_absent_or_own.items()):
+            # 16th review R1601: absent again (an absent input), or the run's own output, whose
+            # state at the end (a file the next run's write must be able to replace) is recorded
+            # so the fingerprint checks it before the next run. 17th review R1701: that end state
+            # stands for the start state only when the next run repeats the same operation with
+            # the same result over it: a writable file written by truncation or moved into place
+            # by os.replace. A file appended to (or created without truncation), or left
+            # read-only, is partial.
+            with self._quiet():
+                present = os.path.lexists(canonical)
+                state = None
+                if present and os.path.isfile(canonical):
+                    state = _sha(canonical)
+            if not present:
+                if self._input_entry(self._scope(canonical), canonical) is None:
+                    self._record_absent(text, canonical, self._scope(canonical))
+            elif (not self._is_created(canonical, presume=False) or state is None or state.startswith("ro:")
+                    or not finals <= {"truncate", "replace"}):
+                self._partial("MUTATION_UNVERIFIABLE", "kept %s" % self._display(text))
+            elif self._input_entry(self._scope(canonical), canonical) is None:
+                self._record_state(canonical, state)
+        for canonical, kind in sorted(self._needs_state.items()):
+            # 15th review R1501: the nearest existing ancestor must still be what it was (a
+            # directory, or a file with its bytes); recorded so the fingerprint checks it
+            # before the next run. Changed during the run, it cannot be checked: partial.
+            with self._quiet():
+                now = None if not os.path.lexists(canonical) else (
+                    "dir" if os.path.isdir(canonical) else _sha(canonical))
+            if now != kind:
+                self._partial("MUTATION_UNVERIFIABLE", "ancestor changed %s" % self._display(canonical))
+            elif self._input_entry(self._scope(canonical), canonical) is None:
+                self._record_state(canonical, kind)
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
@@ -1838,12 +2007,14 @@ class Recorder:
         elif kind == "needs_absent":
             if not (isinstance(event.get("path"), str) and event["path"]):
                 raise ValueError("needs_absent event without path")
-            born = event.get("born")
-            exempt = isinstance(born, (int, float)) and born >= self._started_epoch
-            self._keep_alias(event.get("alias"), event.get("text") or event["path"], exempt,
-                             links=event.get("links", _UNSET))
-            if not exempt:
-                self._needs_absent.setdefault(event["path"], event.get("text") or event["path"])
+            missing = event.get("missing")
+            if not (isinstance(event.get("ancestor"), str) and isinstance(missing, list)
+                    and all(isinstance(m, str) for m in missing) and isinstance(event.get("kind"), str)):
+                raise ValueError("needs_absent event without its ancestor chain")
+            self._judge_chain(event.get("text") or event["path"], event["path"], event.get("alias"),
+                              event["ancestor"], missing, event["kind"], event.get("born"),
+                              _id_tuple(event.get("ancestor_id")), links=event.get("links", _UNSET),
+                              absent_input=event.get("absent_input") is not False, final=event.get("final"))
         elif kind == "rename_failed":
             for key in ("src_alias", "dst_alias"):  # 12th review R1202: decided as the parent's
                 if key in event:
@@ -2161,6 +2332,10 @@ def _tracked_io_open(file, *args, **kwargs):
         result = _wrapped_call(_ORIGINAL_IO_OPEN, file, *args, **kwargs)
     except BaseException:
         _settle_calls("create", [file], False)
+        mode = args[0] if args else kwargs.get("mode", "r")
+        for r in _active():
+            if not r._is_quiet():
+                r._open_failed(file, mode=mode)  # 15th review R1502
         raise
     _settle_calls("create", [file], True, handle=result)
     _note_opened(result)
@@ -2172,6 +2347,10 @@ def _tracked_os_open(path, *args, **kwargs):
         result = _wrapped_call(_ORIGINAL_OS_OPEN, path, *args, **kwargs)
     except BaseException:
         _settle_calls("create", [path], False)
+        flags = args[0] if args else kwargs.get("flags")
+        for r in _active():
+            if not r._is_quiet():
+                r._open_failed(path, flags=flags)  # 15th review R1502
         raise
     _settle_calls("create", [path], True, handle=result)
     _note_opened(result)
