@@ -208,6 +208,8 @@ class EvidenceReuseTests(unittest.TestCase):
     def run_main(self, behavior="pass", environ=None, sdd_code=0):
         def run_suite(names=None):
             self.suite_runs.append(names)
+            if getattr(self, "during_suite", None):
+                self.during_suite()
             suite = unittest.TestSuite([case("synthetic", behavior), case("synthetic", "pass")])
             return unittest.TextTestRunner(stream=io.StringIO()).run(suite)
         stdout = io.StringIO()
@@ -272,6 +274,29 @@ class EvidenceReuseTests(unittest.TestCase):
         with patch.object(self.cp, "resolver_identity", side_effect=lambda: "r%d" % next(calls)):
             code, summary = self.run_main()
         self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
+
+    def test_listing_changed_by_the_suite_uses_the_fallback_and_is_not_reused(self):
+        """CI-OPT-001 re-review N03/N05: a directory the suite listed and then wrote into
+        takes the exact-state fallback (whose record must be valid), keeps the passing run
+        as evidence that is not reusable, and the next run executes again."""
+        watched = Path(self.temp.name) / "watched"
+        watched.mkdir()
+        self.readset = dict(self.readset, listings=[{"path": str(watched), "scope": "outside", "ok": True,
+                                                     "entries": []}])
+        self.during_suite = lambda: (watched / "own-output.txt").write_text("x", encoding="utf-8")
+        self.assertTrue(self.cp.valid_readset({**self.readset, "complete": False, "partial_reasons": ["EXACT_STATE"],
+                                               "listings": []}))
+        code, first = self.run_main()
+        self.assertEqual((code, first["status"], first["verified_evidence_eligible"]), (0, "PASS", True))
+        self.assertFalse(first["readset_complete"])
+        self.assertRegex(first["suite_fingerprint"], r"^[0-9a-f]{64}$")
+        self.assertIn("evidence_sha256", first)
+        evidence = json.loads(next(self.evidence.glob("suite-*.json")).read_text(encoding="utf-8"))
+        self.assertIn("FINGERPRINT_LISTING_CHANGED_DURING_RUN", json.dumps(evidence))
+        self.during_suite = None
+        code, second = self.run_main()
+        self.assertEqual(second["suite_execution"], "executed")
+        self.assertEqual(len(self.suite_runs), 2)
 
     def test_lock_home_requires_evidence_dir(self):
         with patch.object(verify, "prepare_git_path"), contextlib.redirect_stderr(io.StringIO()), \

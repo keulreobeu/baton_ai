@@ -274,35 +274,6 @@ def _local_name(host):
     return isinstance(host, str) and (_is_loopback(host) or host.lower() == "localhost")
 
 
-def pth_safe():
-    """True when every .pth import line that runs before sitecustomize belongs
-    to an allowlisted installer file."""
-    import site
-    directories = []
-    try:
-        directories.extend(site.getsitepackages())
-    except AttributeError:
-        pass
-    if site.ENABLE_USER_SITE:
-        directories.append(site.getusersitepackages())
-    for directory in directories:
-        try:
-            names = sorted(_ORIGINAL_LISTDIR(directory))
-        except FileNotFoundError:
-            continue  # a listed site directory that does not exist holds no .pth
-        except OSError:
-            return False
-        for name in names:
-            if not name.lower().endswith(".pth"):
-                continue
-            try:
-                lines = Path(directory, name).read_text(encoding="utf-8").splitlines()
-            except (OSError, UnicodeDecodeError):
-                return False
-            for line in lines:
-                if line.startswith(("import ", "import\t")) and not any(p.fullmatch(line.rstrip()) for p in PTH_IMPORT_LINES):
-                    return False
-    return True
 
 
 class Recorder:
@@ -350,14 +321,12 @@ class Recorder:
         self._audited_launches = 0
         self._added_env = set()
         self._launch_tokens = {}
-        self._unstarted = []
         self._hooked = {}
         self._log_seq = {}  # child log file -> received sequence numbers and exit proof
         self._spawned = {}
         self._created_at = {}  # (kind, token) -> creation stamp reported by the owner
         self._offsets = {}
         self._created = set()
-        self._pth_safe = True if _child else pth_safe()
         self._install()
         if _child:
             self._emit({"type": "hook_loaded", "pid": os.getpid(), "token": os.environ.get("BATON_READSET_TOKEN"),
@@ -402,11 +371,11 @@ class Recorder:
         """Children append to their own per-process file in every log directory."""
         if not (self._is_child and self._log_dirs):
             return
-        with _WRITE_LOCK:
-            self._seq = getattr(self, "_seq", 0) + 1
-            event = {**event, "seq": self._seq}
-        line = json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+        # CI-OPT-001 re-review N04: the number is assigned and written under one lock,
+        # so every log file holds its process's events in sequence order 1..N.
         with self._quiet(), _WRITE_LOCK:
+            self._seq = getattr(self, "_seq", 0) + 1
+            line = json.dumps({**event, "seq": self._seq}, sort_keys=True, separators=(",", ":")) + "\n"
             for directory in self._log_dirs:
                 try:
                     with open(os.path.join(directory, "%d.jsonl" % os.getpid()), "a", encoding="utf-8") as stream:
@@ -787,12 +756,11 @@ class Recorder:
             if token is None:
                 import uuid
                 token = uuid.uuid4().hex
-            expected = _hook_expected(parts[1:])
             self._python_launches += 1
             if self._is_child:
-                self._emit({"type": "python_launched", "token": token, "command": summary[:160], "expected": expected})
+                self._emit({"type": "python_launched", "token": token, "command": summary[:160]})
             else:
-                self._launch_tokens[token] = (summary[:160], expected)
+                self._launch_tokens[token] = summary[:160]
             childenv = dict(os.environ if env is None else env)
             same_launch = childenv.get("BATON_READSET_TOKEN") == token
             logs = [d for d in childenv.get("BATON_READSET_LOG", "").split(os.pathsep) if d] if same_launch else []
@@ -811,38 +779,9 @@ class Recorder:
                 childenv["PYTHONPATH"] = site + (os.pathsep + old if old else "")
             self._added_env |= set(ADDED_ENV_ALLOWED)
             return childenv
-        allowed = None
-        if basename in {"git", "git.exe"}:
-            # CI-OPT-001 (2026-11-17 user decision): no scratch-area exemption. Git is
-            # native, so its reads are invisible to the recorder; a git child other than
-            # the plain check-attr below makes the read set partial (no reuse).
-            effective = _git_location(parts[1:], cwd or os.getcwd())
-            subcommand = _git_subcommand(parts[1:])
-            plain = not any(p in {"--cached", "--source", "--git-dir", "--work-tree", "-c", "--namespace",
-                                  "--config-env", "--exec-path", "--super-prefix"}
-                            or p.startswith(("--source=", "--git-dir=", "--work-tree=", "--namespace=",
-                                             "--config-env=", "--exec-path=", "--super-prefix="))
-                            for p in parts[1:])
-            # The environment itself is fingerprinted; only variables that move
-            # Git to another gitdir/worktree/index or config file are refused.
-            # Inline config (GIT_CONFIG_COUNT/KEY/VALUE, GIT_CONFIG_PARAMETERS)
-            # is itself an environment value.
-            moving = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_ATTR_SOURCE", "GIT_NAMESPACE",
-                      "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_INDEX_FILE"}
-            child_env = os.environ if env is None else env
-            plain = plain and not any(str(k).upper() in moving for k in child_env)
-            # Exact-form allow-list (final reviews d8ffcd0, 37b897a): global options only -C /
-            # --no-optional-locks, check-attr options only attribute names, -z, -a/--all,
-            # the inherited (fingerprinted) environment only (env=None: removing a variable
-            # such as GIT_CONFIG_NOSYSTEM can add reads), the fingerprinted git executable,
-            # and no other repository between the location and the recorded root.
-            plain = (plain and env is None and _check_attr_form_ok(parts[1:])
-                     and exe is not None and exe == _canonical(shutil_which("git"))
-                     and effective is not None and _no_repository_between(effective, self.root))
-            # CI-OPT-001 final cross review F01 (2026-11-17): no git child is exempt. The
-            # plain check-attr, `cmd /c mklink /j` and tool --help/--version exemptions
-            # read inputs (ignored .gitattributes, tool scripts) that the fingerprint
-            # did not cover; every non-Python child now makes the read set partial.
+        # CI-OPT-001 final cross review F01 (2026-11-17) and re-review N06: no
+        # non-Python child is exempt (git, cmd, tools); native reads are invisible
+        # to the recorder, so every such child makes the read set partial.
         self._partial("CHILD_NOT_ALLOWED")
         self._children["disallowed_count"] += 1
         if len(self._children["disallowed"]) < 20:
@@ -995,34 +934,26 @@ class Recorder:
                     self._partial("READSET_LOG_CORRUPT", "truncated %s" % name)
             # Every child log must end with its exit proof, and the sequence numbers
             # 1..N of the events it emitted must all have arrived (none lost).
+            # CI-OPT-001 re-review N04: in file order the numbers run 1, 2, ... with no
+            # gap, repeat or reordering, and exactly one well-formed exit proof is the
+            # last event (a reused pid appending a second process's log breaks this).
             for name in self._log_names():
                 seen = self._log_seq.get(name)
-                end = seen and seen["end"]
-                if not end or type(end.get("seq")) is not int or seen["seqs"] != set(range(1, end["seq"] + 1)):
+                if not seen or seen["bad"] or seen["end"] is None:
                     self._partial("CHILD_LOG_INCOMPLETE", name)
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
             import shutil
             shutil.rmtree(self._own_log_dir, ignore_errors=True)
-        # A Python process launched without -I/-E/-S and with the injected
-        # environment imports sitecustomize during startup, before user code;
-        # only allowlisted .pth import lines run earlier. If its token never
-        # reported and its known process has exited, it ended before startup
-        # completed and read only interpreter startup files. Anything else is
-        # never explained away.
-        missing = [(token, command, expected) for token, (command, expected) in self._launch_tokens.items()
-                   if token not in self._hooked]
-        unstarted = []
-        for token, command, expected in missing:
-            if (expected and self._pth_safe and token in self._spawned
-                    and not _pid_alive(self._spawned[token], self._created_at.get(("spawned", token)))):
-                unstarted.append(command)
-            else:
+        # CI-OPT-001 re-review N02: a Python launch whose token never reported is
+        # partial. Its absent log proves nothing (a lost log looks the same as a
+        # process that ended before startup), so nothing is explained away.
+        for token, command in self._launch_tokens.items():
+            if token not in self._hooked:
                 self._partial("CHILD_HOOK_MISSING", command)
-        if self._python_launches - self._python_hooks > len(unstarted):
+        if self._python_launches > self._python_hooks:
             self._partial("CHILD_HOOK_MISSING", f"launched={self._python_launches} hooked={self._python_hooks}")
-        self._unstarted = unstarted
 
     def _log_names(self):
         if not self._own_log_dir:
@@ -1050,11 +981,15 @@ class Recorder:
                     continue
                 try:
                     event = json.loads(raw)
-                    seen = self._log_seq.setdefault(name, {"seqs": set(), "end": None})
-                    if type(event.get("seq")) is int:
-                        seen["seqs"].add(event["seq"])
+                    seen = self._log_seq.setdefault(name, {"next": 1, "bad": False, "end": None})
+                    if type(event.get("seq")) is not int or event["seq"] != seen["next"] or seen["end"] is not None:
+                        seen["bad"] = True
+                    seen["next"] += 1
                     if event.get("type") == "exit":
-                        seen["end"] = event
+                        if _exit_proof_ok(event, name):
+                            seen["end"] = event
+                        else:
+                            seen["bad"] = True
                     self._apply(event)
                 except (ValueError, KeyError, TypeError, AttributeError) as exc:
                     self._partial("READSET_LOG_CORRUPT", type(exc).__name__)
@@ -1073,8 +1008,7 @@ class Recorder:
         elif kind == "python_launched":
             self._python_launches += 1
             if event.get("token"):
-                self._launch_tokens[event["token"]] = (str(event.get("command", ""))[:160],
-                                                       event.get("expected") is True)
+                self._launch_tokens[event["token"]] = str(event.get("command", ""))[:160]
         elif kind == "hook_failed":
             self._partial("HOOK_FAILED", event.get("error", "unknown"))
         elif kind == "partial":
@@ -1134,8 +1068,7 @@ class Recorder:
                 "sections_missing": sorted([list(item) for item in self.sections_missing]),
                 "listings": [item for _, item in sorted(self._listings.items(), key=lambda pair: (pair[0][0], pair[0][1]))],
                 "children": {**self._children, "python_launched": self._python_launches,
-                             "python_hooked": self._python_hooks, "python_unstarted": list(self._unstarted),
-                             "pth_safe": self._pth_safe},
+                             "python_hooked": self._python_hooks},
                 "native_modules": sorted(self.native_modules),
                 "network": {"owned_loopback": self._socket_allowed, "violations": self._network_violations},
                 "added_env": sorted(self._added_env),
@@ -1171,76 +1104,12 @@ def _audit(event, args):
             r._audit_event(event, args)
 
 
-def _no_repository_between(location, root):
-    """git run at `location` (inside `root`) must discover `root`'s repository itself."""
-    current = location
-    while _under(current, root) and current != root:
-        if os.path.exists(os.path.join(current, ".git")):
-            return False
-        parent = os.path.dirname(current)
-        if parent == current:
-            return False
-        current = parent
-    return current == root
 
 
-def _check_attr_form_ok(arguments):
-    """git [-C <dir>]... [--no-optional-locks] check-attr [-z] [-a|--all] [attr...] -- <path>..."""
-    index = 0
-    while index < len(arguments):
-        arg = str(arguments[index])
-        if arg == "-C" and index + 1 < len(arguments):
-            index += 2
-        elif arg == "--no-optional-locks":
-            index += 1
-        else:
-            break
-    if index >= len(arguments) or str(arguments[index]) != "check-attr":
-        return False
-    rest = [str(a) for a in arguments[index + 1:]]
-    if "--" not in rest:
-        return False
-    head = rest[:rest.index("--")]
-    return all(a in {"-z", "-a", "--all"} or not a.startswith("-") for a in head)
 
 
-def _git_location(arguments, cwd):
-    """Git applies every -C in order before running the command (and honours
-    --git-dir/--work-tree); return the canonical effective location."""
-    location = cwd
-    index = 0
-    while index < len(arguments):
-        arg = str(arguments[index])
-        if arg in {"-C", "--git-dir", "--work-tree"} and index + 1 < len(arguments):
-            location = os.path.join(location, str(arguments[index + 1]))
-            index += 2
-            continue
-        if arg.startswith(("--git-dir=", "--work-tree=")):
-            location = os.path.join(location, arg.split("=", 1)[1])
-            index += 1
-            continue
-        if arg == "-c" and index + 1 < len(arguments):
-            index += 2
-            continue
-        if arg.startswith("-"):
-            index += 1
-            continue
-        break
-    return _canonical(location)
 
 
-def _git_subcommand(arguments):
-    index = 0
-    while index < len(arguments):
-        arg = str(arguments[index])
-        if arg in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
-            index += 2
-            continue
-        if arg.startswith("-"):
-            index += 1
-            continue
-        return arg
-    return None
 
 
 def _tracked_listdir(path="."):
@@ -1501,28 +1370,6 @@ def read_section(path, heading):
     return section
 
 
-def _hook_expected(arguments):
-    """True when the interpreter options cannot disable sitecustomize/PYTHONPATH."""
-    index = 0
-    while index < len(arguments):
-        arg = str(arguments[index])
-        if arg in {"-c", "-m", "-", "--"} or not arg.startswith("-"):
-            return True
-        if arg.startswith("--"):
-            index += 1
-            continue
-        letters = arg[1:]
-        for position, letter in enumerate(letters):
-            if letter in "IES":
-                return False
-            if letter in "XWcm":
-                if letter in "cm":
-                    return True
-                if position == len(letters) - 1:
-                    index += 1  # option value is the next argument
-                break
-        index += 1
-    return True
 
 
 def _is_device(canonical):
@@ -1531,6 +1378,13 @@ def _is_device(canonical):
     if text.startswith(("\\\\.\\", "\\\\?\\globalroot")):
         return True
     return os.name == "nt" and Path(text).name.split(".")[0].upper() in {"NUL", "CON", "PRN", "AUX"}
+
+
+def _exit_proof_ok(event, name):
+    """Exit proof shape (CI-OPT-001 re-review N04): its own pid matches the log file."""
+    return (type(event.get("pid")) is int and name == "%d.jsonl" % event["pid"]
+            and type(event.get("t")) in {int, float} and type(event.get("write_failed")) is bool
+            and isinstance(event.get("partial"), list) and all(isinstance(r, str) for r in event["partial"]))
 
 
 def _record_child_log(path):

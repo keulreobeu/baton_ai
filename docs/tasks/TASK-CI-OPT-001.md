@@ -1216,3 +1216,14 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   evidence `6892ce58…`, read set partial(`CHILD_NOT_ALLOWED` 16,641 + `CHILD_LOG_INCOMPLETE`: `os._exit`·강제 종료 자식은 exit 증명 없음 — 재현 확인, 의도한 보수 동작). 로그 사본 `CI-OPT-001-v3-iso-b4b9396.log`.
   ChatGPT 재검토 패키지 전달(Drive, 결과 대기). **게시 전 점검(2026-11-18, 사용자 "재검토중이고 게시 가능하면 올려둬")**: 원격 `codex/ci-opt-001-r5`=`762739f`, 미게시 `0bb3bc9`·`b4b9396`·이 기록 커밋,
   작성자 lwwde07, 허용 경로(scripts/tests/docs)만, 비밀값·홈 경로·DB 없음. 대상: 기존 승인 branch(PR #16 draft) fast-forward push만. 재검토·원격 CI 결과 전 verified·병합 아님.
+- **2026-11-18 원격 CI(`1c08857`, PR #16 draft)**: run `44203983648`(pull_request) plan·gate success, offline windows-latest 3.11: 734 tests OK(job 17분 43초),
+  3.12: 734 tests OK(job 14분 2초), 두 조합 failures/errors/skips 0, `verified_evidence_eligible=true`. 이 결과는 `1c08857`(= 코드 `b4b9396` + Task 기록)에만 귀속한다.
+- **2026-11-18 이종 모델 재검토(ChatGPT, 사용자 전달, 대상 `b4b9396`)**: **FAIL**(P1 2, P2 3, P3 1). F01·F04·F05·F06·F07 해소, F02·F03 잔존. `0bb3bc9` 문서 커밋 PASS.
+  N01(P1) 실패한 목록 조회의 오류 유형 미비교 → `verify_observed`가 `error`까지 비교. N02(P1) 자식 로그 전체 손실이 `python_unstarted`로 면제 →
+  면제 제거(hook 기록 없는 Python 실행은 모두 `CHILD_HOOK_MISSING`). N03(P2) exact-state fallback에 `aliases`·`children`·`trust_store` 누락 → 추가,
+  fallback 분기 진입 회귀. N04(P2) 순번 중복·exit 중복·필드 누락·역전 미검출 → 순번 부여와 쓰기를 한 잠금으로 묶고 파일 순서로 1..N 연속·exit 정확히 1개(마지막, pid=파일명)·형식 검사.
+  PID 재사용으로 같은 파일에 두 번째 로그가 붙는 경우는 순번 불연속으로 incomplete(fail-closed). N05(P2) suite 자체 출력으로 목록이 바뀌면 V3가 FAIL →
+  `LISTING_CHANGED_DURING_RUN`으로 분리해 재사용만 거부(read set partial), 실행 안정성은 동결 비교로만 판정. 파일 내용 변경은 계속 무효화.
+  N06(P3) 미사용 git 위치·형태 분석과 `.pth` 검사(`pth_safe`·`_hook_expected`) 삭제. 회귀: 실제 자식 로그 손실, 순번 9종, 다중 스레드 순서, 목록 오류 유형, fallback.
+  영향 모듈 `tests.test_readset`·`tests.test_ci_plan`·`tests.test_verify_environment` 133 OK(검증 진입점 변경이므로 최종은 V3). 미검증으로 남긴 항목: Windows PID 재사용 실제 혼합,
+  중첩 기록기 동시 쓰기 충돌, 일부 로그 디렉터리만 손실(모두 위 불변식으로 fail-closed 방향).

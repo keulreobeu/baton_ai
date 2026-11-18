@@ -192,7 +192,9 @@ def _evidence_main(args, environ):
     from scripts.readset import Recorder
     directory = Path(args.evidence_dir).resolve()
     exact_readset = {"schema": cp.READSET_SCHEMA, "complete": False, "partial_reasons": ["EXACT_STATE"],
-                     "repo_reads": [], "outside_reads": [], "env_reads": [], "listings": [], "added_env": []}
+                     "repo_reads": [], "outside_reads": [], "env_reads": [], "listings": [], "added_env": [],
+                     # CI-OPT-001 re-review N03: every READSET_REQUIRED_FIELDS entry.
+                     "aliases": [], "children": {}, "trust_store": False}
     # Lock key: the exact repository state. Every fingerprint input is then
     # computed inside the lock (a concurrent run may have changed nothing or
     # produced evidence meanwhile).
@@ -236,6 +238,8 @@ def _evidence_main(args, environ):
             fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git,
                                       resolver=resolver, trust=trust, verify_observed=True)
         except cp.PlanError as exc:
+            # LISTING_CHANGED_DURING_RUN (re-review N05) only refuses reuse: the suite may
+            # write into a directory it listed, and stability is the freeze check above.
             if str(exc) in {"INPUT_CHANGED_DURING_RUN", "STATE_CHANGED"}:
                 stable = False
             # The run stays a real execution, but its evidence is not reusable.
