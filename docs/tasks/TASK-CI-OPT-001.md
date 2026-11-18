@@ -1454,3 +1454,43 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 실행 영역 밖(TEMP 루트 등)에 정리하지 않고 남긴 `mkdtemp`·`mkstemp`·배타 생성은 실제 suite에서 partial이 되고, 정리된 것은 부재 입력 항목이 늘어난다(빈도·지문 크기 미측정).
     - 다른 프로세스가 연 핸들 등 실패 원인은 기록하지 않고 partial로만 처리한다.
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 15차 독립 교차검토(Codex Orca worker, 대상 `0a70599`)**: **FAIL**(P1 2, P3 1). R1401~R1405 resolved. RA-1~RA-4 유지. 반영 코드 후보 `7c0bc78`(로컬 커밋, 미게시).
+  지적:
+    - R1501(P1): 사전조건이 대상 부재만 기록해 부모 존재·종류를 놓쳤다(mkdir·`open xb`의 없는 부모, 파일 부모, 정리 뒤 부모 삭제).
+    - R1502(P1): 기존 비자체 파일의 쓰기 모드 open 실패(읽기 전용)에서 내용만 남았다.
+    - R1503(P3) 관찰: `tests/test_managed_providers.py`의 고정 fixture `.local_runtime/harness-managed/test-tmp` 생성·재호출이 전체 suite에서 `MUTATION_UNVERIFIABLE` partial 경로다(첫 실행은 남긴 세 디렉터리, 재실행은 기존 경로 mkdir). 지시대로 수정하지 않았고 fixture도 바꾸지 않았다.
+  수정:
+    - `_precondition`의 부재 분기와 비배타 생성이 `_absent_chain`·`_judge_chain`을 거친다.
+    - 종료 판정은 `_needs_absent`·`_needs_state`(자식은 `needs_absent`에 조상 사슬을 함께 보고)가 맡는다.
+    - 감싼 `open`/`os.open` 실패는 `_open_failed` → `_precondition(changes=True)`로 간다.
+    - `ci_plan._hash_or_none`이 `"dir"`을 허용한다.
+  API 표 갱신(14차 표에 더함):
+    | API | 추가 사전 상태 | 기록 / partial |
+    | 모든 부재 대상 연산(`open x`·mkdir·rename 목적지·부재 대상 remove/rmdir/chmod/utime/truncate·link 새 이름) | 없는 상위 구성요소와 가장 가까운 기존 조상의 종류 | 없는 구성요소는 각각 부재 입력, 조상은 `"dir"`/내용 해시 입력. 종료 시 다르면 partial |
+    | `open` `w`·`a`(새 파일), SQLite 새 DB, `os.replace`·POSIX rename(새 목적지) | 조상 종류 | 같다(대상 부재 조건은 없음) |
+    | 쓰기 모드 `open`/`os.open` 실패(기존 비자체 파일) | 속성·잠금 | 일괄 partial. 내용 입력 유지, 입력 변경 없음 |
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_ancestor_chain_and_failed_writes` 추가. 다루는 사례:
+    - 없는 부모·파일 부모: mkdir·`open xb` × 직접·실제 자식
+    - 기존 부모 아래 생성 후 정리, `w` 생성(complete, `"dir"` 기록, `valid_readset`)
+    - 실행 중 부모 삭제(partial)
+    - 읽기 전용 파일의 `wb`·`r+b`·`ab` 실패와 자식 `ab` 실패
+  수정 전 코드 대조(`0a70599` scripts, 사례별 분리 실행): 14건 모두 기대와 다름(부모·조상 기록 없음, 사유 없음). 수정 후 모두 기대대로.
+  검토자 재현(수정본):
+    - r1501 6건: 지문 변경·reuse 거부
+    - r1502 3건: partial·reuse 거부
+    - owned_output: reuse 허용 유지
+    - temp_probe: 판정 유지(관찰)
+    - 14차 r14_repro 10건·13차 삭제 4건·12차 재현: reuse 거부 유지
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화:
+    - 이번 회차 기존 단언 변경 없음.
+    - 정상 생성은 실행 영역 밖이면 부모 `"dir"` 입력(예: TEMP 루트)이 하나씩 늘 뿐 complete다.
+    - 실행 중 부모가 바뀌는 경우만 새로 partial이다.
+  남은 한계:
+    - R1503 fixture 경로와 TEMP 루트에 남긴 임시 경로는 실제 suite에서 partial이다.
+    - 정상 생성은 부재·조상 입력 항목이 늘어난다(지문 크기·빈도 미측정).
+    - 원격 Windows 두 조합은 확인하지 않았다.
