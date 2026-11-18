@@ -1351,7 +1351,9 @@ class Recorder:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
         scope = self._scope(canonical)
-        if scope in {"env_manifest", "derived"}:
+        # 20th review R2001: a listing inside the runtime environment is recorded too (the
+        # manifest hashes file contents, not the entries a directory lists).
+        if scope == "derived":
             return
         if self._is_child:
             with self._quiet():
@@ -1374,7 +1376,9 @@ class Recorder:
         if not ok and error not in LISTING_ERRORS_AS_INPUT:
             self._partial("LISTING_FAILED", "%s %s" % (error, path))
         normalized = sorted([[str(n), str(k)] for n, k in entries]) if ok else []
-        item = {"path": self._display(_real(path) or canonical), "scope": "repo" if scope == "repo" else "outside",
+        shown = _real(path) or canonical  # 20th review R2001: an absolute path outside the repo scope,
+        # also for a runtime environment inside the repository (.venv)
+        item = {"path": self._display(shown) if scope == "repo" else shown, "scope": "repo" if scope == "repo" else "outside",
                 "ok": bool(ok), "entries": normalized}
         if not ok:
             item["error"] = error
