@@ -58,7 +58,27 @@ _ORIGINAL_OS_REPLACE = None
 # 8th review R803: removals too (the os.remove audit event comes before the call).
 _ORIGINAL_OS_REMOVE = None
 _ORIGINAL_OS_UNLINK = None
+# 11th review R1101: link creations are wrapped, so a link this run made is proven by the
+# identity of the link object (not by its birth time).
+_ORIGINAL_SYMLINK = None
+_ORIGINAL_CREATE_JUNCTION = None
 _IN_SQLITE_WRAPPER = threading.local()
+# 12th review R1204: depth of wrapped calls on this thread. Audit events nested inside
+# one (a codec import, its module reads) come before the call's own outcome and must not
+# settle its attempt from the path's state.
+_WRAPPED = threading.local()
+
+
+def _in_wrapped():
+    return getattr(_WRAPPED, "depth", 0) > 0
+
+
+def _wrapped_call(original, *args, **kwargs):
+    _WRAPPED.depth = getattr(_WRAPPED, "depth", 0) + 1
+    try:
+        return original(*args, **kwargs)
+    finally:
+        _WRAPPED.depth -= 1
 _ORIGINAL_CFFI_DLOPEN = None
 _SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
                   "load_dh_params")
@@ -182,15 +202,14 @@ def _file_id(path=None, handle=None):
 _UNSET = object()
 
 
-def _link_born(observed):
-    """10th review R1002: the oldest birth time among the links (symlinks, junctions) on
-    the observed path; "none" when it passes through none (e.g. an 8.3 short name), None
-    when that cannot be told."""
+def _link_items(observed):
+    """The links (symlinks, junctions) on the lexical path, as [path, birth, object id];
+    [] for none, None when that cannot be told."""
     try:
         current = os.path.abspath(observed)
     except (OSError, ValueError, TypeError):
         return None
-    oldest = "none"
+    links = []
     while True:
         try:
             stat = os.lstat(current)
@@ -203,14 +222,41 @@ def _link_born(observed):
                 getattr(stat, "st_file_attributes", 0) & getattr(_stat_mod, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
                 and getattr(stat, "st_reparse_tag", 0) in (0xA000000C, 0xA0000003))  # symlink, mount point
             if link:
-                stamp = _stamp_of(stat)
-                if stamp is None:
-                    return None
-                oldest = stamp if oldest == "none" else min(oldest, stamp)
+                links.append([current, _stamp_of(stat), _id_list(_ident_of(stat))])
         parent = os.path.dirname(current)
         if parent == current:
-            return oldest
+            return links
         current = parent
+
+
+def _link_target(link):
+    target = os.readlink(link)
+    for prefix in ("\\\\?\\UNC\\", "\\??\\UNC\\"):
+        if target.startswith(prefix):
+            return "\\\\" + target[len(prefix):]
+    for prefix in ("\\\\?\\", "\\??\\"):
+        if target.startswith(prefix):
+            return target[len(prefix):]
+    if not os.path.isabs(target):
+        target = os.path.join(os.path.dirname(link), target)
+    return target
+
+
+def _links_on(observed):
+    """10th-12th review R1002/R1101/R1201: the links on the observed path as [path, birth,
+    object id, chained]; chained tells whether the link's own target passes through
+    another link (True), not (False), or cannot be told (None). [] when the path passes
+    through none (e.g. an 8.3 short name), None when that cannot be told."""
+    links = _link_items(observed)
+    if links is None:
+        return None
+    for item in links:
+        try:
+            inner = _link_items(_link_target(item[0]))
+        except (OSError, ValueError, TypeError):
+            inner = None
+        item.append(None if inner is None else bool(inner))
+    return links
 
 
 def _id_list(ident):
@@ -413,6 +459,7 @@ class Recorder:
         # 10th review R1001: every exempted observation (name, object id) -> path, so a later
         # object at the same name is verified on its own.
         self._presumed = {}
+        self._owned_links = set()  # 11th review R1101: link objects (lstat ids) a recorded process made
         self._created = set()
         self._install()
         if _child:
@@ -455,6 +502,17 @@ class Recorder:
                 io.open = builtins.open = _tracked_io_open
                 os.open, os.rename, os.replace = _tracked_os_open, _tracked_os_rename, _tracked_os_replace
                 os.remove, os.unlink = _tracked_os_remove, _tracked_os_unlink
+                global _ORIGINAL_SYMLINK, _ORIGINAL_CREATE_JUNCTION
+                _ORIGINAL_SYMLINK = getattr(os, "symlink", None)
+                if _ORIGINAL_SYMLINK is not None:
+                    os.symlink = _tracked_symlink
+                try:
+                    import _winapi
+                    _ORIGINAL_CREATE_JUNCTION = getattr(_winapi, "CreateJunction", None)
+                    if _ORIGINAL_CREATE_JUNCTION is not None:
+                        _winapi.CreateJunction = _tracked_create_junction
+                except ImportError:
+                    pass
                 os.listdir = _tracked_listdir
                 os.scandir = _tracked_scandir
                 subprocess.Popen = _TrackedPopen
@@ -559,12 +617,20 @@ class Recorder:
         target = _real(observed)
         return False if target is None else (observed, target)
 
-    def _keep_alias(self, alias, path, exempt, link_born=_UNSET):
-        """10th review R1002: the mapping of an observed alias is a dependency of its own,
-        kept apart from the content or absence exemption. An input always carries it; an
-        output (or an absence inside the run's area) reached through a link that existed
-        before the run carries it too (the next run may reach another target); a link the
-        run created is reproduced by the run; a link whose origin cannot be told is partial."""
+    def _keep_alias(self, alias, path, exempt, links=_UNSET):
+        """10th/11th review R1002/R1101/R1102: the one decision for an observed alias, kept
+        apart from the content or absence exemption, used by direct reads, child reports,
+        listings, creation attempts (failed and successful) and moves alike.
+
+        An input always carries its alias. For an exempt observation (an output read, an
+        absence inside the run's area, a listing of the run's directory, a creation, a move)
+        every link on the path is judged: a link object a recorded process of the run was
+        observed to create (wrapped os.symlink / CreateJunction, its lstat identity) needs no
+        record (the run makes it again); a link that existed before the run is a dependency,
+        so the mapping is kept and checked again by the fingerprint; any other link (made
+        during the run by no recorded creation: its origin and the mapping's stability
+        cannot be verified) or a link that cannot be inspected leaves the read set partial.
+        Birth time only tells "before the run" from "during the run", never who made it."""
         if not exempt:
             self._note_alias(alias, path)
             return
@@ -574,24 +640,62 @@ class Recorder:
         if not alias:
             return
         alias = tuple(alias)
-        if link_born is _UNSET:
+        if links is _UNSET:
             with self._quiet():
-                link_born = _link_born(alias[0])
-        if link_born == "none":
-            return
-        if not isinstance(link_born, (int, float)) or isinstance(link_born, bool):
+                links = _links_on(alias[0])
+        if not isinstance(links, list):
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        if link_born < self._started_epoch:
+        start = _epoch(self.started_utc)
+        keep = False
+        if len(links) > 1:
+            # 12th review R1201: a chain of links is never proven here (fail-closed).
+            self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", "link chain %s" % alias[0])
+            return
+        for item in links:
+            try:
+                link_path, born, ident, chained = item
+            except (TypeError, ValueError):
+                self._partial("PATH_UNNORMALIZABLE", path)
+                return
+            if chained is not False:
+                # 12th review R1201: the link's target passes through another link (a chain),
+                # or that cannot be told: no exemption decision is made for it.
+                self._partial("OUTPUT_OWNERSHIP_UNCERTAIN" if chained else "PATH_UNNORMALIZABLE",
+                              "link chain %s" % link_path)
+                return
+            ident = _id_tuple(ident)
+            if ident is not None and ident in self._owned_links:
+                continue  # made by this run (observed)
+            if isinstance(born, (int, float)) and not isinstance(born, bool) and start is not None and born < start:
+                keep = True  # existed before the run: the mapping is a dependency
+                continue
+            self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", "link %s" % link_path)
+            return
+        if keep:
             self._note_alias(alias, path)
 
     def _alias_event(self, found):
-        """A child's alias report carries the birth of the links it passed (10th review R1002)."""
+        """A child's alias report carries the links it passed (11th review R1101)."""
         payload = {"alias": list(found) if found else found}
         if found:
             with self._quiet():
-                payload["link_born"] = _link_born(found[0])
+                payload["links"] = _links_on(found[0])
         return payload
+
+    def _linked(self, link):
+        """11th review R1101: a link this process created (the wrapped call returned)."""
+        with self._quiet():
+            try:
+                ident = _ident_of(os.lstat(link))
+            except (OSError, ValueError, TypeError):
+                ident = None
+        if ident is None:
+            return
+        if self._is_child:
+            self._emit({"type": "linked", "id": _id_list(ident)})
+        else:
+            self._owned_links.add(ident)
 
     def _note_alias(self, alias, path):
         """Record an alias of an input; a retarget within the run is a change."""
@@ -609,7 +713,7 @@ class Recorder:
 
     def _record_read(self, path, via="open", section_only=False, digest=None, born=None, relayed=False, alias=None,
                      absent=False, isdir=False, precreate=False, seen_absent=False, seen=None, ident=None,
-                     link_born=_UNSET):
+                     links=_UNSET):
         """precreate: a child's absence seen only to create the file (8th review R804);
         seen_absent: the absence seen when a creation that then failed was attempted
         (8th review R801), kept even if another writer has made the path since; seen: that
@@ -624,7 +728,7 @@ class Recorder:
         scope = self._scope(canonical)
         if scope == "derived":
             return
-        if not relayed and self._pending_ops:
+        if not relayed and self._pending_ops and not _in_wrapped():
             self._settle_pending(threading.get_ident())  # this thread's previous attempt first
         if self._is_child:
             # A child judges nothing: it reports content and birth time, and
@@ -663,11 +767,11 @@ class Recorder:
             # judged at stop.
             self._reobserved(scope, canonical, path, absent=True)
             self._precreated.setdefault(canonical, path)
-            self._keep_alias(alias, path, exempt=True, link_born=link_born)  # 10th review R1002
+            self._keep_alias(alias, path, exempt=True, links=links)  # 10th review R1002
             return
         if relayed and isdir:
             self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
-            self._keep_alias(alias, path, exempt=True, link_born=link_born)  # 10th review R1002
+            self._keep_alias(alias, path, exempt=True, links=links)  # 10th review R1002
             return
         if relayed:
             self._reobserved(scope, canonical, path, digest=digest, absent=absent)
@@ -684,7 +788,7 @@ class Recorder:
                 exempt = canonical in self._created
                 if exempt and not absent:
                     self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", path)
-            self._keep_alias(alias, path, exempt=exempt, link_born=link_born)  # 10th review R1002
+            self._keep_alias(alias, path, exempt=exempt, links=links)  # 10th review R1002
             if exempt:
                 return  # an output of this run (for an absent path: inside an area created by the run)
             if absent:
@@ -855,6 +959,14 @@ class Recorder:
                     self._record_read(meta["path"], seen_absent=True, seen=(op[1], meta.get("alias")))
                 else:
                     self._record_read(op[1], seen_absent=True)
+            elif op[0] == "rename":
+                # 12th review R1202: the failure depended on what was (or was not) at both
+                # paths; that condition is not reconstructed, so the read set is partial. The
+                # observed aliases go through the common decision as an input's.
+                moves = self._move_aliases(meta, exempt=False)
+                if self._is_child:
+                    self._emit({"type": "rename_failed", **moves})
+                self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", "failed move %s -> %s" % (op[1], op[2]))
             return  # the open/rename failed: no ownership
         if not certain:
             self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", op[-1])
@@ -874,10 +986,7 @@ class Recorder:
                 self._emit({"type": "created", "path": op[1], "id": _id_list(ident)})
             return
         src, dst = op[1], op[2]
-        if not self._is_child:
-            for key in ("src_alias", "dst_alias"):  # 10th review R1002: moves through links
-                if meta.get(key):
-                    self._keep_alias(meta[key][1], meta[key][0], exempt=True)
+        moves = self._move_aliases(meta, exempt=True)
         with self._quiet():
             moved = _file_id(dst)  # a move keeps the object (and its identity)
         owned = (moved is not None and moved in self._owned_ids) or src in self._created
@@ -885,7 +994,8 @@ class Recorder:
         if self._is_child:
             # The owner is known only for this child's own outputs; the parent decides
             # the rest after merging every log.
-            self._emit({"type": "renamed", "src": src, "dst": dst, "owned": owned, "id": _id_list(moved)})
+            # 11th review R1102: with the aliases and links observed for both paths.
+            self._emit({"type": "renamed", "src": src, "dst": dst, "owned": owned, "id": _id_list(moved), **moves})
         if owned:
             # 7th review R703: ownership is decided at the time of the move, so a read of
             # the moved output right after is an output read.
@@ -897,6 +1007,20 @@ class Recorder:
             self._created.discard(dst)
             if not self._is_child:
                 self._renames.append((src, dst, None, moved))
+
+    def _move_aliases(self, meta, exempt):
+        """The observed aliases of a move's paths with their links (for a child's report),
+        decided by the common alias path in this process."""
+        moves = {}
+        for key in ("src_alias", "dst_alias"):  # 10th review R1002: moves through links
+            if meta.get(key):
+                raw, found = meta[key]
+                with self._quiet():
+                    links = _links_on(found[0]) if found else []
+                moves[key] = [_path_text(raw), list(found) if found else found, links]
+                if not self._is_child:
+                    self._keep_alias(found, raw, exempt=exempt, links=links)
+        return moves
 
     def _apply_renames(self):
         """At stop, after every log is merged: moves whose source owner was not known when
@@ -983,7 +1107,7 @@ class Recorder:
         # output read goes through the same observation, so its alias is not skipped.
         self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
 
-    def _listing(self, path, ok, entries, error=None, born=None, relayed=False, alias=None, link_born=_UNSET):
+    def _listing(self, path, ok, entries, error=None, born=None, relayed=False, alias=None, links=_UNSET):
         canonical = _canonical(path)
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
@@ -1003,7 +1127,7 @@ class Recorder:
         # run's own directory.
         if relayed:
             exempt = canonical in self._created or (born is not None and born >= self._started_epoch)
-            self._keep_alias(alias, path, exempt, link_born=link_born)
+            self._keep_alias(alias, path, exempt, links=links)
         else:
             exempt = self._is_created(canonical)
             self._keep_alias(self._alias_of(path, canonical), path, exempt)
@@ -1021,7 +1145,7 @@ class Recorder:
     def _audit_event(self, event, args):
         """One recorder's handling of a CPython audit event."""
         in_sqlite = event.startswith("sqlite3.") and getattr(_IN_SQLITE_WRAPPER, "on", False)
-        if self._pending_ops and not in_sqlite:  # the wrapper concludes its own attempt (R704)
+        if self._pending_ops and not in_sqlite and not _in_wrapped():  # the wrapper concludes it (R704, R1204)
             self._settle_pending(threading.get_ident())
         if event == "open":
             self._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
@@ -1058,16 +1182,14 @@ class Recorder:
                 # 6th review R604: paths relative to a directory descriptor are not resolved.
                 self._partial("RENAME_DIR_FD_UNRESOLVED", "%s -> %s" % (args[0], args[1]))
             elif src and dst:
-                with self._quiet():
-                    src_exists = os.path.lexists(src)
-                if src_exists:  # a rename of a missing source fails: no attempt to settle
-                    # 10th review R1002: the paths as observed, for the links they pass.
-                    snap = {}
-                    for key, raw, canonical in (("src_alias", args[0], src), ("dst_alias", args[1], dst)):
-                        found = self._alias_of(raw, canonical)
-                        if found is not None:
-                            snap[key] = (raw, found)
-                    self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
+                # 10th review R1002: the paths as observed, for the links they pass. 12th review
+                # R1202: a move of a missing source is an attempt too (its failure is settled).
+                snap = {}
+                for key, raw, canonical in (("src_alias", args[0], src), ("dst_alias", args[1], dst)):
+                    found = self._alias_of(raw, canonical)
+                    if found is not None:
+                        snap[key] = (raw, found)
+                self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
         elif event == "mmap.__new__":
@@ -1307,7 +1429,9 @@ class Recorder:
         rel = self._display(_real(path) or p)
         self._section_depth[p] = self._section_depth.get(p, 0) + 1
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            # 12th review R1203: the observed path is opened (its aliases reach every
+            # recorder); the normalized one only keys the section depth and the display.
+            with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
         finally:
             self._section_depth[p] -= 1
@@ -1549,8 +1673,21 @@ class Recorder:
             if not all(isinstance(event.get(k), str) and event[k] for k in ("src", "dst")):
                 raise ValueError("renamed event without paths")
             owned = event.get("owned")
+            for key in ("src_alias", "dst_alias"):  # 11th review R1102: the same decision as the parent's
+                if key in event:
+                    raw, found, links = event[key]
+                    self._keep_alias(found, raw, exempt=True, links=links)
             self._renames.append((event["src"], event["dst"], True if owned is True else None,
                                   _id_tuple(event.get("id"))))  # applied at stop
+        elif kind == "rename_failed":
+            for key in ("src_alias", "dst_alias"):  # 12th review R1202: decided as the parent's
+                if key in event:
+                    raw, found, links = event[key]
+                    self._keep_alias(found, raw, exempt=False, links=links)
+        elif kind == "linked":
+            if _id_tuple(event.get("id")) is None:
+                raise ValueError("linked event without id")
+            self._owned_links.add(_id_tuple(event["id"]))  # 11th review R1101
         elif kind == "hook_failed":
             self._partial("HOOK_FAILED", event.get("error", "unknown"))
         elif kind == "partial":
@@ -1560,11 +1697,11 @@ class Recorder:
                               event.get("sha256"), born=event.get("born"), relayed=True, alias=event.get("alias"),
                               absent=event.get("absent") is True, isdir=event.get("isdir") is True,
                               precreate=event.get("absent") is True and event.get("precreate") is True,
-                              ident=_id_tuple(event.get("id")), link_born=event.get("link_born", _UNSET))
+                              ident=_id_tuple(event.get("id")), links=event.get("links", _UNSET))
         elif kind == "listing":
             self._listing(event["path"], event["ok"], event.get("entries", []), event.get("error"),
                           born=event.get("born"), relayed=True, alias=event.get("alias"),
-                          link_born=event.get("link_born", _UNSET))
+                          links=event.get("links", _UNSET))
         elif kind == "trust_store":
             self._trust_store = True
         elif kind == "exit":
@@ -1832,7 +1969,7 @@ def _tracked_sqlite_connect(*args, **kwargs):
         r._sqlite(database, uri=bool(uri))
     _IN_SQLITE_WRAPPER.on = True
     try:
-        connection = _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+        connection = _wrapped_call(_ORIGINAL_SQLITE_CONNECT, *args, **kwargs)
     except BaseException:
         _IN_SQLITE_WRAPPER.on = False
         for r in recorders:
@@ -1852,7 +1989,7 @@ def _settle_calls(kind, paths, ok, handle=None):
 
 def _tracked_io_open(file, *args, **kwargs):
     try:
-        result = _ORIGINAL_IO_OPEN(file, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_IO_OPEN, file, *args, **kwargs)
     except BaseException:
         _settle_calls("create", [file], False)
         raise
@@ -1862,7 +1999,7 @@ def _tracked_io_open(file, *args, **kwargs):
 
 def _tracked_os_open(path, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_OPEN(path, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_OPEN, path, *args, **kwargs)
     except BaseException:
         _settle_calls("create", [path], False)
         raise
@@ -1870,9 +2007,25 @@ def _tracked_os_open(path, *args, **kwargs):
     return result
 
 
+def _tracked_symlink(src, dst, *args, **kwargs):
+    result = _ORIGINAL_SYMLINK(src, dst, *args, **kwargs)
+    for r in _active():
+        if not r._is_quiet():
+            r._linked(dst)
+    return result
+
+
+def _tracked_create_junction(target, link, *args, **kwargs):
+    result = _ORIGINAL_CREATE_JUNCTION(target, link, *args, **kwargs)
+    for r in _active():
+        if not r._is_quiet():
+            r._linked(link)
+    return result
+
+
 def _tracked_os_remove(path, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_REMOVE(path, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_REMOVE, path, *args, **kwargs)
     except BaseException:
         _settle_calls("remove", [path], False)
         raise
@@ -1882,7 +2035,7 @@ def _tracked_os_remove(path, *args, **kwargs):
 
 def _tracked_os_unlink(path, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_UNLINK(path, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_UNLINK, path, *args, **kwargs)
     except BaseException:
         _settle_calls("remove", [path], False)
         raise
@@ -1892,7 +2045,7 @@ def _tracked_os_unlink(path, *args, **kwargs):
 
 def _tracked_os_rename(src, dst, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_RENAME(src, dst, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_RENAME, src, dst, *args, **kwargs)
     except BaseException:
         _settle_calls("rename", [src, dst], False)
         raise
@@ -1902,7 +2055,7 @@ def _tracked_os_rename(src, dst, *args, **kwargs):
 
 def _tracked_os_replace(src, dst, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_REPLACE(src, dst, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_REPLACE, src, dst, *args, **kwargs)
     except BaseException:
         _settle_calls("rename", [src, dst], False)
         raise
