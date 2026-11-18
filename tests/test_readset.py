@@ -282,12 +282,9 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(rec._children["tools"], [])
 
     def test_git_location_and_check_attr_forms(self):
+        """Every git form is refused (re-review N06 removed the unused location analysis)."""
         temp_repo = os.path.join(readset._real(tempfile.gettempdir()), "fixture")
         repo = str(Path(__file__).resolve().parents[1])
-        self.assertEqual(readset._git_location(["-C", temp_repo, "-C", repo, "status"], repo), readset._canonical(repo))
-        self.assertEqual(readset._git_location(["-C", repo, "-C", temp_repo, "status"], repo), readset._canonical(temp_repo))
-        self.assertEqual(readset._git_location(["--no-optional-locks", "-C", temp_repo, "status"], repo),
-                         readset._canonical(temp_repo))
         outer = readset.Recorder(repo)
         self.addCleanup(outer.stop)
         clean_env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_DIR")}
@@ -357,6 +354,47 @@ class ReadsetTests(unittest.TestCase):
         self.assertTrue({"CHILD_LOG_INCOMPLETE", "CHILD_NOT_ALLOWED", "READSET_LOG_CORRUPT"} <= rec.partial_reasons)
         self.assertFalse(rec.as_dict()["complete"])
 
+    def test_child_log_sequence_is_strict_with_one_exit_proof(self):
+        """CI-OPT-001 re-review N04: a repeated or reordered number, a second exit proof,
+        an event after the exit, a malformed exit proof or one from another pid
+        (a reused pid's second log) is incomplete; only 1..N in order ending in exit passes."""
+        def end(pid, seq, **extra):
+            return {"type": "exit", "pid": pid, "t": 1.0, "seq": seq, "partial": [], "write_failed": False, **extra}
+        ok = {"type": "trust_store"}
+        cases = {
+            "200.jsonl": ([{**ok, "seq": 1}, {**ok, "seq": 2}, end(200, 3)], True),
+            "201.jsonl": ([{**ok, "seq": 1}, {**ok, "seq": 1}, end(201, 2)], False),   # repeated number
+            "202.jsonl": ([{**ok, "seq": 1}, end(202, 2), end(202, 2)], False),       # second exit
+            "203.jsonl": ([{"type": "exit", "pid": 203, "seq": 1}], False),            # exit fields missing
+            "204.jsonl": ([end(204, 2), {**ok, "seq": 1}], False),                     # reordered
+            "205.jsonl": ([end(205, 1), {**ok, "seq": 2}], False),                     # event after exit
+            "206.jsonl": ([{**ok, "seq": 1}, end(999, 2)], False),                     # another pid's proof
+            "207.jsonl": ([end(207, 1), {**ok, "seq": 1}, end(207, 2)], False),        # reused pid appended
+            "208.jsonl": ([end(208, 1, write_failed=0)], False),                       # wrong field type
+        }
+        for name, (events, complete) in cases.items():  # one recorder each: samples are capped
+            with self.subTest(log=name):
+                rec = self.recorder()
+                with open(os.path.join(rec._log_targets()[0], name), "w", encoding="utf-8") as stream:
+                    for event in events:
+                        stream.write(json.dumps(event) + "\n")
+                rec.stop()
+                self.assertEqual("CHILD_LOG_INCOMPLETE" not in rec.partial_reasons, complete)
+
+    def test_child_numbers_match_file_order_under_threads(self):
+        """CI-OPT-001 re-review N04: number assignment and the write share one lock."""
+        code = ("import threading, os\n"
+                "def work():\n"
+                "    for i in range(40): os.listdir('.')\n"
+                "ts = [threading.Thread(target=work) for _ in range(4)]\n"
+                "[t.start() for t in ts]; [t.join() for t in ts]\n")
+        rec = self.recorder()
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        rec.stop()
+        self.assertNotIn("CHILD_LOG_INCOMPLETE", rec.partial_reasons, rec.partial_samples)
+        self.assertNotIn("CHILD_HOOK_MISSING", rec.partial_reasons)
+
     def test_scratch_area_git_is_not_exempt(self):
         """2026-11-17 user decision (CI-OPT-001): after five rounds on one invariant the
         scratch-area git exemption was removed. Git reads are invisible to the recorder,
@@ -420,51 +458,42 @@ class ReadsetTests(unittest.TestCase):
         self.assertIn("CHILD_HOOK_MISSING", rec2.partial_reasons)
         self.assertTrue(any("-I" in s for s in rec2.partial_samples["CHILD_HOOK_MISSING"]))
 
-    def test_ended_before_startup_rules(self):
-        """'Unstarted' needs hook-capable options, a known exited pid and safe .pth files."""
+    def test_no_launch_without_its_hook_is_explained_away(self):
+        """CI-OPT-001 re-review N02: the 'ended before startup' exemption is removed; an
+        exited, hook-capable launch whose token never reported is partial too."""
         pid = self.exited_pid()
-        rec = self.recorder()
-        env = rec._child([sys.executable, "-c", "import time;time.sleep(30)"], str(self.root), None)
-        rec._spawned_event(env["BATON_READSET_TOKEN"], pid)
-        rec.stop()
-        self.assertTrue(rec.as_dict()["complete"], rec.partial_reasons)
-        self.assertEqual(len(rec.as_dict()["children"]["python_unstarted"]), 1)
         for label, setup in {
+                "exited_known_pid": lambda r: r._spawned_event(
+                    r._child([sys.executable, "-c", "pass"], str(self.root), None)["BATON_READSET_TOKEN"], pid),
                 "unknown_pid": lambda r: r._child([sys.executable, "-c", "pass"], str(self.root), None),
                 "disabled_hook": lambda r: r._spawned_event(
                     r._child([sys.executable, "-E", "-c", "pass"], str(self.root), None)["BATON_READSET_TOKEN"], pid),
                 "still_alive": lambda r: r._spawned_event(
-                    r._child([sys.executable, "-c", "pass"], str(self.root), None)["BATON_READSET_TOKEN"], os.getpid()),
-                "unsafe_pth": lambda r: (setattr(r, "_pth_safe", False), r._spawned_event(
-                    r._child([sys.executable, "-c", "pass"], str(self.root), None)["BATON_READSET_TOKEN"], pid))}.items():
+                    r._child([sys.executable, "-c", "pass"], str(self.root), None)["BATON_READSET_TOKEN"], os.getpid())}.items():
             with self.subTest(label=label):
                 one = self.recorder()
                 setup(one)
                 one.stop()
                 self.assertTrue({"CHILD_HOOK_MISSING", "CHILD_ALIVE_AT_STOP"} & one.partial_reasons, label)
-                self.assertEqual(one.as_dict()["children"]["python_unstarted"], [])
+                self.assertFalse(one.as_dict()["complete"])
+                self.assertNotIn("python_unstarted", one.as_dict()["children"])
 
-    def test_pth_safety_scan(self):
-        """Review P1 (4506c02): exact import-line content, not file names; enumeration failure fails closed."""
-        site_dir = Path(self.temp.name) / "site"
-        site_dir.mkdir()
-        distutils = ("import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; "
-                     "enabled and __import__('_distutils_hack').add_shim(); \n")
-        (site_dir / "distutils-precedence.pth").write_text(distutils, encoding="utf-8")
-        (site_dir / "__editable__.baton_ai-0.1.pth").write_text("C:/repo/src\n", encoding="utf-8")
-        (site_dir / "__editable__.other-1.pth").write_text(
-            "import __editable___other_1_finder; __editable___other_1_finder.install()\n", encoding="utf-8")
-        with patch("site.getsitepackages", return_value=[str(site_dir), str(site_dir / "absent")]), \
-                patch("site.ENABLE_USER_SITE", False):
-            self.assertTrue(readset.pth_safe())
-            (site_dir / "distutils-precedence.pth").write_text("import os; open('C:/outside').read()\n", encoding="utf-8")
-            self.assertFalse(readset.pth_safe())  # allowed name, unknown code
-            (site_dir / "distutils-precedence.pth").write_text(distutils, encoding="utf-8")
-            (site_dir / "evil.pth").write_text("import evil_hook\n", encoding="utf-8")
-            self.assertFalse(readset.pth_safe())
-        with patch("site.getsitepackages", return_value=[str(site_dir)]), patch("site.ENABLE_USER_SITE", False), \
-                patch.object(readset, "_ORIGINAL_LISTDIR", side_effect=PermissionError("denied")):
-            self.assertFalse(readset.pth_safe())
+    def test_lost_child_log_of_a_real_child_is_partial(self):
+        """CI-OPT-001 re-review N02 reproduction: a real Python child reads an outside
+        file and exits; its whole log is then lost. The parent must not be complete."""
+        outside = Path(self.temp.name) / "outside-input.txt"
+        outside.write_text("value\n", encoding="utf-8")
+        rec = self.recorder()
+        code = "open(%r, encoding='utf-8').read()" % str(outside)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        for name in os.listdir(rec._own_log_dir):
+            os.remove(os.path.join(rec._own_log_dir, name))
+        rec.stop()
+        data = rec.as_dict()
+        self.assertIn("CHILD_HOOK_MISSING", rec.partial_reasons)
+        self.assertFalse(data["complete"])
+        self.assertNotIn(str(readset._canonical(outside)), {r["path"] for r in data["outside_reads"]})
 
     def test_cross_process_loopback_endpoints_and_truncated_log(self):
         """A child's connect to an endpoint bound by another process of this run is judged at stop."""

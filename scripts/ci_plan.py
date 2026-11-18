@@ -989,12 +989,20 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         path = root / record["path"] if record["scope"] == "repo" else Path(record["path"])
         current = _listing(path)
         if verify_observed:
-            seen = {"ok": record.get("ok"), "entries": record.get("entries")}
+            # A failed listing also keeps its error type (re-review N01: FileNotFoundError
+            # and NotADirectoryError can steer a program differently).
+            seen = {"ok": record.get("ok"), "entries": record.get("entries"),
+                    "error": None if record.get("ok") else record.get("error")}
+            now = {"ok": current["ok"], "entries": current["entries"],
+                   "error": None if current["ok"] else current.get("error")}
             key = (record["scope"], fold(record["path"]) if record["scope"] == "repo" else record["path"])
             # CI-OPT-001 final cross review F02: what the suite listed must still be
-            # what is there, and repeated listings of one path must agree.
-            if observed_listing.setdefault(key, seen) != seen or seen != {"ok": current["ok"], "entries": current["entries"]}:
-                raise PlanError("INPUT_CHANGED_DURING_RUN")
+            # what is there, and repeated listings of one path must agree. Re-review
+            # N05: a directory the suite itself writes into fails this too, so the
+            # code differs from INPUT_CHANGED_DURING_RUN: the evidence is not reusable,
+            # but the run is not unstable (repository/runtime stability is checked apart).
+            if observed_listing.setdefault(key, seen) != seen or seen != now:
+                raise PlanError("LISTING_CHANGED_DURING_RUN")
         listings.append([record["scope"], record["path"], current])
     outside = []
     for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):

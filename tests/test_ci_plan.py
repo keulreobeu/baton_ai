@@ -933,10 +933,35 @@ class SuiteReuseTests(unittest.TestCase):
         with self.assertRaises(cp.PlanError) as caught:
             cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
-        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")  # re-review N05: own code
         twice = readset(repo_reads=[], listings=[{"path": str(outside), "scope": "outside", "ok": True, "entries": [["new.flag", "file"]]},
                                   {"path": str(outside), "scope": "outside", "ok": True, "entries": []}])
         with self.assertRaises(cp.PlanError):  # two observations of one path disagree
+            cp.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                                 verify_observed=True)
+
+    def test_failed_listing_keeps_its_error_type(self):
+        """CI-OPT-001 re-review N01: a listing that failed with FileNotFoundError during the
+        run and now fails with NotADirectoryError (a file appeared there) is a change."""
+        target = Path(self.temp.name) / "probe"
+        failed = lambda error: readset(repo_reads=[], listings=[
+            {"path": str(target), "scope": "outside", "ok": False, "entries": [], "error": error}])
+        cp.suite_fingerprint(self.root, failed("FileNotFoundError"), environ=self.env, manifest=FIXED_MANIFEST,
+                             git=FIXED_GIT, verify_observed=True)  # still missing: accepted
+        target.write_text("now a file", encoding="utf-8")
+        self.assertEqual(cp._listing(target), {"ok": False, "entries": [], "error": "NotADirectoryError"})
+        with self.assertRaises(cp.PlanError) as caught:
+            cp.suite_fingerprint(self.root, failed("FileNotFoundError"), environ=self.env, manifest=FIXED_MANIFEST,
+                                 git=FIXED_GIT, verify_observed=True)
+        self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")
+        with self.assertRaises(cp.PlanError) as caught:  # recorded error type differs from the current one
+            cp.suite_fingerprint(self.root, failed("PermissionError"), environ=self.env, manifest=FIXED_MANIFEST,
+                                 git=FIXED_GIT, verify_observed=True)
+        self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")
+        twice = readset(repo_reads=[], listings=[
+            {"path": str(target), "scope": "outside", "ok": False, "entries": [], "error": "FileNotFoundError"},
+            {"path": str(target), "scope": "outside", "ok": False, "entries": [], "error": "NotADirectoryError"}])
+        with self.assertRaises(cp.PlanError):  # repeated failed observations disagree on the error type
             cp.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
 
