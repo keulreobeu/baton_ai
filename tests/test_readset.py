@@ -515,6 +515,28 @@ class ReadsetTests(unittest.TestCase):
         self.check_file_state_includes_writability()  # 16th review R1601-R1604
         self.check_kept_final_paths_need_a_repeatable_operation()  # 17th review R1701
         self.check_directory_kind_and_writes_after_creation()  # 18th review R1801/R1802
+        self.check_directory_kind_inside_the_runtime_environment()  # 19th review R1901
+
+    def check_directory_kind_inside_the_runtime_environment(self):
+        """CI-OPT-001 19th review R1901: a directory met by an SQLite connection inside the
+        runtime environment (under sys.prefix; a fixture prefix stands for it) records its
+        kind among env_reads, so the fingerprint checks it like any other kind."""
+        import sqlite3
+        from scripts import ci_plan
+        prefix = Path(tempfile.mkdtemp(dir=self.temp.name))
+        target = prefix / "fixture.db"
+        target.mkdir()
+        time.sleep(0.03)
+        with patch.object(sys, "prefix", str(prefix)):
+            rec = self.recorder()
+            self.assertEqual(rec._scope(readset._canonical(target)), "env_manifest")
+            with self.assertRaises(sqlite3.OperationalError):
+                sqlite3.connect(target.as_uri() + "?mode=ro", uri=True)
+            rec.stop()
+        data = rec.as_dict()
+        seen = {os.path.normcase(r["path"]): r["sha256"] for r in data["env_reads"]}
+        self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", data["env_reads"])
+        self.assertTrue(ci_plan.valid_readset(data))
 
     def check_directory_kind_and_writes_after_creation(self):
         """CI-OPT-001 18th review R1801/R1802: an SQLite connection that fails on an existing

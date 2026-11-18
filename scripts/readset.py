@@ -1172,8 +1172,9 @@ class Recorder:
     def _directory_kind(self, canonical):
         """18th review R1801: a directory found where a file was asked for (an open or an
         SQLite connection that fails because of it) is a kind dependency: "dir", checked at
-        stop and by the fingerprint like an ancestor's kind (15th review)."""
-        if canonical != self.root and self._scope(canonical) != "env_manifest":
+        stop and by the fingerprint like an ancestor's kind (15th review). 19th review R1901:
+        inside the runtime environment too (recorded among env_reads)."""
+        if canonical != self.root:
             self._needs_state.setdefault(canonical, "dir")
 
     def _open_failed(self, file, mode=None, flags=None):
