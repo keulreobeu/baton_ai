@@ -1227,3 +1227,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   N06(P3) 미사용 git 위치·형태 분석과 `.pth` 검사(`pth_safe`·`_hook_expected`) 삭제. 회귀: 실제 자식 로그 손실, 순번 9종, 다중 스레드 순서, 목록 오류 유형, fallback.
   영향 모듈 `tests.test_readset`·`tests.test_ci_plan`·`tests.test_verify_environment` 133 OK(검증 진입점 변경이므로 최종은 V3). 미검증으로 남긴 항목: Windows PID 재사용 실제 혼합,
   중첩 기록기 동시 쓰기 충돌, 일부 로그 디렉터리만 손실(모두 위 불변식으로 fail-closed 방향).
+- **2026-11-18 재검토 수정 후보 `217fc73` 공식 로컬 V3**: `verify_environment.py --base 5c07aea --evidence-dir` 738 tests OK, skips 0, failures/errors 0, eligible true,
+  state stable, 1279 s(CI-VTIER 실측 V2와 일부 동시 실행), evidence `9a593f73…`(commit `217fc73`), reuse rejected(`FINGERPRINT_CHANGED`·`SOURCE_READSET_PARTIAL`).
+  read set partial: `CHILD_NOT_ALLOWED` 16,744, `CHILD_LOG_INCOMPLETE`, `CHILD_HOOK_MISSING`(Python 실행 185 / hook 184 — N02로 면제가 없어진 시작 전 종료 자식, 의도한 보수 동작).
+  로그 사본 `CI-OPT-001-v3-iso-217fc73.log`. 이종 모델 재검토·원격 CI는 대기(새 push는 미승인). verified·병합 아님.
