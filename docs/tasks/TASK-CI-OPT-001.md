@@ -1260,3 +1260,4 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   5차 재검토·게시는 승인 대기. verified·병합 아님.
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 5차 패키지 모두")**: 원격 `codex/ci-opt-001-r5`=`d4d378b`, 미게시 `f707bf4`·`8305a51`·`5fdf500`·이 기록 커밋. 작성자 lwwde07(기존 게시와 같은 신원),
   허용 경로(scripts/tests/docs)만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `8305a51` 이후 변경은 Task 문서뿐. 대상: PR #16 fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`0c173c8`, PR #16)**: run `44248762600` plan·gate success, Windows 3.11·3.12 각 743 tests OK, failures/errors/skips 0, eligible true. `0c173c8`(코드 `8305a51`)에만 귀속. 5차 재검토 대기. 이 기록 커밋은 로컬 전용.
