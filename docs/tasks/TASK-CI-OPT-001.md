@@ -1592,3 +1592,28 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     | `PYTHONIOENCODING=utf-8` | OK |
     `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
   정상 출력 partial 변화: 없음(기존 단언 변경 없음).
+- **2026-11-18 20차 독립 교차검토(Codex Orca worker, 대상 `be31836`)**: **PASS_WITH_FINDINGS**(P2 1). R1901·R1902 resolved. RA-1~RA-4 유지. 반영 코드 후보 `a3a5deb`(로컬 커밋, 미게시).
+  R2001(P2) `_listing`이 env_manifest 범위를 일괄 제외해, 실행 환경 디렉터리의 `os.listdir` 결과가 기록되지 않음(manifest 그대로인 채 항목 추가 뒤에도 reuse 허용). R1901과 같은 원인 → 제외 조건 제거(`derived`만 유지). 목록 레코드는 저장소 범위가 아니면 절대 정규 경로·scope `outside`(저장소 안 `.venv` 포함)로 기존 `listings` 재검증에 연결. 실패한 목록·자체 디렉터리 면제·별칭은 기존 공통 판정 그대로.
+  같은 원인 점검(`scripts/readset.py`의 env_manifest 분기 전수):
+    | 위치 | 판정 |
+    | `_listing`(직접·자식 `listing` 보고, `listdir`·`scandir`·glob 래퍼 공통 진입) | 일괄 제외 → 이번에 수정 |
+    | `_directory_kind` | 19차 R1901에서 수정됨 |
+    | `_record_read`(파일 내용) | env_reads에 내용 상태 기록, 제외 아님 |
+    | `_record_state`(조상·디렉터리 종류)·`_record_absent`(부재) | env_reads에 기록, 제외 아님 |
+    | `_input_entry` | 조회 전용 |
+    | `_scope`(`.venv`를 repo에서 분리) | 분류만, 기록 경로는 위 분기 |
+    | `ci_plan.suite_fingerprint`의 ignored repo_reads `.venv` 생략 | readset이 `.venv`를 repo로 분류하지 않아 도달 없음 |
+    다른 일괄 제외는 없다. `derived`(`__pycache__`)와 ctypes `dlopen`(저장소 경로만 partial)은 실행 환경 범위 제외가 아니라 이번 범위 밖이다.
+  회귀: 기존 AC-12 테스트(`test_input_read_again_must_still_be_what_was_first_read`)에서 호출하는 `check_listing_inside_the_runtime_environment` 추가. 다루는 사례(`sys.prefix`를 fixture로 대체, 저장소 밖·저장소 안 `.venv` 두 경우):
+    - env_manifest 디렉터리 목록: 절대 경로·scope `outside` 기록, `valid_readset`, complete
+    - 없는 디렉터리 목록: `FileNotFoundError` 기록
+    - 실행이 만든 디렉터리 목록: 기록 없음
+    - 고정 manifest 그대로 항목 추가: 지문 변경, `decide_suite_reuse` 거부(추가 전 같은 지문은 허용)
+  수정 전 코드 대조(`be31836` `scripts/readset.py`): 두 경우 모두 목록 레코드 없음(`None != 'outside'`)으로 실패, 수정 후 통과. 검토자 재현(env-listing, 기존 probe venv) 수정본: 대상 목록 1건, `same_fp False`, reuse 거부(`FINGERPRINT_CHANGED`).
+  V2(영향 3모듈):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK(138건, 실패·오류·skip 0) |
+    | `PYTHONIOENCODING=utf-8` | OK(138건, 실패·오류·skip 0) |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 없음(기존 단언 변경 없음). 실행 환경 디렉터리 목록이 read set에 새로 들어가므로 그 디렉터리의 항목이 바뀐 실행은 재사용되지 않는다(관측 증가, 새 partial 사유 없음).
+  남은 한계: `__pycache__` 목록은 기존대로 제외한다. 원격 Windows 두 조합은 확인하지 않았다.
