@@ -12,6 +12,7 @@ import builtins
 import base64
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -417,7 +418,11 @@ class CbmCLI:
         started = self.clock()
         projects = self.call("list_projects", format="json", limit=500)
         need(projects.get("has_more") is False, "CBM_MISSING_PAGE")
-        matches = [p for p in projects.get("projects", [])
+        # 4th review R404: nested items are checked before use.
+        need(isinstance(projects.get("projects"), list)
+             and all(isinstance(p, dict) and isinstance(p.get("root_path", ""), str) for p in projects["projects"]),
+             "CBM_UNKNOWN_SCHEMA")
+        matches = [p for p in projects["projects"]
                    if Path(p.get("root_path", "")).resolve() == self.root]
         need(len(matches) == 1, "CBM_WRONG_ROOT")
         project = matches[0]["name"]
@@ -1424,10 +1429,16 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
             # 3rd review R04: side fields keep their shapes or the answer is discarded.
             need(all(graph.get(k) is None or isinstance(graph[k], str) for k in ("reason", "state", "freshness",
                                                                                "coverage", "index_id", "index_id_kind"))
-                 and (graph.get("seconds") is None or type(graph["seconds"]) in {int, float})
-                 and (graph.get("generation") is None or isinstance(graph["generation"], (str, int))),
+                 and (graph.get("seconds") is None or (type(graph["seconds"]) in {int, float}
+                                                       and math.isfinite(graph["seconds"]) and graph["seconds"] >= 0))
+                 and (graph.get("generation") is None or type(graph["generation"]) in {str, int}),
                  "CBM_UNKNOWN_SCHEMA")
-        except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
+            # 4th review R404: a failed or not-run graph is never complete.
+            need(not (graph["complete"] and graph.get("state") in {"failed", "not_run"}), "CBM_UNKNOWN_SCHEMA")
+        except (PlanError, OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, OverflowError,
+                RecursionError, subprocess.TimeoutExpired, sdd.SddError) as exc:
+            # 4th review R404: any malformed inner structure (e.g. a null project item) is
+            # a failed graph: V1 keeps its direct checks, V2 falls back to V3.
             # Re-review N02: a malformed (possibly non-dict) answer is discarded, never merged.
             graph = {**empty_graph, "state": "failed",
                      "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA"}

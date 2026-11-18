@@ -145,6 +145,15 @@ def validate(body, root):
         raise HarnessError("invalid_task") from None
 
 
+def legacy_official_v3_failed(checks):
+    """A failed official V3 in a validation list written before official_v3_unresolved
+    existed (CI-VTIER-001 3rd/4th review R02/R403)."""
+    if not isinstance(checks, list):
+        return False
+    planners = [c.get("planner") for c in checks if isinstance(c, dict) and isinstance(c.get("planner"), dict)]
+    return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
+
+
 class ManagedStore:
     def __init__(self, directory, root):
         self.directory, self.root = Path(directory).resolve(), Path(root).resolve()
@@ -264,6 +273,7 @@ class ManagedStore:
         return self.get(task)
 
     def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False):
+        overridden = False
         if state not in STATES:
             raise HarnessError("invalid_state")
         with self.tx() as c:
@@ -275,6 +285,7 @@ class ManagedStore:
                         or not result or result.get("runtime", {}).get("settled") is not True):
                     raise HarnessError("orca_settlement_required")
                 if r["control"]:
+                    overridden = state not in {"PAUSED", "CANCELLED"}
                     state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
             if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}:
                 raise HarnessError("control_requested")
@@ -289,7 +300,18 @@ class ManagedStore:
                 if actual and incoming.get("attempt") != actual.get("attempt"):
                     self.event(c, task, "runtime_checkpoint", {"role": "author", "binding": actual})
                 result = {**result, "runtime": incoming}
-            values.update(result or {})
+            result = dict(result or {})
+            if overridden:
+                # CI-VTIER-001 4th review R402: a settlement turned into PAUSED/CANCELLED by a
+                # control that arrived first is no validation result (atomically, here).
+                result.update(validation_passed=False, validation_status=None, wiki=None)
+                result.pop("official_v3_unresolved", None)
+            if ("validation" in result and "official_v3_unresolved" not in result
+                    and "official_v3_unresolved" not in values and legacy_official_v3_failed(values.get("validation"))):
+                # 4th review R403: a record from before the flag keeps its official V3
+                # failure when its validation list is replaced.
+                result["official_v3_unresolved"] = True
+            values.update(result)
             safe(values)
             elapsed = r["elapsed"] + (max(0, time.time() - r["started"]) if release else 0)
             c.execute("UPDATE managed_tasks SET state=?,result=?,worktree=?,lease=?,pid=?,elapsed=? WHERE id=?", (state, encode(values), worktree or r["worktree"], None if release else lease, None if release else r["pid"], elapsed, task))

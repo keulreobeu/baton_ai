@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md"]
 plan = "docs/plans/ci-vtier.md"
 adr = "docs/adr/ADR-CI-VTIER-001.md"
-scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json"]
+scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "src/baton/managed.py", "src/baton/evidence.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json"]
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
 ```
 
@@ -77,3 +77,13 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 4차 패키지")**: 원격 `codex/ci-vtier-001`=`57c8ff5`, 미게시 `4244da7`·`097a7e3`·`50c95c1`·`11c27da`·이 기록 커밋. 작성자 lwwde07,
   허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `50c95c1` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만(force·main 병합 없음).
 - **2026-11-18 원격 CI(`36e5bbc`, draft PR #17)**: run `44228682519` plan·gate success, Windows 3.11·3.12 각 757 tests OK, failures/errors/skips 0, eligible true. `36e5bbc`(코드 `50c95c1`)에만 귀속. 4차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 4차 이종 모델 재검토(ChatGPT, 대상 `50c95c1`)**: **FAIL**(P1 0, P2 3, P3 1). R01~R04 partial(R01 잔존은 P3로 하향). RA-4 재검토 불필요, CI-OPT 병합 회귀 미발견. 격리 재현(Linux 3.13.5).
+  R401(P3) 성공 배치에서 결과 없는 시작 테스트 기록 인정 → 깨끗한 배치는 시작 ID = 성공 ID(실패 배치 제외).
+  R402(P2) `_verify` 예외·인터럽트 뒤 이전 PASS 잔존, Orca 정착 중 제어 시 통과·플래그 해제·Wiki → 공통 `settled_validation()`, `_verify` 시작 시 초기화, 정착 중 제어는 통과 아님,
+  `ManagedStore.update`의 제어 상태 전환 시 검증 필드 원자 무효화, V3 자기 프로세스 중단도 플래그 불변.
+  R403(P2) 플래그 없는 이전 기록이 `validation` 교체로 V3 실패 소실, 증거 게이트 V3 실패 미기록 → 저장 시 레거시 실패 이전(`legacy_official_v3_failed`), 게이트 실패 시 플래그 기록.
+  R404(P2) CBM `projects: [null]` 등 내부 비객체 항목이 `AttributeError`로 전파, bool generation·NaN/음수 seconds·failed+complete 허용 → 중첩 검사·예외 범위 확대·의미 검사.
+  범위 추가: `src/baton/managed.py`(제어에 의한 상태 전환 시 검증 필드 원자 무효화·레거시 이전)·`src/baton/evidence.py`(증거 게이트 V3 실패 기록) — 4차 지적 위치 그대로, 다른 동작 변경 없음.
+  회귀: 기록 불일치 1종+실제 unittest 결과 누락, 예외·인터럽트 뒤 상태, 레거시 V3 실패 이전, 증거 게이트 V3 실패, Orca 정착 중 pause·저장 직전 cancel, CBM 응답 7종.
+  영향 모듈 `test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability` 252 중 251 OK(새 Orca 테스트 fixture 오류: FakeOrca 재생성으로 작업 공간 경로 충돌 → 하나로 공유, 재실행 `test_flow_runtime` 58 OK), check_sdd PASS.
+  `managed.py`·`evidence.py`를 쓰는 다른 모듈은 공식 V3에서 확인한다.

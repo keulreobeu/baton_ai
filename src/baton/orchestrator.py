@@ -76,6 +76,13 @@ def read_unittest_record(path):
             and record["successful"] == (record["failures"] == 0 and record["errors"] == 0
                                          and record["unexpected_successes"] == 0)):
         return None
+    # 4th review R401: a batch with no failure, error, skip, expected failure or
+    # unexpected success must show a success for every test it started (a test whose
+    # result never arrived is not proven). Failed batches keep fixture errors as is.
+    clean = not (record["failures"] or record["errors"] or record["skipped_count"]
+                 or record["expected_failures"] or record["unexpected_successes"])
+    if clean and set(started) != set(passed):
+        return None
     return record
 
 
@@ -103,12 +110,28 @@ def official_v3_fields(checks, *, stopped=False):
     for check in checks or []:
         planner = check.get("planner") if isinstance(check, dict) else None
         if isinstance(planner, dict) and planner.get("effective_tier") == "V3":
-            if stopped:
+            # 4th review R402: a V3 whose own process was stopped (pause, cancel or the
+            # Task time budget) is no result either.
+            if stopped or check.get("stop_reason"):
                 return {}
             ok = (planner.get("actual_status") == "passed" and planner.get("execution_complete") is True
                   and all(isinstance(c, dict) and c.get("exit_code") == 0 and not c.get("stop_reason") for c in checks))
             return {"official_v3_unresolved": not ok}
     return {}
+
+
+def settled_validation(checks, *, stopped=False):
+    """4th review R402: the one rule every path that ends a validation applies.
+
+    A stopped validation (or none) is no result: validation_passed false, status
+    null, the official V3 flag left as it was. Otherwise the status and V3 flag come
+    from the checks; callers decide validation_passed from their own criteria."""
+    if stopped or checks is None:
+        return {"validation_passed": False, "validation_status": None}
+    return {"validation_status": validation_status(checks), **official_v3_fields(checks)}
+
+
+CLEARED_VALIDATION = {"validation_passed": False, "validation_status": None}
 
 
 def persisted_text(value):
@@ -288,7 +311,7 @@ class Orchestrator:
             metrics = self.store.observe(task_id, "begin", row, tree)
             if metrics:
                 self.store.update(task_id, lease, "PLANNING", result={"metrics_run_id": metrics["run_id"]})
-            self.store.update(task_id, lease, "PLANNING", worktree=str(tree), result={"base_commit": base, "validation_passed": False,
+            self.store.update(task_id, lease, "PLANNING", worktree=str(tree), result={"base_commit": base, **CLEARED_VALIDATION,
                               "author_worker": "local:" + task_id + ":" + str(row["attempt"])})
             before = snapshot(tree); check_scope(task, before)
             context = pack_context(task, tree, row["result"].get("validation"))
@@ -371,33 +394,34 @@ class Orchestrator:
                 if reason:
                     # 3rd review R02/R03: a stopped validation is no result; stale status is cleared.
                     return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason,
-                                       validation_passed=False, validation_status=None, **official_v3_fields(validation, stopped=True))
+                                       **settled_validation(validation, stopped=True))
                 final_changes = snapshot(tree); check_scope(task, final_changes)
                 if git(tree, "rev-parse", "HEAD").strip() != base: raise HarnessError("worktree_head_changed")
                 passed = all(c["exit_code"] == 0 for c in validation)
                 if passed:
                     state = "REVIEW_REQUIRED"  # Completion always requires independent evidence.
                     return self.finish(task_id, lease, state, validation=validation, validation_passed=True,
-                                       validation_status=validation_status(validation), changed_files=final_changes,
-                                       **official_v3_fields(validation))
+                                       changed_files=final_changes, **settled_validation(validation))
                 if row["attempt"] < task["execution"]["max_attempts"]:
                     self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False,
-                                                                      "validation_status": validation_status(validation), "retry_cause": "validation_failed",
-                                                                      **official_v3_fields(validation)}, release=True)
+                                                                      "retry_cause": "validation_failed",
+                                                                      **settled_validation(validation)}, release=True)
                     close_metrics()
                     self.store.ready(task_id, automatic=True)
                     return self._run(task_id)
                 return self.finish(task_id, lease, "FAILED", reason="validation_failed", validation=validation, validation_passed=False,
-                                   validation_status=validation_status(validation), **official_v3_fields(validation))
+                                   **settled_validation(validation))
         except HarnessError as exc:
             if self.store.get(task_id)["lease"] != lease:
                 return self.store.export(task_id)
             reason = self.control(task_id, lease)
-            return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "BLOCKED", reason=str(exc))
+            return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "BLOCKED", reason=str(exc),
+                               **CLEARED_VALIDATION)
         except BaseException as exc:
             # No reflected exception text or provider diagnostics in state.
             try:
-                self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error")
+                self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error",
+                            **CLEARED_VALIDATION)
             finally:
                 if isinstance(exc, (KeyboardInterrupt, SystemExit)): raise
             return self.store.export(task_id)
@@ -645,8 +669,8 @@ class Orchestrator:
             checks = result.get("validation") or []
             if result.get("official_v3_unresolved") is not None:
                 return result["official_v3_unresolved"] is True
-            planners = [c.get("planner") for c in checks if isinstance(c, dict) and isinstance(c.get("planner"), dict)]
-            return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
+            from .managed import legacy_official_v3_failed
+            return legacy_official_v3_failed(checks)
         except Exception:
             return True
 
@@ -790,7 +814,9 @@ class Orchestrator:
         try:
             tree = prepare_worktree(self.store, row)
             check_scope(task, snapshot(tree))
-            self.store.update(task_id, lease, "VALIDATING")
+            # 4th review R402: a new validation replaces the previous result even when it
+            # ends by an error or an interruption.
+            self.store.update(task_id, lease, "VALIDATING", result=dict(CLEARED_VALIDATION))
             def stop():
                 return self.control(task_id, lease) or ("timeout" if row["elapsed"] + time.monotonic() - started >= task["execution"]["total_timeout_seconds"] else None)
             checks = self.validate(task, tree, stop, stage=stage,
@@ -798,18 +824,18 @@ class Orchestrator:
             reason = stop()
             if reason:
                 return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason,
-                                   validation_passed=False, validation_status=None, **official_v3_fields(checks, stopped=True))
+                                   **settled_validation(checks, stopped=True))
             changes = snapshot(tree); check_scope(task, changes)
             if git(tree, "rev-parse", "HEAD").strip() != row["result"].get("base_commit"):
                 raise HarnessError("worktree_head_changed")
             passed = bool(checks) and all(check["exit_code"] == 0 for check in checks)
             return self.finish(task_id, lease, "REVIEW_REQUIRED" if passed else "FAILED", validation=checks, validation_passed=passed,
-                               validation_status=validation_status(checks), changed_files=changes,
-                               **official_v3_fields(checks))
+                               changed_files=changes, **settled_validation(checks))
         except HarnessError as exc:
-            return self.finish(task_id, lease, "BLOCKED", reason=str(exc))
+            return self.finish(task_id, lease, "BLOCKED", reason=str(exc), **CLEARED_VALIDATION)
         except BaseException as exc:
-            self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error")
+            self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error",
+                        **CLEARED_VALIDATION)
             if isinstance(exc, (KeyboardInterrupt, SystemExit)): raise
             return self.store.export(task_id)
 

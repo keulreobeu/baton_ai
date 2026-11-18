@@ -638,6 +638,7 @@ def ingest(store, task_id, receipt, client=None):
                         checks = []
                     passed = bool(checks) and all(x["exit_code"] == 0 for x in checks)
                     control = store.get(task_id)["control"]
+                    passed = passed and not control  # 4th review R402: a stopped settlement is no pass
                     state = "CANCELLED" if control == "cancel" else "PAUSED" if control == "pause" else "REVIEW_REQUIRED" if passed else "FAILED"
                     final_changes = changes
                     failure = None
@@ -651,16 +652,17 @@ def ingest(store, task_id, receipt, client=None):
                         passed = False
                         if not control: state = "BLOCKED"
                     from .wiki_cli import assess
-                    from .orchestrator import official_v3_fields, validation_status
-                    status = validation_status(checks)
+                    from .orchestrator import settled_validation
+                    outcome = settled_validation(checks, stopped=bool(control))
+                    status = outcome["validation_status"]
                     wiki = (({"action": "SKIP", "reason": "validation_not_run", "blocking": False} if status == "not_run"
                              else assess(store, task_id, {"changed_files": final_changes, "validation": checks}))
                             if passed else None)
                     _settle_author(store, task_id, row["lease"], state,
                                    {"base_commit": binding["base_sha"], "changed_files": final_changes,
                                     "runtime": binding, "author_worker": "orca:" + binding["dispatch_id"],
-                                    "validation": checks, "validation_passed": passed, "wiki": wiki,
-                                    "validation_status": status, **official_v3_fields(checks),
+                                    "validation": checks, "wiki": wiki,
+                                    **outcome, "validation_passed": passed,
                                     "reason": failure or ("validation_passed" if passed else "validation_failed")},
                                    worktree=str(path))
                 else:

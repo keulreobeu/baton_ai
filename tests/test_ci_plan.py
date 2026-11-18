@@ -825,16 +825,29 @@ class SyntheticGitTests(unittest.TestCase):
                        # 3rd review R04: side fields keep their shapes.
                        {"selected": [], "complete": False, "reason": ["x"]},
                        {"selected": [], "complete": False, "freshness": 1},
-                       {"selected": [], "complete": False, "seconds": "slow"}):
+                       {"selected": [], "complete": False, "seconds": "slow"},
+                       # 4th review R404: bool generation, non-finite or negative time, a
+                       # failed/not-run graph that claims completeness.
+                       {"selected": [], "complete": False, "generation": True},
+                       {"selected": [], "complete": False, "seconds": float("nan")},
+                       {"selected": [], "complete": False, "seconds": -1},
+                       {"selected": [], "complete": True, "state": "failed"},
+                       {"selected": [], "complete": True, "state": "not_run"},
+                       # Inner CBM answers that are not objects (real CbmCLI.inspect).
+                       ("projects", [None]), ("projects", [3])):
             class Bad:
                 def inspect(self, *args, answer=answer): return answer
+            adapter = Bad()
+            if isinstance(answer, tuple):
+                adapter = cp.CbmCLI(self.root, executable="fake-cbm")
+                adapter.call = lambda tool, answer=answer, **args: {"has_more": False, answer[0]: answer[1]}
             with self.subTest(answer=answer):
-                fast = self.planner(adapter=Bad())
+                fast = self.planner(adapter=adapter)
                 self.assertEqual(fast["effective_tier"], "V1")
                 self.assertEqual(fast["graph"]["state"], "failed")
                 self.assertIn("CBM_UNKNOWN_SCHEMA", fast["reasons"])
                 self.assertIn("transitive_impact", fast["unverified_scope"])
-                local = self.planner("checkpoint", Bad())
+                local = self.planner("checkpoint", adapter)
                 self.assertEqual(local["effective_tier"], "V2")
                 self.assertIn("PARTIAL_IMPACT_SCOPE", local["reasons"])
 

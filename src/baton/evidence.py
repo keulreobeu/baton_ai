@@ -97,9 +97,29 @@ def _write(store, row, name, value, *, clear=False):
     return store.export(row["id"])
 
 
+def _note_official_v3(store, row, checks):
+    """CI-VTIER-001 4th review R403: an official V3 failure found by the evidence gate
+    stays unresolved for later plans. True when it is unresolved (the gate then fails).
+    A pass does not clear the flag here (the stored result must stay what the gate read);
+    the next complete passing V3 of the Task clears it."""
+    from .orchestrator import official_v3_fields
+    if official_v3_fields(checks).get("official_v3_unresolved") is not True:
+        return False
+    with store.tx() as c:
+        current = store.row(c, row["id"])
+        values = json.loads(current["result"])
+        if values.get("official_v3_unresolved") is not True:
+            values["official_v3_unresolved"] = True
+            c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), row["id"]))
+            store.event(c, row["id"], "official_v3_recorded", {"official_v3_unresolved": True})
+    return True
+
+
 def _checks(store, row, tree):
     from .orchestrator import Orchestrator
     checks = Orchestrator(store).validate(row["task"], tree, lambda: None)
+    if _note_official_v3(store, row, checks):
+        raise HarnessError("evidence_validation_failed")
     configured = row["task"]["validation"]
     if len(checks) != len(configured) or any(x.get("exit_code") != 0 for x in checks):
         raise HarnessError("evidence_validation_failed")

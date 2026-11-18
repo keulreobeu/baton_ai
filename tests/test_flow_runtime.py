@@ -112,6 +112,44 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         self.assertEqual(stages, ["checkpoint"])
         self.assertEqual(row["state"], "REVIEW_REQUIRED")
 
+    def test_control_during_author_settlement_is_no_pass(self):
+        """CI-VTIER-001 4th review R402: a pause/cancel that arrives while the Orca author
+        is validated, or just before the settlement is stored, leaves no pass, no Wiki
+        verification and the official V3 flag as it was."""
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        client = FakeOrca(self.root)
+        for number, (label, action) in enumerate([("during_validation", "pause"), ("before_store", "cancel")]):
+            with self.subTest(arrives=label):
+                name = "ORCA%d" % number
+                self.orca(name)
+                row = Orchestrator(self.store, runtime_client=client).run(name)
+                path = Path(row["worktree"]); (path / "src/value.py").write_text("value = %d\n" % (number + 2), encoding="utf-8")
+                with self.store.tx() as c:
+                    values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id=?", (name,)).fetchone()[0])
+                    values["official_v3_unresolved"] = True
+                    c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (json.dumps(values), name))
+                did = row["result"]["runtime"]["dispatch_id"]
+                client.settle(did)
+                def validate(*args, **kwargs):
+                    if label == "during_validation":
+                        self.store.control(name, action)
+                    return deepcopy(passing)
+                def assess(*args, **kwargs):
+                    self.store.control(name, action)
+                    return {"action": "SKIP", "reason": "test", "blocking": False}
+                with patch.object(Orchestrator, "validate", validate), patch("baton.wiki_cli.assess", assess):
+                    row = ingest(self.store, name, self.receipt(did), client)
+                result = row["result"]
+                self.assertEqual(row["state"], "PAUSED" if action == "pause" else "CANCELLED")
+                self.assertIs(result["validation_passed"], False)
+                self.assertIsNone(result["validation_status"])
+                self.assertIsNone(result["wiki"])
+                self.assertIs(result["official_v3_unresolved"], True)
+                if row["state"] == "PAUSED":
+                    self.store.control(name, "cancel")  # release the scope for the next case
+
     def test_orca_dispatch_notification_and_duplicate_are_idempotent(self):
         self.orca(); client = FakeOrca(self.root)
         row = Orchestrator(self.store, runtime_client=client).run("ORCA")
