@@ -1617,3 +1617,10 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
   정상 출력 partial 변화: 없음(기존 단언 변경 없음). 실행 환경 디렉터리 목록이 read set에 새로 들어가므로 그 디렉터리의 항목이 바뀐 실행은 재사용되지 않는다(관측 증가, 새 partial 사유 없음).
   남은 한계: `__pycache__` 목록은 기존대로 제외한다. 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-19 21차 독립 교차검토(Codex Orca worker, 대상 `a3a5deb`, 검토 HEAD `686723c`)**: **PASS**(신규 finding P1/P2/P3 각 0). R2001 resolved, R1901·R1801 회귀 없음. RA-1~RA-4 유지. 최종 코드 후보 `a3a5deb`(로컬 커밋, 미게시).
+  근거 요지: 실제 임시 venv 기존 디렉터리에 항목을 추가하면 manifest 동일·목록 1건·지문 불일치·`FINGERPRINT_CHANGED`로 재사용 거부(수정 전 `be31836`은 목록 0건·재사용 허용). 실패 목록 조회(`FileNotFoundError` 기록)와 순차 자식의 `os.listdir`·`os.scandir`도 기록·거부. 같은 원인 점검(`readset.py`·`ci_plan.py`·`verify_environment.py`)에서 실행 환경 범위를 일괄 제외하는 다른 분기 없음, 새 partial 관찰 없음.
+  검토자 V2(영향 3모듈, Windows Python 3.12.10):
+    | 환경 | 결과 |
+    | `PYTHONIOENCODING` 미설정 | OK(138건, 실패·오류·skip 0) |
+    | `PYTHONIOENCODING=utf-8` | OK(138건, 실패·오류·skip 0) |
+    두 실행 모두 `tests/test_readset.py`의 소켓 `ResourceWarning` 1회 기록(실패 아님). 로컬 V3는 이 기록 커밋을 최종 후보 HEAD로 두고 별도 1회 실행한다.
