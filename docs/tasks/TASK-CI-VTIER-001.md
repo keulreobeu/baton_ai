@@ -92,3 +92,4 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   로그 사본 `CI-VTIER-001-v3-94f2316.log`. 5차 재검토·게시는 승인 대기. verified·병합 아님.
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 5차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`36e5bbc`, 미게시 `4c7a03b`·`d4d378b`(CI-OPT branch에 게시됨)·`f707bf4`·`3f41836`·`8305a51`·`5fdf500`·`4c2de5d`·`94f2316`·`9166d40`·이 기록 커밋.
   작성자 lwwde07, 허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `94f2316` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`9681949`, draft PR #17)**: run `44248765957` plan·gate success, Windows 3.11·3.12 각 761 tests OK, failures/errors/skips 0, eligible true. `9681949`(코드 `94f2316`)에만 귀속. 5차 재검토 대기. 이 기록 커밋은 로컬 전용.
