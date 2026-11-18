@@ -1565,3 +1565,19 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 연산 종류 판정은 감사 이벤트의 모드·플래그만 쓴다(감싼 호출 밖 생성은 기존 규칙).
     - ACL 등 다른 속성은 16차와 같이 없다.
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 18차 독립 교차검토(Codex Orca worker, 대상 `f077d3c`)**: **PASS_WITH_FINDINGS**(P2 1, P3 1). R1701 resolved. RA-1~RA-4 유지. 반영 코드 후보 ``(로컬 커밋, 미게시).
+  R1801(P2) 디렉터리에 대한 `sqlite3.connect(mode=ro)` 실패에서 경로 종류 누락 → `_record_read`의 디렉터리 분기(직접·자식 보고)가 비자체 기존 디렉터리를 `_directory_kind`로 `"dir"` 의존성에 남긴다(종료 시·지문 재검증). 자식 디렉터리 이벤트에 birth·객체 ID를 추가했다. 종류 불명은 partial.
+  R1802(P3) `wb` 뒤 `ab`가 complete인데 Spec 문구("섞인 경우 partial")와 달라 보임 → 구현은 그대로 두고 17차 Spec 문구를 고쳤다(부재에서 만든 연산들로 판정, 자체 파일에 이어지는 쓰기는 영향 없음).
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_directory_kind_and_writes_after_creation` 추가. 다루는 사례:
+    - 디렉터리에 SQLite ro 연결 실패(직접·실제 자식): `"dir"` 기록, `valid_readset`, 디렉터리를 DB로 바꾸면 지문 값 변경
+    - 실행이 만든 디렉터리: 기록 없음·complete
+    - `wb` 뒤 `ab`: complete
+    - 정리 뒤 `ab` 재생성: partial
+  수정 전 코드 대조(`f077d3c` scripts): 디렉터리 SQLite 직접·자식 2건 모두 `"dir"` 기록 없음, 수정 후 기록. 검토자 재현 수정본: sqlite-directory는 지문 변경·reuse 거부, mixed(`wb` 뒤 `ab`)는 reuse 허용·결과 일치 유지.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 없음(기존 단언 변경 없음).
+  남은 한계: 디렉터리 종류만 기록하고 그 안 항목은 목록 규칙을 따른다. ACL 등 다른 속성은 16차와 같다. 원격 Windows 두 조합은 확인하지 않았다.
