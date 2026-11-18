@@ -211,6 +211,50 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         self.assertEqual((calls[-1][0], compact["validation_passed"], compact["validation_status"],
                           compact["official_v3_unresolved"]), ("BLOCKED", False, None, True))
 
+    def test_interrupted_second_settlement_step_resumes_and_fallback_skips_it(self):
+        """CI-VTIER-001 6th review R601: a Wiki failure after the stored settlement leaves a
+        pending second step that the repeated end event completes (lease released once);
+        a compact fallback that already released skips the second step without an error."""
+        import baton.runtime as runtime_module
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        client = FakeOrca(self.root)
+        self.orca("ORCAWIKI")
+        row = Orchestrator(self.store, runtime_client=client).run("ORCAWIKI")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 11\n", encoding="utf-8")
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(passing)), \
+                patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+            ingest(self.store, "ORCAWIKI", self.receipt(did), client)
+        row = self.store.get("ORCAWIKI")
+        self.assertEqual(row["state"], "REVIEW_REQUIRED")
+        self.assertIsNotNone(row["lease"])
+        self.assertIs(row["result"]["settlement_pending"], True)
+        with patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "resumed", "blocking": False}):
+            row = ingest(self.store, "ORCAWIKI", self.receipt(did), client)
+        self.assertIsNone(row["lease"])
+        self.assertIs(row["result"]["settlement_pending"], False)
+        self.assertEqual(row["result"]["wiki"]["reason"], "resumed")
+        self.store.control("ORCAWIKI", "cancel")
+        self.orca("ORCACOMPACT")
+        row = Orchestrator(self.store, runtime_client=client).run("ORCACOMPACT")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 12\n", encoding="utf-8")
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        real_update = self.store.update
+        def update(task, lease, state, **options):
+            if (options.get("result") or {}).get("settlement_pending") is True:
+                raise HarnessError("unsafe_payload")
+            return real_update(task, lease, state, **options)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(passing)), \
+                patch.object(self.store, "update", update), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no second step after a fallback")):
+            row = ingest(self.store, "ORCACOMPACT", self.receipt(did), client)
+        self.assertEqual(row["state"], "BLOCKED")
+        self.assertIsNone(row["lease"])
+
     def test_orca_dispatch_notification_and_duplicate_are_idempotent(self):
         self.orca(); client = FakeOrca(self.root)
         row = Orchestrator(self.store, runtime_client=client).run("ORCA")

@@ -125,10 +125,13 @@ def _note_official_v3(store, row, checks):
     return True
 
 
-def _checks(store, row, tree):
+def _checks(store, row, tree, note_row=None):
+    """note_row: the Task whose evidence the result decides (6th review R605: an integration
+    tree's failure belongs to the integration Task, not to a member, so a COMPLETED member's
+    evidence is never removed by another Task's run)."""
     from .orchestrator import Orchestrator
     checks = Orchestrator(store).validate(row["task"], tree, lambda: None)
-    if _note_official_v3(store, row, checks):
+    if _note_official_v3(store, note_row or row, checks):
         raise HarnessError("evidence_validation_failed")
     configured = row["task"]["validation"]
     if len(checks) != len(configured) or any(x.get("exit_code") != 0 for x in checks):
@@ -181,6 +184,10 @@ def _member_proofs(store, names, task_id):
     base = None
     for name in names:
         row = store.get(name)
+        if row["result"].get("official_v3_unresolved") is True:
+            # 6th review R604: a member with an unresolved official V3 failure (also one
+            # recorded before evidence was invalidated on failure) cannot be integrated.
+            raise HarnessError("integration_member_official_v3_unresolved")
         candidate, _ = _current_candidate(store, row, allow_completed=name != task_id)
         review = _review_proof(store, row, candidate)
         if base is not None and candidate["base_sha"] != base:
@@ -202,6 +209,8 @@ def validate_member_records(connection, members):
         if current is None:
             raise HarnessError("integration_member_evidence_changed")
         result = json.loads(current["result"])
+        if result.get("official_v3_unresolved") is True:
+            raise HarnessError("integration_member_official_v3_unresolved")  # 6th review R604
         if (current["state"] not in {"REVIEW_REQUIRED", "COMPLETED"} or current["lease"]
                 or digest(json.loads(current["body"])) != proof.get("task_hash")
                 or digest(result.get("candidate")) != proof.get("candidate_hash")
@@ -288,7 +297,7 @@ def _record_integration(store, row, request, value):
                 raise HarnessError("integration_tree_requires_review")
             checks = {}
             for member in rows:
-                checks[member["id"]] = _checks(store, member, tree)
+                checks[member["id"]] = _checks(store, member, tree, note_row=row)
                 _tree(store, str(tree), integration_sha)
             _, current = _member_proofs(store, names, row["id"])
             if bindings != current:

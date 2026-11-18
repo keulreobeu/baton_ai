@@ -110,12 +110,16 @@ def validation_stop_reason(checks):
     """5th review R502: a validation stopped by pause, cancel or the time budget, seen in
     the planner check or in any of its nested executed checks (a declared check that
     already failed does not receive the nested stop reason). None when not stopped."""
+    # 6th review R603: every top-level check (a second declared check, a project without
+    # a planner) and every nested planner check.
     for check in checks or []:
-        planner = check.get("planner") if isinstance(check, dict) else None
-        if isinstance(planner, dict):
-            for item in [check, *(planner.get("executed_checks") or [])]:
-                if isinstance(item, dict) and item.get("stop_reason") in STOP_REASONS:
-                    return item["stop_reason"]
+        if not isinstance(check, dict):
+            continue
+        planner = check.get("planner")
+        nested = planner.get("executed_checks") or [] if isinstance(planner, dict) else []
+        for item in [check, *nested]:
+            if isinstance(item, dict) and item.get("stop_reason") in STOP_REASONS:
+                return item["stop_reason"]
     return None
 
 
@@ -643,7 +647,10 @@ class Orchestrator:
             if not stable:
                 for result in results:
                     result["exit_code"] = 2
-                    result["stop_reason"] = "validation_state_changed"
+                    result["state_changed"] = True
+                    # 6th review R603: a stop reason (pause/cancel/timeout) is kept.
+                    if result.get("stop_reason") not in STOP_REASONS:
+                        result["stop_reason"] = "validation_state_changed"
             if not results:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")

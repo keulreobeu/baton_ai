@@ -554,6 +554,10 @@ def ingest(store, task_id, receipt, client=None):
         if event_id in binding["events"]:
             if binding["events"][event_id] != event_hash: raise HarnessError("runtime_event_conflict")
             if binding.get("settled"):
+                if key == "runtime" and row["lease"] and row["result"].get("settlement_pending") is True:
+                    # 6th review R601: the stored settlement's second step (Wiki outcome and
+                    # lease release) did not finish; complete only that step.
+                    _finish_author_settlement(store, task_id, row["lease"])
                 _reserve_slot(store, task_id, binding["role"], row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
             return store.export(task_id)
         if sequence <= binding["sequence"] or binding.get("settled"):
@@ -668,15 +672,14 @@ def ingest(store, task_id, receipt, client=None):
                                               "wiki": {"action": "SKIP", "reason": "validation_not_run", "blocking": False}
                                               if passed and skip else None,
                                               **outcome, "validation_passed": passed,
+                                              **({"settlement_pending": True} if passed and not skip else {}),
                                               "reason": failure or ("validation_passed" if passed else "validation_failed")},
                                              worktree=str(path), release=not (passed and not skip))
-                    if passed and not skip:
-                        # 5th review R501: the Wiki verification follows the stored settlement
-                        # (the lease is held until its outcome is stored).
-                        wiki = (assess(store, task_id, {"changed_files": final_changes, "validation": checks})
-                                if settled["state"] == state else None)
-                        store.update(task_id, row["lease"], settled["state"], result={"runtime": binding, "wiki": wiki},
-                                     release=True, settled_external=True)
+                    if passed and not skip and settled.get("lease"):
+                        # 5th review R501 / 6th review R601: the Wiki verification follows the
+                        # stored settlement; a compact fallback already released (no second
+                        # step), and a failure here is resumed by the repeated end event.
+                        _finish_author_settlement(store, task_id, row["lease"])
                 else:
                     state = "CANCELLED" if row["control"] == "cancel" else "PAUSED" if row["control"] == "pause" else "WAITING_FOR_PROVIDER"
                     _settle_author(store, task_id, row["lease"], state,
@@ -696,6 +699,22 @@ def request_control(store, task_id, action, client=None):
         _request_stop(store, task_id, key, client)
     _settle_unstarted_control(store, task_id)
     return store.export(task_id)
+
+
+def _finish_author_settlement(store, task_id, lease):
+    """Second step of a passing author settlement (6th review R601): record the Wiki outcome
+    of the stored result and release the lease. Idempotent: it runs only while the stored
+    result says the step is pending and the lease is still held."""
+    from .wiki_cli import assess
+    row = store.get(task_id)
+    result = row["result"]
+    if row["lease"] != lease or result.get("settlement_pending") is not True:
+        return row
+    wiki = (assess(store, task_id, {"changed_files": result.get("changed_files"), "validation": result.get("validation")})
+            if row["state"] == "REVIEW_REQUIRED" and result.get("validation_passed") is True else None)
+    return store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": wiki,
+                                                             "settlement_pending": False},
+                        release=True, settled_external=True)
 
 
 def _settle_author(store, task_id, lease, state, result, **options):

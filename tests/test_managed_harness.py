@@ -167,6 +167,18 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertIn("tests.test_guard", coverage["output"].split()[1:2])
         self.assertEqual(result[0]["planner"]["actual_status"], "failed")
 
+    def test_timeout_with_a_state_change_keeps_the_stop_reason(self):
+        """CI-VTIER-001 6th review R603: when a check times out and the tracked state also
+        changes, the stop reason stays (the state change is recorded apart)."""
+        from baton.orchestrator import validation_stop_reason
+        def run(argv, *args, **kwargs):
+            self.state["tracked"] = "changed"
+            return (124, "", "", "timeout")
+        result, _ = self.run_validation(run, stage="in_progress", target_base="b" * 40)
+        nested = result[0]["planner"]["executed_checks"]
+        self.assertTrue(any(c.get("stop_reason") == "timeout" and c.get("state_changed") for c in nested + result))
+        self.assertEqual(validation_stop_reason(result), "timeout")
+
     def test_missing_or_malformed_record_is_a_failure(self):
         """CI-VTIER-001 re-review N01: exit 0 with console text but no valid record fails."""
         result, _ = self.run_validation(lambda *a, **k: (0, "", "test_value (tests.test_value.T.test_value) ... ok\nRan 1 test\nOK", None),
@@ -825,6 +837,51 @@ class ManagedHarnessTests(unittest.TestCase):
             result.update(values)
             c.execute("UPDATE managed_tasks SET state=?,control=NULL,lease=NULL,result=? WHERE id='TASK-ONE'",
                       (state, json.dumps(result)))
+
+    def test_latest_control_member_flags_and_member_evidence(self):
+        """CI-VTIER-001 6th review R602/R604/R605: a cancel that arrives after a PAUSED or
+        INTERRUPTED decision wins; a member with an unresolved official V3 failure cannot be
+        bound or approved; an integration tree's failure is recorded on the integration Task
+        and never removes a (COMPLETED) member's evidence."""
+        from baton import evidence
+        for decided in ("PAUSED", "INTERRUPTED"):
+            with self.subTest(decided=decided):
+                self.set_result(state="READY")
+                lease = self.store.claim("TASK-ONE")["lease"]
+                self.store.control("TASK-ONE", "cancel")
+                row = self.store.update("TASK-ONE", lease, decided, release=True, yield_to_control=True)
+                self.assertEqual(row["state"], "CANCELLED")
+                with self.store.tx() as c:
+                    c.execute("UPDATE managed_tasks SET control=NULL WHERE id='TASK-ONE'")
+        member = deepcopy(self.body); member["task_id"] = "TASK-TWO"
+        self.store.create(member)
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-TWO'").fetchone()[0])
+            values.update(official_v3_unresolved=True, review_evidence={"kept": True})
+            c.execute("UPDATE managed_tasks SET state='COMPLETED',result=? WHERE id='TASK-TWO'", (json.dumps(values),))
+        with self.assertRaisesRegex(HarnessError, "integration_member_official_v3_unresolved"):
+            evidence._member_proofs(self.store, ["TASK-TWO"], "TASK-ONE")
+        with self.assertRaisesRegex(HarnessError, "integration_member_official_v3_unresolved"), self.store.tx() as c:
+            evidence.validate_member_records(c, {"TASK-TWO": {}})
+        self.set_result(state="REVIEW_REQUIRED")
+        owner, completed = self.store.get("TASK-ONE"), self.store.get("TASK-TWO")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks(ok=False)), \
+                self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+            evidence._checks(self.store, completed, self.root, note_row=owner)
+        self.assertEqual(self.store.get("TASK-TWO")["result"]["review_evidence"], {"kept": True})
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], True)
+
+    def test_every_check_stop_counts_and_state_change_keeps_it(self):
+        """CI-VTIER-001 6th review R603: a stop in a second declared check or in a project
+        without a planner is a stop (no V3 failure recorded)."""
+        from baton.orchestrator import official_v3_fields, validation_stop_reason
+        second = self.v3_checks() + [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 2,
+                                      "stop_reason": "timeout"}]
+        self.assertEqual(validation_stop_reason(second), "timeout")
+        self.assertEqual(official_v3_fields(second), {})
+        generic = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 2, "stop_reason": "cancel"}]
+        self.assertEqual(validation_stop_reason(generic), "cancel")
+        self.assertIsNone(validation_stop_reason(self.v3_checks(ok=False)))
 
     def test_late_control_and_nested_stop_leave_no_result_and_release(self):
         """CI-VTIER-001 5th review R501/R502: a pause that arrives after the last stop

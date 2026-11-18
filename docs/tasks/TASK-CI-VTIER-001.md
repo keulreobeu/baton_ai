@@ -108,3 +108,9 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 6차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`9681949`, 미게시 `0c173c8`(CI-OPT branch에 게시됨)·`c55a408`·`2f6b432`·`437dab7`·`dadd9ea`·`dcce235`·`4cd979a`·`45cec37`·이 기록 커밋.
   작성자 lwwde07, 허용 경로만(이번 범위 추가분 `managed.py`·`evidence.py` 포함), 비밀값·홈 경로·DB·로그 없음. 검증 SHA `4cd979a` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만.
 - **2026-11-18 원격 CI(`1b863c1`, draft PR #17)**: run `44258934841` plan·gate success, Windows 3.11·3.12 각 765 tests OK, failures/errors/skips 0, eligible true. `1b863c1`(코드 `4cd979a`)에만 귀속. 6차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 6차 이종 모델 재검토(ChatGPT, 대상 `4cd979a`)**: **FAIL**(P1 0, P2 5). R505 resolved, R501~R504 partial. CI-OPT 병합 회귀 미발견, 이번 회차 V3 불필요(사용자 흐름) 판정. 격리 재현(Linux 3.13.5).
+  R601 2단계 정착 중 Wiki 실패 시 lease 미해제, compact fallback 뒤 2단계가 stale_lease → `settlement_pending` + 멱등 `_finish_author_settlement()`, 중복 종료 이벤트가 2단계만 재개, 해제됐으면 생략.
+  R602 PAUSED·INTERRUPTED 결정 뒤 cancel 미반영 → 최신 제어가 최종 상태. R603 두 번째 선언 검사·planner 없는 프로젝트의 중단 누락, 상태 변경이 timeout 덮어씀 → 모든 검사 확인, `state_changed` 분리.
+  R604 미해결 V3 실패 구성원의 integration 승인 우회 → `_member_proofs`·`validate_member_records` 거부. R605 integration 실패가 COMPLETED 구성원 증거를 지워 복구 불가 → 실패는 integration 요청 Task에 기록, 구성원 증거 유지.
+  회귀 4개(수정 전 코드에서 실패 확인).
+  영향 모듈 `test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability` 260 OK, check_sdd PASS.

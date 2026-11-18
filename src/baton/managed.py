@@ -288,10 +288,13 @@ class ManagedStore:
                 if r["control"]:
                     overridden = state not in {"PAUSED", "CANCELLED"}
                     state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
-            if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"} and yield_to_control:
-                # CI-VTIER-001 5th review R501: a final settlement yields to the control.
-                overridden = True
-                state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
+            if r["control"] and yield_to_control:
+                # CI-VTIER-001 5th review R501 / 6th review R602: the latest control decides the
+                # final state, also over a PAUSED or INTERRUPTED decision (a later cancel wins).
+                latest = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
+                overridden = state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}
+                if state != latest and not (state == "CANCELLED" and latest == "PAUSED"):
+                    state = latest
             if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}:
                 raise HarnessError("control_requested")
             values = json.loads(r["result"])
@@ -409,7 +412,7 @@ class ManagedStore:
                 # CI-VTIER-001 5th review R504: an unresolved official V3 failure blocks approval.
                 raise HarnessError("official_v3_unresolved")
             from .evidence import validate_member_records
-            validate_member_records(c, result["integration_evidence"]["members"])
+            validate_member_records(c, result["integration_evidence"]["members"])  # incl. members' V3 (R604)
             c.execute("UPDATE managed_tasks SET state='COMPLETED' WHERE id=?", (task,))
             self.event(c, task, "COMPLETED", {"reviewer": reviewer, "result_hash": digest(result), "proof": proof})
         return self.observe_idle_state(task)
