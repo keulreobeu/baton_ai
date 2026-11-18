@@ -114,3 +114,5 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   R604 미해결 V3 실패 구성원의 integration 승인 우회 → `_member_proofs`·`validate_member_records` 거부. R605 integration 실패가 COMPLETED 구성원 증거를 지워 복구 불가 → 실패는 integration 요청 Task에 기록, 구성원 증거 유지.
   회귀 4개(수정 전 코드에서 실패 확인).
   영향 모듈 `test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability` 260 OK, check_sdd PASS.
+- **2026-11-18 6차 수정 후보 `c460275`(= CI-VTIER `c082cf5` + CI-OPT 6차 수정 `74eb9a6` 병합) V2**: 병합 뒤 `test_readset`·`test_ci_plan`·`test_verify_environment` 144 OK, check_sdd PASS.
+  흐름에 따라 로컬 V3 생략(최종 후보에서 1회). 7차 재검토·게시는 승인 대기. verified·병합 아님.
