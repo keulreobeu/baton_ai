@@ -687,6 +687,11 @@ def _sha_file(path):
     return digest.hexdigest()
 
 
+def _read_document(path):
+    """The bytes of a section-only document, read once (6th review R602)."""
+    return path.read_bytes()
+
+
 def _content(path):
     """Content digest; 'missing'/'dir' for non-files, None on error. A link
     records its target and the content actually read through it."""
@@ -963,20 +968,22 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
             if record is None:
                 continue
             if record.get("section_only") and record.get("sections"):
+                # 6th review R602: one read; the section fingerprints and the whole-file hash
+                # compared with the observation come from the same bytes.
                 try:
-                    text = (root / name).read_text(encoding="utf-8")
+                    raw = _read_document(root / name)
+                    text = raw.decode("utf-8")
                     for heading in sorted(set(record["sections"])):
                         sections.append([name, heading, fingerprint(extract_section(text, heading))])
                 except (OSError, ValueError, UnicodeDecodeError):
+                    raw = None
                     sections.append([name, "*", "unreadable"])
                     soft_need(False, "FILE_UNREADABLE")  # 5th review R503
-                if verify_observed:
+                if verify_observed and raw is not None:
                     # 5th review R503: the whole file hashed when the section was read must
                     # still be the file (a section changed and restored is a change).
-                    whole = _content(root / name)
-                    soft_need(whole is not None, "FILE_UNREADABLE")
                     seen_hash = record.get("sha256")
-                    if seen_hash is not None and whole is not None and seen_hash != whole:
+                    if seen_hash is not None and seen_hash != hashlib.sha256(raw).hexdigest():
                         problem["changed"] = True
                 continue
         content = _content(root / name)

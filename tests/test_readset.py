@@ -60,7 +60,7 @@ class ReadsetTests(unittest.TestCase):
         rec._record_read(self.root / "never-existed.txt")
         rec._record_read(self.root / "<unknown>")  # cannot exist on Windows: not an input
         created = self.root / "new.txt"
-        rec._open_event(created, "w")
+        created.write_text("new")  # 6th review R601: an output once it really exists
         rec._record_read(created)
         rec.stop()
         data = rec.as_dict()
@@ -497,6 +497,79 @@ class ReadsetTests(unittest.TestCase):
         self.check_outputs_created_after_an_absent_probe_are_not_changes()
         self.check_reobservation_is_never_skipped_or_unverified()  # 5th review R501/R502
         self.check_own_outputs_at_absent_inputs_are_partial_not_changes()  # 5th review R504
+        self.check_only_done_creations_and_renames_are_outputs()  # 6th review R601/R604/R605
+        self.check_input_turned_directory_is_a_change()  # 6th review R603
+
+    def check_only_done_creations_and_renames_are_outputs(self):
+        """CI-OPT-001 6th review R601/R604/R605: a failed os.replace or a failed creation
+        gives no ownership (the path read later is an input; one created by another writer
+        after the failed attempt is a change); a rename with a directory descriptor is
+        partial; a parent renaming a file a real child created is an output (renames are
+        judged after every child log is merged)."""
+        config = Path(self.temp.name) / "config-r601.cfg"
+        config.write_text("A", encoding="utf-8")
+        time.sleep(0.03)
+        rec = self.recorder()
+        tmp = self.root / "gone-r601.tmp"
+        tmp.write_text("x", encoding="utf-8")
+        tmp.unlink()
+        with self.assertRaises(FileNotFoundError):
+            os.replace(tmp, config)
+        self.assertEqual(config.read_text(encoding="utf-8"), "A")
+        missing_dir = self.root / "no-such-dir-r601"
+        target = missing_dir / "later.cfg"
+        with self.assertRaises(FileNotFoundError):
+            target.write_text("mine", encoding="utf-8")
+        with rec._quiet():  # another writer creates it
+            missing_dir.mkdir()
+            target.write_text("theirs", encoding="utf-8")
+        self.assertEqual(target.read_text(encoding="utf-8"), "theirs")
+        rec.stop()
+        data = rec.as_dict()
+        self.assertIn(readset._real(config), [r["path"] for r in data["outside_reads"]])
+        self.assertNotIn(readset._canonical(config), rec._made)
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+        fd = self.recorder()
+        fd._audit_event("os.rename", ("a.tmp", "b.cfg", 3, None))
+        fd.stop()
+        self.assertIn("RENAME_DIR_FD_UNRESOLVED", fd.partial_reasons)
+        moved = self.root / "moved-by-parent-r605.cfg"
+        made_by_child = self.root / "made-by-child-r605.tmp"
+        order = self.recorder()
+        with self.assertRaises(FileNotFoundError):
+            open(moved, encoding="utf-8")
+        code = "open(%r, 'w', encoding='utf-8').write('c')" % str(made_by_child)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        os.replace(made_by_child, moved)
+        self.assertEqual(moved.read_text(encoding="utf-8"), "c")
+        order.stop()
+        self.assertNotIn("INPUT_CHANGED_DURING_RUN", order.partial_reasons, order.partial_samples)
+        self.assertIn(readset._canonical(moved), order._made)
+
+    def check_input_turned_directory_is_a_change(self):
+        """CI-OPT-001 6th review R603: a recorded file input that becomes a directory and
+        is restored is a change, seen by this process and reported by a child."""
+        source = Path(self.temp.name) / "turns-dir-r603.cfg"
+        source.write_text("A", encoding="utf-8")
+        time.sleep(0.03)
+        rec = self.recorder()
+        source.read_text(encoding="utf-8")
+        with rec._quiet():
+            source.unlink()
+            source.mkdir()
+        with self.assertRaises(OSError):
+            source.read_text(encoding="utf-8")
+        with rec._quiet():
+            source.rmdir()
+            source.write_text("A", encoding="utf-8")
+        rec.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+        relayed = self.recorder()
+        relayed._record_read(source)
+        relayed._apply({"type": "read", "path": readset._canonical(source), "via": "open", "isdir": True}, None)
+        relayed.stop()
+        self.assertIn("INPUT_CHANGED_DURING_RUN", relayed.partial_reasons)
 
     def check_reobservation_is_never_skipped_or_unverified(self):
         """CI-OPT-001 5th review R501/R502: an input deleted and recreated by the run is

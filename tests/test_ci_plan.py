@@ -920,7 +920,13 @@ class SuiteReuseTests(unittest.TestCase):
         watched.mkdir()
         listing = [{"path": str(watched), "scope": "outside", "ok": True, "entries": []}]
         (watched / "new.txt").write_text("x", encoding="utf-8")
-        with patch.object(cp.Path, "read_text", side_effect=OSError("locked")), \
+        # 6th review R602: the section fingerprint and the compared hash come from one read:
+        # a read that sees B (while the file on disk is A again) is a change.
+        b_bytes = ("# T\n\n" + SECTION + "\nB\n").encode("utf-8")
+        with patch.object(cp, "_read_document", return_value=b_bytes), self.assertRaises(cp.PlanError) as caught:
+            fp(readset(repo_reads=[same]))
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        with patch.object(cp, "_read_document", side_effect=OSError("locked")), \
                 self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[same], listings=listing))
         self.assertEqual(str(caught.exception), "FILE_UNREADABLE")
