@@ -1494,3 +1494,42 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - R1503 fixture 경로와 TEMP 루트에 남긴 임시 경로는 실제 suite에서 partial이다.
     - 정상 생성은 부재·조상 입력 항목이 늘어난다(지문 크기·빈도 미측정).
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 16차 독립 교차검토(Codex Orca worker, 대상 `7c0bc78`)**: **FAIL**(P1 4). R1501·R1502 resolved. RA-1~RA-4 유지. 반영 코드 후보 `100a8ee`(로컬 커밋, 미게시).
+  공통 원인: "파일 입력 상태 = 내용만"이라는 가정.
+  수정:
+    - `readset._sha`와 `ci_plan._content`(`_file_state`)가 쓰기 불가 파일을 `ro:<digest>`로 표시한다.
+    - 섹션 문서 관측 해시 대조도 같은 상태값을 쓴다.
+    - `ci_plan._hash_or_none`이 `ro:` 표시를 허용한다.
+    - 실행이 만들지 않은 기존 파일의 쓰기 모드 open은 `_precondition(changes=True)`로 partial이다.
+    - 비배타 쓰기·덮어쓰기 이동의 부재 최종 경로는 `_needs_absent_or_own`으로 종료 시 판정한다(부재 → 부재 입력, 자체 파일 → 종료 상태 입력, 그 밖 → partial).
+    - 기존 비자체 목적지 `os.replace`는 partial이다.
+  지문 schema: `suite-fp/1` 유지(값 안의 표시로 확장, 이전 증거는 코드 변경으로 지문 불일치).
+  API 표 갱신(14·15차 표에 더함):
+    | API | 상태값 / 추가 사전 상태 | 기록 / partial |
+    | 모든 파일 입력·사전조건 기록(읽기, 조상 파일, SQLite 기존 DB, `shutil.copy` 원본) | 종류·내용·쓰기 가능 여부 | `ro:` 표시 포함 상태 입력 |
+    | 기존 비자체 파일의 쓰기 모드 open(`wb`·`ab`·`r+b`·`os.open` 쓰기) | 쓰기 가능 여부 | 성공·실패 모두 partial, 상태 입력 유지 |
+    | 부재 최종 경로에 `w`·`a`·`O_CREAT\|O_TRUNC`, `os.replace`·POSIX rename | 최종 경로 부재 | 종료 시 부재 → 부재 입력, 자체 파일 → 종료 상태 입력, 그 밖 → partial |
+    | 기존 비자체 목적지 `os.replace` | 덮어쓸 대상 | partial |
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_file_state_includes_writability` 추가. 다루는 사례:
+    - `ro:` 표시의 read set·지문 일치
+    - 기존 파일 `wb`·`ab`·`r+b` 쓰기 열기
+    - SQLite rw 연결과 `shutil.copy` 원본: 속성만 바꿔도 지문이 다름, `valid_readset`
+    - 부재 경로에 쓰고 정리(직접·실제 자식)
+    - 남긴 쓰기와 부재 목적지 `os.replace`: 종료 상태 기록, complete
+    - 기존 비자체 목적지 `os.replace`: partial
+  수정 전 코드 대조(`7c0bc78` scripts, 사례별 분리 실행): 10건 모두 기대와 다름(`ro` 표시 없음, 사유 없음, 최종 경로 기록 없음). 수정 후 모두 기대대로.
+  검토자 재현(수정본):
+    - r16_repro 결함 11건, copy_repro 2건: 모두 reuse 거부
+    - 비창조 부모 `rb`·`r+b` 대조군 2건: reuse 허용 유지
+    - owned_output: reuse 허용 유지
+    - 13~15차 재현: reuse 거부 유지
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: partial로 바뀐 기존 정상 사례 없음. 기존 단언 2곳은 실행 영역 밖에 남은 자체 출력의 종료 상태(또는 정리된 자체 출력의 부재)가 read set에 남는 것으로 갱신했다(`test_repo_outside_and_created_paths`의 `new.txt`, 5차 R504 검사). 실행 영역 안 출력은 여전히 기록하지 않는다.
+  남은 한계:
+    - ACL·소유자·숨김·시스템 속성과 다른 프로세스의 잠금은 상태값에 없다.
+    - 실행 영역 밖에 남긴 자체 출력은 종료 상태가 입력이 된다. 정리(git clean 등) 뒤에는 재사용이 거부된다(보수 방향).
+    - 실제 suite의 입력 항목 증가량과 원격 Windows 두 조합은 확인하지 않았다.
