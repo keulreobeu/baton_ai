@@ -30,6 +30,11 @@ python -m baton quota-window status                   # BATON_HOME을 임시 폴
 - GMS·자격 증명 테스트는 `python -m pip install -e ".[gms]"` 환경에서 실행되고, `cryptography`가 없으면 skip된다.
 - 설계 결정은 `docs/designs/`, 수락 기준·증거는 `docs/tasks/`에 기록한다. 결정이 바뀌면 설계 문서의 "Eng Review Amendments"와 Task 표를 같이 고친다.
 
+## 사용자 보고 명칭 — REPORT-001 (2026-11-18)
+
+사용자에게 보내는 브리핑·진행 보고·검토 결과·결정/승인 요청은 [docs/reporting.md](docs/reporting.md)의 표시 명칭과 브리핑 구성을 따른다.
+내부 코드·문서·파일명·ID·CLI·로그·에이전트 간 인계는 기존 식별자를 유지하며, 표시 변환은 계약·검증·위험 등급·상태·승인 조건을 바꾸지 않는다.
+
 ## BATON 자체 SDD — 2026-11-03
 
 BATON 소스·개발 규칙 변경은 [docs/sdd.md](docs/sdd.md)를 따른다. 시작 전
