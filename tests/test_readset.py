@@ -505,6 +505,81 @@ class ReadsetTests(unittest.TestCase):
         self.check_object_ownership_and_attempt_snapshot()  # 9th review R901/R902
         self.check_every_exempt_object_and_link_is_kept()  # 10th review R1001/R1002
         self.check_one_alias_decision_for_every_observation()  # 11th review R1101/R1102
+        self.check_chains_failed_moves_sections_and_nested_events()  # 12th review R1201-R1204
+
+    def check_chains_failed_moves_sections_and_nested_events(self):
+        """CI-OPT-001 12th review R1201-R1204: an exempt read through a link whose target
+        passes through another link (a chain) is partial, even when the outer link is the
+        run's own (this process and a real child); a failed move and a move of a missing
+        source are partial with their aliases kept (this process and a real child); a
+        section read through a link records the alias; a real child's default-encoding
+        creation, its codec imported inside the open, stays a proven output."""
+        def junction(link, target):
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(target), str(link))
+            else:
+                os.symlink(target, link, target_is_directory=True)
+            self.addCleanup(lambda: (os.rmdir(link) if os.name == "nt" else os.unlink(link))
+                            if os.path.lexists(link) else None)
+
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        old, inner, outer = base / "old", base / "inner", base / "outer"
+        (old / "sub").mkdir(parents=True)
+        junction(inner, old)
+        (old / "doc.md").write_text("# T\n\n## A\nbody\n", encoding="utf-8")
+        (old / "dest.cfg").write_text("there", encoding="utf-8")
+        time.sleep(0.03)
+        for actor in ("direct", "child"):
+            with self.subTest(case="chain/%s" % actor):
+                rec = self.recorder()
+                junction(outer, inner / "sub")  # the run's own link, into another link
+                name = "out-%s.cfg" % actor  # a new own output each time
+                (old / "sub" / name).write_text("own", encoding="utf-8")
+                if actor == "direct":
+                    self.assertEqual((outer / name).read_text(encoding="utf-8"), "own")
+                else:
+                    code = "open(%r, encoding='utf-8').read()" % str(outer / name)
+                    done = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                os.rmdir(outer) if os.name == "nt" else os.unlink(outer)
+                self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", rec.partial_reasons, rec.partial_samples)
+        moves = {"missing": (base / "missing.tmp", inner / "never.cfg")}
+        if os.name == "nt":  # os.rename does not replace an existing file on Windows
+            moves["exists"] = (base / "own.tmp", inner / "dest.cfg")
+        for label, (src, dst) in moves.items():
+            for actor in ("direct", "child"):
+                with self.subTest(case="failed-move/%s/%s" % (label, actor)):
+                    rec = self.recorder()
+                    if label == "exists":
+                        src.write_text("own", encoding="utf-8")
+                    if actor == "direct":
+                        with self.assertRaises(OSError):
+                            os.rename(src, dst)
+                    else:
+                        code = "import os, sys\ntry:\n    os.rename(sys.argv[1], sys.argv[2])\nexcept OSError:\n    pass"
+                        done = subprocess.run([sys.executable, "-c", code, str(src), str(dst)], cwd=self.root,
+                                              capture_output=True, text=True)
+                        self.assertEqual(done.returncode, 0, done.stderr)
+                    rec.stop()
+                    self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", rec.partial_reasons, rec.partial_samples)
+                    self.assertIn(os.path.abspath(str(dst)), [a["path"] for a in rec.as_dict()["aliases"]])
+                    if src.exists():
+                        src.unlink()
+        section = self.recorder()
+        self.assertEqual(readset.read_section(inner / "doc.md", "## A"), "## A\nbody")
+        section.stop()
+        self.assertIn(os.path.abspath(str(inner / "doc.md")), [a["path"] for a in section.as_dict()["aliases"]])
+        made = self.root / "codec-r1204.cfg"
+        rec = self.recorder()
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONUTF8"}
+        env["PYTHONIOENCODING"] = "utf-8"  # the child's locale codec is first imported inside the open
+        code = "open(%r, 'w').write('own')" % str(made)
+        done = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        rec.stop()
+        self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
 
     def check_one_alias_decision_for_every_observation(self):
         """CI-OPT-001 11th review R1101/R1102: every exempt observation (output read, absence
@@ -515,11 +590,11 @@ class ReadsetTests(unittest.TestCase):
         the run by no recorded creation (birth time is no proof of its maker) is partial."""
         child_code = {
             "read": "open(sys.argv[1] + '/f.cfg', encoding='utf-8').read()",
-            "absent": "import os\ntry:\n    open(sys.argv[1] + '/made/x.cfg')\nexcept FileNotFoundError:\n    pass",
+            "absent": "import os\ntry:\n    open(sys.argv[1] + '/made/x.cfg', encoding='utf-8')\nexcept FileNotFoundError:\n    pass",
             "listing": "import os; os.listdir(sys.argv[1] + '/dir')",
-            "failed": "from pathlib import Path\ntry:\n    Path(sys.argv[1] + '/made/sub/x.cfg').open('x')\nexcept FileNotFoundError:\n    pass",
+            "failed": "from pathlib import Path\ntry:\n    Path(sys.argv[1] + '/made/sub/x.cfg').open('x', encoding='utf-8')\nexcept FileNotFoundError:\n    pass",
             "created": "open(sys.argv[1] + '/new.cfg', 'w', encoding='utf-8').write('c')",
-            "move": "import os; open(sys.argv[2] + '/s.cfg', 'w').write('s'); os.replace(sys.argv[2] + '/s.cfg', sys.argv[1] + '/moved.cfg')",
+            "move": "import os; open(sys.argv[2] + '/s.cfg', 'w', encoding='utf-8').write('s'); os.replace(sys.argv[2] + '/s.cfg', sys.argv[1] + '/moved.cfg')",
         }
         observed = {"read": "f.cfg", "absent": "made/x.cfg", "listing": "dir", "failed": "made/sub/x.cfg",
                     "created": "new.cfg", "move": "moved.cfg"}
@@ -604,7 +679,7 @@ class ReadsetTests(unittest.TestCase):
         rec = self.recorder()
         maker = ("import os, sys\nif os.name == 'nt':\n    import _winapi; _winapi.CreateJunction(sys.argv[2], sys.argv[1])\n"
                  "else:\n    os.symlink(sys.argv[2], sys.argv[1], target_is_directory=True)\n"
-                 "open(sys.argv[2] + '/f.cfg', 'w').write('c'); open(sys.argv[1] + '/f.cfg').read()")
+                 "open(sys.argv[2] + '/f.cfg', 'w', encoding='utf-8').write('c'); open(sys.argv[1] + '/f.cfg', encoding='utf-8').read()")
         done = subprocess.run([sys.executable, "-c", maker, str(base / "link"), str(base / "old")], cwd=self.root,
                               capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -768,7 +843,7 @@ class ReadsetTests(unittest.TestCase):
         direct.stop()
         self.assertIn(os.path.abspath(str(missing)), [a["path"] for a in direct.as_dict()["aliases"]])
         relayed = self.recorder()
-        code = "from pathlib import Path\ntry:\n    Path(%r).open('x').close()\nexcept FileNotFoundError:\n    pass" % str(missing)
+        code = "from pathlib import Path\ntry:\n    Path(%r).open('x', encoding='utf-8').close()\nexcept FileNotFoundError:\n    pass" % str(missing)
         child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
         self.assertEqual(child.returncode, 0, child.stderr)
         relayed.stop()
@@ -873,7 +948,7 @@ class ReadsetTests(unittest.TestCase):
         self.assertNotIn("OUTPUT_AT_ABSENT_INPUT", rec.partial_reasons, rec.partial_samples)
         self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
         probe = self.recorder()
-        code = ("from pathlib import Path\ntry:\n    open(%r).close()\nexcept FileNotFoundError:\n    pass\n"
+        code = ("from pathlib import Path\ntry:\n    open(%r, encoding='utf-8').close()\nexcept FileNotFoundError:\n    pass\n"
                 "Path(%r).write_text('own', encoding='utf-8')" % (str(probed), str(probed)))
         child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
         self.assertEqual(child.returncode, 0, child.stderr)

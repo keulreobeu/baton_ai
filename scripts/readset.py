@@ -63,6 +63,22 @@ _ORIGINAL_OS_UNLINK = None
 _ORIGINAL_SYMLINK = None
 _ORIGINAL_CREATE_JUNCTION = None
 _IN_SQLITE_WRAPPER = threading.local()
+# 12th review R1204: depth of wrapped calls on this thread. Audit events nested inside
+# one (a codec import, its module reads) come before the call's own outcome and must not
+# settle its attempt from the path's state.
+_WRAPPED = threading.local()
+
+
+def _in_wrapped():
+    return getattr(_WRAPPED, "depth", 0) > 0
+
+
+def _wrapped_call(original, *args, **kwargs):
+    _WRAPPED.depth = getattr(_WRAPPED, "depth", 0) + 1
+    try:
+        return original(*args, **kwargs)
+    finally:
+        _WRAPPED.depth -= 1
 _ORIGINAL_CFFI_DLOPEN = None
 _SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
                   "load_dh_params")
@@ -186,10 +202,9 @@ def _file_id(path=None, handle=None):
 _UNSET = object()
 
 
-def _links_on(observed):
-    """10th/11th review R1002/R1101: the links (symlinks, junctions) on the observed path,
-    as [lexical path, birth time, object id] from lstat; [] when it passes through none
-    (e.g. an 8.3 short name), None when that cannot be told."""
+def _link_items(observed):
+    """The links (symlinks, junctions) on the lexical path, as [path, birth, object id];
+    [] for none, None when that cannot be told."""
     try:
         current = os.path.abspath(observed)
     except (OSError, ValueError, TypeError):
@@ -212,6 +227,36 @@ def _links_on(observed):
         if parent == current:
             return links
         current = parent
+
+
+def _link_target(link):
+    target = os.readlink(link)
+    for prefix in ("\\\\?\\UNC\\", "\\??\\UNC\\"):
+        if target.startswith(prefix):
+            return "\\\\" + target[len(prefix):]
+    for prefix in ("\\\\?\\", "\\??\\"):
+        if target.startswith(prefix):
+            return target[len(prefix):]
+    if not os.path.isabs(target):
+        target = os.path.join(os.path.dirname(link), target)
+    return target
+
+
+def _links_on(observed):
+    """10th-12th review R1002/R1101/R1201: the links on the observed path as [path, birth,
+    object id, chained]; chained tells whether the link's own target passes through
+    another link (True), not (False), or cannot be told (None). [] when the path passes
+    through none (e.g. an 8.3 short name), None when that cannot be told."""
+    links = _link_items(observed)
+    if links is None:
+        return None
+    for item in links:
+        try:
+            inner = _link_items(_link_target(item[0]))
+        except (OSError, ValueError, TypeError):
+            inner = None
+        item.append(None if inner is None else bool(inner))
+    return links
 
 
 def _id_list(ident):
@@ -603,11 +648,21 @@ class Recorder:
             return
         start = _epoch(self.started_utc)
         keep = False
+        if len(links) > 1:
+            # 12th review R1201: a chain of links is never proven here (fail-closed).
+            self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", "link chain %s" % alias[0])
+            return
         for item in links:
             try:
-                link_path, born, ident = item
+                link_path, born, ident, chained = item
             except (TypeError, ValueError):
                 self._partial("PATH_UNNORMALIZABLE", path)
+                return
+            if chained is not False:
+                # 12th review R1201: the link's target passes through another link (a chain),
+                # or that cannot be told: no exemption decision is made for it.
+                self._partial("OUTPUT_OWNERSHIP_UNCERTAIN" if chained else "PATH_UNNORMALIZABLE",
+                              "link chain %s" % link_path)
                 return
             ident = _id_tuple(ident)
             if ident is not None and ident in self._owned_links:
@@ -673,7 +728,7 @@ class Recorder:
         scope = self._scope(canonical)
         if scope == "derived":
             return
-        if not relayed and self._pending_ops:
+        if not relayed and self._pending_ops and not _in_wrapped():
             self._settle_pending(threading.get_ident())  # this thread's previous attempt first
         if self._is_child:
             # A child judges nothing: it reports content and birth time, and
@@ -904,6 +959,14 @@ class Recorder:
                     self._record_read(meta["path"], seen_absent=True, seen=(op[1], meta.get("alias")))
                 else:
                     self._record_read(op[1], seen_absent=True)
+            elif op[0] == "rename":
+                # 12th review R1202: the failure depended on what was (or was not) at both
+                # paths; that condition is not reconstructed, so the read set is partial. The
+                # observed aliases go through the common decision as an input's.
+                moves = self._move_aliases(meta, exempt=False)
+                if self._is_child:
+                    self._emit({"type": "rename_failed", **moves})
+                self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", "failed move %s -> %s" % (op[1], op[2]))
             return  # the open/rename failed: no ownership
         if not certain:
             self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", op[-1])
@@ -923,15 +986,7 @@ class Recorder:
                 self._emit({"type": "created", "path": op[1], "id": _id_list(ident)})
             return
         src, dst = op[1], op[2]
-        moves = {}
-        for key in ("src_alias", "dst_alias"):  # 10th review R1002: moves through links
-            if meta.get(key):
-                raw, found = meta[key]
-                with self._quiet():
-                    links = _links_on(found[0]) if found else []
-                moves[key] = [_path_text(raw), list(found) if found else found, links]
-                if not self._is_child:
-                    self._keep_alias(found, raw, exempt=True, links=links)
+        moves = self._move_aliases(meta, exempt=True)
         with self._quiet():
             moved = _file_id(dst)  # a move keeps the object (and its identity)
         owned = (moved is not None and moved in self._owned_ids) or src in self._created
@@ -952,6 +1007,20 @@ class Recorder:
             self._created.discard(dst)
             if not self._is_child:
                 self._renames.append((src, dst, None, moved))
+
+    def _move_aliases(self, meta, exempt):
+        """The observed aliases of a move's paths with their links (for a child's report),
+        decided by the common alias path in this process."""
+        moves = {}
+        for key in ("src_alias", "dst_alias"):  # 10th review R1002: moves through links
+            if meta.get(key):
+                raw, found = meta[key]
+                with self._quiet():
+                    links = _links_on(found[0]) if found else []
+                moves[key] = [_path_text(raw), list(found) if found else found, links]
+                if not self._is_child:
+                    self._keep_alias(found, raw, exempt=exempt, links=links)
+        return moves
 
     def _apply_renames(self):
         """At stop, after every log is merged: moves whose source owner was not known when
@@ -1076,7 +1145,7 @@ class Recorder:
     def _audit_event(self, event, args):
         """One recorder's handling of a CPython audit event."""
         in_sqlite = event.startswith("sqlite3.") and getattr(_IN_SQLITE_WRAPPER, "on", False)
-        if self._pending_ops and not in_sqlite:  # the wrapper concludes its own attempt (R704)
+        if self._pending_ops and not in_sqlite and not _in_wrapped():  # the wrapper concludes it (R704, R1204)
             self._settle_pending(threading.get_ident())
         if event == "open":
             self._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
@@ -1113,16 +1182,14 @@ class Recorder:
                 # 6th review R604: paths relative to a directory descriptor are not resolved.
                 self._partial("RENAME_DIR_FD_UNRESOLVED", "%s -> %s" % (args[0], args[1]))
             elif src and dst:
-                with self._quiet():
-                    src_exists = os.path.lexists(src)
-                if src_exists:  # a rename of a missing source fails: no attempt to settle
-                    # 10th review R1002: the paths as observed, for the links they pass.
-                    snap = {}
-                    for key, raw, canonical in (("src_alias", args[0], src), ("dst_alias", args[1], dst)):
-                        found = self._alias_of(raw, canonical)
-                        if found is not None:
-                            snap[key] = (raw, found)
-                    self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
+                # 10th review R1002: the paths as observed, for the links they pass. 12th review
+                # R1202: a move of a missing source is an attempt too (its failure is settled).
+                snap = {}
+                for key, raw, canonical in (("src_alias", args[0], src), ("dst_alias", args[1], dst)):
+                    found = self._alias_of(raw, canonical)
+                    if found is not None:
+                        snap[key] = (raw, found)
+                self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
         elif event == "mmap.__new__":
@@ -1362,7 +1429,9 @@ class Recorder:
         rel = self._display(_real(path) or p)
         self._section_depth[p] = self._section_depth.get(p, 0) + 1
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            # 12th review R1203: the observed path is opened (its aliases reach every
+            # recorder); the normalized one only keys the section depth and the display.
+            with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
         finally:
             self._section_depth[p] -= 1
@@ -1610,6 +1679,11 @@ class Recorder:
                     self._keep_alias(found, raw, exempt=True, links=links)
             self._renames.append((event["src"], event["dst"], True if owned is True else None,
                                   _id_tuple(event.get("id"))))  # applied at stop
+        elif kind == "rename_failed":
+            for key in ("src_alias", "dst_alias"):  # 12th review R1202: decided as the parent's
+                if key in event:
+                    raw, found, links = event[key]
+                    self._keep_alias(found, raw, exempt=False, links=links)
         elif kind == "linked":
             if _id_tuple(event.get("id")) is None:
                 raise ValueError("linked event without id")
@@ -1895,7 +1969,7 @@ def _tracked_sqlite_connect(*args, **kwargs):
         r._sqlite(database, uri=bool(uri))
     _IN_SQLITE_WRAPPER.on = True
     try:
-        connection = _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+        connection = _wrapped_call(_ORIGINAL_SQLITE_CONNECT, *args, **kwargs)
     except BaseException:
         _IN_SQLITE_WRAPPER.on = False
         for r in recorders:
@@ -1915,7 +1989,7 @@ def _settle_calls(kind, paths, ok, handle=None):
 
 def _tracked_io_open(file, *args, **kwargs):
     try:
-        result = _ORIGINAL_IO_OPEN(file, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_IO_OPEN, file, *args, **kwargs)
     except BaseException:
         _settle_calls("create", [file], False)
         raise
@@ -1925,7 +1999,7 @@ def _tracked_io_open(file, *args, **kwargs):
 
 def _tracked_os_open(path, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_OPEN(path, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_OPEN, path, *args, **kwargs)
     except BaseException:
         _settle_calls("create", [path], False)
         raise
@@ -1951,7 +2025,7 @@ def _tracked_create_junction(target, link, *args, **kwargs):
 
 def _tracked_os_remove(path, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_REMOVE(path, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_REMOVE, path, *args, **kwargs)
     except BaseException:
         _settle_calls("remove", [path], False)
         raise
@@ -1961,7 +2035,7 @@ def _tracked_os_remove(path, *args, **kwargs):
 
 def _tracked_os_unlink(path, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_UNLINK(path, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_UNLINK, path, *args, **kwargs)
     except BaseException:
         _settle_calls("remove", [path], False)
         raise
@@ -1971,7 +2045,7 @@ def _tracked_os_unlink(path, *args, **kwargs):
 
 def _tracked_os_rename(src, dst, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_RENAME(src, dst, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_RENAME, src, dst, *args, **kwargs)
     except BaseException:
         _settle_calls("rename", [src, dst], False)
         raise
@@ -1981,7 +2055,7 @@ def _tracked_os_rename(src, dst, *args, **kwargs):
 
 def _tracked_os_replace(src, dst, *args, **kwargs):
     try:
-        result = _ORIGINAL_OS_REPLACE(src, dst, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_REPLACE, src, dst, *args, **kwargs)
     except BaseException:
         _settle_calls("rename", [src, dst], False)
         raise
