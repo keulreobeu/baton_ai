@@ -507,6 +507,106 @@ class ReadsetTests(unittest.TestCase):
         self.check_one_alias_decision_for_every_observation()  # 11th review R1101/R1102
         self.check_chains_failed_moves_sections_and_nested_events()  # 12th review R1201-R1204
         self.check_removals_and_other_mutations_record_their_state()  # 13th review R1301
+        self.check_preconditions_of_state_dependent_operations()  # 14th review R1401-R1405
+
+    def check_preconditions_of_state_dependent_operations(self):
+        """CI-OPT-001 14th review R1401-R1405, one precondition rule: an exclusive creation
+        (open "x", mkdir, os.rename on Windows) whose result is kept outside the run's area
+        cannot have its "nothing there" checked again (partial), one cleaned up before the
+        end leaves an absent input (complete); mkdir exist_ok over a directory the run did
+        not make, an exclusive open of a directory and a failed removal of a read-only file
+        are partial; a change through a descriptor of a file not opened by the run (or not
+        its own) is partial, of its own file is not; os.replace has no destination
+        precondition; a real child follows the same rule."""
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        existing = base / "existing-dir"
+        existing.mkdir()
+        readonly = base / "readonly.cfg"
+        readonly.write_text("ro", encoding="utf-8")
+        os.chmod(readonly, 0o444)
+        before = base / "opened-before.cfg"
+        before.write_text("source", encoding="utf-8")
+        early = os.open(before, os.O_RDWR)
+        time.sleep(0.03)
+
+        def partial(action):
+            rec = self.recorder()
+            action()
+            rec.stop()
+            self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+            self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
+
+        def complete(action):
+            rec = self.recorder()
+            action()
+            rec.stop()
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+            return rec
+
+        def failing(call, *args):
+            def run():
+                with self.assertRaises(OSError):
+                    call(*args)
+            return run
+
+        def exclusive_kept():
+            with open(base / "kept-x.cfg", "x", encoding="utf-8") as stream:
+                stream.write("x")
+
+        def exclusive_cleaned():
+            with open(base / "temp-x.cfg", "x", encoding="utf-8") as stream:
+                stream.write("x")
+            os.unlink(base / "temp-x.cfg")
+
+        def mkdir_cleaned():
+            (base / "temp-dir").mkdir()
+            (base / "temp-dir").rmdir()
+
+        def own_descriptor():
+            with open(base / "own-fd.cfg", "w", encoding="utf-8") as stream:
+                stream.write("own")
+                stream.flush()
+                os.ftruncate(stream.fileno(), 1)
+            os.unlink(base / "own-fd.cfg")
+
+        cases = {
+            "mkdir kept": (partial, lambda: (base / "kept-dir").mkdir()),
+            "mkdir exist_ok over a directory": (partial, lambda: existing.mkdir(exist_ok=True)),
+            "exclusive open kept": (partial, exclusive_kept),
+            "exclusive open of a directory": (partial, failing(open, existing, "x")),
+            "failed removal of a read-only file": (partial, failing(os.unlink, readonly)),
+            "descriptor opened before the run": (partial, lambda: os.ftruncate(early, 2)),
+            "mkdir cleaned": (complete, mkdir_cleaned),
+            "exclusive open cleaned": (complete, exclusive_cleaned),
+            "own descriptor": (complete, own_descriptor),
+        }
+        if os.name == "nt":
+            def rename_kept():
+                (base / "src-r.cfg").write_text("s", encoding="utf-8")
+                os.rename(base / "src-r.cfg", base / "kept-rename.cfg")
+
+            def replace_kept():
+                (base / "src-p.cfg").write_text("s", encoding="utf-8")
+                os.replace(base / "src-p.cfg", base / "kept-replace.cfg")
+            cases["os.rename destination kept"] = (partial, rename_kept)
+            cases["os.replace destination kept"] = (complete, replace_kept)
+        try:
+            for label, (judge, action) in cases.items():
+                with self.subTest(case=label):
+                    rec = judge(action)
+                    if label == "mkdir cleaned":
+                        self.assertTrue(any(r.get("absent") and r["path"].endswith("temp-dir")
+                                            for r in rec.as_dict()["outside_reads"]), rec.as_dict()["outside_reads"])
+        finally:
+            os.close(early)
+            os.chmod(readonly, 0o644)
+        with self.subTest(case="child mkdir kept"):
+            rec = self.recorder()
+            done = subprocess.run([sys.executable, "-c", "import os, sys; os.mkdir(sys.argv[1])", str(base / "child-dir")],
+                                  cwd=self.root, capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            rec.stop()
+            self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
 
     def check_removals_and_other_mutations_record_their_state(self):
         """CI-OPT-001 13th review R1301: removing a file the run did not create is partial
@@ -558,6 +658,7 @@ class ReadsetTests(unittest.TestCase):
         (area / "tree").mkdir()
         (area / "tree" / "f.cfg").write_text("x", encoding="utf-8")
         shutil.rmtree(area / "tree")
+        os.rmdir(area)  # 14th review: an own directory left outside the run's area would be partial
         own.stop()
         self.assertTrue(own.as_dict()["complete"], own.partial_samples)
         if os.name == "nt":
@@ -575,7 +676,8 @@ class ReadsetTests(unittest.TestCase):
             failed.stop()
             self.assertIn(readset._real(held), [r["path"] for r in failed.as_dict()["outside_reads"]])
             self.assertNotIn("INPUT_CHANGED_DURING_RUN", failed.partial_reasons, failed.partial_samples)
-            self.assertTrue(failed.as_dict()["complete"], failed.partial_samples)
+            # 14th review R1401: the failure depended on a handle the read set cannot record.
+            self.assertIn("MUTATION_UNVERIFIABLE", failed.partial_reasons, failed.partial_samples)
         changes = {
             "rmdir": lambda p: os.rmdir(p), "rmtree": lambda p: shutil.rmtree(p),
             "chmod": lambda p: os.chmod(p, 0o644), "utime": lambda p: os.utime(p, None),
@@ -762,6 +864,10 @@ class ReadsetTests(unittest.TestCase):
                             done = subprocess.run([sys.executable, "-c", "import sys\n" + child_code[kind], str(link), str(old)],
                                                   cwd=self.root, capture_output=True, text=True)
                             self.assertEqual(done.returncode, 0, done.stderr)
+                        import shutil
+                        for leftover in ("made", "dir"):  # 14th review: own directories cleaned up
+                            if (old / leftover).exists():
+                                shutil.rmtree(old / leftover)
                         rec.stop()
                         data = rec.as_dict()
                         aliases = [a["path"] for a in data["aliases"]]
@@ -861,6 +967,9 @@ class ReadsetTests(unittest.TestCase):
         point(own_link, area)
         (area / "out.cfg").write_text("own", encoding="utf-8")
         self.assertEqual((own_link / "out.cfg").read_text(encoding="utf-8"), "own")
+        os.rmdir(own_link) if os.name == "nt" else os.unlink(own_link)
+        (area / "out.cfg").unlink()
+        os.rmdir(area)  # 14th review: an own directory left outside the run's area would be partial
         made.stop()
         self.assertEqual(made.as_dict()["aliases"], [])
         self.assertTrue(made.as_dict()["complete"], made.partial_samples)
@@ -922,6 +1031,8 @@ class ReadsetTests(unittest.TestCase):
         os.replace(written, moved)
         self.assertEqual((moved.read_text(encoding="utf-8"), exclusive.read_text(encoding="utf-8"),
                           Path(scratch).read_text(encoding="utf-8")), ("w", "x", ""))
+        exclusive.unlink()  # 14th review: exclusive creations left behind would be partial
+        os.unlink(scratch)
         own.stop()
         self.assertTrue(own.as_dict()["complete"], own.partial_samples)
         old, new = Path(self.temp.name) / "old-r902", Path(self.temp.name) / "new-r902"
@@ -1031,7 +1142,8 @@ class ReadsetTests(unittest.TestCase):
         self.assertEqual(watched.read_text(encoding="utf-8"), "unchanged")
         held.stop()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", held.partial_reasons, held.partial_samples)
-        self.assertTrue(held.as_dict()["complete"], held.partial_samples)
+        # 14th review R1401: no change, but the failure's cause is not recorded: partial.
+        self.assertIn("MUTATION_UNVERIFIABLE", held.partial_reasons, held.partial_samples)
         unsure = self.recorder()
         watched.read_text(encoding="utf-8")
         unsure._audit_event("os.remove", (str(watched), -1))
