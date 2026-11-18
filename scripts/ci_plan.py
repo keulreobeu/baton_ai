@@ -1421,6 +1421,12 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
             need(isinstance(graph, dict) and isinstance(graph.get("selected"), list)
                  and all(isinstance(item, str) for item in graph["selected"])
                  and type(graph.get("complete")) is bool, "CBM_UNKNOWN_SCHEMA")
+            # 3rd review R04: side fields keep their shapes or the answer is discarded.
+            need(all(graph.get(k) is None or isinstance(graph[k], str) for k in ("reason", "state", "freshness",
+                                                                               "coverage", "index_id", "index_id_kind"))
+                 and (graph.get("seconds") is None or type(graph["seconds"]) in {int, float})
+                 and (graph.get("generation") is None or isinstance(graph["generation"], (str, int))),
+                 "CBM_UNKNOWN_SCHEMA")
         except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
             # Re-review N02: a malformed (possibly non-dict) answer is discarded, never merged.
             graph = {**empty_graph, "state": "failed",

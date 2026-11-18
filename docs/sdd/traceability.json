@@ -1659,6 +1659,14 @@
             },
             {
               "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_record_must_agree_with_itself_and_ids_run_once"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_not_run_is_never_wiki_verified_and_new_base_clears_status"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
               "symbol": "ValidationPlannerIntegrationTests.test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time"
             },
             {

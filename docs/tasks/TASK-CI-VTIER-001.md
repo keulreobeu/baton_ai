@@ -64,3 +64,9 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   같은 승인으로 원격 게시·CI-VTIER draft PR 생성·원격 CI·3차 교차검토 준비 진행(verified·main 병합·force push 불승인).
 - **게시 전 점검(2026-11-18, 사용자 승인)**: 원격 `codex/ci-vtier-001`=`b80aeb3`, 미게시 `217fc73`·`f0c0648`·`0120358`·`b6222b9`·`1d1c178`·이 기록 커밋(`1c08857`은 원격 r5에 있음).
   작성자 lwwde07, 허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `0120358` 이후 변경은 Task·Spec 문서뿐. 대상: fast-forward push + draft PR 생성(base `main`, CI-OPT PR #16 의존 명시). force·main 병합 없음.
+- **2026-11-18 원격 CI(`57c8ff5`, draft PR #17)**: run `44213956961` plan·gate success, Windows 3.11·3.12 각 751 tests OK, failures/errors/skips 0, eligible true. `57c8ff5`에만 귀속.
+- **2026-11-18 3차 재검토(ChatGPT, 대상 `0120358`)**: **FAIL**(P1 1, P2 2, P3 1). N02·N03·N06 resolved, P1-01/N01·N04 partial, N05 보류 동의. CI-OPT 병합 회귀 없음.
+  R01(P1) 기록 파일 사후 위조·의미 불일치(tests_run과 ID 수 등) 통과 → 기록 자기 일관성 검사, 배치 간 중복 ID 실패. 의도적 위조는 사용자 결정으로 위협 모델 제외·RA-4(CI-OPT Spec).
+  R02(P2) 중단된 V3가 실패 기록을 지우거나 남기지 않음, 저장소 조회 실패 시 fail-open → `official_v3_unresolved` 별도 유지(완전한 성공 V3만 해제, 중단은 불변), 조회 실패 True.
+  R03(P2) 중단·base 변경 뒤 이전 `validation_status` 잔존, not_run의 Wiki verified, Orca 정착 경로 누락 → 중단 시 상태 초기화, base 변경 시 null, not_run Wiki SKIP, Orca 정착 동일 필드.
+  R04(P3) graph 부가 필드 형식 → 형식 위반 시 failed graph. CI-OPT 3차 수정 `4244da7`을 merge `097a7e3`로 수용. 회귀: 기록 불일치 8종·배치 중복(영향 5모듈 249 OK), V3 중단 3종·불완전 V3·조회 실패, Wiki not_run·base 변경, 부가 필드 3종.

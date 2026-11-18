@@ -160,6 +160,48 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertNotEqual(result[0]["exit_code"], 0)
         self.assertEqual(result[0]["planner"]["actual_status"], "failed")
 
+    def test_record_must_agree_with_itself_and_ids_run_once(self):
+        """CI-VTIER-001 3rd review R01: an inconsistent record (count, passed outside
+        started, success flag, failure/skip counts) is no record; an ID proven in two
+        batches is a duplicate run and fails the coverage check."""
+        from baton.orchestrator import read_unittest_record
+        good = {"schema": "unittest-record/1", "started": ["m.T.a", "m.T.b"], "passed": ["m.T.a", "m.T.b"],
+                "failed": [], "skipped": [], "tests_run": 2, "failures": 0, "errors": 0, "skipped_count": 0,
+                "expected_failures": 0, "unexpected_successes": 0, "successful": True}
+        path = self.root / "record.json"
+        def judged(**changes):
+            path.write_text(json.dumps({**good, **changes}), encoding="utf-8")
+            return read_unittest_record(path)
+        self.assertIsNotNone(judged())
+        for label, changes in {"count": {"tests_run": 1}, "count_up": {"tests_run": 3},
+                               "passed_not_started": {"passed": ["m.T.a", "m.T.b", "m.T.c"]},
+                               "repeat_start": {"started": ["m.T.a", "m.T.a"]},
+                               "repeat_pass": {"passed": ["m.T.a", "m.T.a"]},
+                               "flag": {"failures": 1, "failed": ["m.T.b"]},
+                               "failed_count": {"failed": ["m.T.b"]},
+                               "skip_count": {"skipped_count": 1}}.items():
+            with self.subTest(case=label):
+                self.assertIsNone(judged(**changes))
+        # Two batches (argv size limit): each batch proves its own IDs; when both also
+        # prove one shared ID, that duplicate run fails the coverage check.
+        ids = ["tests.test_value.T.t%03d_%s" % (i, "x" * 200) for i in range(130)]
+        self.plan.update(selected_ids=ids, direct_checks=[])
+        def batch_runner(shared):
+            def run(argv, *a, **k):
+                if len(argv) > 5 and argv[3] == "-c":
+                    done = list(argv[6:]) + shared
+                    Path(argv[5]).write_text(json.dumps({**good, "started": done, "passed": done,
+                                                         "tests_run": len(done)}), encoding="utf-8")
+                return (0, "", "Ran 1 test\nOK", None)
+            return run
+        result, process = self.run_validation(batch_runner([]), stage="in_progress", target_base="b" * 40)
+        self.assertEqual(sum(1 for c in process.call_args_list if c.args[0][3:4] == ["-c"]), 2)
+        self.assertEqual(result[0]["exit_code"], 0)
+        result, _ = self.run_validation(batch_runner(["tests.test_value.T.shared"]), stage="in_progress",
+                                        target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        self.assertIn("duplicate:tests.test_value.T.shared", result[0]["planner"]["executed_checks"][-1]["output"])
+
     def test_validation_status_separates_not_run_from_passed(self):
         """CI-VTIER-001 re-review N04: validation_passed is "no check failed"; whether the
         planner's tests ran is validation_status (not_run is never test evidence)."""
@@ -701,7 +743,8 @@ class ManagedHarnessTests(unittest.TestCase):
             return [{"argv": ["python", "-m", "unittest", "discover", "-s", "tests"], "acs": ["AC1"],
                      "exit_code": 0 if ok else 2, "test_count": 1, "skipped": 0, "expected_failures": 0,
                      "unexpected_successes": 0, "output": "", "stop_reason": None,
-                     "planner": {"effective_tier": "V3", "actual_status": "passed" if ok else "failed"}}]
+                     "planner": {"effective_tier": "V3", "actual_status": "passed" if ok else "failed",
+                                 "execution_complete": True}}]
         task = self.store.get("TASK-ONE")["task"]
         def next_plan_kwargs():
             seen = []
@@ -722,6 +765,56 @@ class ManagedHarnessTests(unittest.TestCase):
             self.assertEqual(runner._verify("TASK-ONE")["state"], "REVIEW_REQUIRED")
         self.assertEqual(self.store.get("TASK-ONE")["result"]["validation_status"], "passed")
         self.assertNotIn("outside_failures", next_plan_kwargs())
+        # 3rd review R02: a failure survives a stopped (paused/cancelled/timed-out) V3 and
+        # is cleared only by a complete passing one; an unreadable store fails closed.
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(False)):
+            runner._verify("TASK-ONE")
+        for control in ("pause", "cancel", "timeout"):
+            with self.subTest(stopped_by=control):
+                def stopped_validate(runner_self, task_arg, tree, stop, **kwargs):
+                    return official(True)
+                with patch.object(Orchestrator, "validate", stopped_validate), \
+                        patch.object(Orchestrator, "control", lambda *a, **k: control):
+                    state = runner._verify("TASK-ONE")["state"]
+                self.assertIn(state, {"PAUSED", "CANCELLED", "INTERRUPTED"})
+                result = self.store.get("TASK-ONE")["result"]
+                self.assertIs(result["official_v3_unresolved"], True)
+                self.assertIsNone(result["validation_status"])
+                self.assertIs(next_plan_kwargs().get("outside_failures"), True)
+                with self.store.tx() as c:  # back to a validatable state for the next case
+                    c.execute("UPDATE managed_tasks SET state='FAILED',control=NULL WHERE id=?", ("TASK-ONE",))
+        incomplete = official(True)
+        incomplete[0]["planner"]["execution_complete"] = False
+        with patch.object(Orchestrator, "validate", lambda *a, **k: incomplete):
+            runner._verify("TASK-ONE")
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], True)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(True)):
+            runner._verify("TASK-ONE")
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], False)
+        broken = Orchestrator(type("Broken", (), {"get": lambda self, task: (_ for _ in ()).throw(OSError("db"))})(), providers={})
+        self.assertTrue(broken._previous_official_failed(task))
+
+    def test_not_run_is_never_wiki_verified_and_new_base_clears_status(self):
+        """CI-VTIER-001 3rd review R03: a passing validation whose planner ran no test does
+        not record a Wiki task_verified event; adopting a new base clears the old status."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        with patch("baton.wiki_cli.assess", side_effect=AssertionError("assess must not run")):
+            self.store.prepare_validation("TASK-ONE")
+            lease = self.store.claim("TASK-ONE", validation_only=True)["lease"]
+            runner.finish("TASK-ONE", lease, "REVIEW_REQUIRED", validation_passed=True, validation_status="not_run")
+        self.assertEqual(self.store.get("TASK-ONE")["result"]["wiki"]["reason"], "validation_not_run")
+        head = git(self.root, "rev-parse", "HEAD").strip()
+        with patch("baton.orchestrator.snapshot", return_value={}), patch("baton.orchestrator.check_scope"), \
+                patch("baton.runtime.repository_key", return_value="same"), \
+                patch("baton.orchestrator.git", return_value=head + "\n"):
+            try:
+                runner._adopt_base("TASK-ONE", head)
+            except HarnessError as exc:
+                self.skipTest("fixture cannot adopt a base here: %s" % exc)
+        result = self.store.get("TASK-ONE")["result"]
+        self.assertIsNone(result["validation_status"])
+        self.assertIs(result["validation_passed"], False)
 
     def test_objective_mode_is_explicit_and_existing_defaults_stay_compatible(self):
         self.assertNotIn("objective_mode", self.store.get("TASK-ONE")["task"]["execution"])

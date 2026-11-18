@@ -821,7 +821,11 @@ class SyntheticGitTests(unittest.TestCase):
         self.write("src/value.py", "def value(): return 2\n")
         for answer in (None, [], "text", 3, {"selected": ["tests.test_value.T.test_two"]},
                        {"selected": "tests.test_value.T.test_two", "complete": True},
-                       {"selected": [1], "complete": True}, {"selected": [], "complete": "yes"}):
+                       {"selected": [1], "complete": True}, {"selected": [], "complete": "yes"},
+                       # 3rd review R04: side fields keep their shapes.
+                       {"selected": [], "complete": False, "reason": ["x"]},
+                       {"selected": [], "complete": False, "freshness": 1},
+                       {"selected": [], "complete": False, "seconds": "slow"}):
             class Bad:
                 def inspect(self, *args, answer=answer): return answer
             with self.subTest(answer=answer):
