@@ -70,3 +70,7 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   R02(P2) 중단된 V3가 실패 기록을 지우거나 남기지 않음, 저장소 조회 실패 시 fail-open → `official_v3_unresolved` 별도 유지(완전한 성공 V3만 해제, 중단은 불변), 조회 실패 True.
   R03(P2) 중단·base 변경 뒤 이전 `validation_status` 잔존, not_run의 Wiki verified, Orca 정착 경로 누락 → 중단 시 상태 초기화, base 변경 시 null, not_run Wiki SKIP, Orca 정착 동일 필드.
   R04(P3) graph 부가 필드 형식 → 형식 위반 시 failed graph. CI-OPT 3차 수정 `4244da7`을 merge `097a7e3`로 수용. 회귀: 기록 불일치 8종·배치 중복(영향 5모듈 249 OK), V3 중단 3종·불완전 V3·조회 실패, Wiki not_run·base 변경, 부가 필드 3종.
+- **2026-11-18 3차 수정 후보 `50c95c1`(= CI-OPT `4244da7` 병합 + CI-VTIER R01~R04) 실측**: 공식 로컬 V3(`--base 762739f --evidence-dir`, 단독) 757 tests OK, skips 0,
+  failures/errors 0, eligible true, state stable, 1291 s, evidence `2f552541…`(commit `50c95c1`), read set partial(`CHILD_NOT_ALLOWED` 17,641·`CHILD_LOG_INCOMPLETE`·`CHILD_HOOK_MISSING` 195/194).
+  실제 `Orchestrator.validate` V2(checkpoint, 깨끗한 HEAD, V3 뒤 **단독 실행**): 338 tests passed, `required_tests_executed` 통과, 542.1 s, `final_evidence_eligible=false`.
+  사본 `CI-VTIER-001-v3-50c95c1.log`·`CI-VTIER-001-v2-50c95c1.json`. 커밋 신원은 저장소 로컬 설정(lwwde07). 4차 재검토·게시는 승인 대기. verified·병합 아님.
