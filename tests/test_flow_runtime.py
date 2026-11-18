@@ -564,7 +564,8 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         with patch("baton.wiki_cli.assess", return_value=wiki):
             row = ingest(self.store, "ORCAOLD1", self.receipt(did), client)
         result = row["result"]
-        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "result_unrecordable"))
+        # 10th review R1001: the refused Wiki step keeps its own reason in the compact write.
+        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "wiki_outcome_unrecordable"))
         self.assertIs(result["validation_passed"], False)
         self.assertIs(result["settlement_pending"], False)
         self.assertEqual((result["wiki"]["event_id"], result["wiki"]["blocking"]), (wiki["event_id"], True))

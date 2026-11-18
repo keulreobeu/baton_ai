@@ -792,7 +792,10 @@ def _settle_author(store, task_id, lease, state, result, **options):
         review = stored.get("review_runtime")
         compact = {"runtime": result["runtime"], "validation_passed": False, "validation_status": None,
                    **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
-                   "reason": "result_unrecordable",
+                   # 10th review R1001: a refused Wiki step keeps its own reason; any other
+                   # refused settlement is result_unrecordable.
+                   "reason": ("wiki_outcome_unrecordable" if result.get("reason") == "wiki_outcome_unrecordable"
+                              else "result_unrecordable"),
                    "changed_files": {}, "validation": [], "resume_point": None,
                    # 9th review R902: the fallback releases the lease, so no second step is pending;
                    # a compact Wiki reference (blocking) of an event already recorded is kept.
