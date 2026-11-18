@@ -1533,3 +1533,35 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - ACL·소유자·숨김·시스템 속성과 다른 프로세스의 잠금은 상태값에 없다.
     - 실행 영역 밖에 남긴 자체 출력은 종료 상태가 입력이 된다. 정리(git clean 등) 뒤에는 재사용이 거부된다(보수 방향).
     - 실제 suite의 입력 항목 증가량과 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 17차 독립 교차검토(Codex Orca worker, 대상 `100a8ee`)**: **FAIL**(P1 1, P3 1). R1601~R1604 resolved. RA-1~RA-4 유지. 반영 코드 후보 `f077d3c`(로컬 커밋, 미게시).
+  지적:
+    - R1701(P1): 부재로 시작한 경로의 종료 상태를 다음 실행의 등가 입력으로 보았다(`ab`로 남긴 파일, `wb` 뒤 읽기 전용, 읽기 전용 자체 소스의 `os.replace`).
+    - R1702(P3) 관찰: `tests/test_managed_providers.py:37–38` 고정 fixture partial(R1503 재측정). 지시대로 수정하지 않았다.
+  수정: `_needs_absent_or_own`가 경로마다 쓰기 방식(`truncate`·`replace`·`append`)을 기억한다(기존 생성 시도의 모드·플래그, 자식은 `needs_absent`의 `final`). 종료 시 자체 파일이 남은 경우의 판정:
+    - 쓰기 방식이 모두 `truncate`/`replace`이고 쓰기 가능하면 종료 상태 입력
+    - 그 밖이면 `MUTATION_UNVERIFIABLE`
+  API 표 갱신(16차 표의 최종 경로 행):
+    | API | 남은 자체 파일 | 기록 / partial |
+    | `w`·`wb`·`O_TRUNC`, `os.replace`·POSIX rename(부재 목적지) | 쓰기 가능 | 종료 상태 입력 |
+    | 같은 경우 | 읽기 전용 | partial |
+    | `a`·`ab`·`O_APPEND`, `O_CREAT`만, SQLite 새 DB | 무관 | partial |
+    | 모든 방식 | 정리되어 부재 | 부재 입력 |
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_kept_final_paths_need_a_repeatable_operation` 추가. 다루는 사례:
+    - partial: `ab` 남김, `O_CREAT`만 남김, `wb` 뒤 읽기 전용, 자체 읽기 전용 소스 `os.replace`, 실제 자식 `ab` 남김
+    - complete(상태 기록 확인): 쓰기 가능 `wb` 남김, 쓰기 가능 `os.replace` 남김
+    - 정리된 `ab`: 부재 입력
+  수정 전 코드 대조(`100a8ee` scripts, 사례별 분리 실행): 결함 5건 모두 complete=True이고 사유 없음. 정상 3건은 전후 모두 complete. 수정 후 결함 5건 모두 partial.
+  검토자 재현(수정본):
+    - r17_kept 결함 4건: reuse 거부
+    - 쓰기 가능 `wb`·`os.replace` 대조군: reuse 허용 유지
+    - 16차 r16_repro·copy_repro: 판정 유지
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 기존 단언 변경 없음. 실행 영역 밖에 `a`/`ab`(로그 등)나 SQLite 새 DB를 남기는 실행은 새로 partial이다(SQLite 새 DB는 9차부터 이미 partial).
+  남은 한계:
+    - 연산 종류 판정은 감사 이벤트의 모드·플래그만 쓴다(감싼 호출 밖 생성은 기존 규칙).
+    - ACL 등 다른 속성은 16차와 같이 없다.
+    - 원격 Windows 두 조합은 확인하지 않았다.
