@@ -1300,3 +1300,12 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   자식이 먼저 부재를 읽은 뒤 만드는 경우의 `OUTPUT_AT_ABSENT_INPUT`은 전후 모두 유지. R703 보강 단언은 `74eb9a6` scripts에서 `own-r703.cfg`가 남아 실패, `e826341`·수정본 통과.
   검토자 재현(r8_repro·r8_fingerprint)도 수정본에서 기대 판정(R802 reuse 거부, R801 경쟁 생성은 입력 변경). V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 로컬 V3는 이번 회차 미실행(최종 후보에서 1회).
   남은 한계: 새 partial 사유(이동·비배타 생성·삭제 결과 미보고)의 전체 suite 빈도·성능, 원격 Windows 두 조합 미확인. dir_fd 상대 삭제는 기존과 같이 경로를 해석하지 않는다.
+- **2026-11-18 9차 독립 교차검토(Codex Orca worker, 대상 `907b24c`)**: **FAIL**(P1 2). R803·R804·R703 보강 resolved, R801·R802 partial. RA-1~RA-4 유지. 반영 코드 후보 `f72002b`(로컬 커밋, 미게시).
+  R901(P1) 출력 소유가 경로에 붙어 자체 unlink·이동 뒤 비워진 이름에 들어온 외부 파일 읽기가 빠지고, 비배타 `a+`는 크기 0이면 경쟁자 파일도 출력으로 확정 → 코디네이터 결정 원칙대로 파일 객체 식별(st_dev/st_ino)로만 소유 입증,
+  생성 이력과 현재 이름 소유 분리, 자체 삭제·이동 출발에서 이름 소유 해제, 이름/birth 추정 면제는 종료 시 식별 검증, 소유 불명 재점유는 입력 + partial, 비배타 생성은 읽기 가능 핸들이면 즉시·쓰기 전용이면 이후 읽기 때 partial.
+  코디네이터 결정 (A)(2026-11-18): SQLite 새 DB 생성 실행은 partial(재사용 거부)이며, 크기 0 소유 인정(B안)은 RA가 필요한 사용자 결정 사항으로 보류. 7차 R704 단언을 "OUTPUT_AT_ABSENT_INPUT 없음 + OUTPUT_OWNERSHIP_UNCERTAIN"으로 변경.
+  R902(P1) 실패한 생성이 정규화 대상만 다시 넘겨 junction 별칭을 잃음 → 감사 이벤트 때 원래 경로·해석 대상·별칭 스냅샷을 실패 확정에 함께 등록(자식 동일), 현재 별칭과 다르면 입력 변경.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_object_ownership_and_attempt_snapshot` 추가(재점유 unlink/이동, 빈 `a+` 경쟁, 쓰기 전용 `a` 뒤 읽기, `w`·`x`·mkstemp·자체 이동 정상 출력 complete, junction 실패 생성 직접·실제 자식). 8차 검사의 합성 이동 기록 형식 갱신.
+  수정 전 코드 대조(`907b24c` scripts + 새 테스트, 사례별 분리 실행): unlink·이동 재점유 complete=True·읽기 기록 없음, 빈 `a+`·`a` 뒤 읽기·SQLite 사유 없음, junction 직접·자식 aliases=[]로 모두 실패. 정상 출력 사례는 전후 모두 complete. 수정 후 모두 통과.
+  검토자 재현(r9_repro·r902_child) 수정본: R901 세 경우 complete=False·reuse 거부, R902 직접·자식 별칭 기록·지문 변경. V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 영향 3모듈에서 정상 출력이 partial로 바뀐 기존 사례는 SQLite 새 DB(R704)뿐. 로컬 V3 미실행.
+  남은 한계: 실제 suite에서 `OUTPUT_OWNERSHIP_UNCERTAIN`이 늘 가능성(SQLite·MetricsStore 계열, `a`/`touch` 파일 재읽기, 비 Python 자식(git 등)이 만든 파일 읽기, Windows CopyFile 경로 등 감싼 호출 밖 생성)과 성능 미측정. 공식 V3 read set은 현재 `CHILD_NOT_ALLOWED`로 이미 partial이라 당장 재사용 손실은 없다. 파일 ID가 없는 파일시스템에서는 식별 입증이 불가해 partial. 원격 Windows 두 조합 미확인.
