@@ -1639,3 +1639,24 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     진단: 외부 기록기가 켜진 상태에서만 재현된다. 같은 테스트를 단독 실행하면 통과, `scripts.readset.Recorder(ROOT)`를 먼저 시작한 뒤 같은 테스트만 실행하면 같은 2건이 결정적으로 실패한다(작업 트리 밖 임시 wrapper). 직접 실행(`remove/direct/True`)과 다른 mutation 사례는 통과한다. 따라서 중첩 기록기 아래에서 실제 Python 자식의 삭제·chmod가 내부 기록기에 기존 파일 변경으로 판정되지 않는다(자식이 받는 시작 시각 `BATON_READSET_STARTED`가 가장 이른 외부 기록기 기준이 되어 테스트 임시 파일을 실행 산출물로 보는 경로가 유력, 최소 재현으로는 미확정).
   실패 2(state stable false): `FINGERPRINT_INPUT_CHANGED_DURING_RUN`. 사후 재계산에서 내용 변경은 0이고, alias 2건(`check_chains_failed_moves_sections_and_nested_events`의 테스트 임시 `inner/dest.cfg`, `inner/never.cfg`)의 대상이 테스트 정리 뒤 달라졌다. 외부 기록기가 테스트 내부 임시 영역의 alias를 입력으로 기록한 결과다.
   두 원인 모두 12~13차 이후 추가된 테스트·기록이며, 직전 통과 V3(5차 `437dab7`)와 V2(영향 3모듈 단독 실행)에는 나타나지 않는 중첩 기록기 상호작용이다. 이 기록에서는 코드를 고치지 않았다. Task는 verified로 올리지 않는다.
+- **2026-11-19 최종 V3 실패 반영(대상 `aca5f0e`)**: 코드 후보 `b3a69cd`(로컬 커밋, 미게시).
+  최소 재현은 작업 트리 밖 임시 wrapper로 했다. `scripts.readset.Recorder(ROOT)`를 먼저 시작하고 `ReadsetTests`의 해당 check만 실행한 뒤, 바깥 기록기의 별칭과 내용을 사후 재계산했다.
+    | 대상 | `check_removals…`(13차) | `check_chains…`(12차) 바깥 alias |
+    | 수정 전 `aca5f0e`(2회) | `:1140` 실패(partial 없음) | 2건 중 2건 변경(`inner/dest.cfg`·`never.cfg`) |
+    | 수정 후 `b3a69cd`(2회) | 통과 | 2건 중 0건 변경, 내용 변경 0 |
+    | 수정 전 + `readset.py`만 수정 | 통과 | - |
+  근본 원인 1(코드): `Recorder._child`가 중첩 기록기 중 가장 이른 시작 시각을 자식에 넘겼다. 자식은 변경 연산의 소유를 `_is_created`(birth ≥ 시작)로 스스로 판정한다. 그래서 바깥 기록기 시작 뒤·안쪽 기록기 시작 전에 생긴 파일의 삭제·chmod를 실행 산출물로 보고, 안쪽 기록기에 `MUTATION_UNVERIFIABLE`이 없었다. 단독 실행에는 기록기가 하나라 나타나지 않는다. 테스트 격리 문제가 아니라 판정 입력 문제라서 코드에서 고쳤다.
+    수정: 가장 늦은 시작을 넘긴다(더 엄격). 바깥 기록기는 partial이 늘 수만 있고, complete 쪽으로 바뀌는 판정은 없다. 자식 읽기는 원래 birth를 보고하고 부모가 자기 시작 시각으로 판정하므로 영향이 없다.
+  근본 원인 2(테스트 배치): 12차 R1202 규칙상 실패한 이동의 별칭은 링크 소유와 관계없이 입력으로 남는다(바깥 공식 기록기 포함). 테스트 tearDown이 junction을 지우면, 지문의 별칭 재검증이 실행 중 변경(`INPUT_CHANGED_DURING_RUN`)으로 보아 unstable이 된다. 규칙은 넓히지 않았다.
+    수정: 이 fixture(`old`·`inner` junction)를 프로세스 종료 시(`atexit`, junction 먼저) 지우는 임시 폴더로 옮겼다. `verify_environment`의 지문 계산 뒤에 정리되며, 종료 후 잔여 폴더 0을 확인했다.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_nested_recorders_give_a_child_the_latest_start`를 추가했다(테스트 참조 수 변화 없음). 다루는 사례:
+    - 합성 `_child` 두 순서에서 넘기는 시작 시각이 늦은 쪽인지
+    - 바깥 기록기 시작 뒤·안쪽 기록기 시작 전에 만든 파일을 실제 자식이 chmod하면 안쪽 기록기가 `MUTATION_UNVERIFIABLE`인지(바깥 로그 폴더는 미리 생성)
+    수정 전 코드에서는 3건 실패, 수정 후 단독·중첩 모두 통과한다.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK(실패·오류·skip 0, 157 s) |
+    | `PYTHONIOENCODING=utf-8` | OK(실패·오류·skip 0, 155 s) |
+    `check_sdd.py --base 5c07aea` PASS. 소켓 `ResourceWarning`은 기존과 같다.
+  중첩 실행: 바깥 `Recorder(ROOT)` 아래에서 `tests.test_readset` 전체를 1회 실행했다. 결과는 37건 OK(실패·오류·skip 0)다. 바깥 partial은 `CHILD_NOT_ALLOWED`·`MUTATION_UNVERIFIABLE`·`OUTPUT_OWNERSHIP_UNCERTAIN`이고, `INPUT_CHANGED_DURING_RUN`은 없다. 별칭 2건 중 변경 0, 내용 변경 0이다.
+  공식 V3는 재실행하지 않았다(재검토 뒤 지시). 남은 한계: 원격 Windows 두 조합은 확인하지 않았다.
