@@ -1388,3 +1388,69 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 감싼 호출 안에서 중첩 생성 시도가 생기면 바깥 시도는 기존처럼 경로 상태로 확정되어 partial이다.
     - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 13차 독립 교차검토(Codex Orca worker, 대상 `ea89e2a`)**: **FAIL**(P1 1). R1201~R1204 resolved. RA-1~RA-4 유지. 반영 코드 후보 `88fb467`(로컬 커밋, 미게시).
+  R1301(P1) 저장소 밖 파일 삭제(직접·자식 × 초기 존재·부재)의 존재 여부와 결과가 재사용 증거에서 빠짐(c90e91c부터 있던 결함). 수정:
+    - 초기 부재 삭제: 부재를 입력으로 기록(다음 실행 전 지문 검증)
+    - 비자체 기존 파일 삭제 성공: 새 사유 `MUTATION_UNVERIFIABLE` partial
+    - 실패한 삭제: 남은 내용을 입력으로 기록(R803 유지)
+    - 자체 출력 판정: 이름 이력이 아니라 객체·birth 기준
+  같은 패턴 점검(감사 이벤트가 있는 상태 의존 변경). 막은 지점:
+    - `os.remove`/`os.unlink`: 위 규칙. 디렉터리 대상이나 dir_fd면 partial
+    - `os.rmdir`·`shutil.rmtree`·`os.chmod`·`os.utime`·`os.truncate`(경로)·`os.link`(원본): 대상이 없으면 부재 입력, 실행이 만들지 않은 기존 경로면 `MUTATION_UNVERIFIABLE`, dir_fd면 `PATH_UNNORMALIZABLE`
+  유지하고 한계로 남긴 지점:
+    - `os.mkdir`(exist_ok면 결과 상태가 같고, 기존 디렉터리의 존재는 read set으로 표현하지 않음)
+    - `os.truncate`/`os.ftruncate`의 파일 기술자 대상(경로 미상)
+    - `os.chown`·xattr(Windows 해당 없음)
+    - `shutil.copy*`: 감싼 `open`으로 관측됨
+    - `os.rename`/`os.replace`: 12차 규칙
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_removals_and_other_mutations_record_their_state` 추가. 다루는 사례:
+    - 삭제: 직접·실제 자식 × 존재·부재
+    - 실패한 삭제(Windows 열린 핸들)
+    - 자체 출력 정리(chmod·utime·truncate·unlink·rmdir·rmtree)는 complete
+    - 기존 경로 rmdir·rmtree·chmod·utime·truncate·link
+    - 없는 디렉터리 rmdir
+    - 자식 chmod
+  수정 전 코드 대조(`ea89e2a` scripts, 사례별 분리 실행): 12개 결함 사례 모두 complete=True이고 기록 없음. 자체 출력 정리는 전후 모두 complete. 검토자 재현(deletion 4건) 수정본: 부재 2건은 부재 입력·지문 변경, 존재 2건은 `MUTATION_UNVERIFIABLE`, 모두 reuse 거부. normal-owned-output은 reuse 허용 유지.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  정상 출력 partial 변화: 기존 단언 변경 없음. 새로 partial이 되는 것은 실행이 만들지 않은 기존 경로를 지우거나 바꾸는 실행이다. 실행 시작 전 존재한 디렉터리를 테스트 정리에서 지우는 경우도 포함된다(중첩 기록기의 tearDown 정리는 기록기 종료 뒤라 영향 없음).
+  남은 한계:
+    - 실제 suite에서 `MUTATION_UNVERIFIABLE` 빈도는 측정하지 않았다.
+    - 위 유지 지점(mkdir, 파일 기술자 대상)이 남아 있다.
+    - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 14차 독립 교차검토(Codex Orca worker, 대상 `88fb467`)**: **FAIL**(P1 4, P2 1). R1301 resolved. RA-1~RA-4 유지. 반영 코드 후보 `0a70599`(로컬 커밋, 미게시).
+  지적: R1401 실패 unlink 원인(읽기 전용) 미기록, R1402 `os.mkdir` 미처리, R1403 경로 없는 FD 변경 무시, R1404 배타 생성의 사전 부재·디렉터리 충돌 누락, R1405 Windows `os.rename` 목적지 부재 누락.
+  수정: 사전조건 일반 규칙을 `_precondition` 한 곳에 두었다(종료 판정은 `stop`의 `_needs_absent`, 자식은 `needs_absent` 보고). FD는 `_descriptor`, 디렉터리 생성 입증은 감싼 `os.mkdir`(`dir_made`)이 맡는다.
+  처리 대상 API 표:
+    | API | 의존 사전 상태 | 기록 방식 / partial 조건 |
+    | `open` `x`·`os.open` `O_EXCL` | 부재 | 없으면 종료 시 부재 입력. 남으면 partial. 기존 파일이면 내용 입력, 기존 디렉터리면 partial |
+    | 모든 `open`의 기존 디렉터리 대상 | 종류 | 실행이 만들지 않았으면 partial |
+    | `os.mkdir`/`makedirs`(exist_ok 포함) | 부재 / 종류 | 없으면 종료 시 판정. 비자체 기존 디렉터리면 partial, 기존 파일이면 내용 입력 |
+    | `os.rename`(Windows, 비덮어쓰기) 목적지 | 부재 | `open x`와 같다. 실패 이동은 12차대로 partial |
+    | `os.replace` | 없음 | 목적지 사전조건 없음(실패는 partial) |
+    | `os.remove`/`os.unlink` | 존재·속성·핸들 | 없으면 종료 시 판정. 비자체 기존 파일이면 성공·실패 모두 partial(실패는 내용 입력도 남기고 입력 변경은 아님). 디렉터리면 partial |
+    | `os.rmdir`·`shutil.rmtree`·`os.chmod`·`os.utime`·`os.truncate`(경로) | 존재·종류·속성 | 없으면 종료 시 판정. 비자체 기존이면 partial |
+    | `os.link` | 원본 존재 / 새 이름 부재 | 원본은 위와 같다. 새 이름은 `open x`와 같다 |
+    | `open(fd)`·`os.truncate`/`ftruncate(fd)` | 연결 파일 | 추적 열기로 연 자체 출력만 허용. 추적 열기로 연 입력은 열기만 허용. 그 밖의 일반 파일은 partial. 파이프·콘솔은 무시 |
+    | dir_fd 상대 경로 | 해석 불가 | `PATH_UNNORMALIZABLE` partial |
+  해당 없음·유지: `os.chown`·xattr는 Windows에 없다. `shutil.copy*`는 감싼 `open`으로 관측된다.
+  회귀: 기존 AC-12 테스트에서 호출하는 `check_preconditions_of_state_dependent_operations` 추가. 다루는 사례:
+    - partial이어야 하는 경우: mkdir 남김, exist_ok 기존 디렉터리, 배타 열기 남김, 디렉터리 배타 열기, 읽기 전용 삭제 실패, 실행 전 연 FD의 ftruncate, Windows `os.rename` 목적지 남김, 실제 자식 mkdir 남김
+    - complete여야 하는 경우: mkdir 후 정리(부재 입력 기록 확인), 배타 생성 후 정리, 자체 FD 변경, `os.replace` 목적지 남김
+  기존 테스트 기대값 변경(정상 출력 partial 변화 목록, 규칙에 따른 것):
+    - 실행 영역 밖에 남긴 자체 디렉터리·배타 파일을 종료 전에 정리하도록 바꾼 테스트: 13차 자체 정리, 10차 자체 junction, 11차 조합 표, 9차 정상 출력(`x`·mkstemp)
+    - 기존 파일 삭제 실패의 기대값을 complete에서 `MUTATION_UNVERIFIABLE`로 바꾼 테스트(입력 변경 없음 유지): 8차 R803, 13차 열린 핸들
+    공식 V3에서는 테스트 파일이 실행이 만든 임시 영역 안에 있으므로, 이 변경은 중첩 기록기 단언에만 해당한다.
+  수정 전 코드 대조(`88fb467` scripts, 사례별 분리 실행): 결함 8건 모두 complete=True이고 사유 없음. 정상 4건은 수정 후 모두 complete다. 수정 전 mkdir 후 정리는 시작 여유(0.05초) 때문에 partial이었다. 검토자 재현(r14_repro) 수정본: 9건 모두 partial 또는 지문 변경으로 reuse 거부. r13 normal-owned-output은 reuse 허용 유지. 8~13차 재현 판정 유지.
+  V2(영향 3모듈, 각 138건):
+    | 환경 | 결과 |
+    | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | OK |
+    | `PYTHONIOENCODING=utf-8` | OK |
+    `check_sdd.py --base 5c07aea` PASS. 로컬 V3 미실행.
+  남은 한계:
+    - 실행 영역 밖(TEMP 루트 등)에 정리하지 않고 남긴 `mkdtemp`·`mkstemp`·배타 생성은 실제 suite에서 partial이 되고, 정리된 것은 부재 입력 항목이 늘어난다(빈도·지문 크기 미측정).
+    - 다른 프로세스가 연 핸들 등 실패 원인은 기록하지 않고 partial로만 처리한다.
+    - 원격 Windows 두 조합은 확인하지 않았다.

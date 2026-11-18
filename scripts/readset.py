@@ -61,6 +61,7 @@ _ORIGINAL_OS_UNLINK = None
 # 11th review R1101: link creations are wrapped, so a link this run made is proven by the
 # identity of the link object (not by its birth time).
 _ORIGINAL_SYMLINK = None
+_ORIGINAL_MKDIR = None  # 14th review: a directory this run made is proven by its object identity
 _ORIGINAL_CREATE_JUNCTION = None
 _IN_SQLITE_WRAPPER = threading.local()
 # 12th review R1204: depth of wrapped calls on this thread. Audit events nested inside
@@ -73,15 +74,23 @@ def _in_wrapped():
     return getattr(_WRAPPED, "depth", 0) > 0
 
 
-def _wrapped_call(original, *args, **kwargs):
+def _wrapped_call(original, *args, _kind=None, **kwargs):
     _WRAPPED.depth = getattr(_WRAPPED, "depth", 0) + 1
+    previous = getattr(_WRAPPED, "kind", None)
+    _WRAPPED.kind = _kind  # 14th review R1405: os.rename (no overwrite on Windows) or os.replace
     try:
         return original(*args, **kwargs)
     finally:
         _WRAPPED.depth -= 1
+        _WRAPPED.kind = previous
 _ORIGINAL_CFFI_DLOPEN = None
 _SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
                   "load_dh_params")
+# 13th review R1301: other state-dependent changes with audit events: event -> (index of
+# the target path, index of a dir_fd argument or None). Their outcome depends on what is at
+# the path before the call.
+_MUTATION_EVENTS = {"os.rmdir": (0, 1), "shutil.rmtree": (0, 1), "os.chmod": (0, 2), "os.utime": (0, 3),
+                    "os.truncate": (0, None), "os.link": (0, 2)}
 _PROCESS_EVENTS = {"os.system", "os.spawn", "os.startfile", "os.exec", "os.posix_spawn", "os.fork", "os.forkpty"}
 
 
@@ -459,6 +468,8 @@ class Recorder:
         # 10th review R1001: every exempted observation (name, object id) -> path, so a later
         # object at the same name is verified on its own.
         self._presumed = {}
+        self._needs_absent = {}  # 14th review: preconditions "nothing at this path", judged at stop
+        self._opened_ids = set()  # 14th review R1403: regular files opened through tracked calls
         self._owned_links = set()  # 11th review R1101: link objects (lstat ids) a recorded process made
         self._created = set()
         self._install()
@@ -502,7 +513,9 @@ class Recorder:
                 io.open = builtins.open = _tracked_io_open
                 os.open, os.rename, os.replace = _tracked_os_open, _tracked_os_rename, _tracked_os_replace
                 os.remove, os.unlink = _tracked_os_remove, _tracked_os_unlink
-                global _ORIGINAL_SYMLINK, _ORIGINAL_CREATE_JUNCTION
+                global _ORIGINAL_SYMLINK, _ORIGINAL_CREATE_JUNCTION, _ORIGINAL_MKDIR
+                _ORIGINAL_MKDIR = os.mkdir
+                os.mkdir = _tracked_mkdir
                 _ORIGINAL_SYMLINK = getattr(os, "symlink", None)
                 if _ORIGINAL_SYMLINK is not None:
                     os.symlink = _tracked_symlink
@@ -589,9 +602,10 @@ class Recorder:
             return canonical in self._created
         stamp = _stamp_of(stat)
         born_in_run = stamp is not None and stamp >= self._started_epoch
-        if os.path.isdir(canonical):
-            return canonical in self._created or born_in_run
         ident = _ident_of(stat)
+        if os.path.isdir(canonical):
+            # 14th review: a directory made by a recorded process (its object), or by name/birth.
+            return (ident is not None and ident in self._owned_ids) or canonical in self._created or born_in_run
         if ident is not None and ident in self._owned_ids:
             return True
         if canonical in self._created or born_in_run:
@@ -682,6 +696,20 @@ class Recorder:
             with self._quiet():
                 payload["links"] = _links_on(found[0])
         return payload
+
+    def _dir_made(self, path):
+        """14th review: a directory this process created (the wrapped os.mkdir returned)."""
+        with self._quiet():
+            try:
+                ident = _ident_of(os.stat(path))
+            except (OSError, ValueError, TypeError):
+                ident = None
+        if ident is None:
+            return
+        if self._is_child:
+            self._emit({"type": "dir_made", "id": _id_list(ident)})
+        else:
+            self._owned_ids.add(ident)
 
     def _linked(self, link):
         """11th review R1101: a link this process created (the wrapped call returned)."""
@@ -938,10 +966,17 @@ class Recorder:
                 self._created.discard(op[1])
                 if meta.get("own"):
                     return
+                # 13th review R1301: a file that existed before the run is gone: the next run
+                # starts without it, which no record can check beforehand (partial).
+                self._partial("MUTATION_UNVERIFIABLE", "removed %s" % (meta.get("text") or op[1]))
                 if self._is_child:
                     self._emit({"type": "removed", "path": op[1]})
                 else:
                     self._removed.setdefault(op[1], meta.get("text") or op[1])
+            elif certain and not meta.get("own"):
+                # 13th review R1301: the removal failed and the file is still there: its content
+                # is the input the outcome depended on (8th review R803: no change).
+                self._record_read(meta.get("text") or op[1])
             elif not certain and not meta.get("own"):
                 if self._is_child:
                     self._emit({"type": "removed", "path": op[1], "confirmed": False})
@@ -1008,6 +1043,72 @@ class Recorder:
             if not self._is_child:
                 self._renames.append((src, dst, None, moved))
 
+    def _precondition(self, event, target, canonical=None, changes=False):
+        """13th/14th review R1301/R1401-R1405: the one rule for an operation whose outcome
+        depends on what is at its path before the call (exclusive creation, mkdir,
+        non-overwriting move, removal, rmdir/rmtree, chmod/utime/truncate, link).
+
+        Nothing there: "nothing there" is the precondition. Inside an area the run created
+        it needs no record; otherwise it is judged at stop: still absent, it becomes an
+        absent input the fingerprint checks before the next run; present (the run's own
+        output kept it, or another writer), it cannot be checked again: partial.
+        Something there that the run made (its object, or birth in the run): the run made
+        that state. Something else: an operation changing it (removal, rmdir, chmod, ...),
+        or depending on more than its bytes (a directory's kind, attributes, open
+        handles), is partial (MUTATION_UNVERIFIABLE; the run did it, so no input change);
+        an existing file the operation only collides with (exclusive open, mkdir, move
+        destination) is recorded as a content input."""
+        if canonical is None:
+            canonical = _canonical(_path_text(target))
+        if canonical is None:
+            self._partial("PATH_UNNORMALIZABLE", target)
+            return
+        if _is_device(canonical) or self._scope(canonical) == "derived":
+            return
+        with self._quiet():
+            exists = os.path.lexists(canonical)
+            isdir = exists and os.path.isdir(canonical)
+        if not exists:
+            if canonical in self._created:
+                return
+            with self._quiet():
+                born = _ancestor_born(canonical)
+            found = self._alias_of(target, canonical)
+            if self._is_child:
+                self._emit({"type": "needs_absent", "path": canonical, "text": _path_text(target), "born": born,
+                            **self._alias_event(found)})
+                return
+            exempt = born is not None and born >= self._started_epoch
+            self._keep_alias(found, target, exempt=exempt)  # the common alias decision (11th review)
+            if not exempt:
+                self._needs_absent.setdefault(canonical, _path_text(target))
+            return
+        if self._is_created(canonical, presume=False):
+            return
+        if changes or isdir:
+            self._partial("MUTATION_UNVERIFIABLE", "%s %s" % (event, _path_text(target)))
+            return
+        self._record_read(target)
+
+    def _descriptor(self, event, fd, changes):
+        """14th review R1403: an operation through a file descriptor without a path. A
+        regular file opened by this process through a tracked call is tied to its observed
+        path (by object identity, never by the descriptor number): changing it is allowed
+        for the run's own output only. Any other regular file is partial; pipes, consoles
+        and sockets are no files."""
+        try:
+            stat = os.fstat(fd)
+        except (OSError, ValueError, TypeError):
+            return  # not an open descriptor: the call fails
+        if not _stat_mod.S_ISREG(stat.st_mode):
+            return
+        ident = _ident_of(stat)
+        if ident is not None and ident in self._owned_ids:
+            return
+        if ident is not None and ident in self._opened_ids and not changes:
+            return
+        self._partial("MUTATION_UNVERIFIABLE", "%s descriptor" % event)
+
     def _move_aliases(self, meta, exempt):
         """The observed aliases of a move's paths with their links (for a child's report),
         decided by the common alias path in this process."""
@@ -1064,6 +1165,7 @@ class Recorder:
 
     def _open_event(self, path, mode=None, flags=None):
         if isinstance(path, int):
+            self._descriptor("open", path, changes=False)  # 14th review R1403
             return
         canonical = _canonical(path)
         if canonical is None:
@@ -1082,6 +1184,13 @@ class Recorder:
             readable = isinstance(mode, str) and ("+" in mode or "r" in mode)
         if _is_device(canonical) or self._scope(canonical) == "derived":
             return
+        # 14th review R1404: an exclusive creation depends on nothing being there; opening
+        # an existing directory fails because of its kind.
+        exclusive = bool((isinstance(mode, str) and "x" in mode) or (isinstance(flags, int) and flags & os.O_EXCL))
+        with self._quiet():
+            there = os.path.lexists(canonical)
+        if (exclusive and not there) or (there and os.path.isdir(canonical)):
+            self._precondition("open", path, canonical)
         # The original path (not the resolved one) goes on, so symlink and
         # junction aliases are recorded with their observed target.
         if self._is_child:
@@ -1165,15 +1274,49 @@ class Recorder:
             # of a file recreated under the same name, so birth time alone cannot show it.
             target = args[0] if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
             canonical = _canonical(_path_text(target)) if target is not None else None
-            if canonical:
+            if len(args) > 1 and isinstance(args[1], int) and args[1] >= 0:
+                self._partial("PATH_UNNORMALIZABLE", "os.remove dir_fd %s" % target)
+            elif canonical:
                 with self._quiet():
-                    existed = os.path.lexists(canonical) and not os.path.isdir(canonical)
-                if existed:
+                    existed = os.path.lexists(canonical)
+                    isdir = existed and os.path.isdir(canonical)
+                if not existed or isdir:
+                    # 13th/14th review: the removal fails because nothing (or a directory) is there.
+                    self._precondition("os.remove", target, canonical, changes=True)
+                else:
+                    # 14th review R1401: removing an existing file the run did not create is
+                    # partial whatever the outcome (a failure depends on attributes or handles
+                    # the read set does not record); a failure still records the content.
+                    self._precondition("os.remove", target, canonical, changes=True)
                     # 8th review R803: the event comes before the call, so this is an attempt
                     # settled by the wrapped os.remove/os.unlink outcome (or the path's state).
-                    # 9th review R901: removing an own output releases the name.
-                    own = self._is_created(canonical, presume=False) or canonical in self._made
+                    # 9th review R901: removing an own output releases the name. 13th review
+                    # R1301: own is the object (or birth in the run), not the name history.
+                    own = self._is_created(canonical, presume=False)
                     self._attempt(("remove", canonical), text=_path_text(target), own=own)
+        elif event in _MUTATION_EVENTS:
+            position, fd_at = _MUTATION_EVENTS[event]
+            target = args[position] if len(args) > position else None
+            if isinstance(target, int):
+                self._descriptor(event, target, changes=True)  # 14th review R1403
+            elif fd_at is not None and len(args) > fd_at and isinstance(args[fd_at], int) and args[fd_at] >= 0:
+                self._partial("PATH_UNNORMALIZABLE", "%s dir_fd %s" % (event, target))
+            elif isinstance(target, (str, bytes, os.PathLike)):
+                canonical = _canonical(_path_text(target))
+                if canonical is None:
+                    self._partial("PATH_UNNORMALIZABLE", target)
+                else:
+                    self._precondition(event, target, canonical, changes=True)
+                    if event == "os.link" and len(args) > 1 and isinstance(args[1], (str, bytes, os.PathLike)):
+                        self._precondition(event, args[1])  # the new name must not exist
+        elif event == "os.mkdir":
+            # 14th review R1402: mkdir succeeds only where nothing is, and exist_ok only
+            # tolerates a directory there.
+            target = args[0] if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
+            if len(args) > 2 and isinstance(args[2], int) and args[2] >= 0:
+                self._partial("PATH_UNNORMALIZABLE", "os.mkdir dir_fd %s" % target)
+            elif target is not None:
+                self._precondition("os.mkdir", target)
         elif event == "os.rename":
             # 5th review R504: an output moved into place (atomic write) is an output.
             src = _canonical(_path_text(args[0])) if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
@@ -1189,6 +1332,10 @@ class Recorder:
                     found = self._alias_of(raw, canonical)
                     if found is not None:
                         snap[key] = (raw, found)
+                if os.name == "nt" and getattr(_WRAPPED, "kind", None) != "replace":
+                    # 14th review R1405: os.rename does not overwrite on Windows: its success
+                    # depends on nothing being at the destination (os.replace does not).
+                    self._precondition("os.rename", args[1], dst)
                 self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
@@ -1567,6 +1714,15 @@ class Recorder:
                 # the read set is partial (not reusable) instead of the run failing.
                 self._partial("OUTPUT_AT_ABSENT_INPUT", store[canonical].get("path"))
                 del store[canonical]
+        for canonical, text in sorted(self._needs_absent.items()):
+            # 14th review: a precondition "nothing at this path". Still absent, it is an absent
+            # input the fingerprint checks before the next run; present, it cannot be checked.
+            with self._quiet():
+                present = os.path.lexists(canonical)
+            if present:
+                self._partial("MUTATION_UNVERIFIABLE", "kept %s" % self._display(text))
+            elif self._input_entry(self._scope(canonical), canonical) is None:
+                self._record_absent(text, canonical, self._scope(canonical))
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
@@ -1679,11 +1835,24 @@ class Recorder:
                     self._keep_alias(found, raw, exempt=True, links=links)
             self._renames.append((event["src"], event["dst"], True if owned is True else None,
                                   _id_tuple(event.get("id"))))  # applied at stop
+        elif kind == "needs_absent":
+            if not (isinstance(event.get("path"), str) and event["path"]):
+                raise ValueError("needs_absent event without path")
+            born = event.get("born")
+            exempt = isinstance(born, (int, float)) and born >= self._started_epoch
+            self._keep_alias(event.get("alias"), event.get("text") or event["path"], exempt,
+                             links=event.get("links", _UNSET))
+            if not exempt:
+                self._needs_absent.setdefault(event["path"], event.get("text") or event["path"])
         elif kind == "rename_failed":
             for key in ("src_alias", "dst_alias"):  # 12th review R1202: decided as the parent's
                 if key in event:
                     raw, found, links = event[key]
                     self._keep_alias(found, raw, exempt=False, links=links)
+        elif kind == "dir_made":
+            if _id_tuple(event.get("id")) is None:
+                raise ValueError("dir_made event without id")
+            self._owned_ids.add(_id_tuple(event["id"]))  # 14th review
         elif kind == "linked":
             if _id_tuple(event.get("id")) is None:
                 raise ValueError("linked event without id")
@@ -1994,6 +2163,7 @@ def _tracked_io_open(file, *args, **kwargs):
         _settle_calls("create", [file], False)
         raise
     _settle_calls("create", [file], True, handle=result)
+    _note_opened(result)
     return result
 
 
@@ -2004,6 +2174,27 @@ def _tracked_os_open(path, *args, **kwargs):
         _settle_calls("create", [path], False)
         raise
     _settle_calls("create", [path], True, handle=result)
+    _note_opened(result)
+    return result
+
+
+def _note_opened(handle):
+    """14th review R1403: the identity of a regular file this process opened through a
+    tracked call, so a later change through its descriptor is tied to an observed path."""
+    recorders = [r for r in _active() if not r._is_quiet()]
+    if not recorders:
+        return
+    ident = _file_id(handle=handle)
+    if ident is not None:
+        for r in recorders:
+            r._opened_ids.add(ident)
+
+
+def _tracked_mkdir(path, *args, **kwargs):
+    result = _wrapped_call(_ORIGINAL_MKDIR, path, *args, **kwargs)
+    for r in _active():
+        if not r._is_quiet():
+            r._dir_made(path)
     return result
 
 
@@ -2045,7 +2236,7 @@ def _tracked_os_unlink(path, *args, **kwargs):
 
 def _tracked_os_rename(src, dst, *args, **kwargs):
     try:
-        result = _wrapped_call(_ORIGINAL_OS_RENAME, src, dst, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_RENAME, src, dst, *args, _kind="rename", **kwargs)
     except BaseException:
         _settle_calls("rename", [src, dst], False)
         raise
@@ -2055,7 +2246,7 @@ def _tracked_os_rename(src, dst, *args, **kwargs):
 
 def _tracked_os_replace(src, dst, *args, **kwargs):
     try:
-        result = _wrapped_call(_ORIGINAL_OS_REPLACE, src, dst, *args, **kwargs)
+        result = _wrapped_call(_ORIGINAL_OS_REPLACE, src, dst, *args, _kind="replace", **kwargs)
     except BaseException:
         _settle_calls("rename", [src, dst], False)
         raise
