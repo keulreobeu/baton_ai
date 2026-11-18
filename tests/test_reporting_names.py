@@ -57,6 +57,7 @@ class ReportingNamesTests(unittest.TestCase):
         missing = (set(STATES) | {"VERIFIED", "NOT_RUN", "PARTIAL"}) - states
         self.assertEqual(missing, set(), "a task state has no display name")
         self.assertIn("작업 완료(COMPLETED)를 계약 검증 완료(VERIFIED)로 간주하지 않는다", self.text)
+        self.assertIn("한국어가 기본이다", self.text)  # language policy (2026-11-18)
 
     def test_a_new_state_without_a_name_is_detected(self):
         """REPORT-001-AC-01 negative: a state added to the code but not to the dictionary fails."""

@@ -17,5 +17,6 @@ acs = ["REPORT-001-AC-01", "REPORT-001-AC-02"]
 - 사용자 목록에 더해 저장소에서 확인한 축약어를 보완: 기능 GMS·REPORT·BAZEL-POC, 교차검토 판정(PASS/PASS_WITH_FINDINGS/FAIL),
   계약 문서 상태(draft·ready·in_progress·verified·approved·baseline·superseded·proposed·accepted·active·completed), 검증 결과(passed·failed·not_run·skipped·not_configured·unknown·partial),
   KAN-nn(Jira 번호 유지)·ADR/Spec/Plan/Task·DEFERRED_GMS·read set·lease·eligible.
+- 같은 날 사용자 지시 "사용자 보고 언어 정책"을 반영: 사용자 대화·보고(백그라운드 알림·중간 보고 포함)는 한국어 기본, 지정 시에만 다른 언어, 내부 번역용 LLM 호출 없음.
 - 하지 않은 것: 진행 중 작업(CI-OPT·CI-VTIER 등)의 계약·코드·증거·파일명·식별자 일괄 변경, 변환 엔진·DB·서비스·LLM 경로, 공통 Skill(`skills/baton-flow`, 해시 잠금) 수정.
 - CI-OPT-001의 AGENTS.md 개정(PR #16)과 같은 위치를 건드리지 않도록 `## 개발`과 `## BATON 자체 SDD` 사이에 절을 넣었다.
