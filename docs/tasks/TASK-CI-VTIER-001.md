@@ -123,3 +123,5 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   회귀 `test_control_after_a_failed_second_step_keeps_the_settled_result`(수정 전 코드에서 실패 확인).
   영향 모듈 `test_flow_runtime`·`test_managed_harness`·`test_flow_evidence` 132 OK, check_sdd PASS.
   흐름 변경(2026-11-18 사용자): 다음 교차검토부터 Codex(Orca worker)로 진행하고, PASS까지 반복한다. 새 세션의 코디네이터가 이어받는다.
+- **2026-11-18 7차 수정 후보 `4a9e564`(= CI-VTIER `1cb6cc7` + CI-OPT 7차 수정 `e826341` 병합) V2**: 병합 뒤 `test_readset`·`test_ci_plan`·`test_verify_environment` 144 OK, check_sdd PASS.
+  로컬 V3는 최종 후보에서 1회. 8차 재검토(Codex)·게시는 새 세션 코디네이터가 진행. verified·병합 아님.
