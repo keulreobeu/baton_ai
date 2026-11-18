@@ -1227,3 +1227,15 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   N06(P3) 미사용 git 위치·형태 분석과 `.pth` 검사(`pth_safe`·`_hook_expected`) 삭제. 회귀: 실제 자식 로그 손실, 순번 9종, 다중 스레드 순서, 목록 오류 유형, fallback.
   영향 모듈 `tests.test_readset`·`tests.test_ci_plan`·`tests.test_verify_environment` 133 OK(검증 진입점 변경이므로 최종은 V3). 미검증으로 남긴 항목: Windows PID 재사용 실제 혼합,
   중첩 기록기 동시 쓰기 충돌, 일부 로그 디렉터리만 손실(모두 위 불변식으로 fail-closed 방향).
+- **2026-11-18 재검토 수정 후보 `217fc73` 공식 로컬 V3**: `verify_environment.py --base 5c07aea --evidence-dir` 738 tests OK, skips 0, failures/errors 0, eligible true,
+  state stable, 1279 s(CI-VTIER 실측 V2와 일부 동시 실행), evidence `9a593f73…`(commit `217fc73`), reuse rejected(`FINGERPRINT_CHANGED`·`SOURCE_READSET_PARTIAL`).
+  read set partial: `CHILD_NOT_ALLOWED` 16,744, `CHILD_LOG_INCOMPLETE`, `CHILD_HOOK_MISSING`(Python 실행 185 / hook 184 — N02로 면제가 없어진 시작 전 종료 자식, 의도한 보수 동작).
+  로그 사본 `CI-OPT-001-v3-iso-217fc73.log`. 이종 모델 재검토·원격 CI는 대기(새 push는 미승인). verified·병합 아님.
+- **게시 전 점검(2026-11-18, 사용자 승인 "원격 게시 승인")**: 원격 `codex/ci-opt-001-r5`=`1c08857`, 미게시 `217fc73`·`d18c013`·이 기록 커밋. 작성자 lwwde07, 허용 경로(scripts/tests/docs)만,
+  비밀값·홈 경로·DB·로그 없음. 검증 SHA `217fc73` 이후 변경은 Task 문서뿐(V3 증거의 코드 범위 유지, 원격 CI는 게시 HEAD에서 재실행). 대상: PR #16 branch fast-forward push만(force·main 병합 없음).
+- **2026-11-18 원격 CI(`9c0b793`, PR #16)**: run `44213913784` plan·gate success, Windows 3.11·3.12 각 738 tests OK, failures/errors/skips 0, eligible true. `9c0b793`에만 귀속.
+- **2026-11-18 3차 이종 모델 재검토(ChatGPT, 대상 `217fc73`)**: **FAIL**(P1 2, P2 1, P3 1). N01·N02·N03 resolved, N04·N05·N06 partial. 격리 재현(Linux 3.13.5).
+  R301(P1) 목록 불일치의 즉시 예외가 뒤의 파일·환경·alias 검사를 막아 동시 변경이 PASS·stable, 기록기가 본 alias 재지정도 stable → 목록은 기록 후 계속 검사(입력 변경 우선),
+  read set `INPUT_CHANGED_DURING_RUN`이면 stable false. R302(P1) 일부 병합 뒤 사라진 로그를 최종 검사가 놓침 → 병합한 모든 로그·hook 토큰의 자기 로그 검사, 사라짐·축소 partial.
+  R303(P2) exit 시간 NaN·pid 값·중복 hook 토큰 → 유한 시간·양수 pid·토큰당 hook 1개. R304(P3) `re`·`PTH_IMPORT_LINES`·`_in_temp_area`·미사용 `temp`·폐기 주석 삭제.
+  사용자 결정(2026-11-18): 테스트 코드의 의도적 증거 위조는 위협 모델에서 제외하고 RA-4로 명문화(Spec Risk Acceptance). 회귀 4종 추가. 영향 3모듈 137 OK.

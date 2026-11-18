@@ -968,6 +968,38 @@ class SuiteReuseTests(unittest.TestCase):
             cp.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
 
+    def test_listing_change_never_hides_a_content_env_or_alias_change(self):
+        """CI-OPT-001 3rd review R301: with a listing change and an input change in one
+        run, INPUT_CHANGED_DURING_RUN wins (every check still runs)."""
+        watched = Path(self.temp.name) / "watched-r301"
+        watched.mkdir()
+        listing = [{"path": str(watched), "scope": "outside", "ok": True, "entries": []}]
+        outside = Path(self.temp.name) / "input-r301.cfg"
+        outside.write_text("before", encoding="utf-8")
+        before = cp._content(outside)
+        rs = readset(repo_reads=[], listings=listing,
+                     outside_reads=[{"path": str(outside), "via": "open", "sha256": before}],
+                     env_reads=[{"path": str(outside), "via": "open", "sha256": before}],
+                     aliases=[{"path": str(outside), "target": cp.os.path.realpath(outside)}])
+        fp = lambda record: cp.suite_fingerprint(self.root, record, environ=self.env, manifest=FIXED_MANIFEST,
+                                                 git=FIXED_GIT, verify_observed=True)
+        fp(rs)
+        (watched / "own-output.txt").write_text("x", encoding="utf-8")
+        with self.assertRaises(cp.PlanError) as caught:
+            fp(rs)
+        self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")  # listing only
+        outside.write_text("after", encoding="utf-8")
+        for key in ("outside_reads", "env_reads"):
+            with self.subTest(changed=key):
+                one = readset(repo_reads=[], listings=listing, **{key: rs[key]})
+                with self.assertRaises(cp.PlanError) as caught:
+                    fp(one)
+                self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+        moved = readset(repo_reads=[], listings=listing, aliases=[{"path": str(outside), "target": "C:/elsewhere"}])
+        with self.assertRaises(cp.PlanError) as caught:
+            fp(moved)
+        self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
+
     def test_failed_listing_keeps_its_error_type(self):
         """CI-OPT-001 re-review N01: a listing that failed with FileNotFoundError during the
         run and now fails with NotADirectoryError (a file appeared there) is a change."""

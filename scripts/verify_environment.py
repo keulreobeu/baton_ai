@@ -230,7 +230,10 @@ def _evidence_main(args, environ):
             recorder.write(args.readset_out)
         # Repository, interpreter/installed files and Git identity must be the
         # same after the suite as before it.
-        stable = (cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
+        # 3rd review R301: a change the recorder itself saw during the run (an alias
+        # retargeted between reads) is an unstable run too.
+        stable = ("INPUT_CHANGED_DURING_RUN" not in readset.get("partial_reasons", [])
+                  and cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
                   and cp.git_identity(ROOT) == git and cp.resolver_identity() == resolver
                   and cp.trust_store_identity() == trust)
         try:

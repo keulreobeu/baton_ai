@@ -984,7 +984,7 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         need(content is not None, "FILE_UNREADABLE")
         check(fold(name), content)
         ignored.append([name, content])
-    listings, observed_listing = [], {}
+    listings, observed_listing, listing_changed = [], {}, False
     for record in sorted(readset.get("listings", []), key=lambda r: (r["scope"], r["path"])):
         path = root / record["path"] if record["scope"] == "repo" else Path(record["path"])
         current = _listing(path)
@@ -1001,8 +1001,10 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
             # N05: a directory the suite itself writes into fails this too, so the
             # code differs from INPUT_CHANGED_DURING_RUN: the evidence is not reusable,
             # but the run is not unstable (repository/runtime stability is checked apart).
+            # 3rd review R301: noted, not raised here, so the content, environment and
+            # alias checks below still run and INPUT_CHANGED_DURING_RUN takes precedence.
             if observed_listing.setdefault(key, seen) != seen or seen != now:
-                raise PlanError("LISTING_CHANGED_DURING_RUN")
+                listing_changed = True
         listings.append([record["scope"], record["path"], current])
     outside = []
     for record in sorted(readset.get("outside_reads", []), key=lambda r: r["path"]):
@@ -1030,6 +1032,8 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
         if verify_observed and not same:
             raise PlanError("INPUT_CHANGED_DURING_RUN")  # the run read through another target
         aliases.append([record["path"], target])
+    if listing_changed:
+        raise PlanError("LISTING_CHANGED_DURING_RUN")
     # Staged content (mode, blob, path; no stat data) for Git reads of the
     # index, limited to the same paths the file component hashes in full.
     hashed = {name for name, _ in files}
