@@ -514,6 +514,69 @@ class ReadsetTests(unittest.TestCase):
         self.check_ancestor_chain_and_failed_writes()  # 15th review R1501/R1502
         self.check_file_state_includes_writability()  # 16th review R1601-R1604
         self.check_kept_final_paths_need_a_repeatable_operation()  # 17th review R1701
+        self.check_directory_kind_and_writes_after_creation()  # 18th review R1801/R1802
+
+    def check_directory_kind_and_writes_after_creation(self):
+        """CI-OPT-001 18th review R1801/R1802: an SQLite connection that fails on an existing
+        directory records the directory's kind ("dir"), so a directory turned into a
+        database changes the fingerprint (this process and a real child); a directory the
+        run made adds nothing. The way a kept path was written is decided by the operations
+        that created it from absence: appending to the run's own file after a truncating
+        creation repeats with the same result (complete); creating it again by appending
+        after it was removed is partial."""
+        import sqlite3
+        from scripts import ci_plan
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        for actor in ("direct", "child"):
+            with self.subTest(case="sqlite on a directory/%s" % actor):
+                target = base / ("fixture-%s.db" % actor)
+                target.mkdir()
+                time.sleep(0.03)
+                rec = self.recorder()
+                if actor == "direct":
+                    with self.assertRaises(sqlite3.OperationalError):
+                        sqlite3.connect(target.as_uri() + "?mode=ro", uri=True)
+                else:
+                    code = ("import sqlite3, sys\ntry:\n    sqlite3.connect(sys.argv[1], uri=True)\n"
+                            "except sqlite3.OperationalError:\n    pass")
+                    done = subprocess.run([sys.executable, "-c", code, target.as_uri() + "?mode=ro"], cwd=self.root,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                seen = {os.path.normcase(r["path"]): r["sha256"] for r in rec.as_dict()["outside_reads"]}
+                self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", seen)
+                self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                target.rmdir()
+                target.write_bytes(b"database")
+                self.assertNotEqual(ci_plan._content(target), "dir")
+        with self.subTest(case="sqlite on the run's own directory"):
+            rec = self.recorder()
+            own = base / "own.db"
+            own.mkdir()
+            with self.assertRaises(sqlite3.OperationalError):
+                sqlite3.connect(own.as_uri() + "?mode=ro", uri=True)
+            own.rmdir()
+            rec.stop()
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+            self.assertFalse(any(r.get("sha256") == "dir" and r["path"].endswith("own.db")
+                                 for r in rec.as_dict()["outside_reads"]))
+        with self.subTest(case="append after a truncating creation"):
+            kept = base / "truncate-then-append.bin"
+            rec = self.recorder()
+            kept.write_bytes(b"one")
+            with open(kept, "ab") as stream:
+                stream.write(b"two")
+            rec.stop()
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+        with self.subTest(case="created again by appending"):
+            again = base / "recreated-by-append.bin"
+            rec = self.recorder()
+            again.write_bytes(b"one")
+            again.unlink()
+            with open(again, "ab") as stream:
+                stream.write(b"two")
+            rec.stop()
+            self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
 
     def check_kept_final_paths_need_a_repeatable_operation(self):
         """CI-OPT-001 17th review R1701: a file the run leaves at a path that was absent stands

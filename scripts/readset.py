@@ -812,8 +812,10 @@ class Recorder:
                 # 8th review R801: what another writer put there since is reported too.
             if os.path.isdir(canonical):
                 # 6th review R603: report it, so a recorded input turned directory is seen.
-                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True,
-                            **self._alias_event(self._alias_of(path, canonical))})  # 10th review R1002
+                with self._quiet():
+                    born, ident = _born(canonical), _file_id(canonical)  # 18th review R1801
+                self._emit({"type": "read", "path": canonical, "via": via, "isdir": True, "born": born,
+                            "id": _id_list(ident), **self._alias_event(self._alias_of(path, canonical))})  # R1002
                 return
             with self._quiet():
                 digest, born, ident = _sha(canonical), _born(canonical), _file_id(canonical)
@@ -833,6 +835,12 @@ class Recorder:
         if relayed and isdir:
             self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
             self._keep_alias(alias, path, exempt=True, links=links)  # 10th review R1002
+            own = (ident is not None and ident in self._owned_ids) or (
+                isinstance(born, (int, float)) and born >= self._started_epoch)
+            if born is None and ident is None:
+                self._partial("PATH_UNNORMALIZABLE", "directory kind %s" % path)  # 18th review R1801
+            elif not own:
+                self._directory_kind(canonical)
             return
         if relayed:
             self._reobserved(scope, canonical, path, digest=digest, absent=absent)
@@ -881,6 +889,8 @@ class Recorder:
             self._keep_alias(self._alias_of(path, canonical), path, exempt or os.path.isdir(canonical))
             if os.path.isdir(canonical):
                 self._reobserved(scope, canonical, path, isdir=True)  # 6th review R603
+                if not exempt:
+                    self._directory_kind(canonical)  # 18th review R1801
                 return  # a directory handle
             if self._input_entry(scope, canonical) is not None:
                 if digest is None:
@@ -1158,6 +1168,13 @@ class Recorder:
             entry[1].add(final if final in ("truncate", "replace") else "append")
         if ancestor != self.root:  # the repository itself is the Git identity's dependency
             self._needs_state.setdefault(ancestor, kind)
+
+    def _directory_kind(self, canonical):
+        """18th review R1801: a directory found where a file was asked for (an open or an
+        SQLite connection that fails because of it) is a kind dependency: "dir", checked at
+        stop and by the fingerprint like an ancestor's kind (15th review)."""
+        if canonical != self.root and self._scope(canonical) != "env_manifest":
+            self._needs_state.setdefault(canonical, "dir")
 
     def _open_failed(self, file, mode=None, flags=None):
         """15th review R1502: a failed open for writing of an existing file the run did not
