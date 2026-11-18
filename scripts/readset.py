@@ -82,6 +82,11 @@ def _wrapped_call(original, *args, **kwargs):
 _ORIGINAL_CFFI_DLOPEN = None
 _SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
                   "load_dh_params")
+# 13th review R1301: other state-dependent changes with audit events: event -> (index of
+# the target path, index of a dir_fd argument or None). Their outcome depends on what is at
+# the path before the call.
+_MUTATION_EVENTS = {"os.rmdir": (0, 1), "shutil.rmtree": (0, 1), "os.chmod": (0, 2), "os.utime": (0, 3),
+                    "os.truncate": (0, None), "os.link": (0, 2)}
 _PROCESS_EVENTS = {"os.system", "os.spawn", "os.startfile", "os.exec", "os.posix_spawn", "os.fork", "os.forkpty"}
 
 
@@ -938,10 +943,17 @@ class Recorder:
                 self._created.discard(op[1])
                 if meta.get("own"):
                     return
+                # 13th review R1301: a file that existed before the run is gone: the next run
+                # starts without it, which no record can check beforehand (partial).
+                self._partial("MUTATION_UNVERIFIABLE", "removed %s" % (meta.get("text") or op[1]))
                 if self._is_child:
                     self._emit({"type": "removed", "path": op[1]})
                 else:
                     self._removed.setdefault(op[1], meta.get("text") or op[1])
+            elif certain and not meta.get("own"):
+                # 13th review R1301: the removal failed and the file is still there: its content
+                # is the input the outcome depended on (8th review R803: no change).
+                self._record_read(meta.get("text") or op[1])
             elif not certain and not meta.get("own"):
                 if self._is_child:
                     self._emit({"type": "removed", "path": op[1], "confirmed": False})
@@ -1007,6 +1019,14 @@ class Recorder:
             self._created.discard(dst)
             if not self._is_child:
                 self._renames.append((src, dst, None, moved))
+
+    def _mutation(self, event, target, canonical):
+        """13th review R1301: a change to an existing path the run did not create (removed,
+        emptied, its mode or times set, linked) changes what the next run starts from; the
+        read set has no record that the fingerprint could check before that run, so it is
+        partial (not an input change: the run did it, and a failed attempt changes nothing)."""
+        if not self._is_created(canonical, presume=False):
+            self._partial("MUTATION_UNVERIFIABLE", "%s %s" % (event, _path_text(target)))
 
     def _move_aliases(self, meta, exempt):
         """The observed aliases of a move's paths with their links (for a child's report),
@@ -1165,15 +1185,44 @@ class Recorder:
             # of a file recreated under the same name, so birth time alone cannot show it.
             target = args[0] if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
             canonical = _canonical(_path_text(target)) if target is not None else None
-            if canonical:
+            if len(args) > 1 and isinstance(args[1], int) and args[1] >= 0:
+                self._partial("PATH_UNNORMALIZABLE", "os.remove dir_fd %s" % target)
+            elif canonical:
                 with self._quiet():
-                    existed = os.path.lexists(canonical) and not os.path.isdir(canonical)
-                if existed:
+                    existed = os.path.lexists(canonical)
+                    isdir = existed and os.path.isdir(canonical)
+                if not existed:
+                    # 13th review R1301: the removal fails because nothing is there: that absence
+                    # is an input (the next run must still find nothing), unless it is inside an
+                    # area the run created.
+                    self._record_read(target)
+                elif isdir:
+                    self._mutation("os.remove", target, canonical)  # fails on a directory
+                else:
                     # 8th review R803: the event comes before the call, so this is an attempt
                     # settled by the wrapped os.remove/os.unlink outcome (or the path's state).
-                    # 9th review R901: removing an own output releases the name.
-                    own = self._is_created(canonical, presume=False) or canonical in self._made
+                    # 9th review R901: removing an own output releases the name. 13th review
+                    # R1301: own is the object (or birth in the run), not the name history.
+                    own = self._is_created(canonical, presume=False)
                     self._attempt(("remove", canonical), text=_path_text(target), own=own)
+        elif event in _MUTATION_EVENTS:
+            position, fd_at = _MUTATION_EVENTS[event]
+            target = args[position] if len(args) > position else None
+            if isinstance(target, int):
+                pass  # an open descriptor (os.ftruncate etc.): see the Task record (not resolved)
+            elif fd_at is not None and len(args) > fd_at and isinstance(args[fd_at], int) and args[fd_at] >= 0:
+                self._partial("PATH_UNNORMALIZABLE", "%s dir_fd %s" % (event, target))
+            elif isinstance(target, (str, bytes, os.PathLike)):
+                canonical = _canonical(_path_text(target))
+                if canonical is None:
+                    self._partial("PATH_UNNORMALIZABLE", target)
+                else:
+                    with self._quiet():
+                        existed = os.path.lexists(canonical)
+                    if not existed:
+                        self._record_read(target)  # 13th review R1301: the absence decides the outcome
+                    else:
+                        self._mutation(event, target, canonical)
         elif event == "os.rename":
             # 5th review R504: an output moved into place (atomic write) is an output.
             src = _canonical(_path_text(args[0])) if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
