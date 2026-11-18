@@ -48,6 +48,13 @@ _ORIGINAL_SCANDIR = os.scandir
 _ORIGINAL_SOCKET_BIND = socket.socket.bind
 _ORIGINAL_SOCKET_CLOSE = socket.socket.close
 _ORIGINAL_SQLITE_CONNECT = None
+# 7th review R701/R703/R704: creation and rename calls are wrapped so an attempt is
+# settled by the call's own outcome (return or exception), not by the path's later state.
+_ORIGINAL_IO_OPEN = None
+_ORIGINAL_OS_OPEN = None
+_ORIGINAL_OS_RENAME = None
+_ORIGINAL_OS_REPLACE = None
+_IN_SQLITE_WRAPPER = threading.local()
 _ORIGINAL_CFFI_DLOPEN = None
 _SSL_FILE_APIS = ("load_verify_locations", "load_cert_chain", "load_default_certs", "set_default_verify_paths",
                   "load_dh_params")
@@ -325,7 +332,9 @@ class Recorder:
         # or a rename is only an attempt until the next event of the same thread (or stop)
         # finds it done; confirmed renames are applied after every child log is merged.
         self._pending_ops = {}  # thread id -> ("create", path) | ("rename", src, dst)
-        self._renames = []  # confirmed (src, dst) of this process and of children
+        self._renames = []  # (src, dst, owned) confirmed renames; owned None = owner unknown
+        self._input_born = {}  # input path -> birth time when first recorded (before the run)
+        self._removed = {}  # pre-existing (not run-created) paths this run removed (7th review R702)
         self._created = set()
         self._install()
         if _child:
@@ -358,6 +367,13 @@ class Recorder:
                             setattr(ssl.SSLContext, name, _ssl_wrapper(name, original))
                 except Exception:
                     pass
+                global _ORIGINAL_IO_OPEN, _ORIGINAL_OS_OPEN, _ORIGINAL_OS_RENAME, _ORIGINAL_OS_REPLACE
+                import builtins
+                import io
+                _ORIGINAL_IO_OPEN, _ORIGINAL_OS_OPEN = io.open, os.open
+                _ORIGINAL_OS_RENAME, _ORIGINAL_OS_REPLACE = os.rename, os.replace
+                io.open = builtins.open = _tracked_io_open
+                os.open, os.rename, os.replace = _tracked_os_open, _tracked_os_rename, _tracked_os_replace
                 os.listdir = _tracked_listdir
                 os.scandir = _tracked_scandir
                 subprocess.Popen = _TrackedPopen
@@ -507,7 +523,16 @@ class Recorder:
             return
         if relayed:
             self._reobserved(scope, canonical, path, digest=digest, absent=absent)
-            if canonical in self._created or (born is not None and born >= self._started_epoch):
+            # 7th review R702: the child saw content born before the run, so it was an input
+            # whatever this recorder later created at the path (log merge order is not time
+            # order). Without a birth time, the created-path exemption cannot be ordered.
+            if born is not None:
+                exempt = born >= self._started_epoch
+            else:
+                exempt = canonical in self._created
+                if exempt and not absent:
+                    self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", path)
+            if exempt:
                 return  # an output of this run (for an absent path: inside an area created by the run)
             self._note_alias(tuple(alias) if alias else alias, path)
             if absent:
@@ -540,6 +565,11 @@ class Recorder:
             if digest is None:
                 with self._quiet():
                     digest = _sha(canonical)
+        if self._input_entry(scope, canonical) is None:
+            with self._quiet():
+                first_born = born if relayed else _born(canonical)
+            if first_born is not None and first_born < self._started_epoch:
+                self._input_born[canonical] = (first_born, path)
         if scope == "env_manifest":
             if canonical not in self._env_reads:
                 self._env_reads[canonical] = {"path": _real(path) or canonical, "sha256": digest}
@@ -594,8 +624,21 @@ class Recorder:
         self._settle_pending(threading.get_ident())
         self._pending_ops[threading.get_ident()] = op
 
+    def _settle_by_call(self, kind, paths, ok):
+        """7th review R701: the wrapped call returned (ok) or raised: that is the outcome."""
+        op = self._pending_ops.get(threading.get_ident())
+        if op is None or op[0] != kind:
+            return
+        wanted = [_canonical(_path_text(p)) if isinstance(p, (str, bytes, os.PathLike)) else None for p in paths]
+        if list(op[1:]) != wanted:
+            return  # another path (e.g. the recorder's own log write): not this attempt
+        del self._pending_ops[threading.get_ident()]
+        self._conclude(op, ok, certain=True)
+
     def _settle_pending(self, ident=None):
-        """Settle attempts (one thread, or all at stop): only a done operation counts."""
+        """Settle attempts no wrapped call concluded (one thread, or all at stop) from the
+        path's state. Existence is no proof of who created it (7th review R701), so such
+        an ownership is uncertain and the evidence is not reusable."""
         for key in ([ident] if ident is not None else list(self._pending_ops)):
             op = self._pending_ops.pop(key, None)
             if op is None:
@@ -605,30 +648,50 @@ class Recorder:
                     done = os.path.lexists(op[1])
                 else:
                     done = os.path.lexists(op[2]) and (op[1] == op[2] or not os.path.lexists(op[1]))
-            if not done:
-                if op[0] == "create":
-                    # The creation failed: the path was absent when the run looked, which is
-                    # an observation (a later appearance by another writer is a change).
-                    self._record_read(op[1])
-                continue  # the open/rename failed: no ownership
+            self._conclude(op, done, certain=False)
+
+    def _conclude(self, op, done, certain):
+        if not done:
             if op[0] == "create":
-                if self._is_child:
-                    self._emit({"type": "created", "path": op[1]})
-                else:
-                    self._made.add(op[1])
-                    self._created.add(op[1])
-            elif self._is_child:
-                self._emit({"type": "renamed", "src": op[1], "dst": op[2]})
-            else:
-                self._renames.append((op[1], op[2]))
+                # The creation failed: the path was absent when the run looked, which is
+                # an observation (a later appearance by another writer is a change).
+                self._record_read(op[1])
+            return  # the open/rename failed: no ownership
+        if not certain:
+            self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", op[-1])
+        if op[0] == "create":
+            self._made.add(op[1])
+            self._created.add(op[1])
+            if self._is_child:
+                self._emit({"type": "created", "path": op[1]})
+            return
+        src, dst = op[1], op[2]
+        owned = src in self._made or src in self._created
+        if self._is_child:
+            # The owner is known only for this child's own outputs; the parent decides
+            # the rest after merging every log.
+            self._emit({"type": "renamed", "src": src, "dst": dst, "owned": owned})
+        if owned:
+            # 7th review R703: ownership is decided at the time of the move, so a read of
+            # the moved output right after is an output read.
+            self._made.add(dst)
+            self._created.add(dst)
+        elif not self._is_child:
+            self._renames.append((src, dst, None))
 
     def _apply_renames(self):
-        """At stop, after every log is merged: a rename of an output gives an output."""
+        """At stop, after every log is merged: moves whose source owner was not known when
+        they happened (another process created it). Applying them is order-uncertain, so
+        an applied one leaves the read set partial (7th review R703)."""
         changed = True
         while changed:
             changed = False
-            for src, dst in self._renames:
-                if (src in self._made or src in self._created) and dst not in self._made:
+            for src, dst, owned in self._renames:
+                if dst in self._made:
+                    continue
+                if owned is True or (owned is None and (src in self._made or src in self._created)):
+                    if owned is None:
+                        self._partial("OUTPUT_OWNERSHIP_UNCERTAIN", dst)
                     self._made.add(dst)
                     self._created.add(dst)
                     changed = True
@@ -661,6 +724,9 @@ class Recorder:
             if not (create and not os.path.exists(canonical)):
                 self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
             else:
+                # 7th review R702: the absence is reported first, so a parent that recorded
+                # this path as an input sees it gone before it is recreated.
+                self._record_read(path)
                 self._attempt(("create", canonical))  # 6th review R601
             return
         if create and not os.path.exists(canonical):
@@ -709,17 +775,35 @@ class Recorder:
 
     def _audit_event(self, event, args):
         """One recorder's handling of a CPython audit event."""
-        if self._pending_ops:
+        in_sqlite = event.startswith("sqlite3.") and getattr(_IN_SQLITE_WRAPPER, "on", False)
+        if self._pending_ops and not in_sqlite:  # the wrapper concludes its own attempt (R704)
             self._settle_pending(threading.get_ident())
         if event == "open":
             self._open_event(args[0] if args else None, args[1] if len(args) > 1 else None,
                              args[2] if len(args) > 2 else None)
+        elif event == "sqlite3.connect" and getattr(_IN_SQLITE_WRAPPER, "on", False):
+            pass  # 7th review R704: the wrapper observes this connect (no duplicate attempt)
         elif event == "sqlite3.connect":
             self._sqlite(args[0] if args else None, uri=None)
         elif event.startswith("socket."):
             self._socket_event(event, args)
         elif event == "subprocess.Popen":
             self._audited_launches += 1
+        elif event == "os.remove":
+            # 7th review R702: removing a path the run did not create is recorded, so a
+            # recorded input (by this process or a child whose log is merged later) that was
+            # removed and recreated is a change. NTFS name tunneling keeps the old birth time
+            # of a file recreated under the same name, so birth time alone cannot show it.
+            target = args[0] if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
+            canonical = _canonical(_path_text(target)) if target is not None else None
+            if canonical:
+                with self._quiet():
+                    existed = os.path.lexists(canonical) and not os.path.isdir(canonical)
+                if existed and not self._is_created(canonical) and canonical not in self._made:
+                    if self._is_child:
+                        self._emit({"type": "removed", "path": canonical})
+                    else:
+                        self._removed.setdefault(canonical, _path_text(target))
         elif event == "os.rename":
             # 5th review R504: an output moved into place (atomic write) is an output.
             src = _canonical(_path_text(args[0])) if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
@@ -1067,6 +1151,17 @@ class Recorder:
                 if not seen or seen["bad"] or seen["end"] is None:
                     self._partial("CHILD_LOG_INCOMPLETE", "token %s pid %s" % (str(token)[:12], pid))
         self._apply_renames()
+        # 7th review R702: an input that existed before the run but now has a birth time in
+        # the run was deleted and recreated (even with the same content).
+        for canonical, (first_born, path) in sorted(self._input_born.items()):
+            with self._quiet():
+                now_born = _born(canonical) if os.path.lexists(canonical) else None
+            if now_born is not None and now_born >= self._started_epoch:
+                self._partial("INPUT_CHANGED_DURING_RUN", path)
+        for canonical, path in sorted(self._removed.items()):
+            entry = self._input_entry(self._scope(canonical), canonical)
+            if entry is not None and not entry.get("absent"):
+                self._partial("INPUT_CHANGED_DURING_RUN", path)
         for canonical, path in sorted(self._appeared.items()):
             if canonical not in self._made:
                 self._partial("INPUT_CHANGED_DURING_RUN", path)
@@ -1170,10 +1265,15 @@ class Recorder:
             if not (isinstance(event.get("path"), str) and event["path"]):
                 raise ValueError("created event without path")  # READSET_LOG_CORRUPT
             self._made.add(event["path"])
+        elif kind == "removed":
+            if not (isinstance(event.get("path"), str) and event["path"]):
+                raise ValueError("removed event without path")
+            self._removed.setdefault(event["path"], event["path"])
         elif kind == "renamed":
             if not all(isinstance(event.get(k), str) and event[k] for k in ("src", "dst")):
                 raise ValueError("renamed event without paths")
-            self._renames.append((event["src"], event["dst"]))  # applied at stop (R605)
+            owned = event.get("owned")
+            self._renames.append((event["src"], event["dst"], True if owned is True else None))  # applied at stop
         elif kind == "hook_failed":
             self._partial("HOOK_FAILED", event.get("error", "unknown"))
         elif kind == "partial":
@@ -1447,10 +1547,67 @@ def _sqlite_target(database, uri):
 def _tracked_sqlite_connect(*args, **kwargs):
     database = args[0] if args else kwargs.get("database")
     uri = kwargs.get("uri", args[7] if len(args) > 7 else False)  # connect(database, timeout, detect_types, isolation_level, check_same_thread, factory, cached_statements, uri)
+    recorders = [r for r in _active() if not r._is_quiet()]
+    for r in recorders:
+        r._sqlite(database, uri=bool(uri))
+    _IN_SQLITE_WRAPPER.on = True
+    try:
+        connection = _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+    except BaseException:
+        _IN_SQLITE_WRAPPER.on = False
+        for r in recorders:
+            r._settle_by_call("create", [_sqlite_target(database, bool(uri))[1]], False)
+        raise
+    _IN_SQLITE_WRAPPER.on = False
+    for r in recorders:
+        r._settle_by_call("create", [_sqlite_target(database, bool(uri))[1]], True)
+    return connection
+
+
+def _settle_calls(kind, paths, ok):
     for r in _active():
         if not r._is_quiet():
-            r._sqlite(database, uri=bool(uri))
-    return _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+            r._settle_by_call(kind, paths, ok)
+
+
+def _tracked_io_open(file, *args, **kwargs):
+    try:
+        result = _ORIGINAL_IO_OPEN(file, *args, **kwargs)
+    except BaseException:
+        _settle_calls("create", [file], False)
+        raise
+    _settle_calls("create", [file], True)
+    return result
+
+
+def _tracked_os_open(path, *args, **kwargs):
+    try:
+        result = _ORIGINAL_OS_OPEN(path, *args, **kwargs)
+    except BaseException:
+        _settle_calls("create", [path], False)
+        raise
+    _settle_calls("create", [path], True)
+    return result
+
+
+def _tracked_os_rename(src, dst, *args, **kwargs):
+    try:
+        result = _ORIGINAL_OS_RENAME(src, dst, *args, **kwargs)
+    except BaseException:
+        _settle_calls("rename", [src, dst], False)
+        raise
+    _settle_calls("rename", [src, dst], True)
+    return result
+
+
+def _tracked_os_replace(src, dst, *args, **kwargs):
+    try:
+        result = _ORIGINAL_OS_REPLACE(src, dst, *args, **kwargs)
+    except BaseException:
+        _settle_calls("rename", [src, dst], False)
+        raise
+    _settle_calls("rename", [src, dst], True)
+    return result
 
 
 def _ssl_wrapper(name, original):
