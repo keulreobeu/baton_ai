@@ -93,3 +93,13 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - **게시 전 점검(2026-11-18, 사용자 승인 "push + 5차 패키지 모두")**: 원격 `codex/ci-vtier-001`=`36e5bbc`, 미게시 `4c7a03b`·`d4d378b`(CI-OPT branch에 게시됨)·`f707bf4`·`3f41836`·`8305a51`·`5fdf500`·`4c2de5d`·`94f2316`·`9166d40`·이 기록 커밋.
   작성자 lwwde07, 허용 경로만, 비밀값·홈 경로·DB·로그 없음. 검증 SHA `94f2316` 이후 변경은 Task 문서뿐. 대상: draft PR #17 fast-forward push만(force·main 병합 없음).
 - **2026-11-18 원격 CI(`9681949`, draft PR #17)**: run `44248765957` plan·gate success, Windows 3.11·3.12 각 761 tests OK, failures/errors/skips 0, eligible true. `9681949`(코드 `94f2316`)에만 귀속. 5차 재검토 대기. 이 기록 커밋은 로컬 전용.
+- **2026-11-18 5차 이종 모델 재검토(ChatGPT, 대상 `94f2316`)**: **FAIL**(P1 0, P2 5). R401 resolved, R402·R403·R404 partial. CI-OPT 병합 회귀 미발견. 격리 재현(Linux 3.13.5).
+  R501 `_verify` 저장 직전 제어로 `control_requested` → lease 미해제, Wiki가 정착 전 기록 → `update(yield_to_control)`로 원자 전환, Wiki는 저장 뒤(lease 유지 후 해제).
+  R502 중첩 V3 timeout이 선언 실패에 가려 실패·플래그 true → `validation_stop_reason()`(planner·중첩 검사) 공통 중단 판정.
+  R503 Orca 일부 정착(스냅샷·scope 실패, 외부 중단, compact fallback, 검증 뒤 HEAD 변경)의 상태 잔존·모순 → `_settle_author` 기본값(통과 false·상태 null), 검증 뒤 무효 트리는 중단 규칙, fallback 상태 null·새 V3 실패 유지.
+  R504 게이트 V3 실패 뒤 기존 review·integration 증거 유효 → 실패 기록 시 증거 제거, 미해결이면 승인 거부, 완전한 V3 증거 기록 시 같은 트랜잭션에서 해제.
+  R505 CBM root 경로 누락이 `Path("")`로 현재 디렉터리와 일치 → 비어 있지 않은 문자열·root 일치 필수(3개 조회).
+  회귀: 늦은 제어·Wiki 순서·중첩 중단, 게이트 실패 증거 무효화·승인 거부·해제, Orca 무효 트리·fallback, CBM root 누락.
+  영향 모듈 5개 256 중 255 OK. 4차 회귀(`test_control_during_author_settlement_is_no_pass`)의 "저장 직전" 주입이 Wiki 판정 중이었는데, R501로 Wiki가 저장 뒤로 옮겨져
+  그 주입은 "저장 뒤"가 됨 → 저장 직전은 검증 뒤 스냅샷 단계 주입으로 재현, 저장 뒤 제어(정착된 유효 결과를 멈춤, 무효화 아님)는 별도 사례로 추가. check_sdd PASS.
+  흐름 변경(2026-11-18 사용자): 회차마다 로컬 V3를 돌리지 않고 V2 + 원격 CI, 공식 로컬 V3는 교차검토 PASS 뒤 최종 후보에 1회. 격리된 두 Task 검증은 병렬.

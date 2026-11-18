@@ -1626,6 +1626,10 @@
             },
             {
               "file": "tests/test_ci_plan.py",
+              "symbol": "SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
               "symbol": "PolicyTests.test_incomplete_inventory_alone_gives_partial_local_v1"
             },
             {
@@ -1676,6 +1680,18 @@
             {
               "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_control_during_author_settlement_is_no_pass"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_late_control_and_nested_stop_leave_no_result_and_release"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_failed_gate_v3_invalidates_evidence_and_blocks_approval"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_settlement_of_an_unvalidated_tree_or_unrecordable_result_has_no_status"
             },
             {
               "file": "tests/test_managed_harness.py",

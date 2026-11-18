@@ -92,6 +92,11 @@ def _write(store, row, name, value, *, clear=False):
         if clear:
             result.pop("review_evidence", None); result.pop("integration_evidence", None)
         result[name] = value
+        # 5th review R504: evidence recorded from a complete passing official V3 resolves
+        # an earlier V3 failure in the same transaction that checked the stored result.
+        from .orchestrator import official_v3_fields
+        if official_v3_fields(value.get("checks") or []) == {"official_v3_unresolved": False}:
+            result["official_v3_unresolved"] = False
         c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(result), row["id"]))
         store.event(c, row["id"], "evidence_recorded", {"kind": name, "evidence_hash": digest(value)})
     return store.export(row["id"])
@@ -108,10 +113,15 @@ def _note_official_v3(store, row, checks):
     with store.tx() as c:
         current = store.row(c, row["id"])
         values = json.loads(current["result"])
-        if values.get("official_v3_unresolved") is not True:
+        # 5th review R504: earlier review/integration evidence no longer stands once an
+        # official V3 of the same Task failed; approval needs new evidence.
+        stale = [k for k in ("review_evidence", "integration_evidence") if values.get(k) is not None]
+        if values.get("official_v3_unresolved") is not True or stale:
             values["official_v3_unresolved"] = True
+            for key in stale:
+                values.pop(key)
             c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), row["id"]))
-            store.event(c, row["id"], "official_v3_recorded", {"official_v3_unresolved": True})
+            store.event(c, row["id"], "official_v3_recorded", {"official_v3_unresolved": True, "invalidated": stale})
     return True
 
 

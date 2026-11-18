@@ -414,6 +414,19 @@ class CbmCLI:
         return {"columns": columns, "rows": rows, "returned": len(rows), "total": total,
                 "total_relation": "eq", "has_more": False, "truncated": False}
 
+    def _is_root(self, value):
+        """5th review R505: a required root path is a non-empty string naming this root
+        (Path("") would resolve to the working directory)."""
+        try:
+            return isinstance(value, str) and bool(value.strip()) and Path(value).resolve() == self.root
+        except (OSError, ValueError):
+            return False
+
+    def _status_root(self, status):
+        git_info = status.get("git") if isinstance(status, dict) else None
+        return (isinstance(status, dict) and self._is_root(status.get("root_path"))
+                and isinstance(git_info, dict) and self._is_root(git_info.get("worktree_root")))
+
     def inspect(self, names, base, inv):
         started = self.clock()
         projects = self.call("list_projects", format="json", limit=500)
@@ -422,14 +435,11 @@ class CbmCLI:
         need(isinstance(projects.get("projects"), list)
              and all(isinstance(p, dict) and isinstance(p.get("root_path", ""), str) for p in projects["projects"]),
              "CBM_UNKNOWN_SCHEMA")
-        matches = [p for p in projects["projects"]
-                   if Path(p.get("root_path", "")).resolve() == self.root]
+        matches = [p for p in projects["projects"] if self._is_root(p.get("root_path"))]
         need(len(matches) == 1, "CBM_WRONG_ROOT")
         project = matches[0]["name"]
         status = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
-        need(Path(status.get("root_path", "")).resolve() == self.root
-             and Path(status.get("git", {}).get("worktree_root", "")).resolve() == self.root,
-             "CBM_WRONG_ROOT")
+        need(self._status_root(status), "CBM_WRONG_ROOT")
         need(status.get("status") == "ready", "CBM_NOT_READY")
         paths = sorted(set(names) | {t["file"] for t in inv["tests"].values()})
 
@@ -463,9 +473,7 @@ class CbmCLI:
             # index_repository automatically updates the existing index incrementally.
             self.call("index_repository", repo_path=str(self.root), persistence=False)
             status = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
-            need(status.get("status") == "ready" and Path(status.get("root_path", "")).resolve() == self.root
-                 and Path(status.get("git", {}).get("worktree_root", "")).resolve() == self.root,
-                 "CBM_REINDEX_FAILED")
+            need(status.get("status") == "ready" and self._status_root(status), "CBM_REINDEX_FAILED")
             generation, rows = coverage()
         need(all(r.get("freshness") == "metadata_match" for r in rows), "CBM_STALE")
         coverage_ok = all(r.get("status") == "no_recorded_issue" and r.get("coverage") == [] for r in rows)
@@ -548,8 +556,7 @@ class CbmCLI:
                     and audit_static_edges(self.root, inv, impacted, graph_edges))
         after = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
         need(after.get("indexed_at") == generation and after.get("root_path") == status.get("root_path")
-             and after.get("status") == "ready"
-             and Path(after.get("git", {}).get("worktree_root", "")).resolve() == self.root,
+             and after.get("status") == "ready" and self._status_root(after),
              "CBM_GENERATION_CHANGED")
         return {"selected": sorted(mapped), "complete": complete,
                 "state": "best_effort", "index_id": fingerprint([project, str(self.root)]),

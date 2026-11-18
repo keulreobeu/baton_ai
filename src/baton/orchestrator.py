@@ -103,6 +103,22 @@ def validation_status(checks):
     return None
 
 
+STOP_REASONS = {"pause", "cancel", "timeout"}
+
+
+def validation_stop_reason(checks):
+    """5th review R502: a validation stopped by pause, cancel or the time budget, seen in
+    the planner check or in any of its nested executed checks (a declared check that
+    already failed does not receive the nested stop reason). None when not stopped."""
+    for check in checks or []:
+        planner = check.get("planner") if isinstance(check, dict) else None
+        if isinstance(planner, dict):
+            for item in [check, *(planner.get("executed_checks") or [])]:
+                if isinstance(item, dict) and item.get("stop_reason") in STOP_REASONS:
+                    return item["stop_reason"]
+    return None
+
+
 def official_v3_fields(checks, *, stopped=False):
     """CI-VTIER-001 3rd review R02: an unresolved official V3 failure is kept in the Task
     result apart from the latest validation. A V3 that failed sets it; only a complete,
@@ -112,7 +128,7 @@ def official_v3_fields(checks, *, stopped=False):
         if isinstance(planner, dict) and planner.get("effective_tier") == "V3":
             # 4th review R402: a V3 whose own process was stopped (pause, cancel or the
             # Task time budget) is no result either.
-            if stopped or check.get("stop_reason"):
+            if stopped or check.get("stop_reason") or validation_stop_reason(checks):
                 return {}
             ok = (planner.get("actual_status") == "passed" and planner.get("execution_complete") is True
                   and all(isinstance(c, dict) and c.get("exit_code") == 0 and not c.get("stop_reason") for c in checks))
@@ -128,6 +144,10 @@ def settled_validation(checks, *, stopped=False):
     from the checks; callers decide validation_passed from their own criteria."""
     if stopped or checks is None:
         return {"validation_passed": False, "validation_status": None}
+    if validation_stop_reason(checks):
+        # Callers route a stopped validation to their stop branch first (5th review R502);
+        # this keeps the status empty and the V3 flag unchanged if one reaches here.
+        return {"validation_status": None}
     return {"validation_status": validation_status(checks), **official_v3_fields(checks)}
 
 
@@ -255,15 +275,28 @@ class Orchestrator:
         return row["control"]
 
     def finish(self, task, lease, state, **result):
+        wiki_due = False
         if result.get("validation_passed") is True and result.get("validation_status") == "not_run":
             # 3rd review R03: no planner test ran, so nothing is recorded as verified.
             result["wiki"] = {"action": "SKIP", "reason": "validation_not_run", "blocking": False}
         elif result.get("validation_passed") is True:
-            from .wiki_cli import assess
-            result["wiki"] = assess(self.store, task, result)
-            if state == "COMPLETED" and result["wiki"].get("blocking"):
-                state = "REVIEW_REQUIRED"
-        self.store.update(task, lease, state, result=result, release=True)
+            wiki_due = True
+        # 5th review R501: a control that arrived after the last stop check turns this
+        # settlement into PAUSED/CANCELLED in the same transaction (no validation result,
+        # lease released) instead of failing and leaving the lease held.
+        row = self.store.update(task, lease, state, result=result, release=not wiki_due, yield_to_control=True)
+        if wiki_due:
+            # The Wiki records a verification only once the validation result is stored as
+            # the settled result; the lease is held until the Wiki outcome is stored too.
+            wiki = None
+            if row["state"] == state:
+                from .wiki_cli import assess
+                wiki = assess(self.store, task, result)
+                if state == "COMPLETED" and wiki.get("blocking"):
+                    state = "REVIEW_REQUIRED"
+            row = self.store.update(task, lease, state if wiki else row["state"], result={"wiki": wiki},
+                                    release=True, yield_to_control=True)
+        state = row["state"]
         self.store.observe_idle_state(task)
         if state == "COMPLETED":
             from .autocommit import auto_commit_task
@@ -390,7 +423,7 @@ class Orchestrator:
                 validation = self.validate(task, tree, stop, stage="in_progress", target_base=base)
                 if metrics:
                     self.store.observe(task_id, "phase", metrics, "validation", time.monotonic() - validation_started)
-                reason = stop()
+                reason = stop() or validation_stop_reason(validation)
                 if reason:
                     # 3rd review R02/R03: a stopped validation is no result; stale status is cleared.
                     return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason,
@@ -821,7 +854,7 @@ class Orchestrator:
                 return self.control(task_id, lease) or ("timeout" if row["elapsed"] + time.monotonic() - started >= task["execution"]["total_timeout_seconds"] else None)
             checks = self.validate(task, tree, stop, stage=stage,
                                    target_base=row["result"].get("base_commit"))
-            reason = stop()
+            reason = stop() or validation_stop_reason(checks)
             if reason:
                 return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason,
                                    **settled_validation(checks, stopped=True))

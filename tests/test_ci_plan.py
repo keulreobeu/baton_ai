@@ -815,6 +815,28 @@ class SyntheticGitTests(unittest.TestCase):
         self.assertEqual(len(partial["selected_ids"]), 2)
         self.assertEqual(self.planner("checkpoint", Partial())["effective_tier"], "V2")
 
+    def test_missing_cbm_root_paths_are_never_this_root(self):
+        """CI-VTIER-001 5th review R505: a missing, empty or non-string root path is not
+        this root even when the working directory is the root (Path("") resolves to it)."""
+        import contextlib
+        cli = cp.CbmCLI(self.root, executable="fake-cbm")
+        good = {"root_path": str(self.root), "git": {"worktree_root": str(self.root)}}
+        with contextlib.chdir(self.root):
+            for value in (None, "", " ", 3, ["x"]):
+                with self.subTest(root_path=value):
+                    self.assertFalse(cli._is_root(value))
+            self.assertTrue(cli._status_root(good))
+            for broken in ({"root_path": str(self.root)}, {"git": {"worktree_root": str(self.root)}},
+                           {"root_path": "", "git": {"worktree_root": ""}}, dict(good, git=None)):
+                with self.subTest(status=broken):
+                    self.assertFalse(cli._status_root(broken))
+            cli.call = lambda tool, **args: ({"has_more": False, "projects": [{"name": "p"}]} if tool == "list_projects"
+                                             else {"status": "ready"})
+            self.write("src/value.py", "def value(): return 3\n")
+            fast = self.planner(adapter=cli)
+        self.assertEqual(fast["graph"]["state"], "failed")
+        self.assertIn("CBM_WRONG_ROOT", fast["reasons"])
+
     def test_malformed_graph_answer_is_discarded_not_merged(self):
         """CI-VTIER-001 re-review N02: a non-dict answer or one without "complete" becomes a
         failed graph (partial local V1/V2), never a planner exception or a defaulted field."""

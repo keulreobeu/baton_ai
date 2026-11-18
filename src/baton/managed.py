@@ -272,7 +272,8 @@ class ManagedStore:
             self.event(c, task, "PLANNING", {"lease": lease, "pid": os.getpid()})
         return self.get(task)
 
-    def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False):
+    def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False,
+               yield_to_control=False):
         overridden = False
         if state not in STATES:
             raise HarnessError("invalid_state")
@@ -287,6 +288,10 @@ class ManagedStore:
                 if r["control"]:
                     overridden = state not in {"PAUSED", "CANCELLED"}
                     state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
+            if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"} and yield_to_control:
+                # CI-VTIER-001 5th review R501: a final settlement yields to the control.
+                overridden = True
+                state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
             if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}:
                 raise HarnessError("control_requested")
             values = json.loads(r["result"])
@@ -301,7 +306,7 @@ class ManagedStore:
                     self.event(c, task, "runtime_checkpoint", {"role": "author", "binding": actual})
                 result = {**result, "runtime": incoming}
             result = dict(result or {})
-            if overridden:
+            if overridden and ({"validation", "validation_passed", "validation_status", "official_v3_unresolved"} & set(result)):
                 # CI-VTIER-001 4th review R402: a settlement turned into PAUSED/CANCELLED by a
                 # control that arrived first is no validation result (atomically, here).
                 result.update(validation_passed=False, validation_status=None, wiki=None)
@@ -400,6 +405,9 @@ class ManagedStore:
                 raise HarnessError("approval_requires_validated_result")
             if digest(result) != digest(checked["result"]) or r["hash"] != checked["hash"] or r["control"]:
                 raise HarnessError("changes_since_validation")
+            if result.get("official_v3_unresolved") is True:
+                # CI-VTIER-001 5th review R504: an unresolved official V3 failure blocks approval.
+                raise HarnessError("official_v3_unresolved")
             from .evidence import validate_member_records
             validate_member_records(c, result["integration_evidence"]["members"])
             c.execute("UPDATE managed_tasks SET state='COMPLETED' WHERE id=?", (task,))

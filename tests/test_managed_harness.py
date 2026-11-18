@@ -810,6 +810,90 @@ class ManagedHarnessTests(unittest.TestCase):
         broken = Orchestrator(type("Broken", (), {"get": lambda self, task: (_ for _ in ()).throw(OSError("db"))})(), providers={})
         self.assertTrue(broken._previous_official_failed(task))
 
+    def v3_checks(self, ok=True, nested_stop=None, declared_exit=None):
+        planner = {"effective_tier": "V3", "actual_status": "passed" if ok else "failed", "execution_complete": ok,
+                   "executed_checks": [{"argv": ["python", "-m", "unittest"], "exit_code": 0 if ok else 2,
+                                        "stop_reason": nested_stop}]}
+        return [{"argv": ["python", "-m", "unittest", "discover", "-s", "tests"], "acs": ["AC1"],
+                 "exit_code": (0 if ok else 2) if declared_exit is None else declared_exit, "test_count": 1,
+                 "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                 "planner": planner}]
+
+    def set_result(self, state="REVIEW_REQUIRED", **values):
+        with self.store.tx() as c:
+            result = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-ONE'").fetchone()[0])
+            result.update(values)
+            c.execute("UPDATE managed_tasks SET state=?,control=NULL,lease=NULL,result=? WHERE id='TASK-ONE'",
+                      (state, json.dumps(result)))
+
+    def test_late_control_and_nested_stop_leave_no_result_and_release(self):
+        """CI-VTIER-001 5th review R501/R502: a pause that arrives after the last stop
+        check settles PAUSED (lease released, no pass, no Wiki); a passing validation
+        records the Wiki only after the result is stored; a V3 whose nested check timed out
+        (the declared check already failed) is a stop: status null, V3 flag unchanged."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.set_result(validation_passed=True, validation_status="passed", official_v3_unresolved=False)
+        from baton import orchestrator as orch
+        real_scope = orch.check_scope
+        calls = {"n": 0}
+        def scope_then_pause(task, changes):
+            calls["n"] += 1
+            if calls["n"] == 2:  # the check after validation: control arrives now
+                self.store.control("TASK-ONE", "pause")
+            return real_scope(task, changes)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks()), \
+                patch.object(orch, "check_scope", scope_then_pause), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki for a stopped settlement")):
+            row = runner._verify("TASK-ONE")
+        self.assertEqual(row["state"], "PAUSED")
+        self.assertIsNone(row["lease"])
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+        self.assertIs(row["result"]["official_v3_unresolved"], False)
+        self.set_result()
+        seen = []
+        def assess(store, task, result):
+            stored = store.get(task)
+            seen.append((stored["result"]["validation_passed"], stored["lease"] is not None))
+            return {"action": "SKIP", "reason": "test", "blocking": False}
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks()), \
+                patch("baton.wiki_cli.assess", assess):
+            row = runner._verify("TASK-ONE")
+        self.assertEqual((row["state"], row["lease"], seen), ("REVIEW_REQUIRED", None, [(True, True)]))
+        self.assertEqual(row["result"]["wiki"]["reason"], "test")
+        from baton.orchestrator import validation_stop_reason
+        stopped = self.v3_checks(ok=False, nested_stop="timeout", declared_exit=2)
+        self.assertEqual(validation_stop_reason(stopped), "timeout")
+        self.set_result(official_v3_unresolved=False)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: stopped):
+            row = runner._verify("TASK-ONE")
+        self.assertEqual(row["state"], "INTERRUPTED")
+        self.assertIsNone(row["result"]["validation_status"])
+        self.assertIs(row["result"]["official_v3_unresolved"], False)
+
+    def test_failed_gate_v3_invalidates_evidence_and_blocks_approval(self):
+        """CI-VTIER-001 5th review R504: an official V3 failure at the evidence gate removes
+        the earlier review/integration evidence and approval refuses while it is unresolved;
+        evidence recorded from a complete passing V3 resolves it in the same transaction."""
+        from baton import evidence
+        self.assertEqual(self.runner().run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.set_result(review_evidence={"old": True}, integration_evidence={"members": {}})
+        row = self.store.get("TASK-ONE")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks(ok=False)), \
+                self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+            evidence._checks(self.store, row, self.root)
+        result = self.store.get("TASK-ONE")["result"]
+        self.assertNotIn("review_evidence", result)
+        self.assertNotIn("integration_evidence", result)
+        self.assertIs(result["official_v3_unresolved"], True)
+        self.set_result(integration_evidence={"members": {}})
+        checked = self.store.get("TASK-ONE")
+        with self.assertRaisesRegex(HarnessError, "official_v3_unresolved"):
+            self.store._approve("TASK-ONE", "reviewer", checked, {})
+        evidence._write(self.store, checked, "review_evidence", {"checks": self.v3_checks()})
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], False)
+
     def test_new_validation_that_errors_or_is_interrupted_leaves_no_pass(self):
         """CI-VTIER-001 4th review R402/R403: a new validation that ends by a planner error
         or an interruption does not keep the previous pass; a record from before the

@@ -638,8 +638,11 @@ def ingest(store, task_id, receipt, client=None):
                         checks = []
                     passed = bool(checks) and all(x["exit_code"] == 0 for x in checks)
                     control = store.get(task_id)["control"]
-                    passed = passed and not control  # 4th review R402: a stopped settlement is no pass
-                    state = "CANCELLED" if control == "cancel" else "PAUSED" if control == "pause" else "REVIEW_REQUIRED" if passed else "FAILED"
+                    from .orchestrator import validation_stop_reason
+                    nested_stop = validation_stop_reason(checks)  # 5th review R502: nested stops too
+                    passed = passed and not control and not nested_stop  # 4th review R402
+                    state = ("CANCELLED" if control == "cancel" else "PAUSED" if control == "pause"
+                             else "INTERRUPTED" if nested_stop else "REVIEW_REQUIRED" if passed else "FAILED")
                     final_changes = changes
                     failure = None
                     try:
@@ -653,18 +656,27 @@ def ingest(store, task_id, receipt, client=None):
                         if not control: state = "BLOCKED"
                     from .wiki_cli import assess
                     from .orchestrator import settled_validation
-                    outcome = settled_validation(checks, stopped=bool(control))
+                    # 5th review R503: a tree that is not the validated one (HEAD/scope changed
+                    # after the checks) is no validation result either: status null, V3 flag kept.
+                    outcome = settled_validation(checks, stopped=bool(control or nested_stop or failure))
                     status = outcome["validation_status"]
-                    wiki = (({"action": "SKIP", "reason": "validation_not_run", "blocking": False} if status == "not_run"
-                             else assess(store, task_id, {"changed_files": final_changes, "validation": checks}))
-                            if passed else None)
-                    _settle_author(store, task_id, row["lease"], state,
-                                   {"base_commit": binding["base_sha"], "changed_files": final_changes,
-                                    "runtime": binding, "author_worker": "orca:" + binding["dispatch_id"],
-                                    "validation": checks, "wiki": wiki,
-                                    **outcome, "validation_passed": passed,
-                                    "reason": failure or ("validation_passed" if passed else "validation_failed")},
-                                   worktree=str(path))
+                    skip = status == "not_run"
+                    settled = _settle_author(store, task_id, row["lease"], state,
+                                             {"base_commit": binding["base_sha"], "changed_files": final_changes,
+                                              "runtime": binding, "author_worker": "orca:" + binding["dispatch_id"],
+                                              "validation": checks,
+                                              "wiki": {"action": "SKIP", "reason": "validation_not_run", "blocking": False}
+                                              if passed and skip else None,
+                                              **outcome, "validation_passed": passed,
+                                              "reason": failure or ("validation_passed" if passed else "validation_failed")},
+                                             worktree=str(path), release=not (passed and not skip))
+                    if passed and not skip:
+                        # 5th review R501: the Wiki verification follows the stored settlement
+                        # (the lease is held until its outcome is stored).
+                        wiki = (assess(store, task_id, {"changed_files": final_changes, "validation": checks})
+                                if settled["state"] == state else None)
+                        store.update(task_id, row["lease"], settled["state"], result={"runtime": binding, "wiki": wiki},
+                                     release=True, settled_external=True)
                 else:
                     state = "CANCELLED" if row["control"] == "cancel" else "PAUSED" if row["control"] == "pause" else "WAITING_FOR_PROVIDER"
                     _settle_author(store, task_id, row["lease"], state,
@@ -687,21 +699,28 @@ def request_control(store, task_id, action, client=None):
 
 
 def _settle_author(store, task_id, lease, state, result, **options):
-    """A settled attempt must release; a manifest too large or sensitive to store cannot block that."""
+    """A settled attempt must release; a manifest too large or sensitive to store cannot block that.
+
+    CI-VTIER-001 5th review R503: every author settlement states its validation outcome;
+    a path that did not validate the attempt leaves no pass and no status."""
+    result = {"validation_passed": False, "validation_status": None, **result}
+    release = options.pop("release", True)
     try:
-        store.update(task_id, lease, state, release=True, settled_external=True, result=result, **options)
+        return store.update(task_id, lease, state, release=release, settled_external=True, result=result, **options)
     except HarnessError as exc:
         if str(exc) != "unsafe_payload": raise
         # Stored fields count too, so the fallback must shrink the record, not only add to it.
         stored = store.get(task_id)["result"]
         review = stored.get("review_runtime")
-        compact = {"runtime": result["runtime"], "validation_passed": False, "reason": "result_unrecordable",
+        compact = {"runtime": result["runtime"], "validation_passed": False, "validation_status": None,
+                   **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
+                   "reason": "result_unrecordable",
                    "changed_files": {}, "validation": [], "resume_point": None, "wiki": None,
                    "candidate": None, "review_evidence": None, "integration_evidence": None,
                    "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
         if review:
             compact["review_runtime"] = {k: v for k, v in review.items() if k != "report"}
-        store.update(task_id, lease, "BLOCKED", release=True, settled_external=True, result=compact, **options)
+        return store.update(task_id, lease, "BLOCKED", release=True, settled_external=True, result=compact, **options)
 
 
 def _confirm_not_started(store, task_id, key, row, operator):
