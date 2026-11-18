@@ -981,6 +981,15 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
                         sections.append([name, heading, fingerprint(extract_section(text, heading))])
                 except (OSError, ValueError, UnicodeDecodeError):
                     sections.append([name, "*", "unreadable"])
+                    soft_need(False, "FILE_UNREADABLE")  # 5th review R503
+                if verify_observed:
+                    # 5th review R503: the whole file hashed when the section was read must
+                    # still be the file (a section changed and restored is a change).
+                    whole = _content(root / name)
+                    soft_need(whole is not None, "FILE_UNREADABLE")
+                    seen_hash = record.get("sha256")
+                    if seen_hash is not None and whole is not None and seen_hash != whole:
+                        problem["changed"] = True
                 continue
         content = _content(root / name)
         soft_need(content is not None, "FILE_UNREADABLE")

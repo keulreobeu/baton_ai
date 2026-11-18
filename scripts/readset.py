@@ -568,6 +568,15 @@ class Recorder:
                 self._appeared.setdefault(canonical, path)
         elif absent or (digest is not None and entry.get("sha256") is not None and digest != entry["sha256"]):
             self._partial("INPUT_CHANGED_DURING_RUN", path)
+        elif digest is None:
+            # 5th review R502: the second look could not be verified, so the evidence
+            # cannot be reused (the run itself is not judged unstable).
+            self._partial("INPUT_UNHASHABLE", path)
+
+    def _renamed(self, src, dst):
+        if src in self._made or src in self._created:
+            self._made.add(dst)
+            self._created.add(dst)
 
     def _record_absent(self, path, canonical, scope):
         record = {"path": _real(path) or canonical, "sha256": None, "absent": True}
@@ -586,8 +595,9 @@ class Recorder:
         if canonical is None:
             self._partial("PATH_UNNORMALIZABLE", path)
             return
-        create = bool((isinstance(mode, str) and any(c in mode for c in "wax+"))
-                      or (isinstance(flags, int) and flags & (os.O_CREAT | os.O_TRUNC)))
+        # 5th review R501: "r+" (and O_TRUNC alone) never creates a missing file.
+        create = bool((isinstance(mode, str) and any(c in mode for c in "wax"))
+                      or (isinstance(flags, int) and flags & os.O_CREAT))
         if _is_device(canonical) or self._scope(canonical) == "derived":
             return
         # The original path (not the resolved one) goes on, so symlink and
@@ -602,7 +612,9 @@ class Recorder:
             if not os.path.exists(canonical):
                 self._made.add(canonical)
             self._is_created(canonical, True)
-        if not self._is_created(canonical):
+        if not self._is_created(canonical) or self._input_entry(self._scope(canonical), canonical) is not None:
+            # 5th review R501: an input recorded earlier is compared again even when the
+            # path now looks like an output (deleted and recreated, replaced).
             self._record_read(path, section_only=self._section_depth.get(canonical, 0) > 0)
 
     def _listing(self, path, ok, entries, error=None, born=None, relayed=False, alias=None):
@@ -649,6 +661,15 @@ class Recorder:
             self._socket_event(event, args)
         elif event == "subprocess.Popen":
             self._audited_launches += 1
+        elif event == "os.rename":
+            # 5th review R504: an output moved into place (atomic write) is an output.
+            src = _canonical(_path_text(args[0])) if args and isinstance(args[0], (str, bytes, os.PathLike)) else None
+            dst = _canonical(_path_text(args[1])) if len(args) > 1 and isinstance(args[1], (str, bytes, os.PathLike)) else None
+            if src and dst:
+                if self._is_child:
+                    self._emit({"type": "renamed", "src": src, "dst": dst})
+                else:
+                    self._renamed(src, dst)
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
         elif event == "mmap.__new__":
@@ -688,6 +709,9 @@ class Recorder:
             self._partial("PATH_UNNORMALIZABLE", value)
         elif not os.path.exists(canonical) and _sqlite_mode(database, uri) == "rwc":
             self._created.add(canonical)  # a new database file is an output
+            self._made.add(canonical)  # 5th review R504: same rule as a created file
+            if self._is_child:
+                self._emit({"type": "created", "path": canonical})
         else:
             # Existing file, or a non-creating mode (ro/rw) on a missing file:
             # the file's content or absence is an input.
@@ -974,6 +998,9 @@ class Recorder:
                     self._partial("CHILD_LOG_INCOMPLETE", "vanished %s" % name)
                 elif not seen or seen["bad"] or seen["end"] is None:
                     self._partial("CHILD_LOG_INCOMPLETE", name)
+                elif seen.get("hooks") != 1:
+                    # 5th review R505: one process log holds exactly one hook record.
+                    self._partial("CHILD_LOG_INCOMPLETE", "hooks=%s %s" % (seen.get("hooks"), name))
             for token, pid in sorted(self._hooked.items(), key=lambda item: str(item[0])):
                 seen = self._log_seq.get("%s.jsonl" % pid)
                 if not seen or seen["bad"] or seen["end"] is None:
@@ -981,6 +1008,13 @@ class Recorder:
         for canonical, path in sorted(self._appeared.items()):
             if canonical not in self._made:
                 self._partial("INPUT_CHANGED_DURING_RUN", path)
+        for store in (self._repo, self._outside, self._env_reads):
+            for canonical in [c for c, e in store.items() if e.get("absent") and c in self._made]:
+                # 5th review R504: the recorder and the fingerprint judge it alike: the
+                # run's own output at a path first seen absent is no input change, and
+                # the read set is partial (not reusable) instead of the run failing.
+                self._partial("OUTPUT_AT_ABSENT_INPUT", store[canonical].get("path"))
+                del store[canonical]
         self._judge_pending_connects()
         if self._own_log_dir:
             # Late writers (alive processes) already made the read set partial.
@@ -1030,7 +1064,9 @@ class Recorder:
                     continue
                 try:
                     event = json.loads(raw)
-                    seen = self._log_seq.setdefault(name, {"next": 1, "bad": False, "end": None})
+                    seen = self._log_seq.setdefault(name, {"next": 1, "bad": False, "end": None, "hooks": 0})
+                    if event.get("type") == "hook_loaded":
+                        seen["hooks"] += 1
                     if type(event.get("seq")) is not int or event["seq"] != seen["next"] or seen["end"] is not None:
                         seen["bad"] = True
                     seen["next"] += 1
@@ -1069,8 +1105,13 @@ class Recorder:
             if event.get("token"):
                 self._launch_tokens[event["token"]] = str(event.get("command", ""))[:160]
         elif kind == "created":
-            if isinstance(event.get("path"), str):
-                self._made.add(event["path"])
+            if not (isinstance(event.get("path"), str) and event["path"]):
+                raise ValueError("created event without path")  # READSET_LOG_CORRUPT
+            self._made.add(event["path"])
+        elif kind == "renamed":
+            if not all(isinstance(event.get(k), str) and event[k] for k in ("src", "dst")):
+                raise ValueError("renamed event without paths")
+            self._renamed(event["src"], event["dst"])
         elif kind == "hook_failed":
             self._partial("HOOK_FAILED", event.get("error", "unknown"))
         elif kind == "partial":
