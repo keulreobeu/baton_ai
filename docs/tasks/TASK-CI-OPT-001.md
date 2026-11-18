@@ -1346,3 +1346,21 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     - 실행 전 링크를 거친 출력 읽기가 실제 suite에서 별칭과 partial을 늘릴 수 있다. 빈도와 성능은 측정하지 않았다.
     - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
     - 원격 Windows 두 조합은 확인하지 않았다.
+- **2026-11-18 11차 독립 교차검토(Codex Orca worker, 대상 `6c9d5d5`)**: **FAIL**(P1 2). R1001 resolved. RA-1~RA-4 유지. 반영 코드 후보 `c90e91c`(로컬 커밋, 미게시).
+  R1101(P1) 면제 읽기에서 링크 birth가 시작+0.05초 이후면 별칭 생략. 시각은 생성 주체의 증거가 아님 → 링크 생성(`os.symlink`·`_winapi.CreateJunction`)을 감싸 링크 객체 lstat 식별을 기록(자식은 `linked`).
+  생략은 입증된 링크만, 실행 전 링크는 별칭 보존, 그 외는 `OUTPUT_OWNERSHIP_UNCERTAIN` partial. 실행 전 판정은 여유 없는 정확한 시작 시각 기준.
+  R1102(P1) 자식 이동의 출발·도착 별칭 누락 → 자식 `renamed`에 관측 경로·별칭·링크를 싣고 부모가 같은 공통 판정으로 처리.
+  공통화 범위: `_keep_alias` 하나로 직접 읽기·디렉터리·부재(시도 스냅샷 포함)·목록·성공 생성·이동(부모·자식)·자식 보고(읽기·디렉터리·부재·precreate·목록) 판정. 자식 이벤트는 `links`([경로, birth, lstat ID])를 보고한다(10차 `link_born` 대체).
+  조합 표(회귀 `check_one_alias_decision_for_every_observation`, 실제 자식 포함 36칸 + 자식이 만든 링크 1건):
+    | 링크 출처 \ 관측 | 직접: 출력 읽기·부재·목록·실패 생성·성공 생성·이동 | 자식: 같은 6종 |
+    | 실행 전 링크 | 6칸 모두 별칭 보존 | 6칸 모두 별칭 보존 |
+    | 실행이 만든 링크(입증) | 6칸 모두 별칭 없음·complete | 6칸 모두 별칭 없음·complete |
+    | 실행 중 미입증 링크 | 6칸 모두 partial | 6칸 모두 partial |
+    자식이 스스로 만든 링크를 거친 읽기: 별칭 없음·complete.
+  수정 전 코드 대조(`6c9d5d5` scripts에 같은 표를 단언 없이 실행): 13칸이 기대와 다름(실행 전 링크·자식 이동 1칸 별칭 없음, 미입증 링크 12칸 모두 partial 없음). 수정 후 36칸 모두 기대대로. 검토자 재현(r11_repro, `_link_born` 이름만 바꿔 실행): R1101 partial·reuse 거부, R1102 별칭 기록·지문 변경·reuse 거부.
+  시작 직후 만든 링크(0.05초 근접 사례)는 감싼 생성으로 입증되어 별칭 없이 complete. 8~10차 재현 판정 유지. V2: 영향 3모듈 138 OK(skip 0), `check_sdd.py --base 5c07aea` PASS. 기존 테스트 단언 변경 없음(정상 출력이 partial로 바뀐 기존 사례 없음). 로컬 V3 미실행.
+  남은 한계:
+    - `cmd /c mklink`(비 Python 자식)로 만든 링크는 입증되지 않아 그 링크를 거친 면제 관측은 partial이다(해당 실행은 `CHILD_NOT_ALLOWED`로 이미 partial).
+    - ctypes 등 감싼 호출 밖에서 만든 링크도 같다.
+    - Windows 파일 symlink는 WinError 1314로 검증하지 못했다.
+    - 실제 suite의 partial 빈도·성능, 원격 Windows 두 조합은 확인하지 않았다.
