@@ -502,6 +502,95 @@ class ReadsetTests(unittest.TestCase):
         self.check_call_outcome_and_order_decide_ownership()  # 7th review R701-R704
         self.check_attempt_absence_and_moved_ownership()  # 8th review R801/R802
         self.check_removal_outcome_and_child_creation()  # 8th review R803/R804
+        self.check_object_ownership_and_attempt_snapshot()  # 9th review R901/R902
+
+    def check_object_ownership_and_attempt_snapshot(self):
+        """CI-OPT-001 9th review R901/R902: ownership belongs to the file object. After the
+        run removes or moves away its own output, an older file another writer puts at that
+        name is read as an input and the read set is partial; a non-exclusive "a+" creation
+        that opened an empty file is unproven; the run's own exclusive/truncating outputs
+        read back (also moved) stay complete. A failed exclusive creation through a junction
+        keeps the alias seen at the attempt (this process and a real child)."""
+        for mode in ("unlink", "move"):
+            with self.subTest(mode=mode):
+                supply = Path(self.temp.name) / ("supply-r901-%s.cfg" % mode)
+                supply.write_text("accepted", encoding="utf-8")
+                time.sleep(0.03)
+                rec = self.recorder()
+                target = Path(self.temp.name) / ("target-r901-%s.cfg" % mode)
+                target.write_text("own", encoding="utf-8")
+                if mode == "unlink":
+                    target.unlink()
+                else:
+                    os.replace(target, Path(self.temp.name) / ("moved-r901-%s.cfg" % mode))
+                with rec._quiet():  # another writer reoccupies the name
+                    os.replace(supply, target)
+                self.assertEqual(target.read_text(encoding="utf-8"), "accepted")
+                rec.stop()
+                data = rec.as_dict()
+                self.assertIn(readset._real(target), [r["path"] for r in data["outside_reads"]])
+                self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", rec.partial_reasons, rec.partial_samples)
+                self.assertFalse(data["complete"])
+        empty = Path(self.temp.name) / "empty-r901.cfg"
+        race = self.recorder()
+        race._audit_event("open", (str(empty), "a+", os.O_CREAT | os.O_APPEND | os.O_RDWR))
+        with race._quiet():  # another writer makes it (empty) between the event and the call
+            empty.touch()
+            handle = open(empty, "a+", encoding="utf-8")
+        try:
+            race._settle_by_call("create", [empty], True, handle=handle)
+        finally:
+            handle.close()
+        race.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", race.partial_reasons, race.partial_samples)
+        appended = Path(self.temp.name) / "appended-r901.log"
+        later = self.recorder()
+        with open(appended, "a", encoding="utf-8") as stream:
+            stream.write("line")
+        self.assertEqual(appended.read_text(encoding="utf-8"), "line")  # an unproven name read back
+        later.stop()
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", later.partial_reasons, later.partial_samples)
+        own = self.recorder()
+        written, exclusive = self.root / "written-r901.cfg", self.root / "exclusive-r901.cfg"
+        written.write_text("w", encoding="utf-8")
+        with open(exclusive, "x", encoding="utf-8") as stream:
+            stream.write("x")
+        handle, scratch = tempfile.mkstemp(dir=self.root)
+        os.close(handle)
+        moved = self.root / "moved-own-r901.cfg"
+        os.replace(written, moved)
+        self.assertEqual((moved.read_text(encoding="utf-8"), exclusive.read_text(encoding="utf-8"),
+                          Path(scratch).read_text(encoding="utf-8")), ("w", "x", ""))
+        own.stop()
+        self.assertTrue(own.as_dict()["complete"], own.partial_samples)
+        old, new = Path(self.temp.name) / "old-r902", Path(self.temp.name) / "new-r902"
+        old.mkdir()
+        (new / "sub").mkdir(parents=True)
+        link = Path(self.temp.name) / "junction-r902"
+
+        def point(target):
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(target), str(link))
+            else:
+                os.symlink(target, link, target_is_directory=True)
+
+        point(old)
+        self.addCleanup(lambda: (os.rmdir(link) if os.name == "nt" else os.unlink(link)) if os.path.lexists(link) else None)
+        missing = link / "sub" / "alias-r902.cfg"
+        time.sleep(0.03)
+        direct = self.recorder()
+        with self.assertRaises(FileNotFoundError):
+            missing.open("x").close()
+        direct.stop()
+        self.assertIn(os.path.abspath(str(missing)), [a["path"] for a in direct.as_dict()["aliases"]])
+        relayed = self.recorder()
+        code = "from pathlib import Path\ntry:\n    Path(%r).open('x').close()\nexcept FileNotFoundError:\n    pass" % str(missing)
+        child = subprocess.run([sys.executable, "-c", code], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        relayed.stop()
+        self.assertIn(os.path.abspath(str(missing)), [a["path"] for a in relayed.as_dict()["aliases"]])
+        self.assertTrue(any(r.get("absent") for r in relayed.as_dict()["outside_reads"]))
 
     def check_attempt_absence_and_moved_ownership(self):
         """CI-OPT-001 8th review R801/R802: a failed exclusive creation keeps the absence it
@@ -552,7 +641,7 @@ class ReadsetTests(unittest.TestCase):
         self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", replaced.partial_reasons, replaced.partial_samples)
         self.assertIn(readset._real(target), [r["path"] for r in data["outside_reads"]])
         late = self.recorder()
-        late._renames.append((readset._canonical(supply), readset._canonical(target), None))
+        late._renames.append((readset._canonical(supply), readset._canonical(target), None, None))
         late._made.add(readset._canonical(target))  # an earlier own output at the destination
         late.stop()
         self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", late.partial_reasons)
@@ -613,7 +702,7 @@ class ReadsetTests(unittest.TestCase):
         uncertain (partial); a pre-existing input read by a real child and then recreated
         by this process with the same content is a change; a moved own output read and
         deleted is no input; a move of a file this process did not own, whose source the
-        run creates later, is uncertain; a plain new SQLite database is no absent input."""
+        run creates later, is uncertain; a plain new SQLite database is no absent input (9th review: but partial)."""
         import sqlite3
         guessed = self.recorder()
         target = self.root / "guessed-r701.cfg"
@@ -663,7 +752,9 @@ class ReadsetTests(unittest.TestCase):
         sqlite3.connect(db).close()
         plain.stop()
         self.assertNotIn("OUTPUT_AT_ABSENT_INPUT", plain.partial_reasons, plain.partial_samples)
-        self.assertNotIn("OUTPUT_OWNERSHIP_UNCERTAIN", plain.partial_reasons, plain.partial_samples)
+        # 9th review R901 (coordinator decision (A)): SQLite creates without O_EXCL and its
+        # connection reads the file, so a new database proves no ownership: partial.
+        self.assertIn("OUTPUT_OWNERSHIP_UNCERTAIN", plain.partial_reasons, plain.partial_samples)
 
     def check_only_done_creations_and_renames_are_outputs(self):
         """CI-OPT-001 6th review R601/R604/R605: a failed os.replace or a failed creation
