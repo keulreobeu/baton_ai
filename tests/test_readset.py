@@ -64,9 +64,12 @@ class ReadsetTests(unittest.TestCase):
         rec._record_read(created)
         rec.stop()
         data = rec.as_dict()
-        # Review P1 (3a7d63b): a probed but absent path is an input too.
+        # Review P1 (3a7d63b): a probed but absent path is an input too. 16th review R1601: the
+        # run's own new file is no input read, but its final state is recorded (the next run's
+        # write depends on what is at that path).
         self.assertEqual([(x["path"], x.get("absent", False)) for x in data["repo_reads"]],
-                         [("in.txt", False), ("never-existed.txt", True)])
+                         [("in.txt", False), ("never-existed.txt", True), ("new.txt", False)])
+        self.assertEqual(data["repo_reads"][2]["sha256"], readset._sha(str(created)))
         self.assertEqual(data["outside_reads"][0]["path"], readset._real(outside))
         self.assertRegex(data["outside_reads"][0]["sha256"], r"^[0-9a-f]{64}$")
         self.assertTrue(data["complete"])
@@ -509,6 +512,107 @@ class ReadsetTests(unittest.TestCase):
         self.check_removals_and_other_mutations_record_their_state()  # 13th review R1301
         self.check_preconditions_of_state_dependent_operations()  # 14th review R1401-R1405
         self.check_ancestor_chain_and_failed_writes()  # 15th review R1501/R1502
+        self.check_file_state_includes_writability()  # 16th review R1601-R1604
+
+    def check_file_state_includes_writability(self):
+        """CI-OPT-001 16th review R1601-R1604: a file input's state is its kind, content and
+        writability, alike in the read set and the fingerprint (a read-only file is marked);
+        a write-mode open of an existing file the run did not make is partial; a written or
+        overwriting move's final path that was absent is recorded at the end as absent again
+        or as the run's own file's state (this process and a real child); an existing SQLite
+        database or a copied source is recorded with its writability."""
+        import shutil
+        import sqlite3
+        from scripts import ci_plan
+        base = Path(tempfile.mkdtemp(dir=self.temp.name))
+        marked = base / "marked.cfg"
+        marked.write_text("same", encoding="utf-8")
+        writable_state = readset._sha(str(marked))
+        os.chmod(marked, 0o444)
+        try:
+            self.assertEqual(readset._sha(str(marked)), "ro:" + writable_state)
+            self.assertEqual(ci_plan._content(marked), readset._sha(str(marked)))
+        finally:
+            os.chmod(marked, 0o644)
+        existing = base / "existing.bin"
+        existing.write_bytes(b"same")
+        db = base / "existing.sqlite"
+        with sqlite3.connect(db) as connection:
+            connection.execute("create table t (i)")
+        connection.close()
+        source = base / "copy-source.cfg"
+        source.write_text("copied", encoding="utf-8")
+        time.sleep(0.03)
+
+        def entries(rec):
+            return {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
+                    for r in rec.as_dict()["outside_reads"]}
+
+        def key(path):
+            return os.path.normcase(str(path))
+
+        for mode in ("wb", "ab", "r+b"):
+            with self.subTest(case="write open %s" % mode):
+                rec = self.recorder()
+                with open(existing, mode) as stream:
+                    if mode != "ab":
+                        stream.write(b"same")
+                rec.stop()
+                self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
+                self.assertEqual(entries(rec).get(key(existing)), readset._sha(str(existing)))
+        with self.subTest(case="sqlite rw and copy source keep their state"):
+            rec = self.recorder()
+            connection = sqlite3.connect(db.as_uri() + "?mode=rw", uri=True)
+            connection.execute("insert into t values (1)")
+            connection.rollback()
+            connection.close()
+            shutil.copy(source, base / "copy-target.cfg")
+            os.unlink(base / "copy-target.cfg")
+            rec.stop()
+            seen = entries(rec)
+            self.assertEqual(seen.get(key(db)), readset._sha(str(db)), seen)
+            self.assertEqual(seen.get(key(source)), readset._sha(str(source)), seen)
+            for path in (db, source):  # only the read-only attribute changes: the fingerprint differs
+                os.chmod(path, 0o444)
+                try:
+                    self.assertNotEqual(ci_plan._content(path), seen[key(path)])
+                finally:
+                    os.chmod(path, 0o644)
+            self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+        for actor in ("direct", "child"):
+            with self.subTest(case="%s written then cleaned" % actor):
+                leaf = base / ("leaf-%s.bin" % actor)
+                rec = self.recorder()
+                if actor == "direct":
+                    leaf.write_bytes(b"same")
+                    leaf.unlink()
+                else:
+                    code = "import os, sys; open(sys.argv[1], 'wb').write(b'same'); os.unlink(sys.argv[1])"
+                    done = subprocess.run([sys.executable, "-c", code, str(leaf)], cwd=self.root,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                rec.stop()
+                self.assertEqual(entries(rec).get(key(leaf)), "missing", entries(rec))
+        with self.subTest(case="written and kept, replaced onto an absent destination"):
+            kept, moved = base / "kept.bin", base / "replaced.bin"
+            rec = self.recorder()
+            kept.write_bytes(b"same")
+            (base / "src.bin").write_bytes(b"same")
+            os.replace(base / "src.bin", moved)
+            rec.stop()
+            seen = entries(rec)
+            self.assertEqual(seen.get(key(kept)), readset._sha(str(kept)), seen)
+            self.assertEqual(seen.get(key(moved)), readset._sha(str(moved)), seen)
+            self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+        with self.subTest(case="replaced onto an existing file the run did not make"):
+            target = base / "pre-existing-target.bin"
+            target.write_bytes(b"theirs")
+            time.sleep(0.03)
+            rec = self.recorder()
+            (base / "src2.bin").write_bytes(b"same")
+            os.replace(base / "src2.bin", target)
+            rec.stop()
+            self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
 
     def check_ancestor_chain_and_failed_writes(self):
         """CI-OPT-001 15th review R1501/R1502: an operation on a missing path records every
@@ -1310,7 +1414,9 @@ class ReadsetTests(unittest.TestCase):
         moved.stop()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", moved.partial_reasons, moved.partial_samples)
         # 8th review: the moved own output is no input either (no read record left).
-        self.assertFalse(any(r["path"].startswith("own-r703") for r in moved.as_dict()["repo_reads"]),
+        # 16th review R1601: a cleaned-up own output leaves only an absent input (its final path).
+        self.assertFalse(any(r["path"].startswith("own-r703") and not r.get("absent")
+                             for r in moved.as_dict()["repo_reads"]),
                          moved.as_dict()["repo_reads"])
         foreign = Path(self.temp.name) / "foreign-r703.cfg"
         foreign.write_text("theirs", encoding="utf-8")
@@ -1470,7 +1576,10 @@ class ReadsetTests(unittest.TestCase):
         data = rec.as_dict()
         self.assertNotIn("INPUT_CHANGED_DURING_RUN", rec.partial_reasons, rec.partial_samples)
         self.assertIn("OUTPUT_AT_ABSENT_INPUT", rec.partial_reasons)
-        self.assertFalse(any(r["path"].startswith(("own-r504", "moved-r504")) for r in data["repo_reads"]), data["repo_reads"])
+        # 16th review R1601: the run's own outputs leave only their final state (or absence).
+        for r in data["repo_reads"]:
+            if r["path"].startswith(("own-r504", "moved-r504")) and not r.get("absent"):
+                self.assertEqual(r["sha256"], readset._sha(str(self.root / r["path"])), r)
 
     def check_one_hook_per_log_and_event_fields(self):
         """CI-OPT-001 5th review R505: two hook records in one log, a log without a hook

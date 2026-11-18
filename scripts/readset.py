@@ -141,7 +141,10 @@ def _under(path, parent):
 
 
 def _sha(path):
-    """Content digest at observation time; None if unreadable or too large."""
+    """A file's input state at observation time: its content digest, marked "ro:" when the
+    file is not writable (16th review: a file input's state is its kind, content and
+    writability, alike in the read set and the fingerprint); None if unreadable or too
+    large."""
     try:
         if os.path.getsize(path) > HASH_LIMIT:
             return None
@@ -149,9 +152,15 @@ def _sha(path):
         with open(path, "rb") as stream:
             for chunk in iter(lambda: stream.read(1 << 20), b""):
                 digest.update(chunk)
-        return digest.hexdigest()
+        return ("ro:" if _read_only(path) else "") + digest.hexdigest()
     except OSError:
         return None
+
+
+def _read_only(path):
+    """16th review R1602-R1604: not writable (Windows read-only attribute / no write bit)."""
+    stat = os.stat(path)
+    return bool(getattr(stat, "st_file_attributes", 0) & 1) or not stat.st_mode & _stat_mod.S_IWRITE
 
 
 _PRECISE = None
@@ -492,6 +501,7 @@ class Recorder:
         self._presumed = {}
         self._needs_absent = {}  # 14th review: preconditions "nothing at this path", judged at stop
         self._needs_state = {}  # 15th review R1501: nearest existing ancestor -> its kind, judged at stop
+        self._needs_absent_or_own = {}  # 16th review R1601: written final paths absent before the run
         self._opened_ids = set()  # 14th review R1403: regular files opened through tracked calls
         self._owned_links = set()  # 11th review R1101: link objects (lstat ids) a recorded process made
         self._created = set()
@@ -1138,6 +1148,10 @@ class Recorder:
             return
         for path in missing:
             self._needs_absent.setdefault(path, text if path == canonical else path)
+        if not absent_input:
+            # 16th review R1601: the final path of a plain write or overwriting move was absent:
+            # at stop it must be absent again (an absent input) or the run's own output.
+            self._needs_absent_or_own.setdefault(canonical, text)
         if ancestor != self.root:  # the repository itself is the Git identity's dependency
             self._needs_state.setdefault(ancestor, kind)
 
@@ -1273,6 +1287,11 @@ class Recorder:
             there = os.path.lexists(canonical)
         if (exclusive and not there) or (there and os.path.isdir(canonical)):
             self._precondition("open", path, canonical)
+        elif there and (create or (isinstance(mode, str) and "+" in mode) or (
+                isinstance(flags, int) and flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_TRUNC))):
+            # 16th review R1602: opening an existing file the run did not make for writing
+            # changes it and depends on its writability: partial (its state is still recorded).
+            self._precondition("open for writing", path, canonical, changes=True)
         # The original path (not the resolved one) goes on, so symlink and
         # junction aliases are recorded with their observed target.
         if self._is_child:
@@ -1427,6 +1446,9 @@ class Recorder:
                         dst_there = os.path.lexists(dst)
                     if not dst_there:
                         self._absent_chain(args[1], dst, include_target=False)  # 15th review R1501
+                    else:
+                        # 16th review R1601: overwriting an existing destination the run did not make.
+                        self._precondition("os.replace", args[1], dst, changes=True)
                 self._attempt(("rename", src, dst), **snap)  # 6th review R601/R605
         elif event in _PROCESS_EVENTS:
             self._partial("UNTRACKED_PROCESS", event)
@@ -1815,6 +1837,22 @@ class Recorder:
                 self._partial("MUTATION_UNVERIFIABLE", "kept %s" % self._display(text))
             elif self._input_entry(self._scope(canonical), canonical) is None:
                 self._record_absent(text, canonical, self._scope(canonical))
+        for canonical, text in sorted(self._needs_absent_or_own.items()):
+            # 16th review R1601: absent again (an absent input), or the run's own output, whose
+            # state at the end (a file the next run's write must be able to replace) is recorded
+            # so the fingerprint checks it before the next run.
+            with self._quiet():
+                present = os.path.lexists(canonical)
+                state = None
+                if present and os.path.isfile(canonical):
+                    state = _sha(canonical)
+            if not present:
+                if self._input_entry(self._scope(canonical), canonical) is None:
+                    self._record_absent(text, canonical, self._scope(canonical))
+            elif not self._is_created(canonical, presume=False) or state is None:
+                self._partial("MUTATION_UNVERIFIABLE", "replaced %s" % self._display(text))
+            elif self._input_entry(self._scope(canonical), canonical) is None:
+                self._record_state(canonical, state)
         for canonical, kind in sorted(self._needs_state.items()):
             # 15th review R1501: the nearest existing ancestor must still be what it was (a
             # directory, or a file with its bytes); recorded so the fingerprint checks it

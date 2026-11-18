@@ -687,6 +687,15 @@ def _sha_file(path):
     return digest.hexdigest()
 
 
+def _file_state(path, digest=None):
+    """CI-OPT-001 16th review: a file input's state is its content digest, marked "ro:"
+    when it is not writable (as the read set records it)."""
+    digest = _sha_file(path) if digest is None else digest
+    stat = os.stat(path)
+    read_only = bool(getattr(stat, "st_file_attributes", 0) & 1) or not stat.st_mode & 0o200
+    return ("ro:" if read_only else "") + digest
+
+
 def _read_document(path):
     """The bytes of a section-only document, read once (6th review R602)."""
     return path.read_bytes()
@@ -700,13 +709,13 @@ def _content(path):
             target = os.readlink(path)
             resolved = path.resolve()
             inner = ("missing" if not resolved.exists() else "dir" if resolved.is_dir()
-                     else _sha_file(resolved))
+                     else _file_state(resolved))
             return "link:" + target + ":" + inner
         if not path.exists():
             return "missing"
         if path.is_dir():
             return "dir"
-        return _sha_file(path)
+        return _file_state(path)
     except OSError:
         return None
 
@@ -739,7 +748,7 @@ def _hash_or_none(value):
     # CI-OPT-001 15th review R1501: "dir" records a directory's kind (an ancestor a creation
     # depended on); _content gives the same value, so the fingerprint checks it alike.
     return value is None or value == "dir" or (
-        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None)
+        isinstance(value, str) and re.fullmatch(r"(ro:)?[0-9a-f]{64}", value) is not None)
 
 
 # CI-OPT-001 final cross review F06: fields a readset/1 record must carry.
@@ -992,7 +1001,11 @@ def suite_fingerprint(root, readset, *, environ=None, manifest=None, git=None, r
                     # 5th review R503: the whole file hashed when the section was read must
                     # still be the file (a section changed and restored is a change).
                     seen_hash = record.get("sha256")
-                    if seen_hash is not None and seen_hash != hashlib.sha256(raw).hexdigest():
+                    try:
+                        now_state = _file_state(root / name, hashlib.sha256(raw).hexdigest())
+                    except OSError:
+                        now_state = None
+                    if seen_hash is not None and seen_hash != now_state:
                         problem["changed"] = True
                 continue
         content = _content(root / name)
