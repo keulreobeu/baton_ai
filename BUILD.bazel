@@ -33,6 +33,7 @@ filegroup(
         args = [module.removesuffix(".py").replace("/", ".")],
         data = [":offline_inputs"],
         deps = ["@poc_pypi//cryptography"],
+        imports = ["poc/ci-engine"],
         main = "poc/ci-engine/bazel_entry.py",
         size = "large",
     )

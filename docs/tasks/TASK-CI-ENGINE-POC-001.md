@@ -43,3 +43,13 @@ The second push is a fast-forward from `ec2024e` on the same destination.
 The corrected configuration supersedes both first-run Windows jobs through
 branch concurrency. Fetch, unpublished commit and complete experiment diff,
 secret-pattern, scope, and static SDD checks are repeated before push.
+
+## Push 3 checkpoint
+
+Run 44575579235 at `b481228` confirmed that Ubuntu A/B agree on all 777
+IDs and outcomes. Its Bazel launchers could not import the recorder before
+executing a test. The third candidate adds that import directory to each
+target and sets the test runner spawn strategy explicitly. The second-run
+Windows jobs are superseded by branch concurrency. This is a fast-forward
+on the same destination with a fresh audit of the unpublished commit and
+full experiment diff.

@@ -39,6 +39,8 @@ output root는 runner 임시 경로의 짧은 하위 폴더를 사용한다. Git
 loopback fixture 때문에 `standalone` test strategy를 사용한다. Bazel 테스트 결과 캐시는
 비활성화한다.
 
+테스트 런처는 `imports`로 PoC 수집 모듈의 디렉터리를 받는다.
+
 각 job의 artifact에 `baseline.json`, `pytest.xml`, `bazel-targets/`,
 `A-B.json`, `A-C.json`, `wall.json`이 남는다. `wall.json`에는 단계별
 실측 시간, 종료 코드 및 논리 CPU 수가 있다. 비교는 누락, 추가, 중복,
@@ -68,3 +70,13 @@ Ubuntu A/B는 Windows Credential Manager 통합 검사 1건을 건너뛰었고 �
 JUnit은 SuiteReuse 예외 1건을 assertion failure와 같은 태그로 표현했다.
 A/B 간 ID 누락, 추가, 중복은 없었다. Bazel 9.3.2가 `local` test strategy를
 거부한 뒤 `standalone`으로 바꿨다.
+
+첫 run의 Windows 3.11/3.12는 두 번째 push의 브랜치 동시성 설정으로
+취소되었다. 두 번째 [run 44575579235](https://github.com/keulreobeu/baton_ai/actions/runs/44575579235),
+`b481228`의 Ubuntu A↔B는 777개 ID와 각 실행 결과가 모두 일치했다.
+Bazel은 34개 타깃을 분석했지만 런처에 `collect_ids` import 경로가 없어
+모든 타깃이 검사 실행 전에 실패했다.
+
+| OS/Python | CPU | A 실행 건수/초 | B 실행 건수/초 | C 실행 건수/초 | A↔B | A↔C |
+|---|---:|---:|---:|---:|---|---|
+| Ubuntu 3.12.16 | 4 | 777 / 62.929 | 777 / 22.607 | 0 / 58.406 | 일치 | 누락 777, 0건 실행 |
