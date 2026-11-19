@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md"]
 plan = "docs/plans/ci-vtier.md"
 adr = "docs/adr/ADR-CI-VTIER-001.md"
-scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "src/baton/managed.py", "src/baton/evidence.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json", "docs/tasks/TASK-SETTLE-RECOVERY-001.md"]
+scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "src/baton/managed.py", "src/baton/evidence.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json", "docs/tasks/TASK-SETTLE-RECOVERY-001.md", "docs/HANDOFF.md"]
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
 
 [[verification]]
@@ -40,9 +40,15 @@ result = "not_run"
 evidence = "docs/tasks/TASK-CI-VTIER-001.md#pr-17-리뷰-반영정착-중단-복구--2026-11-19"
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
 
+[[verification]]
+command = "Scope change 2026-11-19: settlement crash recovery excluded, src/ and tests/ restored to 57ef209 content (532e034); V2 only, independent review and official V3 (verify_environment.py --base 762739f, reuse off) pending"
+result = "not_run"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#범위-조정-자동-정착-복구-제외--2026-11-19"
+acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+
 [independent_review]
 result = "not_run"
-evidence = "docs/tasks/TASK-CI-VTIER-001.md#pr-17-리뷰-반영정착-중단-복구--2026-11-19"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#범위-조정-자동-정착-복구-제외--2026-11-19"
 ```
 
 A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화"): 로컬 V1/V2 실사용 활성화. B Task(Bazel-diff 사전 연구)는 별도이며 이 Task 파일을 수정하지 않는다.
@@ -250,7 +256,7 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 ## 정착 중단 복구 범위 축소(사용자 결정, 15차 반영) — 2026-11-19
 
 - 결정: 사용자 결정(2026-11-19, 코디네이터 전달). 설계 메모 `D:/baton_ai/.local_runtime/handoffs/research/CI-VTIER-RECOVERY-REDUCE-20261119.md`의 권고(복구 결과 BLOCKED, Spec revision 1 유지, blocking 참조 연결)와 B안(고도화 복구는 코드에서 제거, 이력 보존)을 확정했다. 복구 책임은 안전한 종료와 재검증 가능한 상태로 전환까지다. 위험 등급 L3 유지. Spec "2026-11-19 사용자 결정: 정착 중단 복구 범위 축소" 문단, ADR Amendment 2026-11-19.
-- 15차 검토(Codex 독립 확인, 대상 `2de9e5b`) FAIL P1 3: R1501(Orca Task의 로컬 checkpoint 검증 중단 시 복구 주체 오판), R1502(HarnessError 외 영구 Wiki 입력 오류로 고립), R1503(기존 blocking Wiki 이벤트가 복구에서 빠져 승인 통과). 보고서: `C:/Users/SSAFY/AppData/Local/Temp/baton-ci-vtier-r15-review/TASK-CI-VTIER-001-review15.md`, 14차: `C:/Users/SSAFY/AppData/Local/Temp/baton-ci-vtier-r14-review/TASK-CI-VTIER-001-review14.md`.
+- 15차 검토(Codex 독립 확인, 대상 `2de9e5b`) FAIL P1 3: R1501(Orca Task의 로컬 checkpoint 검증 중단 시 복구 주체 오판), R1502(HarnessError 외 영구 Wiki 입력 오류로 고립), R1503(기존 blocking Wiki 이벤트가 복구에서 빠져 승인 통과). 보고서: `<TEMP>/baton-ci-vtier-r15-review/TASK-CI-VTIER-001-review15.md`, 14차: `<TEMP>/baton-ci-vtier-r14-review/TASK-CI-VTIER-001-review14.md`.
 - 구현:
   - `orchestrator.finish`: 1단계에 `settlement_owner="local"`, `settlement_lease` 기록.
   - `recover_settlement`·`_end_interrupted`: 잠금·pid 확인 뒤 한 쓰기로 BLOCKED `settlement_interrupted`, 통과·상태 없음, 결정적 이벤트 ID blocking 참조, pending·lease·pid(·Orca author 슬롯) 해제, `settlement_recovered` 이벤트.
@@ -278,7 +284,7 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 
 ## 16차 재검토 반영(차단 참조 보존·승인 게이트) — 2026-11-19
 
-- 검토: Codex 16차 독립 교차검토(대상 `b16ba12`, 축소 계약 기준) FAIL. P1 R1601(I5 위반), P3 R1602(문서 경계). I1~I4·거부 보고는 충족 판정. 보고서 `C:/Users/SSAFY/AppData/Local/Temp/baton-ci-vtier-r16-review/TASK-CI-VTIER-001-review16.md`.
+- 검토: Codex 16차 독립 교차검토(대상 `b16ba12`, 축소 계약 기준) FAIL. P1 R1601(I5 위반), P3 R1602(문서 경계). I1~I4·거부 보고는 충족 판정. 보고서 `<TEMP>/baton-ci-vtier-r16-review/TASK-CI-VTIER-001-review16.md`.
 - 수정:
   - R1601: `orchestrator._end_interrupted`가 결정적 이벤트 ID를 `wiki`와 함께 지속 필드 `wiki_blocking_refs`(정렬·중복 없음·최대 20)에 기록한다. 크기 fallback `_settle_unrecordable`에도 같은 값(`extra`)을 넣는다.
   - R1601: `evidence.approval_proof`(승인 게이트 한 곳)가 목록의 각 이벤트에 대해 `Wiki.decision`(기존 `resolved_by` 해결 연쇄 포함)을 읽고, blocking이면 `wiki_review_required_before_completion`으로 거부한다. `wiki_unknown_event`(기록 전 종료)만 비차단이고 그 밖의 오류는 승인 오류다.
@@ -288,3 +294,16 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - 수정 전 대조(`b16ba12` 임시 worktree, 같은 구간을 behavior probe로): `gap`은 복구 결과 `wiki`가 올바른 blocking 참조였지만 재검증 뒤 CLI `approve`가 종료 0·COMPLETED였다(Wiki 판단 blocking=true 그대로). `pause`는 복구 결과 `wiki=None`(참조 유실)이었고 CLI `approve`가 종료 0·COMPLETED였다. 새 테스트는 `b16ba12`에서 `wiki_blocking_refs` 부재로 실패한다.
 - Task 상태는 `in_progress` 유지. 공식 V3·push 없음.
 - V2(작업 트리 = `b16ba12` + 이 변경, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(1031.1초), `PYTHONIOENCODING=utf-8` 371 OK(1041.8초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T07:39:24Z~07:56:48Z, 단독 실측 아님). check_sdd `--base 762739f` PASS. 공식 V3·push 없음. verified 아님.
+
+## 범위 조정: 자동 정착 복구 제외 — 2026-11-19
+
+- 결정: 사용자 결정(2026-11-19, 코디네이터 전달) "복구 기능 제외 방향으로 진행". 자동 정착 복구를 이 Task 범위에서 빼고 [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)로 분리·착수 보류한다(자동 착수 금지). V1·V2·V3 검증 최적화, 정상 상태 관리, 검증 안전성은 유지한다. 이력 삭제·reset·amend·force 없음.
+- 이유: PR #17 리뷰 반영 뒤 독립 교차검토 14~17차 연속 FAIL(P1 2·3·1·3건). 17차(대상 `f790115`) FAIL은 P1 R1701~R1703·P2 R1704·R1705이며 이번 결정으로 반영하지 않는다. 지적 ID·요약은 Spec CI-VTIER-001 "2026-11-19 범위 조정: 자동 정착 복구 제외" 문단과 TASK-SETTLE-RECOVERY-001 표.
+- 되돌린 방식: 커밋 `532e034`에서 `git checkout 57ef209 -- src tests`로 파일 내용을 복원했다(`git diff 57ef209 532e034 -- src tests` 0줄). `9aa79e6`·`2de9e5b`·`b16ba12`·`f790115`의 `src/baton/managed.py`·`orchestrator.py`·`runtime.py`·`evidence.py`·`tests/test_flow_runtime.py` 변경이 대상이다. 문서 변경은 되돌리지 않고 Spec 네 문단·ADR Amendment에 제외됨(superseded)을 표시했다(git revert는 문서까지 되돌리므로 택하지 않음).
+- 함께 되돌린 비복구 변경: 없음. 네 커밋의 코드 변경은 모두 복구 경로(`settlement_pending` 로컬 표시, `recover_settlement`·`_end_interrupted`, `interrupted_local_settlement`·`local_settlement_lease`, `ready` 분기·`refuse_recovery`, runtime 로컬 소유 가드, `_settle_unrecordable`의 `settlement_pending`·`extra`, `approval_proof`의 `wiki_blocking_refs`)이거나 그것을 위한 정리(`_finish_settlement`·`_settled` 추출)였다. `traceability.json` 변경은 없었다.
+- 코드 상태: `src/`·`tests/`는 `57ef209`과 같다. `57ef209` 코드 트리는 로컬 공식 V3 `4187253`(777 OK)과 원격 CI run `44455837743`(`3675fb8`)이 통과한 트리와 같은 코드다. 그래도 같은 SHA·이전 증거로 재사용하지 않으므로(AGENTS 검증 사다리) 이 후보에 새 독립 검토와 공식 V3가 필요하다.
+- 남은 위험: PR #17 comment 4624337778(P2). 로컬 정착 1·2단계 사이 프로세스 종료 시 Task 고립(REVIEW_REQUIRED·lease·pid 보유, `resume --recover-running` → `task_cannot_resume`, 재검증 → `worker_busy`). 영향은 운영 고립이며 오승격이 아니다(`ManagedStore._approve`가 lease 보유 행을 `approval_requires_validated_result`로 거부). 수동 조치: 지원 CLI 해제 경로 없음. 고립 Task는 이력으로 두고 새 Task로 재검증한다. 관리 DB 직접 수정은 계약 밖. 스레드 응답·resolve 여부는 사용자 결정.
+- 문서: Spec CI-VTIER-001(새 문단, 네 문단 superseded 표시), ADR Amendment (2), TASK-SETTLE-RECOVERY-001(배경·보존 SHA·지적 표·착수 보류·PID 재사용·`end_attempt`), current.md, docs/HANDOFF.md 재개 카드(다른 PC 재개용). scope에 `docs/HANDOFF.md` 추가.
+- Task 상태: `in_progress` 유지. 전체 AC 마지막 기록 `not_run`, 독립 검토 `not_run`. verified 아님.
+- V2(코드 후보 `532e034` = `src/`·`tests/` `57ef209`, 작업 트리에 이 문서 변경만 추가, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음, 이 checkout에 venv가 없어 다른 checkout의 venv 인터프리터 사용): 9모듈(`test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability`·`test_readset`·`test_verify_environment`·`test_ci_workflow`·`test_sdd`) 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(1052.9초), `PYTHONIOENCODING=utf-8` 371 OK(1049.1초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T08:23:26Z~08:40:59Z, 단독 실측 아님). check_sdd `--base 762739f` PASS(changed_paths 32). 공식 V3는 실행하지 않았다(다음 단계).
+- 다음 단계(코디네이터가 별도 워커로 진행): 독립 교차검토 → 공식 V3(`verify_environment.py --base 762739f`, 재사용 off) → verified 재승격 → push·원격 CI → 리뷰 스레드 응답·resolve(사용자 결정) → 병합.

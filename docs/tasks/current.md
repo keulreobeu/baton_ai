@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-19 CI-VTIER 범위 조정(자동 정착 복구 제외)·체크포인트
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) in_progress: 사용자 결정으로 자동 정착 복구를 범위에서 제외했다. `src/`·`tests/`를 `57ef209` 내용으로 되돌렸고(`532e034`, 이력 보존), 복구 문단은 제외됨(superseded)으로 남겼다. 남은 위험은 PR #17 comment 4624337778(로컬 정착 1·2단계 사이 종료 시 Task 고립, 오승격 아님)이다. 후속 [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)는 착수 보류(자동 착수 금지). V2만 실행했다. 독립 교차검토·공식 V3·verified 재승격·CI·스레드 처리·병합이 남았다. 재개 카드는 [HANDOFF](../HANDOFF.md).
+
 ## 현재 작업 — 2026-11-19 CI-VTIER 정착 중단 복구 범위 축소
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) in_progress: 사용자 결정(범위 축소)으로 명시 복구는 통과 없이 BLOCKED `settlement_interrupted`로 끝내고 재검증을 요구한다(Wiki 재평가 없음, blocking 참조 연결, 소유권 미확인 시 해제 안 함). 15차 R1501~R1503 반영. 고도화 복구는 제거·이력 보존, 후속 [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)(착수 전). 독립 검토·공식 V3·원격 CI 대기.
