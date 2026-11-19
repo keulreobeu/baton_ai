@@ -298,7 +298,7 @@ os._exit(0)
                         "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "",
                         "stop_reason": None, "planner": None}]
 
-    def crash_local_settlement(self, name, mode, *, legacy=False, recorded=False, orca=None):
+    def crash_local_settlement(self, name, mode, *, legacy=False, recorded=False, orca=None, attempts=None):
         """Create `name` and end a real child worker (run, or checkpoint verify after a run) between
         its two local settlement steps. `legacy` stores the first step without the settlement
         mark (an earlier version), `recorded` lets the real Wiki record its event first, and
@@ -322,6 +322,8 @@ os._exit(0)
                 self.assertEqual(ingest(self.store, name, self.receipt(did), orca)["state"], "REVIEW_REQUIRED")
         else:
             body = deepcopy(self.body); body["task_id"] = name
+            if attempts:
+                body["execution"]["max_attempts"] = attempts
             self.store.create(body)
             if mode == "verify":
                 class Author:
@@ -608,6 +610,49 @@ os._exit(0)
         with self.assertRaisesRegex(HarnessError, "wiki_review_required_before_completion"):
             self.store.approve(name, "operator")
         self.store.control(name, "cancel")
+
+        # R1601 (I5): the blocking reference survives a control applied by recovery (pause) and a
+        # later validation that stores a non-blocking outcome while the Wiki policy is missing;
+        # the real CLI approval is refused while the recorded decision is unresolved.
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
+        for case in ("gap", "pause"):
+            with self.subTest(r1601=case):
+                name = "WIKI" + case.upper()
+                policy.write_text("# Fixture Wiki policy\n", encoding="utf-8")
+                before = set(events())
+                self.crash_local_settlement(name, "run", recorded=True, attempts=3)
+                (event,) = set(events()) - before
+                self.assertIs(wiki.decision(event)["blocking"], True)
+                if case == "pause":
+                    self.store.control(name, "pause")
+                policy.unlink()
+                with never:
+                    row = self.store.ready(name, recover=True)
+                self.assertEqual((row["state"], row["result"]["validation_passed"]),
+                                 ("PAUSED" if case == "pause" else "BLOCKED", False))
+                self.assertEqual(row["result"]["wiki_blocking_refs"], [event])
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.RECOVERY_CHECKS)):
+                    if case == "pause":
+                        self.assertEqual(self.store.ready(name)["state"], "READY")
+                        again = Orchestrator(self.store, {"mock": Author()}).run(name)
+                    else:
+                        again = Orchestrator(self.store, {}).verify(name, stage="checkpoint")
+                self.assertEqual((again["state"], again["result"]["validation_passed"], again["result"]["wiki"]["reason"]),
+                                 ("REVIEW_REQUIRED", True, "wiki_policy_not_enabled"))
+                policy.write_text("# Fixture Wiki policy\n", encoding="utf-8")
+                attest(self.store, self.root, name)
+                self.assertIs(wiki.decision(event)["blocking"], True)
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    code = main(["--state-dir", ".local_runtime/state", "approve", "--task", name, "--reviewer", "operator"],
+                                workspace=self.root)
+                self.assertEqual((code, json.loads(out.getvalue())),
+                                 (2, {"status": "error", "error": "wiki_review_required_before_completion"}))
+                self.assertEqual(self.store.get(name)["state"], "REVIEW_REQUIRED")
+                self.store.control(name, "cancel")
 
     def test_control_after_a_failed_second_step_keeps_the_settled_result(self):
         """CI-VTIER-001 7th review R701: a pause after the Wiki step failed completes that

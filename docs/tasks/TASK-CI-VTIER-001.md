@@ -275,3 +275,16 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   - `57ef209`: 원 지적·R1401·R1404·R1503 구간이 `task_cannot_resume`, R1403은 `('READY', None, True, True)`, R1501은 표시 없음, R1502는 CLI 오류.
 - Task 상태는 `in_progress` 유지(전체 AC `not_run`·독립 검토 `not_run`). 공식 V3·push 없음.
 - V2(작업 트리 = `2de9e5b` + 이 변경, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(981.8초), `PYTHONIOENCODING=utf-8` 371 OK(982.5초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T06:57:31Z~07:13:55Z, 단독 실측 아님). check_sdd `--base 762739f` PASS. 공식 V3·push 없음. verified 아님.
+
+## 16차 재검토 반영(차단 참조 보존·승인 게이트) — 2026-11-19
+
+- 검토: Codex 16차 독립 교차검토(대상 `b16ba12`, 축소 계약 기준) FAIL. P1 R1601(I5 위반), P3 R1602(문서 경계). I1~I4·거부 보고는 충족 판정. 보고서 `C:/Users/SSAFY/AppData/Local/Temp/baton-ci-vtier-r16-review/TASK-CI-VTIER-001-review16.md`.
+- 수정:
+  - R1601: `orchestrator._end_interrupted`가 결정적 이벤트 ID를 `wiki`와 함께 지속 필드 `wiki_blocking_refs`(정렬·중복 없음·최대 20)에 기록한다. 크기 fallback `_settle_unrecordable`에도 같은 값(`extra`)을 넣는다.
+  - R1601: `evidence.approval_proof`(승인 게이트 한 곳)가 목록의 각 이벤트에 대해 `Wiki.decision`(기존 `resolved_by` 해결 연쇄 포함)을 읽고, blocking이면 `wiki_review_required_before_completion`으로 거부한다. `wiki_unknown_event`(기록 전 종료)만 비차단이고 그 밖의 오류는 승인 오류다.
+  - 제어 override·재검증·Wiki 결과 저장은 이 필드를 쓰지 않는다. 정상·Orca 경로는 필드를 만들지 않으므로 기존 Wiki 승인 계약은 그대로다.
+  - R1602: Spec 범위 축소 문단의 슬롯 문장을 실제 경계로 고쳤다(행 쓰기·이벤트 뒤 별도 예약 잠금, 로컬 검증은 슬롯 없음). 슬롯 해제 실패는 `settlement_slot_release_failed` 이벤트·오류 코드로 보고하며 복구 거부(`settlement_recovery_refused`)로 표시하지 않는다. 이전 기록의 "(·Orca author 슬롯) 해제"도 이 경계로 읽는다.
+- 회귀: `check_recovery_of_legacy_refused_raced_or_changed_settlements`의 R1601 구간(subTest `gap`·`pause`). 실제 Wiki가 blocking 이벤트를 기록한 뒤 자식이 종료하고, 정책 파일을 뺀 채 복구한다. `gap`은 BLOCKED, `pause`는 요청된 pause로 PAUSED이고, 둘 다 `wiki_blocking_refs == [event]`다. 정책 부재 중 재검증(`gap`은 checkpoint verify, `pause`는 resume 뒤 run)은 `SKIP wiki_policy_not_enabled`로 통과한다. 정책 복원, 실제 증거 기록(`attest`) 뒤 실제 CLI `approve`는 종료 2와 `wiki_review_required_before_completion`이며 상태는 REVIEW_REQUIRED로 남는다. 기존 I1~I5 구간(R1503 포함)은 그대로 통과한다.
+- 수정 전 대조(`b16ba12` 임시 worktree, 같은 구간을 behavior probe로): `gap`은 복구 결과 `wiki`가 올바른 blocking 참조였지만 재검증 뒤 CLI `approve`가 종료 0·COMPLETED였다(Wiki 판단 blocking=true 그대로). `pause`는 복구 결과 `wiki=None`(참조 유실)이었고 CLI `approve`가 종료 0·COMPLETED였다. 새 테스트는 `b16ba12`에서 `wiki_blocking_refs` 부재로 실패한다.
+- Task 상태는 `in_progress` 유지. 공식 V3·push 없음.
+- V2(작업 트리 = `b16ba12` + 이 변경, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(1031.1초), `PYTHONIOENCODING=utf-8` 371 OK(1041.8초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T07:39:24Z~07:56:48Z, 단독 실측 아님). check_sdd `--base 762739f` PASS. 공식 V3·push 없음. verified 아님.

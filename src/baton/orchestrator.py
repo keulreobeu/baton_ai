@@ -390,22 +390,37 @@ class Orchestrator:
     def _end_interrupted(self, task, row):
         result = row["result"]
         values = {**CLEARED_VALIDATION, "settlement_pending": False, "reason": "settlement_interrupted"}
+        refs = {}
         if result.get("validation_passed") is True:
             # 15th review R1503: link (never replace) a Wiki verification the first step may have
             # recorded; the id is the one wiki_cli.assess derives from the stored result.
-            values["wiki"] = {"event_id": "VALIDATED-" + digest([task, result.get("changed_files"), result.get("validation")])[:32],
-                              "action": "REVIEW_REQUIRED", "execution": "REVIEW_REQUIRED", "blocking": True,
-                              "reason": "settlement_interrupted", "compacted": True}
+            event_id = "VALIDATED-" + digest([task, result.get("changed_files"), result.get("validation")])[:32]
+            values["wiki"] = {"event_id": event_id, "action": "REVIEW_REQUIRED", "execution": "REVIEW_REQUIRED",
+                              "blocking": True, "reason": "settlement_interrupted", "compacted": True}
+            # 16th review R1601: the reference also goes to a field no control override, later
+            # validation or Wiki outcome rewrites; the approval gate reads its durable Wiki
+            # decision until the Wiki resolves it (evidence.approval_proof).
+            refs = {"wiki_blocking_refs": sorted(set(result.get("wiki_blocking_refs") or []) | {event_id})[-20:]}
+            values.update(refs)
         try:
             settled = self.store.update(task, row["lease"], "BLOCKED", result=values, release=True, yield_to_control=True)
         except HarnessError as exc:
             if str(exc) != "unsafe_payload": raise
-            settled = self._settle_unrecordable(task, row["lease"], result, values.get("wiki"), "result_unrecordable")
+            settled = self._settle_unrecordable(task, row["lease"], result, values.get("wiki"), "result_unrecordable", refs)
         with self.store.tx() as c:
             self.store.event(c, task, "settlement_recovered", {"reason": "settlement_interrupted", "state": settled["state"]})
         if row["task"]["execution"].get("runtime") == "orca":
+            # 16th review R1602: after the row write (lease already released), under the separate
+            # reservation lock. A local validation holds no slot; this clears an author
+            # reservation an earlier version may have left. A failure is reported as such, not
+            # as a refused recovery.
             from .runtime import _reserve_slot
-            _reserve_slot(self.store, task, "author", row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
+            try:
+                _reserve_slot(self.store, task, "author", row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
+            except HarnessError as exc:
+                with self.store.tx() as c:
+                    self.store.event(c, task, "settlement_slot_release_failed", {"reason": str(exc)})
+                raise HarnessError("settlement_slot_release_failed") from None
         return self._settled(task, settled)
 
     def _settled(self, task, row):
@@ -416,7 +431,7 @@ class Orchestrator:
             return auto_commit_task(self.store, task)
         return self.store.export(task)
 
-    def _settle_unrecordable(self, task, lease, result, wiki, reason):
+    def _settle_unrecordable(self, task, lease, result, wiki, reason, extra=None):
         """CI-VTIER-001 9th review R901: a settlement the record cannot hold ends with no pass,
         in one write that also releases the lease. Stored fields count too, so the large
         validation and diagnostic fields are cleared (as in the Orca compact fallback)."""
@@ -426,7 +441,8 @@ class Orchestrator:
                    "validation": [], "changed_files": {}, "summary": None, "provider_events": [],
                    "resume_point": None, "wiki": wiki, "settlement_pending": False,
                    "candidate": None, "review_evidence": None, "integration_evidence": None,
-                   "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
+                   "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])],
+                   **(extra or {})}
         return self.store.update(task, lease, "BLOCKED", result=compact, release=True, yield_to_control=True)
 
     def run(self, task_id):
