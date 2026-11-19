@@ -300,7 +300,10 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 
 - 분리 위치: AC-12 revision 5 지문·재사용 판정·증거·lock(`suite-fp/1` 블록)은 `scripts/ci_plan.py`에서 `scripts/suite_reuse.py`로 코드 변경 없이 옮기고,
   검증기의 재사용 경로(`_evidence_main` 등)도 같은 모듈로 옮긴다. `policy_identity`는 옮긴 모듈도 지문에 넣는다.
-  동적 입력 관측(`scripts/readset.py`, `scripts/readset_site/`)은 경로를 유지하고 재사용 기능 묶음으로 표시한다(내부 변경 없음).
+  동적 입력 관측(`scripts/readset.py`, `scripts/readset_site/`)은 경로를 유지하고 재사용 기능 묶음으로 표시한다
+  (분리 커밋 `ef82cd5` 시점에는 주석 외 내부 변경 없음). 분리 뒤 후속 수정은 별도 커밋이다: 원격 CI 8.3 짧은 경로 별칭 수정 `a2f107d`
+  (`_alias_of`의 짧은 이름 확장, 링크 판정 불변)와 23차 교차검토 반영 `957de59`(테스트 기대 키·옵션 판정·환경 스냅샷·MetricsStore).
+  근거와 증거는 Task의 "원격 CI 8.3 짧은 경로 실패 수정"·"23차 독립 교차검토 FAIL 반영" 기록이다.
 - 스위치: `verify_environment.py --enable-suite-reuse`(기본 off) 하나다. `--evidence-dir`·`--lock-home`·`--readset-out`을 스위치 없이 주면
   사용 오류(종료 코드 2)로 거부하고 SDD·suite를 실행하지 않는다. Orchestrator V3 caller와 원격 CI는 스위치를 쓰지 않는다.
 - 꺼진 상태의 기록: 기본 V3는 매번 `offline_suite` 전체를 실행하고 `suite_execution=executed`, `suite_fingerprint=null`,

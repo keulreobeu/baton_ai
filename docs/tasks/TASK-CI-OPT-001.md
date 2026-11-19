@@ -1707,6 +1707,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
 - 기존 재사용·readset 단위 테스트는 같은 파일에서 기본 discover로 계속 실행한다(참조만 `suite_reuse`로 바꿈, 재사용 테스트는 `--enable-suite-reuse` 명시).
 - V2(영향 8모듈 `test_readset·test_ci_plan·test_verify_environment·test_managed_harness·test_flow_runtime·test_observability·test_ci_workflow·test_sdd`):
   | 환경 | 결과 |
+  | --- | --- |
   | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 464 s) |
   | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 468 s) |
   `check_sdd.py --base 5c07aea` PASS. 공식 V3는 교차검토 뒤 1회 실행한다(이번에는 실행하지 않음). 원격 CI 미확인.
@@ -1729,10 +1730,12 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   - 8.3 이름이 없으면 skip하지 않고 대체 확장 함수로 `_alias_of` 단위 판정을 한다.
   - 결과(수정 전 → 수정 후):
     | 분기 | 수정 전 | 수정 후 |
+    | --- | --- | --- |
     | 실제 8.3 경로 | 실패(별칭 `TMPU0F~1\LONG-D~1\repo\own-area-r83`) | 통과 |
     | 대체 분기(GetShortPathNameW 0 강제) | 실패 | 통과 |
 - V2(같은 영향 8모듈):
   | 환경 | 결과 |
+  | --- | --- |
   | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 469 s) |
   | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 465 s) |
   `check_sdd.py --base 5c07aea` PASS. 원격 CI 재실행은 push 뒤 확인 대상이다(미게시).
@@ -1750,6 +1753,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
 - R2305(P3): 8.3 대체 테스트의 확장 단언은 Windows에서만 하고, 다른 플랫폼에서는 별칭 보존을 확인한다(비Windows 실제 실행은 범위 밖, 미실행).
 - 수정 전 실패 확인:
   | 지적 | 수정 전 코드 결과 |
+  | --- | --- |
   | R2301 | 8.3 TEMP `tests.test_readset` 37건 중 22 실패. 기대 키만 고친 중간 상태에서도 가려졌던 목록 단언 2건이 실패 |
   | R2302 | 꺼짐 프로브 환경 열거 2회 |
   | R2304 | `--evidence-dir ''`가 SystemExit 없이 실행 |
@@ -1763,6 +1767,7 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   5. `python -X utf8 -m unittest tests.test_readset`를 실행한다.
 - V2(같은 8모듈) + 8.3 TEMP:
   | 환경 | 결과 |
+  | --- | --- |
   | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 487 s) |
   | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 477 s) |
   | 8.3 TEMP `tests.test_readset` | 37 OK(실패·오류·skip 0) |
@@ -1770,3 +1775,21 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
 - 참고(요구 범위 밖, 이번에 수정하지 않음): 8.3 TEMP로 8모듈 전체를 돌리면 `tests.test_flow_runtime` 12건이 오류다. 원인은 `git_lifecycle._scan_range`의 `git rev-list` 실패(`git_operation_failed_rev-list`)다.
   이 경로는 이번 변경 밖의 제품 코드다. 원격 CI run 44425214483(`RUNNER~1` TEMP)에서는 readset 1건 외에 실패가 없었으므로 로컬 모사 조건의 차이일 수 있다. 원인 확정과 처리는 코디네이터 결정 대상이다.
 - 공식 V3·push는 하지 않았다(독립 델타 검토 뒤). 원격 CI 미확인.
+
+## 24차 독립 교차검토 — 2026-11-19
+
+- 검토: Codex, 대상 `957de59`, 23차 반영 범위 `a2f107d..957de59`, 회귀 범위 `27312df..957de59`. 판정 **PASS_WITH_FINDINGS**(P1 0, P2 0, P3 2).
+- R2301~R2305: 모두 resolved.
+  - R2301: 실제 8.3 TEMP에서 readset 37 OK, `a2f107d` 테스트 본문으로는 22 실패 재현
+  - R2302: 꺼짐 프로브 환경 열거 0회
+  - R2303: V1·V2 `not_configured` 거부
+  - R2304: 빈 값 종료 2
+  - R2305: Windows 전용 확장 단언
+- 검토자 실행: 8모듈 기본 324 OK(529 s), 8.3 TEMP 8모듈 324 OK(529 s, Git 오류 진단 0), 8.3 TEMP readset 37 OK, flow runtime 단독 56 OK. `check_sdd.py --base 5c07aea` PASS.
+- 8.3 flow 오류(23차 반영 때 로컬 보조 실행의 `test_flow_runtime` 12건): 검토자 환경에서는 재현되지 않았다.
+  - 원격 run 44425214483의 두 Windows job은 `RUNNER~1` 경로에서 flow runtime을 실행했고 실패는 readset 1건뿐이었다.
+  - 8.3 표기만으로 flow 오류가 난다는 근거와 이 후보가 원격에 추가한 실패라는 근거는 없다. 당시 로컬 12건의 정확한 Git 원인은 미확정이다(래퍼가 stderr를 전달하지 않음). 제품 코드는 이번 범위에서 바뀌지 않았다.
+- 지적 반영(문서만):
+  - R2401: Spec 분리 Amendment의 "내부 변경 없음"이 분리 커밋 `ef82cd5` 시점의 설명임을 명시하고 후속 `a2f107d`·`957de59`를 연결했다.
+  - R2402: 이 Task의 2026-11-19 기록 표(분리·8.3·23차)에 Markdown 구분 행을 추가했다.
+- 다음: 이 기록 커밋을 최종 후보 HEAD로 두고 공식 로컬 V3를 1회 실행한다.
