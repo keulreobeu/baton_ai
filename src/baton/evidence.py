@@ -402,18 +402,4 @@ def approval_proof(store, row, approver):
         from .wiki import Wiki
         if Wiki(store.root).decision(documentation["event_id"]).get("blocking"):
             raise HarnessError("wiki_review_required_before_completion")
-    for event_id in row["result"].get("wiki_blocking_refs") or []:
-        # CI-VTIER-001 16th review R1601: a Wiki verification an interrupted settlement may have
-        # recorded keeps blocking completion until the Wiki itself resolves it (resolves),
-        # whatever later validations stored as the current outcome. An event that was never
-        # recorded (the worker died first) holds no decision.
-        from .wiki import Wiki
-        try:
-            blocking = Wiki(store.root).decision(event_id).get("blocking")
-        except HarnessError as exc:
-            if str(exc) != "wiki_unknown_event":
-                raise
-            continue
-        if blocking:
-            raise HarnessError("wiki_review_required_before_completion")
     return digest({"candidate": candidate, "review": row["result"]["review_evidence"], "integration": integration})

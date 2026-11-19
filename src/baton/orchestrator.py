@@ -307,18 +307,7 @@ class Orchestrator:
         # 5th review R501: a control that arrived after the last stop check turns this
         # settlement into PAUSED/CANCELLED in the same transaction (no validation result,
         # lease released) instead of failing and leaving the lease held.
-        from .runtime import SETTLEMENT_HEADROOM
-        if wiki_due:
-            # PR #17 review (settlement crash recovery): as on the Orca path, the first step
-            # that keeps the lease records the pending second step, so a worker that dies
-            # before the Wiki outcome is stored can be settled by `resume --recover-running`.
-            # 15th review R1501: the mark names its owner (this local lease), so an Orca end
-            # event never settles it and a stale mark never matches a later lease.
-            result.update(settlement_pending=True, settlement_owner="local", settlement_lease=lease)
-        elif self.store.get(task)["result"].get("settlement_pending") is True:
-            # A failure after the first step ends this settlement here (no pass); the
-            # pending mark never outlives the lease it describes.
-            result["settlement_pending"] = False
+        from .runtime import SETTLEMENT_HEADROOM, store_wiki_outcome
         try:
             # CI-VTIER-001 9th review R901: as on the Orca path, a first step that keeps the
             # lease for the Wiki outcome reserves that outcome's space.
@@ -328,102 +317,20 @@ class Orchestrator:
             if str(exc) != "unsafe_payload": raise
             row, wiki_due = self._settle_unrecordable(task, lease, result, None, "result_unrecordable"), False
         if wiki_due:
-            row = self._finish_settlement(task, lease, state, row, result)
-        return self._settled(task, row)
-
-    def _finish_settlement(self, task, lease, state, row, result):
-        """Second step of a passing local settlement: the Wiki records a verification only once
-        the validation result is stored as the settled result; the lease is held until the Wiki
-        outcome is stored too, with the pending mark cleared in the same write."""
-        from .runtime import store_wiki_outcome
-        wiki = None
-        if row["state"] == state:
-            from .wiki_cli import assess
-            wiki = assess(self.store, task, result)
-            if state == "COMPLETED" and wiki.get("blocking"):
-                state = "REVIEW_REQUIRED"
-        final = state if wiki else row["state"]
-        return store_wiki_outcome(
-            lambda outcome: self.store.update(task, lease, final, result={"wiki": outcome, "settlement_pending": False},
-                                              release=True, yield_to_control=True),
-            wiki,
-            lambda outcome: self._settle_unrecordable(task, lease, result, outcome, "wiki_outcome_unrecordable"))
-
-    def recover_settlement(self, task):
-        """Explicit recovery of a settlement a dead local worker left between its two steps
-        (entry point: ManagedStore.ready(recover=True), CLI `resume --recover-running`).
-
-        Scope (user decision 2026-11-19, reduced recovery): end the row safely in a state that can
-        be validated again; never rebuild a success. One write settles BLOCKED with reason
-        settlement_interrupted (a pause/cancel request decides PAUSED/CANCELLED), no pass and no
-        status; the stored checks, manifest and unresolved official V3 flag stay as history. The
-        Wiki is neither assessed nor written: a passing first step may already have recorded its
-        verification event, so the deterministic event id of the stored result is attached as a
-        blocking reference (the completion gate reads that durable decision). The pending mark,
-        lease and pid (and an Orca author slot) are released in that one write.
-
-        Ownership must be proven first: a held task or worktree lock (worker_busy), a live pid
-        (worker_still_alive) or an unknown pid (worker_ownership_unknown) refuses recovery and
-        leaves the row unchanged, with the refusal recorded as an event."""
-        from .isolation import process_alive
-        from .managed import interrupted_local_settlement
-        from .runtime import execution_lock
-        try:
-            with execution_lock(self.store.root, "task", task):
-                row = self.store.get(task)
-                result = row["result"]
-                if not interrupted_local_settlement(row["state"], row["lease"], result, row["task"]):
-                    return self.store.export(task)  # Settled meanwhile (or not a local settlement).
-                if type(row["pid"]) is not int or row["pid"] <= 0:
-                    raise HarnessError("worker_ownership_unknown")
-                if process_alive(row["pid"]):
-                    raise HarnessError("worker_still_alive")
-                if not row["worktree"]:
-                    return self._end_interrupted(task, row)
-                with execution_lock(self.store.root, "worktree", Path(row["worktree"]).resolve()):
-                    return self._end_interrupted(task, row)
-        except HarnessError as exc:
-            if str(exc) in {"worker_busy", "worker_still_alive", "worker_ownership_unknown"}:
-                self.store.refuse_recovery(task, str(exc))
-            raise
-
-    def _end_interrupted(self, task, row):
-        result = row["result"]
-        values = {**CLEARED_VALIDATION, "settlement_pending": False, "reason": "settlement_interrupted"}
-        refs = {}
-        if result.get("validation_passed") is True:
-            # 15th review R1503: link (never replace) a Wiki verification the first step may have
-            # recorded; the id is the one wiki_cli.assess derives from the stored result.
-            event_id = "VALIDATED-" + digest([task, result.get("changed_files"), result.get("validation")])[:32]
-            values["wiki"] = {"event_id": event_id, "action": "REVIEW_REQUIRED", "execution": "REVIEW_REQUIRED",
-                              "blocking": True, "reason": "settlement_interrupted", "compacted": True}
-            # 16th review R1601: the reference also goes to a field no control override, later
-            # validation or Wiki outcome rewrites; the approval gate reads its durable Wiki
-            # decision until the Wiki resolves it (evidence.approval_proof).
-            refs = {"wiki_blocking_refs": sorted(set(result.get("wiki_blocking_refs") or []) | {event_id})[-20:]}
-            values.update(refs)
-        try:
-            settled = self.store.update(task, row["lease"], "BLOCKED", result=values, release=True, yield_to_control=True)
-        except HarnessError as exc:
-            if str(exc) != "unsafe_payload": raise
-            settled = self._settle_unrecordable(task, row["lease"], result, values.get("wiki"), "result_unrecordable", refs)
-        with self.store.tx() as c:
-            self.store.event(c, task, "settlement_recovered", {"reason": "settlement_interrupted", "state": settled["state"]})
-        if row["task"]["execution"].get("runtime") == "orca":
-            # 16th review R1602: after the row write (lease already released), under the separate
-            # reservation lock. A local validation holds no slot; this clears an author
-            # reservation an earlier version may have left. A failure is reported as such, not
-            # as a refused recovery.
-            from .runtime import _reserve_slot
-            try:
-                _reserve_slot(self.store, task, "author", row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
-            except HarnessError as exc:
-                with self.store.tx() as c:
-                    self.store.event(c, task, "settlement_slot_release_failed", {"reason": str(exc)})
-                raise HarnessError("settlement_slot_release_failed") from None
-        return self._settled(task, settled)
-
-    def _settled(self, task, row):
+            # The Wiki records a verification only once the validation result is stored as
+            # the settled result; the lease is held until the Wiki outcome is stored too.
+            wiki = None
+            if row["state"] == state:
+                from .wiki_cli import assess
+                wiki = assess(self.store, task, result)
+                if state == "COMPLETED" and wiki.get("blocking"):
+                    state = "REVIEW_REQUIRED"
+            final = state if wiki else row["state"]
+            row = store_wiki_outcome(
+                lambda outcome: self.store.update(task, lease, final, result={"wiki": outcome},
+                                                  release=True, yield_to_control=True),
+                wiki,
+                lambda outcome: self._settle_unrecordable(task, lease, result, outcome, "wiki_outcome_unrecordable"))
         state = row["state"]
         self.store.observe_idle_state(task)
         if state == "COMPLETED":
@@ -431,7 +338,7 @@ class Orchestrator:
             return auto_commit_task(self.store, task)
         return self.store.export(task)
 
-    def _settle_unrecordable(self, task, lease, result, wiki, reason, extra=None):
+    def _settle_unrecordable(self, task, lease, result, wiki, reason):
         """CI-VTIER-001 9th review R901: a settlement the record cannot hold ends with no pass,
         in one write that also releases the lease. Stored fields count too, so the large
         validation and diagnostic fields are cleared (as in the Orca compact fallback)."""
@@ -439,10 +346,9 @@ class Orchestrator:
         compact = {"validation_passed": False, "validation_status": None, "reason": reason,
                    **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
                    "validation": [], "changed_files": {}, "summary": None, "provider_events": [],
-                   "resume_point": None, "wiki": wiki, "settlement_pending": False,
+                   "resume_point": None, "wiki": wiki,
                    "candidate": None, "review_evidence": None, "integration_evidence": None,
-                   "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])],
-                   **(extra or {})}
+                   "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
         return self.store.update(task, lease, "BLOCKED", result=compact, release=True, yield_to_control=True)
 
     def run(self, task_id):
