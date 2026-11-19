@@ -11,6 +11,7 @@ from unittest.mock import patch
 from contextlib import redirect_stdout
 
 from scripts import ci_plan as cp
+from scripts import suite_reuse as sr
 from scripts import check_sdd as sdd
 
 
@@ -105,6 +106,34 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.choose("checkpoint", graph=graph)["effective_tier"], "V3")
 
 
+def check_reuse_feature_import_boundary(test):
+    """CI-OPT-001 2026-11-19: the common validation path never imports the separated
+    reuse feature (scripts/suite_reuse.py) or its input observation (scripts/readset.py);
+    the verifier imports it only inside the --enable-suite-reuse branch."""
+    import ast
+    root = Path(__file__).resolve().parents[1]
+    reuse = {"suite_reuse", "readset"}
+    def imports(tree):
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""] + [a.name for a in node.names]
+            if any(part in reuse for name in names for part in name.split(".")):
+                yield node
+    common = [root / "scripts/ci_plan.py", root / "scripts/check_sdd.py", *sorted((root / "src/baton").glob("*.py"))]
+    for path in common:
+        with test.subTest(path=path.name):
+            test.assertEqual(list(imports(ast.parse(path.read_text(encoding="utf-8")))), [])
+    tree = ast.parse((root / "scripts/verify_environment.py").read_text(encoding="utf-8"))
+    found = list(imports(tree))
+    test.assertEqual(len(found), 1)
+    guarded = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+               and ast.unparse(node.test) == "args.enable_suite_reuse" and found[0] in list(ast.walk(node))]
+    test.assertEqual(len(guarded), 1)
+
+
 class ReuseTests(unittest.TestCase):
     def test_exact_complete_v3_only_and_never_remote(self):
         current = identity(); prior = evidence(current)
@@ -113,6 +142,7 @@ class ReuseTests(unittest.TestCase):
         for tier in ("V1", "V2", None):
             prior["tier"] = tier
             self.assertFalse(cp.reuse_v3(current, prior)["allowed"])
+        check_reuse_feature_import_boundary(self)
 
     def test_every_identity_field_changed_unknown_partial_missing(self):
         current = identity()
@@ -854,17 +884,17 @@ class SuiteReuseTests(unittest.TestCase):
         outside = Path(self.temp.name) / "watched"
         outside.mkdir()
         rs = readset(repo_reads=[], listings=[{"path": str(outside), "scope": "outside", "ok": True, "entries": []}])
-        cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+        sr.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                              verify_observed=True)  # unchanged: accepted
         (outside / "new.flag").write_text("x", encoding="utf-8")
         with self.assertRaises(cp.PlanError) as caught:
-            cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+            sr.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
         self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")  # re-review N05: own code
         twice = readset(repo_reads=[], listings=[{"path": str(outside), "scope": "outside", "ok": True, "entries": [["new.flag", "file"]]},
                                   {"path": str(outside), "scope": "outside", "ok": True, "entries": []}])
         with self.assertRaises(cp.PlanError):  # two observations of one path disagree
-            cp.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+            sr.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
 
     def test_listing_change_never_hides_a_content_env_or_alias_change(self):
@@ -875,12 +905,12 @@ class SuiteReuseTests(unittest.TestCase):
         listing = [{"path": str(watched), "scope": "outside", "ok": True, "entries": []}]
         outside = Path(self.temp.name) / "input-r301.cfg"
         outside.write_text("before", encoding="utf-8")
-        before = cp._content(outside)
+        before = sr._content(outside)
         rs = readset(repo_reads=[], listings=listing,
                      outside_reads=[{"path": str(outside), "via": "open", "sha256": before}],
                      env_reads=[{"path": str(outside), "via": "open", "sha256": before}],
                      aliases=[{"path": str(outside), "target": cp.os.path.realpath(outside)}])
-        fp = lambda record: cp.suite_fingerprint(self.root, record, environ=self.env, manifest=FIXED_MANIFEST,
+        fp = lambda record: sr.suite_fingerprint(self.root, record, environ=self.env, manifest=FIXED_MANIFEST,
                                                  git=FIXED_GIT, verify_observed=True)
         fp(rs)
         (watched / "own-output.txt").write_text("x", encoding="utf-8")
@@ -906,15 +936,15 @@ class SuiteReuseTests(unittest.TestCase):
         before the end is a change in the source run; an unreadable section is reported
         before a listing change."""
         self.write("docs/tasks/TASK-X.md", "# T\n\n" + SECTION + "\nB\n")
-        seen = cp._content(self.root / "docs/tasks/TASK-X.md")
+        seen = sr._content(self.root / "docs/tasks/TASK-X.md")
         self.write("docs/tasks/TASK-X.md", "# T\n\n" + SECTION + "\nA\n")
         record = {"path": "docs/tasks/TASK-X.md", "via": "open", "section_only": True, "sections": [SECTION], "sha256": seen}
-        fp = lambda rs: cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST,
+        fp = lambda rs: sr.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST,
                                              git=FIXED_GIT, verify_observed=True)
         with self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[record]))
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
-        same = dict(record, sha256=cp._content(self.root / "docs/tasks/TASK-X.md"))
+        same = dict(record, sha256=sr._content(self.root / "docs/tasks/TASK-X.md"))
         fp(readset(repo_reads=[same]))
         watched = Path(self.temp.name) / "watched-r503"
         watched.mkdir()
@@ -923,15 +953,15 @@ class SuiteReuseTests(unittest.TestCase):
         # 6th review R602: the section fingerprint and the compared hash come from one read:
         # a read that sees B (while the file on disk is A again) is a change.
         b_bytes = ("# T\n\n" + SECTION + "\nB\n").encode("utf-8")
-        with patch.object(cp, "_read_document", return_value=b_bytes), self.assertRaises(cp.PlanError) as caught:
+        with patch.object(sr, "_read_document", return_value=b_bytes), self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[same]))
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
         # 7th review R705: bytes that were read but do not decode are still compared.
-        with patch.object(cp, "_read_document", return_value=b"\xff\xfe not utf-8"), \
+        with patch.object(sr, "_read_document", return_value=b"\xff\xfe not utf-8"), \
                 self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[same]))
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
-        with patch.object(cp, "_read_document", side_effect=OSError("locked")), \
+        with patch.object(sr, "_read_document", side_effect=OSError("locked")), \
                 self.assertRaises(cp.PlanError) as caught:
             fp(readset(repo_reads=[same], listings=listing))
         self.assertEqual(str(caught.exception), "FILE_UNREADABLE")
@@ -948,12 +978,12 @@ class SuiteReuseTests(unittest.TestCase):
         for path in (first, second):
             path.write_text("before", encoding="utf-8")
         rs = readset(repo_reads=[], listings=listing,
-                     outside_reads=[{"path": str(p), "via": "open", "sha256": cp._content(p)} for p in (first, second)])
-        fp = lambda record: cp.suite_fingerprint(self.root, record, environ=self.env, manifest=FIXED_MANIFEST,
+                     outside_reads=[{"path": str(p), "via": "open", "sha256": sr._content(p)} for p in (first, second)])
+        fp = lambda record: sr.suite_fingerprint(self.root, record, environ=self.env, manifest=FIXED_MANIFEST,
                                                  git=FIXED_GIT, verify_observed=True)
-        real = cp._content
+        real = sr._content
         unreadable = lambda path: None if Path(path) == first else real(path)
-        with patch.object(cp, "_content", unreadable):
+        with patch.object(sr, "_content", unreadable):
             with self.assertRaises(cp.PlanError) as caught:
                 fp(rs)
             self.assertEqual(str(caught.exception), "OUTSIDE_UNREADABLE")
@@ -972,35 +1002,35 @@ class SuiteReuseTests(unittest.TestCase):
         target = Path(self.temp.name) / "probe"
         failed = lambda error: readset(repo_reads=[], listings=[
             {"path": str(target), "scope": "outside", "ok": False, "entries": [], "error": error}])
-        cp.suite_fingerprint(self.root, failed("FileNotFoundError"), environ=self.env, manifest=FIXED_MANIFEST,
+        sr.suite_fingerprint(self.root, failed("FileNotFoundError"), environ=self.env, manifest=FIXED_MANIFEST,
                              git=FIXED_GIT, verify_observed=True)  # still missing: accepted
         target.write_text("now a file", encoding="utf-8")
-        self.assertEqual(cp._listing(target), {"ok": False, "entries": [], "error": "NotADirectoryError"})
+        self.assertEqual(sr._listing(target), {"ok": False, "entries": [], "error": "NotADirectoryError"})
         with self.assertRaises(cp.PlanError) as caught:
-            cp.suite_fingerprint(self.root, failed("FileNotFoundError"), environ=self.env, manifest=FIXED_MANIFEST,
+            sr.suite_fingerprint(self.root, failed("FileNotFoundError"), environ=self.env, manifest=FIXED_MANIFEST,
                                  git=FIXED_GIT, verify_observed=True)
         self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")
         with self.assertRaises(cp.PlanError) as caught:  # recorded error type differs from the current one
-            cp.suite_fingerprint(self.root, failed("PermissionError"), environ=self.env, manifest=FIXED_MANIFEST,
+            sr.suite_fingerprint(self.root, failed("PermissionError"), environ=self.env, manifest=FIXED_MANIFEST,
                                  git=FIXED_GIT, verify_observed=True)
         self.assertEqual(str(caught.exception), "LISTING_CHANGED_DURING_RUN")
         twice = readset(repo_reads=[], listings=[
             {"path": str(target), "scope": "outside", "ok": False, "entries": [], "error": "FileNotFoundError"},
             {"path": str(target), "scope": "outside", "ok": False, "entries": [], "error": "NotADirectoryError"}])
         with self.assertRaises(cp.PlanError):  # repeated failed observations disagree on the error type
-            cp.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+            sr.suite_fingerprint(self.root, twice, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
 
     def test_readset_required_fields_are_not_defaulted(self):
         """CI-OPT-001 final cross review F06: a record without its required fields is invalid."""
-        self.assertTrue(cp.valid_readset(readset()))
-        for key in sorted(cp.READSET_REQUIRED_FIELDS - {"schema"}):
+        self.assertTrue(sr.valid_readset(readset()))
+        for key in sorted(sr.READSET_REQUIRED_FIELDS - {"schema"}):
             broken = readset()
             del broken[key]
             with self.subTest(missing=key):
-                self.assertFalse(cp.valid_readset(broken))
-        self.assertFalse(cp.valid_readset({"schema": "readset/1", "complete": True, "partial_reasons": []}))
-        self.assertFalse(cp.valid_readset(readset(listings={})))
+                self.assertFalse(sr.valid_readset(broken))
+        self.assertFalse(sr.valid_readset({"schema": "readset/1", "complete": True, "partial_reasons": []}))
+        self.assertFalse(sr.valid_readset(readset(listings={})))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
@@ -1031,11 +1061,11 @@ class SuiteReuseTests(unittest.TestCase):
         return result.stdout.strip()
 
     def fp(self, rs=None, env=None, manifest=None, git=None):
-        return cp.suite_fingerprint(self.root, rs or readset(), environ=self.env if env is None else env,
+        return sr.suite_fingerprint(self.root, rs or readset(), environ=self.env if env is None else env,
                                     manifest=manifest or FIXED_MANIFEST, git=git or FIXED_GIT)
 
     def evidence(self, fp, **overrides):
-        value = cp.suite_evidence(run_id="run-1", commit="c" * 40, fingerprint_record=fp, readset=readset(complete=fp["readset_complete"], partial_reasons=[] if fp["readset_complete"] else ["NETWORK"]),
+        value = sr.suite_evidence(run_id="run-1", commit="c" * 40, fingerprint_record=fp, readset=readset(complete=fp["readset_complete"], partial_reasons=[] if fp["readset_complete"] else ["NETWORK"]),
                                   result={"tests_run": 100, "failures": 0, "errors": 0, "skipped": 0,
                                           "expected_failures": 0, "unexpected_successes": 0},
                                   returncode=0, state_stable=True,
@@ -1046,7 +1076,7 @@ class SuiteReuseTests(unittest.TestCase):
 
     def decide(self, current, source, now="2026-11-16T01:00:00+00:00", non_reusable=None):
         value, digest, raw = source
-        return cp.decide_suite_reuse(current, value, digest, raw, now_utc=now, non_reusable=non_reusable)
+        return sr.decide_suite_reuse(current, value, digest, raw, now_utc=now, non_reusable=non_reusable)
 
     def test_unread_doc_candidate_and_outside_section_change_reuse(self):
         source = self.evidence(self.fp())
@@ -1132,17 +1162,17 @@ class SuiteReuseTests(unittest.TestCase):
         self.assertEqual(decision["equality_checks"]["env_reads"], "different")
         observed = readset(outside_reads=[{"path": str(self.outside), "sha256": "0" * 64}])
         with self.assertRaises(cp.PlanError) as caught:
-            cp.suite_fingerprint(self.root, observed, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+            sr.suite_fingerprint(self.root, observed, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
 
     def test_git_identity_covers_attribute_files_and_complete_reads_need_digests(self):
         """Review P1 (104e448): check-attr reads attribute files; complete read sets carry read-time digests."""
-        before = cp.git_identity(self.root)
+        before = sr.git_identity(self.root)
         info = self.root / ".git" / "info" / "attributes"
         info.parent.mkdir(parents=True, exist_ok=True)
         info.write_text("*.md text\n", encoding="utf-8")
-        self.assertNotEqual(cp.git_identity(self.root)["attributes"], before["attributes"])
+        self.assertNotEqual(sr.git_identity(self.root)["attributes"], before["attributes"])
         for key in ("repo_reads", "outside_reads", "env_reads"):
             entry = {"path": "docs/specs/READ.md" if key == "repo_reads" else str(self.outside), "via": "open"}
             with self.subTest(key=key), self.assertRaises(cp.PlanError):
@@ -1157,13 +1187,13 @@ class SuiteReuseTests(unittest.TestCase):
         with patch.object(Path, "is_symlink", lambda p: p == link or real_is_symlink(p)), \
                 patch.object(Path, "resolve", lambda p, strict=False: target if p == link else real_resolve(p, strict)), \
                 patch.object(cp.os, "readlink", lambda p: str(target)):
-            first = cp._content(link)
+            first = sr._content(link)
             target.write_text("b", encoding="utf-8")
-            self.assertNotEqual(cp._content(link), first)
+            self.assertNotEqual(sr._content(link), first)
             self.assertTrue(first.startswith("link:" + str(target) + ":"))
-        before = cp.resolver_identity()
+        before = sr.resolver_identity()
         with patch("socket.gethostname", return_value="another-host"):
-            self.assertNotEqual(cp.resolver_identity(), before)
+            self.assertNotEqual(sr.resolver_identity(), before)
         rs = readset(listings=[{"path": "docs/new", "scope": "repo", "ok": False, "entries": [], "error": "FileNotFoundError"}])
         source = self.evidence(self.fp(rs))
         self.assertTrue(self.decide(self.fp(rs), source)["allowed"])
@@ -1181,10 +1211,10 @@ class SuiteReuseTests(unittest.TestCase):
         with patch.object(cp.os.path, "realpath", lambda p, **kw: "C:/target-b" if p == alias else real(p, **kw)):
             self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["aliases"], "different")
             with self.assertRaises(cp.PlanError) as caught:  # review P1 (8d26947): retargeted during the source run
-                cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+                sr.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                      verify_observed=True)
             self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
-        snapshot = cp.suite_fingerprint(self.root, readset(), environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+        snapshot = sr.suite_fingerprint(self.root, readset(), environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                         resolver="r" * 64)
         self.assertEqual(snapshot["components"]["resolver"], "r" * 64)
 
@@ -1199,7 +1229,7 @@ class SuiteReuseTests(unittest.TestCase):
         probe.write_text("now present", encoding="utf-8")
         self.assertEqual(self.decide(self.fp(rs), source)["equality_checks"]["outside_reads"], "different")
         with self.assertRaises(cp.PlanError) as caught:
-            cp.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
+            sr.suite_fingerprint(self.root, rs, environ=self.env, manifest=FIXED_MANIFEST, git=FIXED_GIT,
                                  verify_observed=True)
         self.assertEqual(str(caught.exception), "INPUT_CHANGED_DURING_RUN")
         probe.unlink()
@@ -1212,10 +1242,10 @@ class SuiteReuseTests(unittest.TestCase):
         unused = self.fp()
         self.assertEqual(unused["components"]["trust_store"], "unused")
         used = readset(trust_store=True)
-        with patch.object(cp, "trust_store_identity", return_value="t" * 64):
+        with patch.object(sr, "trust_store_identity", return_value="t" * 64):
             source = self.evidence(self.fp(used))
             self.assertTrue(self.decide(self.fp(used), source)["allowed"])
-        with patch.object(cp, "trust_store_identity", return_value="u" * 64):
+        with patch.object(sr, "trust_store_identity", return_value="u" * 64):
             self.assertEqual(self.decide(self.fp(used), source)["equality_checks"]["trust_store"], "different")
 
     def test_windows_style_and_escaping_paths_are_rejected(self):
@@ -1236,11 +1266,11 @@ class SuiteReuseTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertFalse(self.decide(fp, self.evidence(fp, **{key: value}))["allowed"])
         value, digest, raw = self.evidence(fp)
-        self.assertFalse(cp.decide_suite_reuse(fp, value, "0" * 64, raw, now_utc="2026-11-16T01:00:00+00:00")["allowed"])
-        self.assertFalse(cp.decide_suite_reuse(fp, value, digest, raw + b" ", now_utc="2026-11-16T01:00:00+00:00")["allowed"])
+        self.assertFalse(sr.decide_suite_reuse(fp, value, "0" * 64, raw, now_utc="2026-11-16T01:00:00+00:00")["allowed"])
+        self.assertFalse(sr.decide_suite_reuse(fp, value, digest, raw + b" ", now_utc="2026-11-16T01:00:00+00:00")["allowed"])
         tampered = dict(value, tests_run=200)
         self.assertIn("EVIDENCE_HASH_MISMATCH",
-                      cp.decide_suite_reuse(fp, tampered, digest, raw, now_utc="2026-11-16T01:00:00+00:00")["reasons"])
+                      sr.decide_suite_reuse(fp, tampered, digest, raw, now_utc="2026-11-16T01:00:00+00:00")["reasons"])
         self.assertFalse(self.decide(fp, self.evidence(fp), now="2026-11-15T00:00:00+00:00")["allowed"])
         self.assertFalse(self.decide(fp, self.evidence(fp), now="not-a-time")["allowed"])
         self.assertFalse(self.decide({"schema": "x"}, self.evidence(fp))["allowed"])
@@ -1256,7 +1286,7 @@ class SuiteReuseTests(unittest.TestCase):
         def moving(root):
             calls.append(1); value = original(root)
             return dict(value, worktree=value["worktree"] + str(len(calls)))
-        with patch.object(cp, "freeze", moving), self.assertRaises(cp.PlanError) as caught:
+        with patch.object(sr, "freeze", moving), self.assertRaises(cp.PlanError) as caught:
             self.fp()
         self.assertEqual(str(caught.exception), "STATE_CHANGED")
 
@@ -1278,31 +1308,31 @@ class SuiteReuseTests(unittest.TestCase):
         self.assertIn("NOTHING_TO_REUSE", self.decide(fp, tiny, non_reusable=always)["reasons"])
 
     def test_policy_identity_tracks_non_reusable_list_and_scripts(self):
-        before = cp.policy_identity(self.root)
-        with patch.object(cp, "NON_REUSABLE_TESTS", [{"test_id": "x", "reason": "r", "mode": "always"}]):
-            self.assertNotEqual(cp.policy_identity(self.root), before)
+        before = sr.policy_identity(self.root)
+        with patch.object(sr, "NON_REUSABLE_TESTS", [{"test_id": "x", "reason": "r", "mode": "always"}]):
+            self.assertNotEqual(sr.policy_identity(self.root), before)
         self.write("scripts/verify_environment.py", "# changed\n")
-        self.assertNotEqual(cp.policy_identity(self.root), before)
+        self.assertNotEqual(sr.policy_identity(self.root), before)
 
     def test_doc_candidate_boundaries(self):
-        self.assertTrue(cp.doc_candidate("docs/tasks/current.md"))
+        self.assertTrue(sr.doc_candidate("docs/tasks/current.md"))
         for name in ("docs/sdd/traceability.json", "docs/templates/task.md", "AGENTS.md", "README.md",
                      "skills/baton-flow/SKILL.md", ".github/workflows/verify.yml", "src/docs/x.md"):
             with self.subTest(name=name):
-                self.assertFalse(cp.doc_candidate(name))
+                self.assertFalse(sr.doc_candidate(name))
 
     def test_fingerprint_lock_serializes_and_times_out(self):
         home = Path(self.temp.name) / "home"; digest = "a" * 64
-        with cp.fingerprint_lock(home, digest):
+        with sr.fingerprint_lock(home, digest):
             clock = iter([0.0, 0.0, 10.0])
             with self.assertRaises(cp.PlanError) as caught:
-                with cp.fingerprint_lock(home, digest, wait_seconds=1, clock=lambda: next(clock), sleep=lambda s: None):
+                with sr.fingerprint_lock(home, digest, wait_seconds=1, clock=lambda: next(clock), sleep=lambda s: None):
                     pass
             self.assertEqual(str(caught.exception), "FINGERPRINT_LOCK_TIMEOUT")
-        with cp.fingerprint_lock(home, digest):
+        with sr.fingerprint_lock(home, digest):
             pass
         with self.assertRaises(cp.PlanError):
-            with cp.fingerprint_lock(home, "not-hex"):
+            with sr.fingerprint_lock(home, "not-hex"):
                 pass
 
     def test_reproduces_2026_11_13_five_run_case(self):
@@ -1317,12 +1347,12 @@ class SuiteReuseTests(unittest.TestCase):
         self.assertEqual(allowed, 4)
 
     def test_real_environment_helpers_are_deterministic(self):
-        self.assertEqual(cp.environment_digest({"A": "1", "B": "2"}), cp.environment_digest({"B": "2", "A": "1"}))
-        self.assertNotEqual(cp.environment_digest({"A": "1"}), cp.environment_digest({"A": "2"}))
-        identity = cp.git_identity(self.root)
+        self.assertEqual(sr.environment_digest({"A": "1", "B": "2"}), sr.environment_digest({"B": "2", "A": "1"}))
+        self.assertNotEqual(sr.environment_digest({"A": "1"}), sr.environment_digest({"A": "2"}))
+        identity = sr.git_identity(self.root)
         self.assertRegex(identity["exe_sha256"], r"^[0-9a-f]{64}$")
-        self.assertEqual(identity, cp.git_identity(self.root))
-        self.assertEqual(cp.extract_section("a\n## X\nb\n## Y\nc", "## X"), "## X\nb")
+        self.assertEqual(identity, sr.git_identity(self.root))
+        self.assertEqual(sr.extract_section("a\n## X\nb\n## Y\nc", "## X"), "## X\nb")
 
 
 class RemoteTests(unittest.TestCase):

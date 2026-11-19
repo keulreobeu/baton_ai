@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
-scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py", "scripts/readset.py", "scripts/readset_site/sitecustomize.py", "scripts/verify_environment.py", "tests/test_readset.py", "tests/test_verify_environment.py"]
+scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py", "scripts/readset.py", "scripts/readset_site/sitecustomize.py", "scripts/verify_environment.py", "scripts/suite_reuse.py", "tests/test_readset.py", "tests/test_verify_environment.py"]
 acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
 
 ```
@@ -33,6 +33,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | b50ec38 adapter/상태 결합/중단/F-B 보강, 로컬 수렴·공식 V3 692 tests PASS; graph/inventory partial로 실제 narrowing 미자격 |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix·plan/gate 구현, b50ec38 로컬 수렴·공식 V3 PASS; 원격 두 matrix·개별 job E2E NOT_RUN |
 | 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3/기존 MetricsStore 구현, b50ec38 공식 V3 692 tests·로컬 수렴 확인; runtime reuse caller 미연결·원격 CI pending |
+| 재사용 기능 분리·비활성화 — 2026-11-19 | AC-01/12/13 | `scripts/suite_reuse.py`(신규), `scripts/ci_plan.py`, `scripts/verify_environment.py`, `src/baton/orchestrator.py`, `src/baton/observability.py`, 관련 테스트, 안내·계약 문서 | 구현·V2, 독립 교차검토·공식 V3·원격 CI 대기. AC-12 rev5 재사용은 deferred(분리·off) |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 과거 approved 유지 및 revision 4 Windows-first 사용자 결정 반영; 현재 유효 범위는 Spec 최신 승인/처분 표 |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | P-01 확정/반영; P-02/03/08/09 superseded; P-04/05/06 re-scoped; P-07 기존 CI owner 경계 유지. 새 보류 결정은 아래 전체 검토 목록 |
@@ -1688,3 +1689,24 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   변경 파일 6개(`docs/specs/CI-OPT-001.md`, `docs/tasks/TASK-CI-OPT-001.md`, `scripts/ci_plan.py`, `scripts/readset.py`, `tests/test_ci_plan.py`, `tests/test_readset.py`). 추가 줄에서 홈 경로·이메일·키·토큰·DB·로그·runtime 파일 0건(저장소 상대 fixture 경로 언급만 있음). finding 없음.
   최종 후보: 코드 `b3a69cd`, 최종 후보 HEAD `5f42d00` 공식 로컬 V3 PASS(743 OK, skip 0), 22차 독립 교차검토 PASS_WITH_FINDINGS(P1 0, R2201 알려진 한계). `5f42d00..11b7747`과 이 기록은 Task 문서만 바꾼다(테스트 재실행 없음).
   push 대상은 이 기록 커밋까지 fast-forward만 한다. 원격 CI 결과는 SHA를 바꾸지 않도록 이 Task에 커밋하지 않고 보고로 넘긴다. Task는 verified로 올리지 않는다.
+
+## 재사용 기능 분리·비활성화 — 2026-11-19
+
+- 근거: 2026-11-19 사용자 결정(Spec "Eng Review Amendments — 2026-11-19 재사용 기능 분리·비활성화"). 설계 메모 승인은 코디네이터 msg_361a8bca2bad(Q1~Q5)다. L3, 독립 Codex 교차검토는 코디네이터가 띄운다.
+- 변경(분리에 필요한 것만, 추가 최적화 없음):
+  - `scripts/ci_plan.py`의 rev5 블록(`suite-fp/1` 지문·재사용 판정·증거·lock)을 `scripts/suite_reuse.py`로 코드 변경 없이 옮겼다. `policy_identity`는 옮긴 모듈도 해시한다.
+  - 검증기 재사용 경로(`_evidence_main`·`_try_reuse`·`_candidates`·`_Counts`·`_write_evidence`·`suite_lock_key`)와 `--readset-out` 처리도 같은 모듈로 옮겼다.
+  - `verify_environment.py --enable-suite-reuse`(기본 off)만 이 모듈을 import한다. `--evidence-dir`·`--lock-home`·`--readset-out`을 스위치 없이 주면 종료 코드 2(SDD·suite 미실행)다.
+  - 꺼진 요약: `suite_execution=executed`, `suite_fingerprint=null`, `reuse_decision=not_configured`, suite-*.json 미작성.
+  - Orchestrator V3 caller는 `--evidence-dir/--lock-home`을 넘기지 않는다. `official_suite`와 MetricsStore `ci.validation` 표는 `not_configured`를 executed 전용(지문 null)으로 받는다. 성공 판정(PASS·nonzero·no-skip·eligible)과 `evidence.py`는 그대로다.
+  - `scripts/readset.py`·`readset_site`는 경로와 동작을 유지한다(주석만 갱신). R2201 보류, SQLite A안 유지. rev2 `reuse_v3`는 공통 planner에 남긴다.
+- 꺼진 상태 증명(기존 AC-12 테스트에서 호출하는 `check_*`, traceability 참조 수 변화 없음):
+  - `check_reuse_off_installs_no_recorder_child_hook_or_fingerprint`: 새 인터프리터에서 기본 `main` 2회. builtins/io/os/sqlite3/Popen/socket 교체 0, 재사용 모듈 import 0, BATON_READSET·readset_site 추가 0(자식 포함), 독 모듈 접근 0, 요약 not_configured. 기본 경로에 `Recorder` 설치를 넣은 변형에서 실패함을 확인했다.
+  - `check_reuse_options_require_the_switch_and_run_nothing`, `check_reuse_feature_import_boundary`(공통 경로 AST import 경계, 검증기는 `if args.enable_suite_reuse:` 안 1곳)
+  - `check_reuse_off_summary_is_judged_by_the_executed_suite`(harness), `check_reuse_not_configured_is_an_executed_suite_only`(MetricsStore)
+- 기존 재사용·readset 단위 테스트는 같은 파일에서 기본 discover로 계속 실행한다(참조만 `suite_reuse`로 바꿈, 재사용 테스트는 `--enable-suite-reuse` 명시).
+- V2(영향 8모듈 `test_readset·test_ci_plan·test_verify_environment·test_managed_harness·test_flow_runtime·test_observability·test_ci_workflow·test_sdd`):
+  | 환경 | 결과 |
+  | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 464 s) |
+  | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 468 s) |
+  `check_sdd.py --base 5c07aea` PASS. 공식 V3는 교차검토 뒤 1회 실행한다(이번에는 실행하지 않음). 원격 CI 미확인.

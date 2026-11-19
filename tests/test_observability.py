@@ -265,6 +265,28 @@ class LedgerTests(unittest.TestCase):
         for changes in invalid:
             with self.subTest(invalid=changes), self.assertRaises(ValueError):
                 self.metrics.record_ci_validation(self.ci_observation(run_id=run_id, event_id="CI-BAD", **changes))
+        self.check_reuse_not_configured_is_an_executed_suite_only(run_id, v3, refs)
+
+    def check_reuse_not_configured_is_an_executed_suite_only(self, run_id, v3, refs):
+        """CI-OPT-001 2026-11-19: with the reuse feature off the suite is executed without a
+        fingerprint. not_configured is only the reuse state: the status stays the executed
+        suite's own result, a passed event still needs executed tests, and it never pairs
+        with a reused suite, a fingerprint or source evidence."""
+        off = dict(v3, suite_execution="executed", status="passed", executed_test_count=100,
+                   suite_fingerprint=None, reuse_decision="not_configured", source_evidence=[])
+        for index, changes in enumerate([off, dict(off, status="failed", executed_test_count=0)]):
+            with self.subTest(valid=changes):
+                self.metrics.record_ci_validation(self.ci_observation(run_id=run_id, event_id=f"CI-OFF-{index}", **changes))
+        event = self.metrics.report(run_id)["ci_validations"][-2]
+        self.assertEqual((event["status"], event["reuse_decision"], event["suite_fingerprint"], event["executed_test_count"]),
+                         ("passed", "not_configured", None, 100))
+        for changes in (dict(off, executed_test_count=0), dict(off, suite_fingerprint="e" * 64),
+                        dict(off, reused_test_count=5),
+                        dict(off, suite_execution="reused", executed_test_count=0, reused_test_count=100,
+                             suite_fingerprint="e" * 64, source_evidence=refs),
+                        dict(off, suite_execution="not_run", status="not_run", executed_test_count=0)):
+            with self.subTest(invalid=changes), self.assertRaises(ValueError):
+                self.metrics.record_ci_validation(self.ci_observation(run_id=run_id, event_id="CI-OFF-BAD", **changes))
 
     def test_ci_validation_event_contains_only_allowlisted_values(self):
         request = self.ci_observation()

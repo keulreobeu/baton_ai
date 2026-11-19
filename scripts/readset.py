@@ -1,8 +1,12 @@
 """Input recorder for offline test runs (stdlib only).
 
 CI-OPT-001 AC-12 revision 5 (R1-R5): records what the suite actually reads so
-that ``scripts/ci_plan.py`` can fingerprint it. Anything the recorder cannot
+that ``scripts/suite_reuse.py`` can fingerprint it. Anything the recorder cannot
 observe completely makes the read set ``partial`` (fail-closed).
+
+2026-11-19: part of the separated, disabled-by-default reuse feature. Only
+``verify_environment.py --enable-suite-reuse`` installs it; the common validation
+path never imports this module.
 
 Real events (file opens, listings, Python child launches, sockets, ...) are
 delivered to every active recorder, so a recorder created inside the suite
@@ -27,7 +31,7 @@ import time
 # R5: stdlib native modules observed loading in the 2026-11-16 full-suite
 # measurement (Windows, CPython 3.12). Any other native module import makes the
 # read set partial. Changing this list changes the policy digest
-# (ci_plan.policy_identity hashes this file).
+# (suite_reuse.policy_identity hashes this file).
 STDLIB_NATIVE_ALLOWED = ("_asyncio", "_bz2", "_ctypes", "_decimal", "_elementtree", "_hashlib", "_lzma",
                          "_multiprocessing", "_overlapped", "_queue", "_socket", "_sqlite3", "_ssl", "_uuid",
                          "math", "pyexpat", "select", "unicodedata")
@@ -419,7 +423,7 @@ def _is_loopback(host):
 
 def _local_name(host):
     """Loopback literal, 'localhost' or no host: answered from the hosts file
-    (fingerprinted by ci_plan) without a network service."""
+    (fingerprinted by suite_reuse) without a network service."""
     if host is None:
         return True
     if isinstance(host, bytes):
@@ -1566,7 +1570,7 @@ class Recorder:
             if not _local_name(host):
                 self._partial("NETWORK", event); self._network_violations += 1
             return
-        # socket.gethostname: the host name is fingerprinted (ci_plan resolver component)
+        # socket.gethostname: the host name is fingerprinted (suite_reuse resolver component)
 
     def _owned(self, sock, address):
         """Only a loopback endpoint bound successfully by this run and still open."""

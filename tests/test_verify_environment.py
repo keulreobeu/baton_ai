@@ -13,6 +13,70 @@ from unittest.mock import patch
 from scripts import verify_environment as verify
 
 
+# CI-OPT-001 2026-11-19: run in a fresh interpreter. An audit hook or a patched
+# builtin cannot be removed, so a process that already ran tests.test_readset cannot
+# show that the default verifier installs nothing. Everything is compared with the
+# probe's own start (an outer opted-in recorder may already be present).
+REUSE_OFF_PROBE = r"""
+import builtins, io, json, os, socket, sqlite3, subprocess, sys, types, unittest
+from unittest.mock import patch
+def current():
+    return {"builtins.open": builtins.open, "io.open": io.open, "os.open": os.open, "os.rename": os.rename,
+            "os.replace": os.replace, "os.remove": os.remove, "os.unlink": os.unlink, "os.mkdir": os.mkdir,
+            "os.listdir": os.listdir, "os.scandir": os.scandir, "sqlite3.connect": sqlite3.connect,
+            "subprocess.Popen": subprocess.Popen, "socket.bind": socket.socket.bind}
+def env_marks(environ):
+    return {"env": sorted(k for k in environ if k.startswith("BATON_READSET")),
+            "site": "readset_site" in environ.get("PYTHONPATH", "")}
+original, start_env = current(), env_marks(os.environ)
+REUSE_MODULES = ("scripts.readset", "readset", "scripts.suite_reuse", "suite_reuse")
+start_modules = {m for m in REUSE_MODULES if m in sys.modules}
+from scripts import verify_environment as verify
+CHILD = ("import json, os, sys; print(json.dumps({'env': sorted(k for k in os.environ if k.startswith('BATON_READSET')),"
+         " 'site': 'readset_site' in os.environ.get('PYTHONPATH', '')}))")
+class Case(unittest.TestCase):
+    def test_ok(self):
+        pass
+seen = []
+def fake_suite(names=None):
+    child = real_run([sys.executable, "-X", "utf8", "-c", CHILD], capture_output=True, text=True, timeout=60)
+    seen.append({"changed": sorted(k for k, v in current().items() if v is not original[k]),
+                 "modules": sorted(m for m in REUSE_MODULES if m in sys.modules and m not in start_modules
+                                   and not getattr(sys.modules[m], "POISON", False)),
+                 "env": env_marks(os.environ) == start_env, "child": json.loads(child.stdout) == start_env})
+    return unittest.TextTestRunner(stream=io.StringIO()).run(unittest.TestSuite([Case("test_ok")]))
+real_run = subprocess.run
+def fake_run(command, *args, **kwargs):
+    if any(str(part).endswith("check_sdd.py") for part in command):
+        return subprocess.CompletedProcess(command, 0)
+    return real_run(command, *args, **kwargs)
+touched = []
+class Poison(types.ModuleType):
+    POISON = True
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        touched.append(name)
+        raise RuntimeError("reuse feature touched while off: " + name)
+codes, summaries = [], []
+for poisoned in (False, True):
+    out = io.StringIO()
+    with patch.object(verify, "prepare_git_path"), patch.object(subprocess, "run", fake_run), \
+            patch.object(verify, "_run_suite", fake_suite), patch("sys.stdout", out):
+        if poisoned:
+            # Every fingerprint/recorder entry point would raise if it were reached.
+            import scripts
+            for name in REUSE_MODULES:
+                if name not in start_modules:
+                    sys.modules[name] = Poison(name)
+                    if name.startswith("scripts."):
+                        setattr(scripts, name.split(".")[1], sys.modules[name])
+        codes.append(verify.main(["--base", "fake-base"]))
+    summaries.append(json.loads(out.getvalue().strip().splitlines()[-1]))
+print(json.dumps({"codes": codes, "seen": seen, "touched": touched, "summaries": summaries}))
+"""
+
+
 def case(module, behavior, events=None):
     def test(self):
         if events is not None:
@@ -119,7 +183,10 @@ class OfficialRunnerTests(unittest.TestCase):
                             "failures": len(baseline.failures), "errors": len(baseline.errors),
                             "skipped": len(baseline.skipped), "expected_failures": len(baseline.expectedFailures),
                             "verified_evidence_eligible": bool(passed and not baseline.skipped and not baseline.expectedFailures),
-                            "scope": "offline_tests_only", "live_provider_validation": "NOT_RUN"}
+                            "scope": "offline_tests_only", "live_provider_validation": "NOT_RUN",
+                            "suite_execution": "executed", "suite_fingerprint": None,
+                            "executed_tests": baseline.testsRun, "reused_test_count": None, "source_evidence": [],
+                            "reuse_decision": "not_configured", "reuse_reasons": [], "equality_checks": {}}
                 self.assertEqual(code, 0 if passed else 1)
                 self.assertEqual(json.loads(stdout.getvalue()), expected)
                 self.assertNotIn("[verify]", stdout.getvalue())
@@ -146,10 +213,13 @@ class OfficialRunnerTests(unittest.TestCase):
                     patch.object(verify.time, "monotonic", return_value=20), \
                     patch.dict(os.environ), patch.object(sys, "path", list(sys.path)), \
                     contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                self.assertEqual(verify.main(["--readset-out", str(out)]), 0)
+                self.assertEqual(verify.main(["--enable-suite-reuse", "--readset-out", str(out)]), 0)
             expected = {"status": "PASS", "tests_run": 1, "failures": 0, "errors": 0, "skipped": 0,
                         "expected_failures": 0, "verified_evidence_eligible": True,
-                        "scope": "offline_tests_only", "live_provider_validation": "NOT_RUN"}
+                        "scope": "offline_tests_only", "live_provider_validation": "NOT_RUN",
+                        "suite_execution": "executed", "suite_fingerprint": None, "executed_tests": 1,
+                        "reused_test_count": None, "source_evidence": [], "reuse_decision": "not_configured",
+                        "reuse_reasons": [], "equality_checks": {}}
             self.assertEqual(stdout.getvalue().splitlines()[-1], json.dumps(expected, sort_keys=True))
             payload = json.loads(out.read_text(encoding="utf-8"))
             self.assertEqual(payload["schema"], "readset/1")
@@ -158,11 +228,12 @@ class OfficialRunnerTests(unittest.TestCase):
 
 
 class EvidenceReuseTests(unittest.TestCase):
-    """CI-OPT-001-AC-12 rev5 offline_suite reuse through --evidence-dir (fake suite/recorder/SDD)."""
+    """CI-OPT-001-AC-12 rev5 offline_suite reuse through --enable-suite-reuse --evidence-dir
+    (separated, off by default since 2026-11-19; fake suite/recorder/SDD)."""
 
     def setUp(self):
-        from scripts import ci_plan
-        self.cp = ci_plan
+        from scripts import suite_reuse
+        self.sr = suite_reuse
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.evidence = Path(self.temp.name) / "evidence"
         self.home = Path(self.temp.name) / "home"
@@ -185,17 +256,17 @@ class EvidenceReuseTests(unittest.TestCase):
         commit or another worktree of the same repository wait on the same lock."""
         git = lambda *args: subprocess.run(["git", "--no-optional-locks", "-C", str(self.repo), *args],
                                            check=True, capture_output=True)
-        before = verify.suite_lock_key(self.cp, self.repo)
+        before = self.sr.suite_lock_key(self.repo)
         (self.repo / "README.md").write_text("docs only\n", encoding="utf-8")
         git("add", "."); git("commit", "-q", "-m", "docs")
         other = Path(self.temp.name) / "other-worktree"
         git("worktree", "add", "-q", str(other))
-        self.assertEqual(verify.suite_lock_key(self.cp, self.repo), before)
-        self.assertEqual(verify.suite_lock_key(self.cp, other), before)
+        self.assertEqual(self.sr.suite_lock_key(self.repo), before)
+        self.assertEqual(self.sr.suite_lock_key(other), before)
         elsewhere = Path(self.temp.name) / "elsewhere"
         elsewhere.mkdir()
         subprocess.run(["git", "--no-optional-locks", "-C", str(elsewhere), "init", "-q"], check=True, capture_output=True)
-        self.assertNotEqual(verify.suite_lock_key(self.cp, elsewhere), before)
+        self.assertNotEqual(self.sr.suite_lock_key(elsewhere), before)
 
     def fake_recorder(test):
         class Recorder:
@@ -225,11 +296,12 @@ class EvidenceReuseTests(unittest.TestCase):
                 patch.object(verify.subprocess, "run", side_effect=selective_run), \
                 patch.object(verify, "_run_suite", side_effect=run_suite), \
                 patch("scripts.readset.Recorder", self.fake_recorder()), \
-                patch.object(self.cp, "runtime_manifest", return_value=fixed), \
-                patch.object(self.cp, "git_identity", return_value=git), \
+                patch.object(self.sr, "runtime_manifest", return_value=fixed), \
+                patch.object(self.sr, "git_identity", return_value=git), \
                 patch.dict(os.environ, environ or self.environ, clear=True), patch.object(sys, "path", list(sys.path)), \
                 contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
-            code = verify.main(["--base", "fake-base", "--evidence-dir", str(self.evidence), "--lock-home", str(self.home)])
+            code = verify.main(["--base", "fake-base", "--enable-suite-reuse", "--evidence-dir", str(self.evidence),
+                                "--lock-home", str(self.home)])
         lines = stdout.getvalue().strip().splitlines()
         return code, (json.loads(lines[-1]) if lines else None)
 
@@ -250,6 +322,27 @@ class EvidenceReuseTests(unittest.TestCase):
         self.assertEqual(third["suite_execution"], "executed")
         self.assertEqual(third["reuse_decision"], "rejected")
         self.assertIn("FINGERPRINT_CHANGED", third["reuse_reasons"])
+        self.check_reuse_off_installs_no_recorder_child_hook_or_fingerprint()
+
+    def check_reuse_off_installs_no_recorder_child_hook_or_fingerprint(self):
+        """CI-OPT-001 2026-11-19: without --enable-suite-reuse the verifier never imports
+        the reuse feature or scripts/readset.py, patches no builtin/os/sqlite3/Popen/socket
+        entry, adds no BATON_READSET_* or readset_site to itself or a child, and computes no
+        fingerprint (poisoned modules stay untouched); the summary is not_configured."""
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join([str(verify.ROOT / "src"), str(verify.ROOT)])
+        probe = subprocess.run([sys.executable, "-X", "utf8", "-c", REUSE_OFF_PROBE], cwd=verify.ROOT, env=env,
+                               capture_output=True, text=True, encoding="utf-8", timeout=300)
+        self.assertEqual(probe.returncode, 0, probe.stderr[-3000:])
+        data = json.loads(probe.stdout.strip().splitlines()[-1])
+        self.assertEqual((data["codes"], data["touched"], len(data["seen"])), ([0, 0], [], 2))
+        for seen in data["seen"]:
+            self.assertEqual(seen, {"changed": [], "modules": [], "env": True, "child": True})
+        for summary in data["summaries"]:
+            self.assertEqual((summary["status"], summary["suite_execution"], summary["suite_fingerprint"],
+                              summary["reuse_decision"], summary["executed_tests"], summary["tests_run"]),
+                             ("PASS", "executed", None, "not_configured", 1, 1))
+            self.assertNotIn("evidence_sha256", summary)
 
     def test_failed_run_is_recorded_but_never_reused_and_sdd_failure_runs_nothing(self):
         code, first = self.run_main(behavior="failure")
@@ -271,7 +364,7 @@ class EvidenceReuseTests(unittest.TestCase):
     def test_resolver_change_during_suite_makes_evidence_unstable(self):
         """Review P1 (4506c02): resolver state is compared before and after the suite."""
         calls = iter(range(1000))
-        with patch.object(self.cp, "resolver_identity", side_effect=lambda: "r%d" % next(calls)):
+        with patch.object(self.sr, "resolver_identity", side_effect=lambda: "r%d" % next(calls)):
             code, summary = self.run_main()
         self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
 
@@ -284,7 +377,7 @@ class EvidenceReuseTests(unittest.TestCase):
         self.readset = dict(self.readset, listings=[{"path": str(watched), "scope": "outside", "ok": True,
                                                      "entries": []}])
         self.during_suite = lambda: (watched / "own-output.txt").write_text("x", encoding="utf-8")
-        self.assertTrue(self.cp.valid_readset({**self.readset, "complete": False, "partial_reasons": ["EXACT_STATE"],
+        self.assertTrue(self.sr.valid_readset({**self.readset, "complete": False, "partial_reasons": ["EXACT_STATE"],
                                                "listings": []}))
         code, first = self.run_main()
         self.assertEqual((code, first["status"], first["verified_evidence_eligible"]), (0, "PASS", True))
@@ -308,7 +401,7 @@ class EvidenceReuseTests(unittest.TestCase):
         outside = Path(self.temp.name) / "outside.cfg"
         outside.write_text("before", encoding="utf-8")
         self.readset = dict(self.readset, listings=[{"path": str(watched), "scope": "outside", "ok": True, "entries": []}],
-                            outside_reads=[{"path": str(outside), "via": "open", "sha256": self.cp._content(outside)}])
+                            outside_reads=[{"path": str(outside), "via": "open", "sha256": self.sr._content(outside)}])
         def change():
             (watched / "new.txt").write_text("x", encoding="utf-8")
             outside.write_text("after", encoding="utf-8")
@@ -333,14 +426,14 @@ class EvidenceReuseTests(unittest.TestCase):
         for path in (first, second):
             path.write_text("before", encoding="utf-8")
         self.readset = dict(base, listings=[{"path": str(watched), "scope": "outside", "ok": True, "entries": []}],
-                            outside_reads=[{"path": str(p), "via": "open", "sha256": self.cp._content(p)}
+                            outside_reads=[{"path": str(p), "via": "open", "sha256": self.sr._content(p)}
                                            for p in (first, second)])
-        real = self.cp._content
+        real = self.sr._content
         def change():
             (watched / "new.txt").write_text("x", encoding="utf-8")
             second.write_text("after", encoding="utf-8")
         self.during_suite = change
-        with patch.object(self.cp, "_content", lambda path: None if Path(path) == first else real(path)):
+        with patch.object(self.sr, "_content", lambda path: None if Path(path) == first else real(path)):
             code, summary = self.run_main()
         self.assertEqual((code, summary["status"], summary["verified_evidence_eligible"]), (1, "FAIL", False))
 
@@ -348,6 +441,23 @@ class EvidenceReuseTests(unittest.TestCase):
         with patch.object(verify, "prepare_git_path"), contextlib.redirect_stderr(io.StringIO()), \
                 self.assertRaises(SystemExit):
             verify.main(["--lock-home", str(self.home)])
+        with patch.object(verify, "prepare_git_path"), contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit):
+            verify.main(["--enable-suite-reuse", "--readset-out", "x.json", "--lock-home", str(self.home)])
+        self.check_reuse_options_require_the_switch_and_run_nothing()
+
+    def check_reuse_options_require_the_switch_and_run_nothing(self):
+        """CI-OPT-001 2026-11-19: the reuse feature is off unless --enable-suite-reuse; its
+        options alone are a usage error (exit 2) before SDD or any suite runs."""
+        for argv in (["--evidence-dir", str(self.evidence)], ["--lock-home", str(self.home)],
+                     ["--readset-out", "x.json"], ["--evidence-dir", str(self.evidence), "--lock-home", str(self.home)],
+                     ["--enable-suite-reuse"]):
+            with self.subTest(argv=argv), patch.object(verify, "prepare_git_path") as prepare, \
+                    patch.object(verify.subprocess, "run") as checked, patch.object(verify, "_run_suite") as suite, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
+                verify.main(["--base", "fake-base", *argv])
+            self.assertEqual(caught.exception.code, 2)
+            prepare.assert_not_called(); checked.assert_not_called(); suite.assert_not_called()
 
 
 if __name__ == "__main__":

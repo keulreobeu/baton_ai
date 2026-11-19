@@ -47,6 +47,7 @@ class MethodologyDocsTests(unittest.TestCase):
         "unknown/partial이면 재실행",
         "지문 입력이 바뀌면 관련 증거는 무효",
         "Risk Acceptance RA-1/RA-2",
+        "분리·비활성화(기본 off)", "`reuse_decision=not_configured`",
         "최근 1~3개 커밋 조회는 빠른 파악용",
         "최종 diff 범위는 Task base 또는 통합 대상",
         "새 검증 DB·두 번째 정책 엔진은 금지",
@@ -82,7 +83,8 @@ class MethodologyDocsTests(unittest.TestCase):
             text = read(name)
             for term in ("worker V1은 `Orchestrator._run` 직접 실행 피드백",
                          "Orca author settle 경로는 현재 기본 V3로 보수적으로 실행",
-                         "`offline_suite` 재사용은 2026-11-16 `verify_environment.py --evidence-dir`와 Orchestrator V3 caller에 연결",
+                         "`offline_suite` 재사용은 2026-11-19부터 분리·비활성화되어 Orchestrator V3 caller와 원격 CI는 재사용·입력 관측 없이 실행",
+                         "`verify_environment.py --enable-suite-reuse`로만 켠다",
                          "재사용 절감은 실측 전이라 주장하지 않는다",
                          "부분 재실행(Re-run failed jobs)은 fail-closed", "Re-run all jobs가 필요",
                          "승인된 영구 정책이 아니라", "run id/attempt", "첫 merge parent", "null이다"):

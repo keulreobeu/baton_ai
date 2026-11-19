@@ -584,7 +584,7 @@ class ReadsetTests(unittest.TestCase):
         absolute path, also for a .venv inside the repository, so an entry added there while
         the runtime manifest stays the same changes the fingerprint and refuses reuse. A
         failed listing and the run's own directory there follow the common rules."""
-        from scripts import ci_plan
+        from scripts import suite_reuse
         for where in ("outside", "repo .venv"):
             with self.subTest(prefix=where):
                 prefix = (self.root / ".venv" if where != "outside"
@@ -605,7 +605,7 @@ class ReadsetTests(unittest.TestCase):
                     rec.stop()
                 data = rec.as_dict()
                 self.assertTrue(data["complete"], rec.partial_samples)
-                self.assertTrue(ci_plan.valid_readset(data))
+                self.assertTrue(suite_reuse.valid_readset(data))
                 shown = {os.path.normcase(r["path"]): r for r in data["listings"]}
                 listed = shown.get(os.path.normcase(str(target)))
                 self.assertEqual((listed or {}).get("scope"), "outside", data["listings"])
@@ -620,21 +620,21 @@ class ReadsetTests(unittest.TestCase):
                     for args in (["init", "-q"], ["-c", "user.name=fixture", "-c", "user.email=f@example.invalid",
                                                   "commit", "-q", "--allow-empty", "-m", "fixture"]):
                         subprocess.run(["git", "-C", str(self.root), *args], check=True, capture_output=True)
-                source = ci_plan.suite_fingerprint(self.root, data, verify_observed=True, **fixed)
+                source = suite_reuse.suite_fingerprint(self.root, data, verify_observed=True, **fixed)
                 result = dict(tests_run=1, failures=0, errors=0, skipped=0, expected_failures=0,
                               unexpected_successes=0)
-                evidence = ci_plan.suite_evidence(run_id="r2001", commit=source["head"], fingerprint_record=source,
+                evidence = suite_reuse.suite_evidence(run_id="r2001", commit=source["head"], fingerprint_record=source,
                                                   readset=data, result=result, returncode=0, state_stable=True,
                                                   started_utc=rec.started_utc, finished_utc=rec.finished_utc)
                 raw = json.dumps(evidence).encode()
                 digest = __import__("hashlib").sha256(raw).hexdigest()
-                same = ci_plan.suite_fingerprint(self.root, data, **fixed)
-                self.assertTrue(ci_plan.decide_suite_reuse(same, evidence, digest, raw, now_utc=readset._utc_now(),
+                same = suite_reuse.suite_fingerprint(self.root, data, **fixed)
+                self.assertTrue(suite_reuse.decide_suite_reuse(same, evidence, digest, raw, now_utc=readset._utc_now(),
                                                            non_reusable=[])["allowed"])
                 (target / "added.db").write_bytes(b"fixture")  # the manifest (fixed) is unchanged
-                current = ci_plan.suite_fingerprint(self.root, data, **fixed)
+                current = suite_reuse.suite_fingerprint(self.root, data, **fixed)
                 self.assertNotEqual(current["fingerprint"], source["fingerprint"])
-                self.assertFalse(ci_plan.decide_suite_reuse(current, evidence, digest, raw,
+                self.assertFalse(suite_reuse.decide_suite_reuse(current, evidence, digest, raw,
                                                             now_utc=readset._utc_now(), non_reusable=[])["allowed"])
 
     def check_directory_kind_inside_the_runtime_environment(self):
@@ -642,7 +642,7 @@ class ReadsetTests(unittest.TestCase):
         runtime environment (under sys.prefix; a fixture prefix stands for it) records its
         kind among env_reads, so the fingerprint checks it like any other kind."""
         import sqlite3
-        from scripts import ci_plan
+        from scripts import suite_reuse
         prefix = Path(tempfile.mkdtemp(dir=self.temp.name))
         target = prefix / "fixture.db"
         target.mkdir()
@@ -656,7 +656,7 @@ class ReadsetTests(unittest.TestCase):
         data = rec.as_dict()
         seen = {os.path.normcase(r["path"]): r["sha256"] for r in data["env_reads"]}
         self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", data["env_reads"])
-        self.assertTrue(ci_plan.valid_readset(data))
+        self.assertTrue(suite_reuse.valid_readset(data))
 
     def check_directory_kind_and_writes_after_creation(self):
         """CI-OPT-001 18th review R1801/R1802: an SQLite connection that fails on an existing
@@ -667,7 +667,7 @@ class ReadsetTests(unittest.TestCase):
         creation repeats with the same result (complete); creating it again by appending
         after it was removed is partial."""
         import sqlite3
-        from scripts import ci_plan
+        from scripts import suite_reuse
         base = Path(tempfile.mkdtemp(dir=self.temp.name))
         for actor in ("direct", "child"):
             with self.subTest(case="sqlite on a directory/%s" % actor):
@@ -687,10 +687,10 @@ class ReadsetTests(unittest.TestCase):
                 rec.stop()
                 seen = {os.path.normcase(r["path"]): r["sha256"] for r in rec.as_dict()["outside_reads"]}
                 self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", seen)
-                self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                self.assertTrue(suite_reuse.valid_readset(rec.as_dict()))
                 target.rmdir()
                 target.write_bytes(b"database")
-                self.assertNotEqual(ci_plan._content(target), "dir")
+                self.assertNotEqual(suite_reuse._content(target), "dir")
         with self.subTest(case="sqlite on the run's own directory"):
             rec = self.recorder()
             own = base / "own.db"
@@ -801,7 +801,7 @@ class ReadsetTests(unittest.TestCase):
         database or a copied source is recorded with its writability."""
         import shutil
         import sqlite3
-        from scripts import ci_plan
+        from scripts import suite_reuse
         base = Path(tempfile.mkdtemp(dir=self.temp.name))
         marked = base / "marked.cfg"
         marked.write_text("same", encoding="utf-8")
@@ -809,7 +809,7 @@ class ReadsetTests(unittest.TestCase):
         os.chmod(marked, 0o444)
         try:
             self.assertEqual(readset._sha(str(marked)), "ro:" + writable_state)
-            self.assertEqual(ci_plan._content(marked), readset._sha(str(marked)))
+            self.assertEqual(suite_reuse._content(marked), readset._sha(str(marked)))
         finally:
             os.chmod(marked, 0o644)
         existing = base / "existing.bin"
@@ -853,10 +853,10 @@ class ReadsetTests(unittest.TestCase):
             for path in (db, source):  # only the read-only attribute changes: the fingerprint differs
                 os.chmod(path, 0o444)
                 try:
-                    self.assertNotEqual(ci_plan._content(path), seen[key(path)])
+                    self.assertNotEqual(suite_reuse._content(path), seen[key(path)])
                 finally:
                     os.chmod(path, 0o644)
-            self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+            self.assertTrue(suite_reuse.valid_readset(rec.as_dict()))
         for actor in ("direct", "child"):
             with self.subTest(case="%s written then cleaned" % actor):
                 leaf = base / ("leaf-%s.bin" % actor)
@@ -899,7 +899,7 @@ class ReadsetTests(unittest.TestCase):
         next run changes the fingerprint (this process and a real child); an ancestor
         changed during the run is partial; any failed write-mode open of an existing file
         the run did not make is partial (no input change), whatever the cause."""
-        from scripts import ci_plan
+        from scripts import suite_reuse
         base = Path(tempfile.mkdtemp(dir=self.temp.name))
         filed = base / "file-parent"
         filed.write_bytes(b"parent input")
@@ -942,7 +942,7 @@ class ReadsetTests(unittest.TestCase):
                         self.assertEqual(seen.get(key(target)), "missing", seen)
                         self.assertEqual(seen.get(key(target.parent)), "missing", seen)
                         self.assertEqual(seen.get(key(base)), "dir", seen)
-                        self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                        self.assertTrue(suite_reuse.valid_readset(rec.as_dict()))
                     with self.subTest(case="%s/%s/file-parent" % (actor, label)):
                         target = filed / ("%s-%s" % (actor, label))
                         rec = self.recorder()
@@ -964,7 +964,7 @@ class ReadsetTests(unittest.TestCase):
                 rec.stop()
                 self.assertEqual(entries(rec).get(key(kept)), "dir", entries(rec))
                 self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
-                self.assertTrue(ci_plan.valid_readset(rec.as_dict()))
+                self.assertTrue(suite_reuse.valid_readset(rec.as_dict()))
             with self.subTest(case="ancestor changed during the run"):
                 moving = base / "moving-parent"
                 moving.mkdir()

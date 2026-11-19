@@ -126,9 +126,8 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         return json.dumps(value)
 
     def v3_argv(self):
-        home = self.root / ".local_runtime/harness-managed"
-        return [sys.executable, "-X", "utf8", str(self.root / "scripts/verify_environment.py"), "--base", "a" * 40,
-                "--evidence-dir", str(home / "evidence" / "TASK-OFFLINE"), "--lock-home", str(home)]
+        # CI-OPT-001 2026-11-19: no reuse/observation options (the separated feature is off).
+        return [sys.executable, "-X", "utf8", str(self.root / "scripts/verify_environment.py"), "--base", "a" * 40]
 
     def test_v3_reused_suite_is_recorded_without_counting_as_new_run(self):
         """CI-OPT-001-AC-12 rev5: a reused suite keeps evidence counts but executed_test_count is only what ran."""
@@ -148,6 +147,36 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertEqual((event["status"], event["suite_execution"], event["executed_test_count"], event["reused_test_count"]),
                          ("passed", "reused", 0, 5))
         self.assertEqual((event["reuse_decision"], event["source_evidence"]), ("accepted", refs))
+        self.check_reuse_off_summary_is_judged_by_the_executed_suite()
+
+    def check_reuse_off_summary_is_judged_by_the_executed_suite(self):
+        """CI-OPT-001 2026-11-19: the default V3 caller passes no reuse option, and the
+        verifier's reuse-off summary (reuse_decision not_configured, no fingerprint) is
+        accepted only on the executed suite's own nonzero/no-skip success."""
+        self.plan.update(effective_tier="V3", direct_checks=[])
+        off = dict(suite_fingerprint=None, reuse_decision="not_configured")
+        def runner_for(summary):
+            def runner(argv, *args, **kw):
+                if "--base" in argv: return 0, summary, "", None
+                return 0, "", "Ran 2 tests\nOK", None
+            return runner
+        result, process = self.run_validation(runner_for(self.official_output(**off)))
+        self.assertEqual(process.call_args_list[-1].args[0], self.v3_argv())
+        for option in ("--evidence-dir", "--lock-home", "--readset-out", "--enable-suite-reuse"):
+            self.assertNotIn(option, process.call_args_list[-1].args[0])
+        self.assertEqual(result[0]["exit_code"], 0)
+        event = self.observations[-1][2]
+        self.assertEqual((event["status"], event["suite_execution"], event["suite_fingerprint"],
+                          event["reuse_decision"], event["executed_test_count"], event["reused_test_count"]),
+                         ("passed", "executed", None, "not_configured", 5, None))
+        for changes in (dict(status="FAIL"), dict(failures=1), dict(skipped=1), dict(expected_failures=1),
+                        dict(tests_run=0), dict(verified_evidence_eligible=False), dict(suite_fingerprint="e" * 64),
+                        dict(suite_execution="reused", executed_tests=0, reused_test_count=5,
+                             source_evidence=["run:run-1", "commit:" + "c" * 40, "evidence:" + "d" * 64])):
+            with self.subTest(changes=changes):
+                result, _ = self.run_validation(runner_for(self.official_output(**{**off, **changes})))
+                self.assertNotEqual(result[0]["exit_code"], 0)
+                self.assertEqual(self.observations[-1][2]["status"], "failed")
 
     def test_v3_executed_suite_event_and_malformed_suite_fail_closed(self):
         self.plan.update(effective_tier="V3", direct_checks=[])

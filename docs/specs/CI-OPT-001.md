@@ -35,7 +35,7 @@ CBM은 그래프 조회/인덱싱 도구이며 BATON Python 테스트 선택 정
 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
 AC-07/09의 상향·fallback은 단계 기본값보다 우선한다. 기존 fast runner는 로컬 보조 피드백이며 공식 V3/SDD 증거를 대체하지 않는다.
 음성: 같은 SHA만으로 검증 재사용을 결정하지 않는다. 후보 파일/index·base·Task/AC·검증 설정·정책·환경이 바뀌면 관련 증거는 무효다.
-CBM 그래프 선택과 AC-12 revision 5 입력 지문 V3 재사용만 허용한다. 자동 무조건 cache·새 검증 DB·두 번째 영향 분석 엔진은 금지한다.
+CBM 그래프 선택과 AC-12 revision 5 입력 지문 V3 재사용(2026-11-19부터 분리·비활성, 기본 off)만 허용한다. 자동 무조건 cache·새 검증 DB·두 번째 영향 분석 엔진은 금지한다.
 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다.
 기존 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다.
 
@@ -160,6 +160,8 @@ merge에는 유효한 V3가 필요하고 validation은 검사한 코드 상태�
 
 ### CI-OPT-001-AC-12
 
+> 2026-11-19: 아래 revision 5 `offline_suite` 재사용은 **분리·비활성화(deferred)**다. 기본 V3는 매번 전체를 실행하고 `reuse_decision=not_configured`(passed 아님)를 남긴다. 재사용 계약 본문은 재도입 결정 때까지 보존하며 `--enable-suite-reuse`로 켠 경우에만 적용한다([Amendments 2026-11-19](#eng-review-amendments--2026-11-19-재사용-기능-분리비활성화)).
+
 revision 5(2026-11-16): V3는 `sdd_static`(매번 실행, 재사용 없음)과 `offline_suite`로 나눈다. `offline_suite` 결과 재사용은
 아래 "revision 5 — AC-12 입력 지문 V3 재사용" 절의 R1~R6 입력 지문(`suite-fp/1`)이 원본과 같고, 원본이 실제 실행된 성공 결과이며
 read set이 complete일 때만 허용한다(partial 원본은 재사용 원본이 될 수 없다). 코드 상태·테스트 설정/명령·실제
@@ -185,7 +187,7 @@ ready/main 실제 Windows 2 job 성공은 별도 승인된 원격 E2E에서 개�
 | selected_tests / total_tests / executed_test_count / selection_reasons | 테스트 ID·선택 수·실제 실행 케이스 수·선택/누락 이유와 모듈 inventory; 기존 event payload 한도에서는 전체 ID digest와 bounded sample로 축약 가능 |
 | graph_seconds / ci_seconds / validation_seconds | 실제 측정 구간별 시간, 미수집 null |
 | escalations / fallback_reasons | 상향 원인·실패 보존 |
-| reuse_decision / equality_checks / source_evidence | 재사용 여부·비교 근거와 원 증거 참조 |
+| reuse_decision / equality_checks / source_evidence | 재사용 여부·비교 근거와 원 증거 참조; 재사용 기능 off이면 `not_configured`(passed 아님) |
 | v3_only_defects | V1/V2 밖에서 V3가 찾은 결함·선택 범위·후속 조치 |
 | measurement_kind / coverage_state | measured / measured_calculation / assumed 구분, unknown/partial/null 유지 |
 
@@ -193,7 +195,7 @@ ready/main 실제 Windows 2 job 성공은 별도 승인된 원격 E2E에서 개�
 
 ### CI-OPT-001-AC-13
 
-AC-01/13의 기존 '새 영향 분석 엔진/cache 전면 금지'는 CBM V1/V2 선택과 AC-12 revision 5 입력 지문 V3 재사용에 한해서 개정한다.
+AC-01/13의 기존 '새 영향 분석 엔진/cache 전면 금지'는 CBM V1/V2 선택과 AC-12 revision 5 입력 지문 V3 재사용(2026-11-19부터 분리·비활성, 기본 off)에 한해서 개정한다.
 새 검증 DB는 금지하고 기존 MetricsStore·Task 증거를 사용한다. CBM 자체 SQLite index는 전역 cache 아래 프로젝트/worktree별이며 검증 DB가 아니다.
 범위 밖: main tree 동일성만으로 생략(R4), merge_group(사용 unknown), CI/공식 검증 병렬화, Base+Delta overlay,
 별도 벤치마크/비교실험 시스템·원격 보호설정 변경. 공식 `verify_environment.py`는 순차 유지한다.
@@ -285,6 +287,30 @@ Linux/Ubuntu 검증은 후속 확장으로 미룬다. 이는 skip 예외가 아�
 - Q2 경계: 다른 Task 커밋은 기본 제외하되, 필수 의존성이 있으면 근거와 분리 방법을 보고한다. 기본 branch 직접 push·
   force·기존 공유 이력 변경은 금지한다. remote와 최종 branch 이름은 현행 확인 후 사용자에게 제시하고 구체 대상 승인 후 게시한다.
 - Q3는 현행 AC-12(ready/main Windows 2 job 개별 성공 확인 전 `not_run`)와 같은 방향이며 추가 완화가 없다.
+
+## Eng Review Amendments — 2026-11-19 재사용 기능 분리·비활성화
+
+사용자 결정(2026-11-19, 원문 요지): 재사용 기능은 삭제하지 않고 독립 기능으로 분리한 뒤 비활성화한 상태에서 CI 최적화를 완성한다.
+유지: V1 최소 범위 검증·V2 영향 범위 검증·V3 전체 검증·Git 캐싱 및 묶음 호출·검증 증거 기록 및 관리.
+분리·비활성화: 동적 입력 관측, 검증 결과 재사용(`offline_suite` 재사용). 재사용 기능으로 분리: 자식 프로세스 입력 추적, SQLite 출력 소유권 판단.
+다른 검증 기능과 공통인 코드는 유지한다. 기존 구현·교차검토 기록은 보존하고, 꺼진 상태에서는 기록기·자식 훅·sitecustomize 주입·read set
+지문 계산이 V3 실행 경로에서 돌지 않는다. 개선/외부 기술 대체는 추후 결정하며 분리에 필요한 변경만 한다(추가 최적화 금지).
+결정 4: R2201은 재사용 기능 고도화 시까지 수정 보류. 결정 5: SQLite A안 유지, B안 보류.
+이후 순서: 분리·비활성화 → CI-OPT·CI-VTIER 최종 검증·병합 → V1·V2·V3 병렬 검증 고도화 → BATON 전체 완성 → 실사용 지표 수집 → Bazel 증분 검증 비교 → 재사용 재설계·도입 결정.
+
+- 분리 위치: AC-12 revision 5 지문·재사용 판정·증거·lock(`suite-fp/1` 블록)은 `scripts/ci_plan.py`에서 `scripts/suite_reuse.py`로 코드 변경 없이 옮기고,
+  검증기의 재사용 경로(`_evidence_main` 등)도 같은 모듈로 옮긴다. `policy_identity`는 옮긴 모듈도 지문에 넣는다.
+  동적 입력 관측(`scripts/readset.py`, `scripts/readset_site/`)은 경로를 유지하고 재사용 기능 묶음으로 표시한다(내부 변경 없음).
+- 스위치: `verify_environment.py --enable-suite-reuse`(기본 off) 하나다. `--evidence-dir`·`--lock-home`·`--readset-out`을 스위치 없이 주면
+  사용 오류(종료 코드 2)로 거부하고 SDD·suite를 실행하지 않는다. Orchestrator V3 caller와 원격 CI는 스위치를 쓰지 않는다.
+- 꺼진 상태의 기록: 기본 V3는 매번 `offline_suite` 전체를 실행하고 `suite_execution=executed`, `suite_fingerprint=null`,
+  `reuse_decision=not_configured`를 남긴다. suite-*.json 재사용 증거는 쓰지 않는다. `not_configured`는 재사용 미설정일 뿐 V3 실패나 passed가 아니다.
+  V3 성공·merge 증거는 실제 전체 실행 결과(전체 AC·nonzero·no-skip, 독립 검토·원격 CI)로만 성립하며 `evidence.py` 후보/통합 검사는 바뀌지 않는다.
+- 공통 경로(`scripts/ci_plan.py`, `scripts/check_sdd.py`, `src/baton/*`, 검증기 기본 경로)는 `suite_reuse`·`readset`을 import하지 않는다.
+  rev2 `reuse_v3`(증거 공급자 없음, 항상 거부)는 공통 planner 출력으로 남긴다.
+- 아래 revision 5 절·Risk Acceptance·9~22차 반영 문단은 보존하며, 재사용 기능을 켠 경우에만 적용한다.
+  기존 재사용·readset 단위 테스트는 기본 discover에서 계속 실행한다. 재도입·개선·외부 기술 대체는 위 순서의 마지막 단계에서 결정한다.
+- Spec revision은 올리지 않는다(`check_sdd.py`는 계약 변경에 revision 증가를 요구하지 않는다). 이 절이 2026-11-19 개정 근거다.
 
 ## revision 5 — AC-12 입력 지문 V3 재사용 (2026-11-16)
 
