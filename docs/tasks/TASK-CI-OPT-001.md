@@ -1793,3 +1793,26 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   - R2401: Spec 분리 Amendment의 "내부 변경 없음"이 분리 커밋 `ef82cd5` 시점의 설명임을 명시하고 후속 `a2f107d`·`957de59`를 연결했다.
   - R2402: 이 Task의 2026-11-19 기록 표(분리·8.3·23차)에 Markdown 구분 행을 추가했다.
 - 다음: 이 기록 커밋을 최종 후보 HEAD로 두고 공식 로컬 V3를 1회 실행한다.
+
+## 최종 후보 `b23e309` 공식 로컬 V3 — 2026-11-19
+
+- 명령: `verify_environment.py --base 5c07aea`(재사용 off, 재사용 옵션 없음). `PYTHONPATH=src`, 임시 `BATON_HOME`, `PYTHONUTF8`·`PYTHONIOENCODING` 미설정. 1회 실행했다.
+- 실행 조건: 실행 전후 HEAD `b23e309`(같음), 작업 트리 변경 0(전후). 실행 중 worktree 파일과 git 설정은 바꾸지 않았다.
+- 결과: **PASS**, returncode 0.
+  | 항목 | 값 |
+  | --- | --- |
+  | tests_run / executed_tests | 743 / 743 |
+  | failures / errors / skipped / expected_failures | 0 / 0 / 0 / 0 |
+  | verified_evidence_eligible | true |
+  | suite_execution | executed |
+  | reuse_decision | not_configured(passed 아님, 재사용 미설정) |
+  | suite_fingerprint / reused_test_count / source_evidence | null / null / [] |
+  | 소요 | 1213 s(suite 1208.3 s) |
+  | `check_sdd.py --base 5c07aea`(검증기 선행 단계) | PASS(AC 65, 문서 41, Task 14, provider 호출 0) |
+- 꺼짐 상태 확인:
+  - 요약에 `readset_complete`·`evidence_sha256`이 없다.
+  - suite-*.json 재사용 증거를 만들지 않았다(임시 `BATON_HOME` 비어 있음, `--evidence-dir` 없음).
+  - 출력에 `BATON_READSET`·`readset_site` 흔적이 0이다.
+  - 같은 suite 안의 꺼짐 프로브(기록기·자식 훅·sitecustomize·지문 계산·환경 열거 0)와 import 경계 테스트가 통과했다.
+  - 이 꺼짐 경로에는 재사용 경로의 freeze 전후 비교가 없다. 상태 안정성은 실행 전후 HEAD·작업 트리 비교로 확인했다.
+- 재사용 절감은 없다(기본 off). 원격 Windows 3.11·3.12와 plan/gate는 미확인이고, push 전 전체 미게시 커밋 점검이 필요하다. Task는 verified로 올리지 않는다.
