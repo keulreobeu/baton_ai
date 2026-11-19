@@ -1816,3 +1816,8 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   - 같은 suite 안의 꺼짐 프로브(기록기·자식 훅·sitecustomize·지문 계산·환경 열거 0)와 import 경계 테스트가 통과했다.
   - 이 꺼짐 경로에는 재사용 경로의 freeze 전후 비교가 없다. 상태 안정성은 실행 전후 HEAD·작업 트리 비교로 확인했다.
 - 재사용 절감은 없다(기본 off). 원격 Windows 3.11·3.12와 plan/gate는 미확인이고, push 전 전체 미게시 커밋 점검이 필요하다. Task는 verified로 올리지 않는다.
+- **2026-11-19 push 전 전체 커밋 점검 2차(Git 게시 담당, 사용자 승인 push·원격 CI 확인)**: `git fetch` 뒤 원격 `codex/ci-opt-001-r5`=`27312df`(지시값과 일치, 직전 run `44425214483`은 8.3 짧은 경로로 실패), 로컬 HEAD `1e3c4cf`.
+  범위 `origin/codex/ci-opt-001-r5..codex/ci-opt-001-r5` 미게시 커밋 5개(`ef82cd5`·`a2f107d`·`957de59`·`b23e309`·`1e3c4cf`, 병합 커밋 0), 작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`. 변경 파일 19개(scripts·src·tests·docs, 새 파일 `scripts/suite_reuse.py`).
+  추가 줄에서 홈 경로·계정 이메일·키·토큰·DB·로그·runtime 파일 0건. 계약 문서 `AGENTS.md`·`README.md`·`docs/sdd.md`는 `ef82cd5` 한 커밋에서 각 3줄(+3/-3)만 바뀌었고, 내용은 2026-11-19 사용자 결정인 `offline_suite` 재사용 분리·기본 비활성화(`not_configured`는 passed 아님) 반영 문구로 세 문서가 같다. 그 밖의 계약 확대 없음. finding 없음.
+  최종 후보: 코드 `957de59`(+ `b23e309` 문서), 최종 후보 HEAD `b23e309` 공식 로컬 V3 PASS(743 OK, skip 0, eligible true, reuse `not_configured`), 24차 독립 교차검토(Codex, 대상 `957de59`) PASS_WITH_FINDINGS(P1·P2 0, P3 2 반영). `b23e309..` 이후와 이 기록은 Task 문서만 바꾼다(테스트 재실행 없음).
+  push는 이 기록 커밋까지 fast-forward만 한다. 원격 CI 결과는 Task에 커밋하지 않고 보고로 넘긴다. Task는 verified로 올리지 않는다.
