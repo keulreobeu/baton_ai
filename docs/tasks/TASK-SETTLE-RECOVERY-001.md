@@ -7,7 +7,7 @@
 
 - PR #17 리뷰 스레드(chatgpt-codex-connector, comment 4624337778, `src/baton/orchestrator.py` at `57ef209`, P2): 로컬 워커(`run`·`validate`)가 정착 1단계(검증 결과 저장, lease 유지) 뒤 2단계(Wiki 결과 저장·lease 해제) 전에 종료되면 Task가 REVIEW_REQUIRED·lease·pid 보유로 고립된다. `resume --recover-running`은 `task_cannot_resume`, 재검증은 `worker_busy`다.
 - 사용자 결정 "수정 후 병합" → 구현(`9aa79e6`) → 14·15차 FAIL → 범위 축소(통과 없이 BLOCKED `settlement_interrupted`로 정착, `b16ba12`) → 16차 FAIL(`f790115` 보완) → 17차 FAIL. 2026-11-19 사용자 결정으로 CI-VTIER-001 범위에서 제외하고 코드를 `57ef209` 내용으로 되돌렸다(`532e034`).
-- 현재 영향: 운영 고립이며 검증 통과 오승격이 아니다(lease가 남은 행은 `ManagedStore._approve`가 거부). 수동 조치는 고립 Task를 이력으로 두고, 같은 변경을 새 Task로 `run` 실행해 새 worktree에서 재검증하는 것이다. `create` 직후 `validate`는 worktree가 없어 `validation_not_ready`다(Spec CI-VTIER-001 "2026-11-19 범위 조정" 문단, 18차 R1801).
+- 현재 영향: 운영 고립이며 검증 통과 오승격이 아니다(lease가 남은 행은 `ManagedStore._approve`가 거부). 수동 조치는 고립 Task를 이력으로 두고, 같은 변경을 별도로 확보한 뒤(새 worktree는 현재 HEAD에서 시작하며 고립 worktree 변경을 옮기지 않음) 사용자 승인을 받아 새 Task로 `run` 실행해 재검증하는 것이다(`run`은 Orca 배정·provider 실행 시작). `create` 직후 `validate`는 worktree가 없어 `validation_not_ready`다. Orca 런타임 설정 Task는 `cancel`·`pause`가 통과 없이 정착·lease 해제한다(Spec CI-VTIER-001 "2026-11-19 범위 조정" 문단, 18차 R1801·R1803, 19차 R1901·R1902).
 
 ## 보존 위치
 
