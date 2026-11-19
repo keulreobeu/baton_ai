@@ -13,6 +13,7 @@ if __name__ == "__main__":
     baton_home = Path(os.environ["TEST_TMPDIR"]) / "baton-home"
     baton_home.mkdir()
     os.chdir(root)
-    os.environ.update(BATON_HOME=str(baton_home), PYTHONPATH=str(root / "src"))
+    # A/B child interpreters can import test fixtures from their own working directory.
+    os.environ.update(BATON_HOME=str(baton_home), PYTHONPATH=os.pathsep.join((".", str(root / "src"))))
     sys.path[:0] = [str(root), str(root / "src")]
     raise SystemExit(main(["--module", sys.argv[1], "--output", str(output)]))

@@ -80,3 +80,15 @@ Bazel은 34개 타깃을 분석했지만 런처에 `collect_ids` import 경로�
 | OS/Python | CPU | A 실행 건수/초 | B 실행 건수/초 | C 실행 건수/초 | A↔B | A↔C |
 |---|---:|---:|---:|---:|---|---|
 | Ubuntu 3.12.16 | 4 | 777 / 62.929 | 777 / 22.607 | 0 / 58.406 | 일치 | 누락 777, 0건 실행 |
+
+두 번째 run의 Windows 두 조합도 후속 push로 취소됐다. 세 번째
+[run 44576569511](https://github.com/keulreobeu/baton_ai/actions/runs/44576569511),
+`c8f9421`에서 Ubuntu Bazel은 34개 타깃의 JSON을 수집했고 777개 ID가 A와
+일치했다. 차이는 fixture cwd에서 모듈을 불러오는 자식 Python 테스트 6건에
+집중됐다(`RemoteResultTests` 4건, `test_managed_harness` 2건).
+rules_python의 `PYTHONSAFEPATH` 상속으로 대표 2건의 실패를 재현했으며,
+다음 후보는 자식 Python의 fixture 작업 디렉터리를 `PYTHONPATH`에 명시한다.
+
+| OS/Python | CPU | A 실행 건수/초 | B 실행 건수/초 | C 실행 건수/초 | A↔B | A↔C |
+|---|---:|---:|---:|---:|---|---|
+| Ubuntu 3.12.16 | 4 | 777 / 102.105 | 777 / 36.022 | 777 / 96.947 | 일치 | 결과 불일치 6 |

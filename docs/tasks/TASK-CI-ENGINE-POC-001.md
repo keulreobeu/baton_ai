@@ -53,3 +53,12 @@ target and sets the test runner spawn strategy explicitly. The second-run
 Windows jobs are superseded by branch concurrency. This is a fast-forward
 on the same destination with a fresh audit of the unpublished commit and
 full experiment diff.
+
+## Push 4 checkpoint
+
+Run 44576569511 at `c8f9421` captured all 777 unittest IDs from 34 Ubuntu
+Bazel targets. Six child-Python fixture tests changed outcome. With the
+launcher safe-path environment applied locally, representative CI plan and
+harness tests reproduced the failure. The final push aligns the child
+environment with A/B and uses the last authorized push. The audit covers
+the unpublished commit and full diff, and the remote destination is rechecked.
