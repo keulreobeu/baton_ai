@@ -23,3 +23,9 @@ existing Bazel cwd entry for subprocess import semantics.
 Measure Bazel only after same-job equality with the baseline. Separate
 pytest repetition jobs by worker count and preserve earlier completed jobs
 when publishing another candidate.
+
+Phase 3 keeps the shared-data BUILD as a control. The comparison BUILD is
+generated from static AST imports, coalescing import cycles, with no manual
+edges for dynamic access. Add mutation paths to the registered Task only
+while asking the official planner to plan the fixture, and restore the
+original file before querying external engines.

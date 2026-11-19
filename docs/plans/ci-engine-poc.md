@@ -19,3 +19,11 @@ Use one baseline and Bazel gate job per OS/Python, a separate job per pytest
 worker count, and three Bazel job groups per OS/Python. Keep repeated tests
 in the same condition job. In the local venv, collect three sequences per
 worker count and run the two-checkout condition last.
+
+## Phase 3
+
+Run each case in disposable detached worktrees. Capture Ubuntu baseline and
+mutant outcomes, official planner fallback on both runner platforms, and
+current/static-import Bazel reverse dependencies. Measure external tools
+from pinned release assets on Actions only. Reconcile all selections with
+the mutation oracle and the official policy's required checks.

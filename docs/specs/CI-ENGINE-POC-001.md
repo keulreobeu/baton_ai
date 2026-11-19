@@ -5,10 +5,10 @@ kind = "spec"
 id = "CI-ENGINE-POC-001"
 status = "approved"
 owner = "Codex"
-revision = 2
+revision = 3
 approved_by = "user"
 approved_at = "2026-11-20"
-approval_ref = "Orca task_f0cdc02a5f05 and task_9853ded0c44a, CI engine replacement PoC phases 1 and 2"
+approval_ref = "Orca task_f0cdc02a5f05, task_9853ded0c44a and task_b08759b7ff7d, CI engine replacement PoC phases 1 through 3"
 ```
 
 ## CI-ENGINE-POC-001-REQ-01
@@ -29,3 +29,8 @@ unittest, keep per-run resource samples and Git/process counts, and require
 same-job A/Bazel equivalence before admitting any Bazel performance results
 for that OS and Python. Windows and Linux conditions and allowed repetition
 counts follow the phase 2 dispatch.
+
+Phase 3 compares impact selection across ten isolated changes. Use Ubuntu
+outcome deltas as a mutation proxy, time analysis without Trace2, and count
+Git starts separately. Record missing declarations, invalid tool output,
+and the official planner's checks and escalation behavior.

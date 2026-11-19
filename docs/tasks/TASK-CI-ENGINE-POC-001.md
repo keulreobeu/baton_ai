@@ -131,3 +131,11 @@ baseline on all 3 sequential runs, 15 single-worktree pytest repeats and
 both concurrent four-worker runs. The best single-worktree median was
 230.202 seconds at 12 workers. The concurrent pair took 420.616 seconds
 in total, and its temporary detached worktree was removed.
+
+## Phase 3 first push checkpoint
+
+The phase 3 dispatch authorizes ten disposable mutations and remote impact
+tool runs. The local CBM executable returned Authenticode `NotSigned`; the
+PoC removes it from the planner's PATH and measures fallback only. The
+unpublished phase 2 report `ff4b8be` is part of this first fast-forward and
+is in the pre-push file scope and sensitive-pattern audit.
