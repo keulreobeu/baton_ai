@@ -11,13 +11,14 @@ from collect_ids import PRIORITY
 
 
 def junit_outcome(case):
+    recorded = case.find("./properties/property[@name='baton_unittest_outcome']")
     outcomes = ["pass"]
     for child in case:
         message = child.get("message", "")
         if child.tag in {"failure", "error"} and message.startswith("Unexpected success"):
             outcomes.append("unexpected_success")
         elif child.tag == "failure":
-            outcomes.append("fail")
+            outcomes.append("fail" if recorded is None else recorded.attrib["value"])
         elif child.tag == "error":
             outcomes.append("error")
         elif child.tag == "skipped":
@@ -41,8 +42,8 @@ def read_junit(path):
         for case in cases
     ]
     # Pytest uses an empty class name for synthetic collection or internal errors.
-    return len(records), records, sorted(row["id"] for case, row in zip(cases, records)
-                                         if not case.get("classname"))
+    issues = sorted(row["id"] for case, row in zip(cases, records) if not case.get("classname"))
+    return len(records) - len(issues), records, issues
 
 
 def read_json(path):

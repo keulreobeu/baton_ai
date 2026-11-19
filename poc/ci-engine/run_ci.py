@@ -28,9 +28,15 @@ def run(name, command, timings, env):
     return exit_code
 
 
-def collect_bazel(destination):
+def collect_bazel(command, env, destination):
     destination.mkdir(exist_ok=True)
-    for target in sorted(Path("bazel-testlogs").glob("test_*/")):
+    try:
+        info = subprocess.check_output([*command, "info", "bazel-testlogs"],
+                                       env=env, encoding="utf-8")
+        testlogs = Path(info.strip())
+    except (OSError, subprocess.CalledProcessError):
+        testlogs = Path("bazel-testlogs")
+    for target in sorted(testlogs.glob("test_*/")):
         direct = target / "test.outputs" / "ids.json"
         archive = target / "test.outputs" / "outputs.zip"
         result = destination / f"{target.name}.json"
@@ -69,7 +75,8 @@ def main():
                            "--output", str(baseline)], timings, env)
             else:
                 run(lane, [sys.executable, "-m", "pytest", "-p", "no:cacheprovider",
-                           "-n", "4", f"--junitxml={pytest_xml}", "tests"], timings, env)
+                           "-p", "poc.ci-engine.pytest_outcomes", "-n", "4",
+                           f"--junitxml={pytest_xml}", "tests"], timings, env)
         bazel = shutil.which("bazelisk") or shutil.which("bazel") or "bazelisk"
         if os.name == "nt":
             # Keep execution and Python runfiles paths within Windows path limits.
@@ -82,7 +89,7 @@ def main():
                   f"--@rules_python//python/config_settings:python_version={minor}",
                   f"--build_event_json_file={evidence / 'bazel-events.jsonl'}"],
             timings, env)
-        collect_bazel(targets)
+        collect_bazel([bazel, *startup], env, targets)
         for name, candidate in (("A-B", pytest_xml), ("A-C", targets)):
             run(name, [sys.executable, str(TOOLS / "compare.py"), str(baseline),
                        str(candidate), "--output", str(evidence / f"{name}.json")], timings, env)

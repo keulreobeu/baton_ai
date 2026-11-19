@@ -30,3 +30,16 @@ Audit checks cover the complete changed file list, sensitive paths and
 values, and the push-only workflow trigger. Local discovery produced 777 IDs.
 Static SDD, Python compilation, and the 10-test Windows GMS A/B smoke passed.
 Full local A/B and remote A/B/C are pending.
+
+## Push 2 checkpoint
+
+Run 44573966541 at `ec2024e` showed 777 IDs in both Ubuntu A/B and
+zero Bazel results because Bazel rejected the test strategy. Pytest JUnit
+classified one unittest exception as a failure. The second candidate
+uses Bazel's standalone strategy and records unittest outcome types in JUnit.
+Local A/B executed 777 tests each with matching IDs and all passed. Focused
+checks cover typed failures in xdist JUnit and both Bazel output layouts.
+The second push is a fast-forward from `ec2024e` on the same destination.
+The corrected configuration supersedes both first-run Windows jobs through
+branch concurrency. Fetch, unpublished commit and complete experiment diff,
+secret-pattern, scope, and static SDD checks are repeated before push.

@@ -4,5 +4,6 @@ build --lockfile_mode=off
 test --nocache_test_results
 test --test_output=errors
 # BATON fixtures spawn git and Python and exercise local files and loopback.
-test --test_strategy=local
+test --test_strategy=standalone
+test --test_env=PATH
 test --test_env=PYTHONUTF8=1
