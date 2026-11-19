@@ -329,7 +329,7 @@ class Orchestrator:
             row = self._finish_settlement(task, lease, state, row, result)
         return self._settled(task, row)
 
-    def _finish_settlement(self, task, lease, state, row, result):
+    def _finish_settlement(self, task, lease, state, row, result, *, recovering=False):
         """Second step of a passing local settlement: the Wiki records a verification only once
         the validation result is stored as the settled result; the lease is held until the Wiki
         outcome is stored too, with the pending mark cleared in the same write."""
@@ -337,7 +337,18 @@ class Orchestrator:
         wiki = None
         if row["state"] == state:
             from .wiki_cli import assess
-            wiki = assess(self.store, task, result)
+            try:
+                wiki = assess(self.store, task, result)
+            except HarnessError as exc:
+                # 14th review R1402: in recovery, a Wiki refusal that repeats on every retry
+                # (a contract error, not an unavailable store) ends the settlement with no
+                # pass and a blocking reference, as the live worker's exception path does;
+                # a control decides the final state. Unavailable stores are retried.
+                if not recovering or str(exc).endswith("_unavailable"):
+                    raise
+                return self._settle_no_pass(task, lease, result, "wiki_assessment_failed",
+                                            wiki={"event_id": None, "action": "REVIEW_REQUIRED", "execution": "REVIEW_REQUIRED",
+                                                  "reason": str(exc), "blocking": True})
             if state == "COMPLETED" and wiki.get("blocking"):
                 state = "REVIEW_REQUIRED"
         final = state if wiki else row["state"]
@@ -348,29 +359,80 @@ class Orchestrator:
             lambda outcome: self._settle_unrecordable(task, lease, result, outcome, "wiki_outcome_unrecordable"))
 
     def recover_settlement(self, task):
-        """PR #17 review: finish the pending second step a dead local worker left (entry point:
-        ManagedStore.ready(recover=True), CLI `resume --recover-running`). The stored validation
-        result is kept; the Wiki outcome is stored as on the Orca path (assess again: the event
-        is keyed by the stored result, so a recorded event is read back, not recorded twice), or
-        the settlement fails closed (no pass); the pending mark, lease and pid are released in
-        that one write. A live worker or a held task lock is never fenced."""
+        """PR #17 review: finish the settlement a dead local worker left between its two steps
+        (entry point: ManagedStore.ready(recover=True), CLI `resume --recover-running`). The
+        stored validation result is kept; the Wiki outcome is stored as on the Orca path (assess
+        again: the event is keyed by the stored result, so a recorded event is read back, not
+        recorded twice), or the settlement fails closed (no pass); the pending mark, lease and
+        pid are released in that one write. A live worker or a held task lock is never fenced.
+
+        14th review: a row stored by an earlier version without the pending mark is settled only
+        when its events prove it is that first step, otherwise it fails closed (R1401); a
+        permanent Wiki refusal fails closed (R1402); a pass is kept and verified only for the
+        HEAD and file contents it was validated on (R1404, as R801)."""
         from .isolation import process_alive
+        from .managed import interrupted_local_settlement
         from .runtime import execution_lock
         with execution_lock(self.store.root, "task", task):
             row = self.store.get(task)
             result = row["result"]
-            if (not row["lease"] or result.get("settlement_pending") is not True
-                    or row["task"]["execution"].get("runtime") == "orca"):
+            if not interrupted_local_settlement(row["state"], row["lease"], result, row["task"]):
                 return self.store.export(task)  # Settled meanwhile (or not a local settlement).
             if process_alive(row["pid"]):
                 raise HarnessError("worker_still_alive")
+            lease = row["lease"]
             with self.store.tx() as c:
                 self.store.event(c, task, "settlement_recovered", {"reason": "dead_worker"})
+            if result.get("settlement_pending") is not True and not self._legacy_first_step(task, row):
+                return self._settled(task, self._settle_no_pass(task, lease, result, "settlement_unverifiable"))
             # A first step a control already turned into PAUSED/CANCELLED holds no validation
             # result to verify (no Wiki outcome), as in finish().
             state = (row["state"] if row["state"] in {"REVIEW_REQUIRED", "COMPLETED"}
                      and result.get("validation_passed") is True else None)
-            return self._settled(task, self._finish_settlement(task, row["lease"], state, row, result))
+            if state is None:
+                return self._settled(task, self._finish_settlement(task, lease, state, row, result, recovering=True))
+            if not row["worktree"]:
+                return self._settled(task, self._settle_no_pass(task, lease, result, "settlement_unverifiable"))
+            tree = Path(row["worktree"])
+            with execution_lock(self.store.root, "worktree", tree.resolve()):
+                try:
+                    same = (git(tree, "rev-parse", "HEAD").strip() == result.get("base_commit")
+                            and snapshot(tree) == result.get("changed_files"))
+                except (HarnessError, OSError):
+                    same = False
+                if not same:
+                    # The checks ran on other contents; their list stays as history.
+                    return self._settled(task, self._settle_no_pass(task, lease, result, "validation_state_changed"))
+                return self._settled(task, self._finish_settlement(task, lease, state, row, result, recovering=True))
+
+    def _legacy_first_step(self, task, row):
+        """14th review R1401: whether the last write of this claim (control requests aside) is a
+        passing first settlement step of an earlier version: a state event equal to the stored
+        state, with a pass and no Wiki outcome, after the PLANNING event of the held lease."""
+        with self.store.tx() as c:
+            events = c.execute("SELECT kind, body FROM managed_events WHERE task_id=? ORDER BY id", (task,)).fetchall()
+        claimed, last = False, None
+        for kind, body in events:
+            body = json.loads(body)
+            if kind == "PLANNING" and body.get("lease") == row["lease"] and "pid" in body:
+                claimed, last = True, None
+            elif claimed and kind not in {"control_requested", "settlement_recovered"}:
+                last = (kind, body)
+        return (claimed and last is not None and last[0] == row["state"]
+                and row["state"] in {"REVIEW_REQUIRED", "COMPLETED"}
+                and last[1].get("validation_passed") is True and "wiki" not in last[1]
+                and row["result"].get("validation_passed") is True)
+
+    def _settle_no_pass(self, task, lease, result, reason, **extra):
+        """A recovered settlement that cannot be confirmed ends BLOCKED (a control decides PAUSED or
+        CANCELLED) with no pass, the pending mark, lease and pid released in one write; the
+        stored check list stays as history. A record too large for it takes the compact fallback."""
+        values = {**CLEARED_VALIDATION, "settlement_pending": False, "reason": reason, **extra}
+        try:
+            return self.store.update(task, lease, "BLOCKED", result=values, release=True, yield_to_control=True)
+        except HarnessError as exc:
+            if str(exc) != "unsafe_payload": raise
+            return self._settle_unrecordable(task, lease, result, extra.get("wiki"), "result_unrecordable")
 
     def _settled(self, task, row):
         state = row["state"]

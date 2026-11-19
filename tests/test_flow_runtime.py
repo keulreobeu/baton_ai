@@ -218,6 +218,7 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         import baton.runtime as runtime_module
         # PR #17 review: the local settlement's pending second step is recoverable as well.
         self.check_dead_local_worker_between_settlement_steps_is_recovered()
+        self.check_recovery_of_legacy_refused_raced_or_changed_settlements()
         passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
                     "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
                     "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
@@ -267,6 +268,14 @@ from baton.orchestrator import Orchestrator
 state, root, name, mode, checks = sys.argv[1:6]
 store = ManagedStore(Path(state), Path(root))
 checks = Path(checks).read_text(encoding="utf-8")
+if sys.argv[6:] == ["legacy"]:
+    # The first step as an earlier version (57ef209) stored it: no settlement_pending mark.
+    original = store.update
+    def update(task, lease, state, **kwargs):
+        if kwargs.get("headroom") and (kwargs.get("result") or {}).get("settlement_pending") is True:
+            kwargs["result"] = {k: v for k, v in kwargs["result"].items() if k != "settlement_pending"}
+        return original(task, lease, state, **kwargs)
+    store.update = update
 class Author:
     def execute(self, task, context, tree, stop):
         (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
@@ -358,6 +367,156 @@ os._exit(0)
         self.assertEqual((row["state"], row["lease"]), ("BLOCKED", None))
         self.assertIs(row["result"]["validation_passed"], False)
         self.assertIs(row["result"]["settlement_pending"], False)
+        self.store.control(name, "cancel")
+
+    def crash_local_settlement(self, name, mode, *, legacy=False):
+        """Create `name` and end a real child worker (run, or checkpoint verify after a run) between
+        its two local settlement steps; `legacy` stores the first step without the pending mark."""
+        import os, sys, tempfile
+        import baton
+        checks = [{**deepcopy(self.PASSING[0]), "planner": None}]
+        scripts = Path(tempfile.mkdtemp(dir=self.tmp.name))
+        (scripts / "worker.py").write_text(self.CRASHING_LOCAL_WORKER, encoding="utf-8")
+        (scripts / "checks.json").write_text(json.dumps(checks), encoding="utf-8")
+        env = {**os.environ, "PYTHONPATH": str(Path(baton.__file__).resolve().parents[1])}
+        body = deepcopy(self.body); body["task_id"] = name
+        self.store.create(body)
+        if mode == "verify":
+            class Author:
+                def execute(_, task, context, tree, stop):
+                    (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                    return ExecutionResult()
+            with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
+                    patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "first", "blocking": False}):
+                self.assertEqual(Orchestrator(self.store, {"mock": Author()}).run(name)["state"], "REVIEW_REQUIRED")
+        child = subprocess.run([sys.executable, "-X", "utf8", str(scripts / "worker.py"), str(self.store.directory),
+                                str(self.root), name, mode, str(scripts / "checks.json"), *(["legacy"] if legacy else [])],
+                               env=env, capture_output=True, timeout=120)
+        self.assertEqual(child.returncode, 17, child.stderr[-2000:])
+        row = self.store.get(name)
+        self.assertEqual((row["state"], bool(row["lease"]), row["result"]["validation_passed"]), ("REVIEW_REQUIRED", True, True))
+        return row
+
+    def check_recovery_of_legacy_refused_raced_or_changed_settlements(self):
+        """CI-VTIER-001 14th review. R1401: a first step stored by an earlier version (no pending
+        mark) is recovered when its events prove it, and one they do not prove ends with no pass
+        and the lease released. R1402: a permanent Wiki refusal in recovery ends with no pass (a
+        requested cancel is applied); an unavailable Wiki keeps the row for a retry. R1403: a row
+        that becomes a pending settlement while resume runs is never made READY. R1404: a tree
+        changed since the checks is no pass and records no new Wiki verification."""
+        import sqlite3, sys, time
+        from contextlib import contextmanager
+        from baton.contracts import encode
+        wiki = {"event_id": "VALIDATED-" + "8" * 32, "action": "RECORD", "blocking": False}
+        never = patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki verification"))
+        dead = int(subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                                  capture_output=True, text=True, timeout=60).stdout)
+        def sql(statement, *values):
+            c = sqlite3.connect(self.store.path)
+            try:
+                with c:
+                    c.execute(statement, values)
+            finally:
+                c.close()
+        # R1401: an earlier version's stranded first step (run, checkpoint verify).
+        for mode in ("run", "verify"):
+            with self.subTest(r1401=mode):
+                name = "LEGACY" + mode.upper()
+                stored = self.crash_local_settlement(name, mode, legacy=True)["result"]
+                self.assertIsNot(stored.get("settlement_pending"), True)
+                with self.assertRaisesRegex(HarnessError, "recovery_confirmation_required"):
+                    self.store.ready(name)
+                assessed = []
+                with patch("baton.wiki_cli.assess", lambda *a: assessed.append(1) or deepcopy(wiki)):
+                    row = self.store.ready(name, recover=True)
+                result = row["result"]
+                self.assertEqual((row["state"], row["lease"], row["pid"], assessed), ("REVIEW_REQUIRED", None, None, [1]))
+                self.assertEqual((result["validation_passed"], result["validation"], result["wiki"]),
+                                 (True, stored["validation"], wiki))
+                self.assertIs(result["settlement_pending"], False)
+                self.store.control(name, "cancel")
+        # R1401: a lease-held settled row whose events do not prove a first step fails closed.
+        name = "LEGACYUNPROVEN"
+        body = deepcopy(self.body); body["task_id"] = name
+        self.store.create(body)
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
+        with patch.object(Orchestrator, "validate", lambda *a, **k: [{**deepcopy(self.PASSING[0]), "planner": None}]), \
+                patch("baton.wiki_cli.assess", return_value=wiki):
+            before = Orchestrator(self.store, {"mock": Author()}).run(name)["result"]
+        sql("UPDATE managed_tasks SET lease=?, pid=?, started=? WHERE id=?", "0" * 32, dead, time.time(), name)
+        with never:
+            row = self.store.ready(name, recover=True)
+        result = row["result"]
+        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "settlement_unverifiable"))
+        self.assertEqual((result["validation_passed"], result["validation_status"], result["validation"]),
+                         (False, None, before["validation"]))
+        self.assertIs(result["settlement_pending"], False)
+        self.store.control(name, "cancel")
+        # R1402: unavailable Wiki stores are retried; a permanent refusal settles with no pass.
+        for control in (None, "cancel"):
+            with self.subTest(r1402=control):
+                name = "WIKIREFUSED" + (control or "").upper()
+                stored = self.crash_local_settlement(name, "run")["result"]
+                for transient in (HarnessError("wiki_storage_unavailable"), OSError("wiki down")):
+                    with patch("baton.wiki_cli.assess", side_effect=transient), self.assertRaises(type(transient)):
+                        self.store.ready(name, recover=True)
+                    self.assertEqual(self.store.get(name)["result"], stored)
+                if control:
+                    self.store.control(name, control)
+                    self.assertEqual((self.store.get(name)["control"], bool(self.store.get(name)["lease"])), (control, True))
+                with patch("baton.wiki_cli.assess", side_effect=HarnessError("wiki_resolution_task_mismatch")):
+                    row = self.store.ready(name, recover=True)
+                result = row["result"]
+                self.assertEqual((row["state"], row["lease"], row["pid"]), ("CANCELLED" if control else "BLOCKED", None, None))
+                self.assertEqual((result["validation_passed"], result["validation_status"]), (False, None))
+                self.assertIs(result["settlement_pending"], False)
+                self.assertEqual(result["validation"], stored["validation"])
+                if not control:
+                    self.assertEqual(result["reason"], "wiki_assessment_failed")
+                    self.assertEqual((result["wiki"]["blocking"], result["wiki"]["reason"]), (True, "wiki_resolution_task_mismatch"))
+                    self.store.control(name, "cancel")
+        # R1403: the row becomes a paused pending settlement between resume's read and its write.
+        name = "RACE"
+        body = deepcopy(self.body); body["task_id"] = name
+        self.store.create(body)
+        real_tx, done = self.store.tx, []
+        def settle_pending():
+            with real_tx() as c:
+                values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id=?", (name,)).fetchone()[0])
+                values.update(validation_passed=True, settlement_pending=True)
+                c.execute("UPDATE managed_tasks SET state='PAUSED', lease=?, pid=?, started=?, control='pause', result=? WHERE id=?",
+                          ("1" * 32, dead, time.time(), encode(values), name))
+        @contextmanager
+        def tx():
+            with real_tx() as c:
+                yield c
+            if not done:
+                done.append(1)
+                settle_pending()
+        with patch.object(self.store, "tx", tx):
+            self.store.ready(name, recover=True)
+        row = self.store.get(name)
+        self.assertEqual((row["state"], row["control"], bool(row["lease"]), row["result"]["settlement_pending"]),
+                         ("PAUSED", "pause", True, True))
+        with never:
+            row = self.store.ready(name, recover=True)
+        self.assertEqual((row["state"], row["lease"], row["result"]["settlement_pending"]), ("PAUSED", None, False))
+        self.store.control(name, "cancel")
+        # R1404: the worktree changed after the checks and before recovery.
+        name = "CHANGED"
+        row = self.crash_local_settlement(name, "run")
+        stored = row["result"]
+        (Path(row["worktree"]) / "src/value.py").write_text("value = 3\n", encoding="utf-8")
+        with never:
+            row = self.store.ready(name, recover=True)
+        result = row["result"]
+        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "validation_state_changed"))
+        self.assertEqual((result["validation_passed"], result["validation_status"], result["validation"]),
+                         (False, None, stored["validation"]))
+        self.assertIs(result["settlement_pending"], False)
         self.store.control(name, "cancel")
 
     def test_control_after_a_failed_second_step_keeps_the_settled_result(self):

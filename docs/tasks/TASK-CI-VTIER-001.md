@@ -35,7 +35,7 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "PR #17 review fix (local settlement crash recovery): code changed after official V3 4187253; V2 only, official V3 pending review"
+command = "PR #17 review fix and 14th review R1401-R1404 (local settlement crash recovery): code changed after official V3 4187253; V2 only, official V3 pending review"
 result = "not_run"
 evidence = "docs/tasks/TASK-CI-VTIER-001.md#pr-17-리뷰-반영정착-중단-복구--2026-11-19"
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
@@ -228,3 +228,21 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - 수정 전 확인: `57ef209` 임시 worktree에 새 테스트를 넣어 실행하면 실패(`settlement_pending` 기록 없음). 같은 자식 프로세스 종료 직후 probe로 run·verify 두 경로 모두 상태 REVIEW_REQUIRED·lease 보유, `ready(recover=True)` → `task_cannot_resume`, `verify` → `worker_busy`를 재현했다(지적의 두 오류).
 - Task 상태: `verified` → `in_progress`. 근거: verified 증거(공식 로컬 V3 `4187253`, 원격 CI `3675fb8`, 11~13차 독립 검토)는 이번 코드 변경 전 트리에 대한 것이다. `docs/sdd.md`(필수 검증 미실행이면 in_progress/blocked, V1/V2는 완료 상태를 올리지 않음)와 AGENTS 검증 사다리(같은 SHA·이전 증거로 재사용하지 않음, merge에는 유효한 V3 필요)에 따라 새 코드에는 유효한 V3·L3 독립 검토가 없다. 그래서 전체 AC 마지막 기록을 `not_run` 기록으로 무효화하고 `independent_review`도 `not_run`으로 내렸다(이전 기록은 이력으로 보존). 재승격은 독립 검토·공식 V3·원격 CI 뒤 별도로 한다.
 - V2(작업 트리 = `57ef209` + 이 수정, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈(`test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability`·`test_readset`·`test_verify_environment`·`test_ci_workflow`·`test_sdd`) 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(917.1초), `PYTHONIOENCODING=utf-8` 371 OK(914.5초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T05:21:54Z~05:37:10Z, 시간은 단독 실측 아님). `test_readset`의 `ResourceWarning`은 기존과 동일. check_sdd `--base 762739f` PASS. 테스트 수가 직전 V2와 같은 371인 것은 새 회귀를 기존 테스트 안의 `check_*` 함수로 넣었기 때문이다. 공식 V3는 실행하지 않았다(독립 검토 뒤). push·PR 조작 없음. verified 아님.
+
+## 14차 재검토 반영(정착 중단 복구 보완) — 2026-11-19
+
+- 검토: Codex 14차 독립 확인(대상 `9aa79e6`, 비교 `57ef209`) FAIL, P1 2(R1401·R1402)·P2 2(R1403·R1404). PR #17 comment 4624337778 자체는 PASS로 판정됐다.
+- 수정(Spec CI-VTIER-001 "2026-11-19 14차 재검토 반영" 문단, `src/baton/managed.py`·`src/baton/orchestrator.py`):
+  - R1401(P1): `interrupted_local_settlement`이 pending 행과 함께 lease를 가진 채 일반 재개가 거부하는 상태의 로컬 행(이전 버전이 남긴 행)을 정착 중단으로 본다. `recover_settlement`은 pending이 없으면 `_legacy_first_step`(보유 lease의 claim 이벤트 뒤 마지막 기록이 저장 상태와 같은 통과·Wiki 없음 1단계)으로 증명된 행만 정착하고, 아니면 `_settle_no_pass`(BLOCKED `settlement_unverifiable`, 통과 없음, pending·lease·pid 해제)로 fail-closed한다.
+  - R1402(P1): 복구 중 `assess`의 계약 오류(`*_unavailable` 제외 HarnessError)는 `_settle_no_pass`(`wiki_assessment_failed`, blocking 참조)로 정착하고 yield_to_control로 요청된 cancel·pause를 적용한다. `*_unavailable`·OSError는 다시 올려 행을 보존한다(재시도). 살아 있는 워커 경로(`recovering=False`)는 그대로다.
+  - R1403(P2): `ready`의 정착 중단 판단과 기존 READY 전환을 한 트랜잭션으로 합쳤다(두 번째 트랜잭션 제거, 기존 분기 본문은 들여쓰기만 바뀜).
+  - R1404(P2): 통과 행의 복구는 worktree 잠금 아래 HEAD·`snapshot`을 저장된 `base_commit`·`changed_files`와 비교하고, 다르면 `validation_state_changed`로 통과 없이 정착한다(Wiki 기록 없음, 검사 목록 보존).
+  - 정상 경로·제어 경로·크기 거부 fallback·Orca 경로는 바꾸지 않았다.
+- 회귀: AC-04 테스트 참조 상한(30)이라 기존 참조 `FlowRuntimeTests.test_interrupted_second_settlement_step_resumes_and_fallback_skips_it`에서 호출하는 `check_recovery_of_legacy_refused_raced_or_changed_settlements`(헬퍼 `crash_local_settlement`, 자식 스크립트 `legacy` 모드는 1단계를 pending 표시 없이 저장)로 넣었다.
+  - R1401: 이전 버전 형태 행(run·checkpoint verify)이 `ready()` `recovery_confirmation_required`, `ready(recover=True)` 뒤 REVIEW_REQUIRED·lease/pid 없음·검증 보존·Wiki 1회·pending false. 이벤트로 증명되지 않는 lease 보유 정착 행은 BLOCKED `settlement_unverifiable`·통과 없음·Wiki 평가 없음.
+  - R1402: `wiki_storage_unavailable`·OSError는 오류를 내고 행 불변, `wiki_resolution_task_mismatch`는 BLOCKED `wiki_assessment_failed`(blocking 참조) 또는 cancel 요청 시 CANCELLED, 둘 다 통과 없음·pending false·lease/pid 없음.
+  - R1403: `ready`의 첫 트랜잭션 뒤 행을 PAUSED·lease·pending=true·pause 제어로 바꾸는 경쟁을 주입해도 행이 그대로 남고, 다음 복구가 PAUSED·lease 없음·pending false로 정착(Wiki 없음).
+  - R1404: 1단계 뒤 worktree 파일을 바꾸면 BLOCKED `validation_state_changed`, 통과 없음, 검사 목록 보존, Wiki 평가 없음.
+- 수정 전 확인: `9aa79e6` 임시 worktree에 새 테스트를 넣고 결함 구간별로 실행해 모두 실패했다. R1401 `task_cannot_resume`(`recovery_confirmation_required` 불일치 포함), R1402 `wiki_resolution_task_mismatch` 반복 오류, R1403 `('READY', None, False, True)`(READY·control 없음·lease 없음·pending true), R1404 Wiki 평가 호출(`no Wiki verification` 단언). R1401 실제 이전 버전: 자식 워커를 `57ef209` 소스로 실행해 만든 DB의 run·verify 행을 새 코드가 복구하는 것을 같은 R1401 구간으로 확인했다(임시 worktree, 테스트 파일에는 넣지 않음).
+- Task 상태는 `in_progress` 유지(전체 AC `not_run` 기록·독립 검토 `not_run`).
+- V2(작업 트리 = `9aa79e6` + 이 수정, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(910.8초), `PYTHONIOENCODING=utf-8` 371 OK(910.4초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T06:00:38Z~06:15:50Z, 단독 실측 아님). check_sdd `--base 762739f` PASS. 공식 V3·push 없음. verified 아님.

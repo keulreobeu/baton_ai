@@ -156,6 +156,16 @@ def legacy_official_v3_failed(checks):
     return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
 
 
+def interrupted_local_settlement(state, lease, result, body):
+    """A local row whose worker settled a state while holding the lease (the first settlement
+    step, PR #17 review): marked pending, or, stored by an earlier version without the mark
+    (14th review R1401), a lease-held state that a plain resume refuses. Orca rows settle by
+    their end event and never take this path."""
+    return (bool(lease) and body["execution"].get("runtime") != "orca"
+            and (result.get("settlement_pending") is True
+                 or state in TERMINAL or state in {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}))
+
+
 class ManagedStore:
     def __init__(self, directory, root):
         self.directory, self.root = Path(directory).resolve(), Path(root).resolve()
@@ -349,43 +359,47 @@ class ManagedStore:
     def ready(self, task, *, recover=False, automatic=False):
         with self.tx() as c:
             r = self.row(c, task)
-            pending = (not automatic and bool(r["lease"]) and json.loads(r["result"]).get("settlement_pending") is True
-                       and json.loads(r["body"])["execution"].get("runtime") != "orca")
-            if pending and not recover:
+            # 14th review R1403: the interrupted-settlement decision and the READY change below
+            # are made in one transaction, so a row that becomes a pending settlement in between
+            # is never made READY (which would drop its control and leave a pending mark with
+            # no lease).
+            settle = not automatic and interrupted_local_settlement(r["state"], r["lease"], json.loads(r["result"]),
+                                                                    json.loads(r["body"]))
+            if settle and not recover:
                 raise HarnessError("recovery_confirmation_required")
-        if pending:
-            # PR #17 review: a local worker that died between the two settlement steps left
-            # its stored result with the lease held (REVIEW_REQUIRED or COMPLETED). Recovery
-            # finishes that settlement; it does not make the Task READY.
+            if not settle:
+                if r["state"] in TERMINAL or r["state"] in {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}:
+                    raise HarnessError("task_cannot_resume")
+                if automatic and (r["state"] != "RETRYING" or r["control"]):
+                    raise HarnessError("automatic_retry_interrupted")
+                values = json.loads(r["result"])
+                if values.get("uncertain_dispatch"):
+                    # Resending could pay twice. The operator confirms the ledger with --recover-running.
+                    if not recover:
+                        raise HarnessError("uncertain_dispatch_requires_review")
+                    values.pop("uncertain_dispatch")
+                    c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), task))
+                if r["lease"]:
+                    if json.loads(r["body"])["execution"].get("runtime") == "orca":
+                        raise HarnessError("orca_settlement_required")
+                    if not recover:
+                        raise HarnessError("recovery_confirmation_required")
+                    # Never fence a live worker; PID reuse conservatively blocks recovery.
+                    from .isolation import process_alive
+                    if process_alive(r["pid"]):
+                        raise HarnessError("worker_still_alive")
+                    elapsed = r["elapsed"] + max(0, time.time() - r["started"])
+                    c.execute("UPDATE managed_tasks SET elapsed=? WHERE id=?", (elapsed, task))
+                    self.event(c, task, "INTERRUPTED", {"reason": "dead_worker"})
+                c.execute("UPDATE managed_tasks SET state='READY',lease=NULL,pid=NULL,control=NULL WHERE id=?", (task,))
+                self.event(c, task, "READY", {"recovered": recover})
+        if settle:
+            # PR #17 review / 14th review R1401: a local worker that died between the two
+            # settlement steps (also one stored by an earlier version without the pending
+            # mark) left its settled state with the lease held. Recovery finishes or fails
+            # closed that settlement; it does not make the Task READY.
             from .orchestrator import Orchestrator
             return Orchestrator(self, providers={}).recover_settlement(task)
-        with self.tx() as c:
-            r = self.row(c, task)
-            if r["state"] in TERMINAL or r["state"] in {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}:
-                raise HarnessError("task_cannot_resume")
-            if automatic and (r["state"] != "RETRYING" or r["control"]):
-                raise HarnessError("automatic_retry_interrupted")
-            values = json.loads(r["result"])
-            if values.get("uncertain_dispatch"):
-                # Resending could pay twice. The operator confirms the ledger with --recover-running.
-                if not recover:
-                    raise HarnessError("uncertain_dispatch_requires_review")
-                values.pop("uncertain_dispatch")
-                c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), task))
-            if r["lease"]:
-                if json.loads(r["body"])["execution"].get("runtime") == "orca":
-                    raise HarnessError("orca_settlement_required")
-                if not recover:
-                    raise HarnessError("recovery_confirmation_required")
-                # Never fence a live worker; PID reuse conservatively blocks recovery.
-                from .isolation import process_alive
-                if process_alive(r["pid"]):
-                    raise HarnessError("worker_still_alive")
-                elapsed = r["elapsed"] + max(0, time.time() - r["started"])
-                c.execute("UPDATE managed_tasks SET elapsed=? WHERE id=?", (elapsed, task))
-                self.event(c, task, "INTERRUPTED", {"reason": "dead_worker"})
-            c.execute("UPDATE managed_tasks SET state='READY',lease=NULL,pid=NULL,control=NULL WHERE id=?", (task,))
-            self.event(c, task, "READY", {"recovered": recover})
         return self.observe_idle_state(task)
 
     def configure(self, task, *, priority=None, provider=None):
