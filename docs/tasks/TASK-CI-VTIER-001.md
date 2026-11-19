@@ -3,7 +3,7 @@
 ```toml
 kind = "task"
 id = "TASK-CI-VTIER-001"
-status = "in_progress"
+status = "verified"
 owner = "Claude"
 level = 3
 specs = ["docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md"]
@@ -11,6 +11,32 @@ plan = "docs/plans/ci-vtier.md"
 adr = "docs/adr/ADR-CI-VTIER-001.md"
 scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "src/baton/managed.py", "src/baton/evidence.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json"]
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+
+[[verification]]
+command = "python -X utf8 scripts/verify_environment.py --base 762739f (official local V3, HEAD 4187253, suite reuse off)"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-승격--2026-11-19"
+acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+tests_run = 777
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions verify.yml run 44455837743 attempt 1 (pull_request, headSha 3675fb8): plan, offline windows-latest 3.11/3.12 official V3, gate"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-승격--2026-11-19"
+acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+tests_run = 777
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[independent_review]
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-승격--2026-11-19"
 ```
 
 A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화"): 로컬 V1/V2 실사용 활성화. B Task(Bazel-diff 사전 연구)는 별도이며 이 Task 파일을 수정하지 않는다.
@@ -172,3 +198,18 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - **2026-11-19 push 전 전체 커밋 점검(Git 게시·병합 담당, 사용자 결정 2)**: `git fetch` 뒤 원격 `codex/ci-vtier-001`=`f10ccae`, `origin/main`=`9a74545`. 원격 refs로 도달할 수 없는 커밋 31개(`git rev-list HEAD --not --remotes`). 그중 `7a8d5ad`까지는 위 2026-11-19 점검 기록(finding 없음)을 참조한다. 새 범위는 `e7f5b57`(점검 기록, Task 문서만), `6446255`(CI-OPT `1e3c4cf` 병합, 13차 Codex 병합 회귀 검토 PASS), `11e7011`·`4187253`(Task 문서만), `c7e4738`(main `9a74545` 병합, 첫 부모 대비 `docs/tasks/TASK-CI-OPT-001.md`·`docs/tasks/current.md`만, 내용은 원격 main과 같음)과 이 기록 커밋이다. CI-OPT 쪽 커밋(`27312df`~`85f459f`, `9a74545`)은 이미 `origin/main`에 있다.
   작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`. 병합 커밋 `6446255`·`c7e4738`은 Co-Authored-By 줄이 없으며 amend 금지라 그대로 둔다. `7a8d5ad..HEAD` 추가 줄에서 홈 경로·계정 이메일·키·토큰·DB·로그·runtime 파일 0건(CI-OPT 기록의 hosted runner 경로 예시 `C:\Users\RUNNER~1`·환경 변수 이름만, 이미 main에 게시됨). finding 없음.
   push는 이 기록 커밋까지 fast-forward만 한다. 이 SHA의 원격 CI(draft PR #17 synchronize)를 확인한 뒤 verified 승격 커밋을 따로 만든다(Q3=B: 원격 Windows 3.11/3.12 성공 후 verified). verified·병합 아님.
+
+## verified 승격 — 2026-11-19
+
+- 근거: 사용자 결정 2(2026-11-19, 코디네이터 전달) "#16 병합 뒤 #17은 main 기준 재검증 후 verified 승격·병합"과 2026-11-16 Q3=B(원격 Windows 3.11/3.12 성공 후 verified). Git 게시·병합 담당이 기록한다. Task level 3(L3) 기준.
+- 요건 대조(`docs/sdd.md` 문서와 상태, `check_sdd.py` verified 검사):
+  | 요건 | 증거 |
+  | --- | --- |
+  | 전체 AC(CI-VTIER-001-AC-01~06) 마지막 기록 passed, tests_run>0, 실패·오류·skip·expected failure 0 | 공식 로컬 V3(최종 후보 HEAD `4187253` = main `9a74545` 병합 `c7e4738` + V2 기록, base `762739f`, 재사용 off) 777 OK skip 0, eligible true, `reuse_decision` not_configured(전체 실행) |
+  | 원격 Windows CI | run `44455837743` attempt 1(pull_request synchronize, draft PR #17, headSha `3675fb8`): plan·offline windows-latest 3.11(777 OK)·3.12(777 OK)·gate 모두 success, 두 job failures·errors·skipped 0, `verified_evidence_eligible=true`, `reuse_decision=not_configured` |
+  | L3 독립 검토 | Codex Orca worker 11차(대상 `18ca03d`) PASS, 12차 병합 회귀(대상 `d5a7d69`) PASS, 13차 병합 회귀(대상 `6446255` = CI-OPT `1e3c4cf` 재사용 분리 병합, 코디네이터 보고: 신규 지적 0, 371 OK) PASS. 이전 FAIL·PASS_WITH_FINDINGS 회차의 finding은 위 기록대로 반영·해소됐고 미해결 finding 없음을 `independent_review.result=passed`로 기록 |
+  | 승인 문서 | Spec `CI-VTIER-001`·`CI-OPT-001` approved, Plan `ci-vtier` active, ADR `ADR-CI-VTIER-001` accepted |
+- 13차 검토 뒤 변경: main `9a74545` 병합(`c7e4738`)은 Task 문서 2개만 가져왔고(코드·테스트 0건) 이후 커밋은 Task 문서뿐이다. 그 트리에서 V2 371 OK·로컬 V3 777 OK·원격 CI 777 OK를 확인했다.
+- 같은 job의 "Base install without the gms" 단계(30 tests)는 선택 의존성 `gms` 미설치 확인 단계이며 공식 V3 suite(777, skip 0)와 별개다.
+- `3675fb8` 이후와 이 승격 커밋은 Task·current 문서만 바꾼다. 이 커밋 SHA의 원격 CI(ready)는 커밋 뒤 확인하며 Task에 다시 커밋하지 않고 보고로 넘긴다. 결과가 실패하면 verified를 유지하지 않고 병합하지 않는다.
+- `offline_suite` 재사용은 분리·비활성(`reuse_decision=not_configured`, passed 아님)이며 재사용 절감은 주장하지 않는다.
