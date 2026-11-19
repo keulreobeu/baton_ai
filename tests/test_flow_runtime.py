@@ -216,6 +216,8 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         pending second step that the repeated end event completes (lease released once);
         a compact fallback that already released skips the second step without an error."""
         import baton.runtime as runtime_module
+        # PR #17 review: the local settlement's pending second step is recoverable as well.
+        self.check_dead_local_worker_between_settlement_steps_is_recovered()
         passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
                     "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
                     "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
@@ -254,6 +256,109 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
             row = ingest(self.store, "ORCACOMPACT", self.receipt(did), client)
         self.assertEqual(row["state"], "BLOCKED")
         self.assertIsNone(row["lease"])
+
+    CRASHING_LOCAL_WORKER = r'''
+import json, os, sys
+from pathlib import Path
+from unittest.mock import patch
+from baton.execution import ExecutionResult
+from baton.managed import ManagedStore
+from baton.orchestrator import Orchestrator
+state, root, name, mode, checks = sys.argv[1:6]
+store = ManagedStore(Path(state), Path(root))
+checks = Path(checks).read_text(encoding="utf-8")
+class Author:
+    def execute(self, task, context, tree, stop):
+        (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        return ExecutionResult()
+def die(*args, **kwargs):
+    os._exit(17)  # The process ends between the stored first step and the Wiki outcome.
+with patch.object(Orchestrator, "validate", lambda *a, **k: json.loads(checks)), patch("baton.wiki_cli.assess", die):
+    if mode == "verify":
+        Orchestrator(store, {}).verify(name, stage="checkpoint")
+    else:
+        Orchestrator(store, {"mock": Author()}).run(name)
+os._exit(0)
+'''
+
+    def check_dead_local_worker_between_settlement_steps_is_recovered(self):
+        """PR #17 review (P2): a local worker process (run, checkpoint verify) that exits after the
+        stored first settlement step but before the Wiki outcome leaves a pending mark with the
+        lease; `resume --recover-running` (ManagedStore.ready(recover=True)) finishes that
+        settlement for a dead worker: validation result kept, Wiki outcome stored once, pending
+        mark, lease and pid released. Before the fix the Task was stranded (task_cannot_resume,
+        worker_busy). A live worker or a held task lock is not fenced, and a failure after the
+        first step in a live worker still ends with no pass and no pending mark."""
+        import os, sys, tempfile
+        import baton
+        from baton.runtime import execution_lock
+        checks = [{**deepcopy(self.PASSING[0]), "planner": None}]
+        scripts = Path(tempfile.mkdtemp(dir=self.tmp.name))
+        (scripts / "worker.py").write_text(self.CRASHING_LOCAL_WORKER, encoding="utf-8")
+        (scripts / "checks.json").write_text(json.dumps(checks), encoding="utf-8")
+        env = {**os.environ, "PYTHONPATH": str(Path(baton.__file__).resolve().parents[1])}
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
+        skip = {"action": "SKIP", "reason": "first", "blocking": False}
+        wiki = {"event_id": "VALIDATED-" + "9" * 32, "action": "RECORD", "blocking": False}
+        for mode in ("run", "verify"):
+            with self.subTest(mode=mode):
+                name = "LOCALDEAD" + mode.upper()
+                body = deepcopy(self.body); body["task_id"] = name
+                self.store.create(body)
+                if mode == "verify":
+                    with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
+                            patch("baton.wiki_cli.assess", return_value=skip):
+                        self.assertEqual(Orchestrator(self.store, {"mock": Author()}).run(name)["state"], "REVIEW_REQUIRED")
+                child = subprocess.run([sys.executable, "-X", "utf8", str(scripts / "worker.py"), str(self.store.directory),
+                                        str(self.root), name, mode, str(scripts / "checks.json")],
+                                       env=env, capture_output=True, timeout=120)
+                self.assertEqual(child.returncode, 17, child.stderr[-2000:])
+                row = self.store.get(name)
+                self.assertEqual(row["state"], "REVIEW_REQUIRED")
+                self.assertIsNotNone(row["lease"])
+                stored = row["result"]
+                self.assertEqual((stored["settlement_pending"], stored["validation_passed"]), (True, True))
+                with self.assertRaisesRegex(HarnessError, "worker_busy"):
+                    Orchestrator(self.store, {}).verify(name)
+                with self.assertRaisesRegex(HarnessError, "recovery_confirmation_required"):
+                    self.store.ready(name)
+                with patch("baton.isolation.process_alive", return_value=True), \
+                        self.assertRaisesRegex(HarnessError, "worker_still_alive"):
+                    self.store.ready(name, recover=True)
+                with execution_lock(self.store.root, "task", name), self.assertRaisesRegex(HarnessError, "worker_busy"):
+                    self.store.ready(name, recover=True)
+                self.assertEqual(self.store.get(name)["result"], stored)
+                assessed = []
+                def assess(store, task, result):
+                    assessed.append((result["changed_files"], result["validation"]))
+                    return deepcopy(wiki)
+                with patch("baton.wiki_cli.assess", assess):
+                    row = self.store.ready(name, recover=True)
+                    with self.assertRaisesRegex(HarnessError, "task_cannot_resume"):
+                        self.store.ready(name, recover=True)
+                result = row["result"]
+                self.assertEqual((row["state"], row["lease"], row["pid"]), ("REVIEW_REQUIRED", None, None))
+                self.assertEqual(assessed, [(stored["changed_files"], stored["validation"])])
+                self.assertEqual((result["validation_passed"], result["validation"], result["validation_status"]),
+                                 (True, stored["validation"], stored["validation_status"]))
+                self.assertIs(result["settlement_pending"], False)
+                self.assertEqual(result["wiki"], wiki)
+                self.store.control(name, "cancel")
+        # A live worker whose Wiki step fails after the stored first step ends with no pass (as
+        # before) and leaves no pending mark behind the released lease.
+        name = "LOCALDEADLIVE"
+        body = deepcopy(self.body); body["task_id"] = name
+        self.store.create(body)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
+                patch("baton.wiki_cli.assess", side_effect=HarnessError("wiki_event_id_conflict")):
+            row = Orchestrator(self.store, {"mock": Author()}).run(name)
+        self.assertEqual((row["state"], row["lease"]), ("BLOCKED", None))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIs(row["result"]["settlement_pending"], False)
+        self.store.control(name, "cancel")
 
     def test_control_after_a_failed_second_step_keeps_the_settled_result(self):
         """CI-VTIER-001 7th review R701: a pause after the Wiki step failed completes that

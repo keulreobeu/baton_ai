@@ -349,6 +349,18 @@ class ManagedStore:
     def ready(self, task, *, recover=False, automatic=False):
         with self.tx() as c:
             r = self.row(c, task)
+            pending = (not automatic and bool(r["lease"]) and json.loads(r["result"]).get("settlement_pending") is True
+                       and json.loads(r["body"])["execution"].get("runtime") != "orca")
+            if pending and not recover:
+                raise HarnessError("recovery_confirmation_required")
+        if pending:
+            # PR #17 review: a local worker that died between the two settlement steps left
+            # its stored result with the lease held (REVIEW_REQUIRED or COMPLETED). Recovery
+            # finishes that settlement; it does not make the Task READY.
+            from .orchestrator import Orchestrator
+            return Orchestrator(self, providers={}).recover_settlement(task)
+        with self.tx() as c:
+            r = self.row(c, task)
             if r["state"] in TERMINAL or r["state"] in {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}:
                 raise HarnessError("task_cannot_resume")
             if automatic and (r["state"] != "RETRYING" or r["control"]):

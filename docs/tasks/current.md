@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-19 CI-VTIER PR #17 리뷰 반영(정착 중단 복구)
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified → in_progress: PR #17 리뷰(P2, 로컬 정착 1단계 뒤 워커 종료 시 Task 고립) 수정으로 코드가 바뀌어 이전 verified 증거가 무효다. 로컬 1단계에 `settlement_pending` 기록, `resume --recover-running`이 죽은 워커의 2단계를 마친다. V2만 실행, 독립 검토·공식 V3·원격 CI 뒤 재승격.
+
 ## 현재 작업 — 2026-11-19 CI-VTIER verified 승격
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(사용자 결정 2, main `9a74545` 기준 재검증): 공식 로컬 V3(`4187253`) 777 OK skip 0, 원격 Windows CI run `44455837743`(headSha `3675fb8`) plan·3.11·3.12·gate success, Codex 11·12·13차 독립 검토 PASS. 승격 커밋의 ready CI와 PR #17 병합 결과는 보고로 넘긴다. `offline_suite` 재사용은 분리·비활성(not_configured).

@@ -89,6 +89,8 @@ V1/V2 결과(부분 여부와 무관)는 `final_evidence_eligible=false`이며 �
 
 **2026-11-18 10차 재검토 반영(Codex `75a7bcb` PASS_WITH_FINDINGS, P3 1):** R1001: Orca `_settle_author`의 최종 축약 저장은 Wiki 2단계가 요청한 사유 `wiki_outcome_unrecordable`을 그대로 기록한다. 그 밖의 크기 거부(일반 1단계 포함)는 `result_unrecordable`을 유지한다. 따라서 9차 반영 문단이 구별한 두 사유가 저장 결과에서도 구별된다(검증 통과·lease·슬롯 처리는 변경 없음).
 
+**2026-11-19 PR #17 리뷰 반영(정착 중단 복구, chatgpt-codex-connector comment 4624337778, 대상 `57ef209` `src/baton/orchestrator.py`, P2, 사용자 결정 "수정 후 병합"):** 로컬 정착(`Orchestrator.finish`, `_run`·`_verify` 공통)의 lease를 남기는 1단계도 Orca 경로처럼 같은 쓰기에 `settlement_pending=true`를 기록하고, 2단계(`store_wiki_outcome`)는 Wiki 결과와 `settlement_pending=false`를 lease 해제와 같은 쓰기로 저장한다(축약 fallback `_settle_unrecordable`도 false). 1단계 뒤 워커 프로세스가 종료되면 Task는 REVIEW_REQUIRED(또는 COMPLETED)·lease·pending으로 남는다. 기존 복구 진입점 `ManagedStore.ready(recover=True)`(CLI `resume --recover-running`)는 상태 검사(`task_cannot_resume`) 전에 로컬 pending 행을 알아보고 `Orchestrator.recover_settlement`로 2단계만 마친다. task 실행 잠금이 잡혀 있으면 `worker_busy`, 워커 pid가 살아 있으면 `worker_still_alive`로 거부한다(PID 재사용은 보수적으로 살아 있음). 저장된 검증 결과는 그대로 두고 Wiki는 Orca 2단계와 같은 규칙으로 다시 평가한다. 이벤트 ID가 저장된 `changed_files`·`validation`으로 정해지므로 이미 기록된 이벤트는 다시 읽을 뿐 중복 기록하지 않는다. 크기 거부는 9·10차 규칙(축약, 그것도 거부되면 통과 없음 `wiki_outcome_unrecordable`)을 그대로 쓴다. `recover` 없는 `ready`는 `recovery_confirmation_required`다. 복구는 Task를 READY로 만들지 않고 정착 상태를 유지한다. 제어가 1단계를 PAUSED/CANCELLED로 바꾼 행은 Wiki 없이 pending·lease만 해제한다. 살아 있는 워커에서 1단계 뒤 예외가 나면 기존처럼 통과 없이(BLOCKED/INTERRUPTED) 끝나며 pending도 false로 지운다. 따라서 불변식 "`settlement_pending=true`이면 lease가 있다"가 로컬 경로에도 성립한다. Orca 행은 이 분기에 들어가지 않는다(`orca_settlement_required`·종료 이벤트 재처리 유지). 한계: 죽은 시도의 metrics `end_attempt`는 기록되지 않고 lifecycle 관측만 남는다.
+
 ## CI-VTIER-001-REQ-03 실행 경로
 
 ### CI-VTIER-001-AC-05

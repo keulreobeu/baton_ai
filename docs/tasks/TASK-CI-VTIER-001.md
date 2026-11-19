@@ -3,7 +3,7 @@
 ```toml
 kind = "task"
 id = "TASK-CI-VTIER-001"
-status = "verified"
+status = "in_progress"
 owner = "Claude"
 level = 3
 specs = ["docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md"]
@@ -34,9 +34,15 @@ errors = 0
 skipped = 0
 expected_failures = 0
 
+[[verification]]
+command = "PR #17 review fix (local settlement crash recovery): code changed after official V3 4187253; V2 only, official V3 pending review"
+result = "not_run"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#pr-17-리뷰-반영정착-중단-복구--2026-11-19"
+acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+
 [independent_review]
-result = "passed"
-evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-승격--2026-11-19"
+result = "not_run"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#pr-17-리뷰-반영정착-중단-복구--2026-11-19"
 ```
 
 A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화"): 로컬 V1/V2 실사용 활성화. B Task(Bazel-diff 사전 연구)는 별도이며 이 Task 파일을 수정하지 않는다.
@@ -213,3 +219,12 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - 같은 job의 "Base install without the gms" 단계(30 tests)는 선택 의존성 `gms` 미설치 확인 단계이며 공식 V3 suite(777, skip 0)와 별개다.
 - `3675fb8` 이후와 이 승격 커밋은 Task·current 문서만 바꾼다. 이 커밋 SHA의 원격 CI(ready)는 커밋 뒤 확인하며 Task에 다시 커밋하지 않고 보고로 넘긴다. 결과가 실패하면 verified를 유지하지 않고 병합하지 않는다.
 - `offline_suite` 재사용은 분리·비활성(`reuse_decision=not_configured`, passed 아님)이며 재사용 절감은 주장하지 않는다.
+
+## PR #17 리뷰 반영(정착 중단 복구) — 2026-11-19
+
+- 지적: PR #17 리뷰 스레드(chatgpt-codex-connector, comment id 4624337778, `src/baton/orchestrator.py:315` at `57ef209`, P2). 로컬 워커 프로세스가 1단계 정착 쓰기 뒤, Wiki 결과가 lease를 해제하기 전에 종료되면 Task가 REVIEW_REQUIRED·lease 보유로 남는다. Orca 경로와 달리 재개 가능한 pending 정착 기록이 없고, `ManagedStore.ready(recover=True)`는 죽은 워커 복구 전에 `task_cannot_resume`로, 검증은 `worker_busy`로 거부한다. 사용자 결정: "수정 후 병합"(코디네이터 전달).
+- 수정(Spec CI-VTIER-001 "2026-11-19 PR #17 리뷰 반영(정착 중단 복구)" 문단): `Orchestrator.finish` 1단계가 `settlement_pending=true`를 같은 쓰기에 기록, 2단계는 기존 `store_wiki_outcome`으로 Wiki 결과·`settlement_pending=false`·lease 해제를 한 쓰기로 저장(새 helper `_finish_settlement`는 기존 2단계 코드를 옮긴 것, 축약 fallback `_settle_unrecordable`도 false). 기존 복구 진입점 `ManagedStore.ready(recover=True)`(CLI `resume --recover-running`)가 로컬 pending 행을 상태 검사 전에 `Orchestrator.recover_settlement`로 넘긴다: task 실행 잠금(잡혀 있으면 `worker_busy`), pid 생존 시 `worker_still_alive`, 저장된 검증 결과 보존, Wiki 재평가(저장된 결과로 정해진 이벤트 ID라 중복 기록 없음, Orca 2단계와 같은 규칙), 크기 거부는 9·10차 축약·fail-closed, pending·lease·pid 해제. `recover` 없는 `ready`는 `recovery_confirmation_required`. 살아 있는 워커의 1단계 뒤 예외는 기존처럼 통과 없이 끝나며 pending을 false로 지운다. Orca 경로·제어 경로·크기 거부 fallback 규칙은 바꾸지 않았다. 새 상태 체계 없음.
+- 회귀: `FlowRuntimeTests.test_interrupted_second_settlement_step_resumes_and_fallback_skips_it`(AC-04 기존 참조)에서 호출하는 `check_dead_local_worker_between_settlement_steps_is_recovered`. 실제 자식 프로세스가 run(stage in_progress)·checkpoint verify의 1단계 뒤 Wiki 평가에서 `os._exit(17)`로 종료하고, 부모가 pending·lease 잔존, `verify` `worker_busy`, `ready()` `recovery_confirmation_required`, pid 생존 시 `worker_still_alive`, 잠금 보유 시 `worker_busy`(행 불변), `ready(recover=True)` 뒤 REVIEW_REQUIRED·lease/pid 없음·검증 결과 보존·Wiki 1회 평가(저장된 `changed_files`·`validation`)·pending false, 재호출은 `task_cannot_resume`(Wiki 재평가 없음)을 확인한다. 살아 있는 워커의 Wiki 예외는 BLOCKED·통과 없음·pending false. traceability AC-04는 테스트 참조 30개 상한이라 새 symbol을 넣지 않고 기존 참조 테스트에서 `check_*` 함수를 호출했다(CI-OPT AC-12와 같은 방식).
+- 수정 전 확인: `57ef209` 임시 worktree에 새 테스트를 넣어 실행하면 실패(`settlement_pending` 기록 없음). 같은 자식 프로세스 종료 직후 probe로 run·verify 두 경로 모두 상태 REVIEW_REQUIRED·lease 보유, `ready(recover=True)` → `task_cannot_resume`, `verify` → `worker_busy`를 재현했다(지적의 두 오류).
+- Task 상태: `verified` → `in_progress`. 근거: verified 증거(공식 로컬 V3 `4187253`, 원격 CI `3675fb8`, 11~13차 독립 검토)는 이번 코드 변경 전 트리에 대한 것이다. `docs/sdd.md`(필수 검증 미실행이면 in_progress/blocked, V1/V2는 완료 상태를 올리지 않음)와 AGENTS 검증 사다리(같은 SHA·이전 증거로 재사용하지 않음, merge에는 유효한 V3 필요)에 따라 새 코드에는 유효한 V3·L3 독립 검토가 없다. 그래서 전체 AC 마지막 기록을 `not_run` 기록으로 무효화하고 `independent_review`도 `not_run`으로 내렸다(이전 기록은 이력으로 보존). 재승격은 독립 검토·공식 V3·원격 CI 뒤 별도로 한다.
+- V2(작업 트리 = `57ef209` + 이 수정, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈(`test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability`·`test_readset`·`test_verify_environment`·`test_ci_workflow`·`test_sdd`) 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(917.1초), `PYTHONIOENCODING=utf-8` 371 OK(914.5초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T05:21:54Z~05:37:10Z, 시간은 단독 실측 아님). `test_readset`의 `ResourceWarning`은 기존과 동일. check_sdd `--base 762739f` PASS. 테스트 수가 직전 V2와 같은 371인 것은 새 회귀를 기존 테스트 안의 `check_*` 함수로 넣었기 때문이다. 공식 V3는 실행하지 않았다(독립 검토 뒤). push·PR 조작 없음. verified 아님.
