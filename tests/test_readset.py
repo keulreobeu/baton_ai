@@ -1463,6 +1463,62 @@ class ReadsetTests(unittest.TestCase):
         made.stop()
         self.assertEqual(made.as_dict()["aliases"], [])
         self.assertTrue(made.as_dict()["complete"], made.partial_samples)
+        self.check_short_name_spelling_is_no_alias(point)
+
+    def check_short_name_spelling_is_no_alias(self, point):
+        """Remote CI 2026-11-19 (run 44425214483: TEMP under C:\\Users\\RUNNER~1): the run's
+        own directory created and removed under an 8.3 short spelling of the repository is
+        no alias and the read set stays complete; an input read through a link that existed
+        before the run under that spelling keeps its alias. Without 8.3 names on the volume
+        the same decision is checked through a substituted expansion."""
+        long_dir = Path(self.temp.name) / "long-directory-name-r83"
+        (long_dir / "repo").mkdir(parents=True)
+        outside = Path(self.temp.name) / "outside-r83"
+        outside.mkdir()
+        (outside / "in.cfg").write_text("input", encoding="utf-8")
+        short = long_dir
+        if os.name == "nt":
+            import ctypes
+            buffer = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.kernel32.GetShortPathNameW(str(long_dir), buffer, 1024):
+                short = Path(buffer.value)
+        root = short / "repo"
+        point(root / "link-r83", outside)
+        if os.path.normcase(str(short)) == os.path.normcase(str(long_dir)):
+            # No 8.3 name here: a fake short spelling that expands to the real path.
+            fake = str(long_dir.parent / "NOLONG~9")  # no real short name can collide
+            def expand(path):
+                return str(long_dir) + path[len(fake):] if os.path.normcase(path).startswith(os.path.normcase(fake)) else path
+            root = Path(fake) / "repo"
+            rec = readset.Recorder(long_dir / "repo")
+            self.addCleanup(rec.stop)
+            canonical = readset._canonical(long_dir / "repo" / "own")
+            with patch.object(readset, "_long_name", expand):
+                self.assertIsNone(rec._alias_of(str(root / "own"), canonical))
+                self.assertTrue(rec._alias_of(str(long_dir / "repo" / "link-r83" / "in.cfg"),
+                                              readset._canonical(outside / "in.cfg")))
+            self.assertTrue(rec._alias_of(str(root / "own"), canonical))  # without the expansion
+            rec.stop()
+            return
+        rec = readset.Recorder(root)
+        self.addCleanup(rec.stop)
+        time.sleep(readset.CREATED_MARGIN_SECONDS * 2)
+        area = root / "own-area-r83"
+        area.mkdir()
+        (area / "out.cfg").write_text("own", encoding="utf-8")
+        self.assertEqual((area / "out.cfg").read_text(encoding="utf-8"), "own")
+        os.listdir(area)
+        (area / "out.cfg").unlink()
+        os.rmdir(area)
+        rec.stop()
+        self.assertEqual(rec.as_dict()["aliases"], [])
+        self.assertTrue(rec.as_dict()["complete"], rec.partial_samples)
+        reader = readset.Recorder(root)
+        self.addCleanup(reader.stop)
+        self.assertEqual((root / "link-r83" / "in.cfg").read_text(encoding="utf-8"), "input")
+        reader.stop()
+        self.assertEqual([os.path.normcase(a["target"]) for a in reader.as_dict()["aliases"]],
+                         [os.path.normcase(os.path.realpath(outside / "in.cfg"))])
 
     def check_object_ownership_and_attempt_snapshot(self):
         """CI-OPT-001 9th review R901/R902: ownership belongs to the file object. After the

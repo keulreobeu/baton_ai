@@ -129,6 +129,47 @@ def _real(value):
         return None
 
 
+_LONG = None
+
+
+def _long_name(path):
+    """Remote CI 2026-11-19 (TEMP under C:\\Users\\RUNNER~1): the absolute path with the
+    8.3 short names of its existing part expanded (GetLongPathNameW). Links are not
+    resolved, so a path through a symlink or junction still differs from its real target.
+    The path itself when it cannot be expanded (an alias is then kept: fail-closed)."""
+    global _LONG
+    if os.name != "nt" or "~" not in path:
+        return path
+    if _LONG is None:
+        try:
+            import ctypes
+            function = ctypes.WinDLL("kernel32", use_last_error=True).GetLongPathNameW
+            function.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong]
+            function.restype = ctypes.c_ulong
+            def expand(text):
+                size = function(text, None, 0)
+                if not size:
+                    return None
+                buffer = ctypes.create_unicode_buffer(size)
+                written = function(text, buffer, size)
+                return buffer.value if 0 < written < size else None
+            _LONG = expand
+        except (OSError, AttributeError):
+            _LONG = lambda text: None
+    head, tail = path, []
+    try:
+        while not os.path.lexists(head):
+            parent, name = os.path.split(head)
+            if parent == head or not name:
+                return path
+            tail.append(name)
+            head = parent
+        expanded = _LONG(head)
+    except (OSError, ValueError, TypeError):
+        return path
+    return path if expanded is None else os.path.join(expanded, *reversed(tail))
+
+
 def _canonical(value):
     """Comparison key: real path, case-folded on Windows."""
     result = _real(value)
@@ -665,6 +706,13 @@ class Recorder:
         key = os.path.normcase(observed) if os.name == "nt" else observed
         if key == canonical:
             return None
+        if os.name == "nt":
+            # Remote CI 2026-11-19: an 8.3 short spelling of the same path is no alias; a
+            # link on the path keeps it different from the real target (still an alias).
+            with self._quiet():
+                expanded = _long_name(observed)
+            if expanded != observed and os.path.normcase(expanded) == canonical:
+                return None
         target = _real(observed)
         return False if target is None else (observed, target)
 

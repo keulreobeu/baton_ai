@@ -1710,3 +1710,29 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 464 s) |
   | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 468 s) |
   `check_sdd.py --base 5c07aea` PASS. 공식 V3는 교차검토 뒤 1회 실행한다(이번에는 실행하지 않음). 원격 CI 미확인.
+
+## 원격 CI 8.3 짧은 경로 실패 수정 — 2026-11-19
+
+- 실패: PR #16 원격 CI run 44425214483(headSha `27312df`)의 Windows 3.11·3.12 두 job이 같은 1건으로 결정적으로 실패했다.
+  위치는 `tests.test_readset` `test_input_read_again_must_still_be_what_was_first_read`의 `check_every_exempt_object_and_link_is_kept`다.
+  실행이 직접 만든 `own-area-r1002`가 `C:\Users\RUNNER~1\…`(관측) → `C:\Users\runneradmin\…`(실제) 별칭으로 기록됐다.
+- 원인(로컬 재현): 러너 TEMP가 8.3 짧은 이름이다. 새 디렉터리를 만들면 "없음" 입력 판정(`_absent_chain`)이 별칭을 입력으로 남긴다.
+  `_alias_of`는 관측 경로와 realpath(긴 이름)가 다르면 링크가 없어도 별칭으로 봤다. 이 PC에서 8.3 이름이 있는 경로를 root로 두고 같은 결과를 재현했다.
+- 수정(`scripts/readset.py`): `_long_name`이 존재하는 부분의 짧은 이름만 `GetLongPathNameW`로 펼친다.
+  - 링크는 해석하지 않으므로 junction·symlink를 지나는 경로는 계속 별칭이다.
+  - 펼친 경로가 실제 경로와 같을 때만 별칭이 아니다. 펼치지 못하면 기존처럼 별칭을 남긴다(fail-closed).
+  - 링크 판정(`_links_on`, lstat·reparse tag)과 exempt 규칙은 바꾸지 않았다.
+- 회귀: 같은 AC-12 테스트에서 호출하는 `check_short_name_spelling_is_no_alias`(참조 수 변화 없음).
+  - 실제 8.3 경로(GetShortPathNameW)에 대해 다음을 확인한다.
+    - 자기 디렉터리를 만들고 지우는 동안 별칭 0, read set complete
+    - 실행 전에 있던 junction을 짧은 이름 경로로 지나 읽은 입력은 별칭 유지
+  - 8.3 이름이 없으면 skip하지 않고 대체 확장 함수로 `_alias_of` 단위 판정을 한다.
+  - 결과(수정 전 → 수정 후):
+    | 분기 | 수정 전 | 수정 후 |
+    | 실제 8.3 경로 | 실패(별칭 `TMPU0F~1\LONG-D~1\repo\own-area-r83`) | 통과 |
+    | 대체 분기(GetShortPathNameW 0 강제) | 실패 | 통과 |
+- V2(같은 영향 8모듈):
+  | 환경 | 결과 |
+  | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 469 s) |
+  | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 465 s) |
+  `check_sdd.py --base 5c07aea` PASS. 원격 CI 재실행은 push 뒤 확인 대상이다(미게시).
