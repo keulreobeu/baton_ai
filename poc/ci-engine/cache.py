@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ NAMES = {1: "01-repeat", 2: "02-docs", 3: "03-module", 4: "04-common", 5: "05-te
 MUTATION = {2: 4, 3: 1, 4: 2, 5: 3, 8: 3}
 WINDOWS = os.name == "nt"
 LABEL = re.compile(r":(test_[A-Za-z0-9_]+)$")
+CACHE_MESSAGE = re.compile(r"digest|corrupt|mismatch|cache|invalid|checksum", re.I)
 
 
 def write(path, value):
@@ -69,6 +71,30 @@ def outcomes(name):
         return None
 
 
+def messages(text):
+    """Cache-related Bazel diagnostics with local paths removed."""
+    found = []
+    for line in text.splitlines():
+        if CACHE_MESSAGE.search(line) and len(found) < 20:
+            line = re.sub(r"(?:[A-Za-z]:)?[/\\][^\s'\"]+", "<path>", line)
+            found.append(line[:300])
+    return found
+
+
+def digest(path):
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def materialized(names):
+    """Digests of each target's cached test outputs as found in bazel-testlogs."""
+    logs = ROOT / "bazel-testlogs"
+    return {name: {"outputs.zip": digest(logs / name / "test.outputs" / "outputs.zip"),
+                   "test.xml": digest(logs / name / "test.xml")} for name in names}
+
+
 def cached(target):
     return bool(target.get("cached_locally") or target.get("cached_remotely"))
 
@@ -84,10 +110,15 @@ class Bazel:
         self.events = temp / "events.jsonl"
         self.python = f"{sys.version_info.major}.{sys.version_info.minor}"
 
-    def call(self, args, env=None, timeout=3000):
+    def call(self, args, env=None, timeout=3000, log=None):
         try:
-            return subprocess.call([self.exe, *self.startup, *args], cwd=ROOT,
-                                   env=env or os.environ, timeout=timeout)
+            if log is None:
+                return subprocess.call([self.exe, *self.startup, *args], cwd=ROOT,
+                                       env=env or os.environ, timeout=timeout)
+            with log.open("wb") as output:
+                return subprocess.call([self.exe, *self.startup, *args], cwd=ROOT,
+                                       env=env or os.environ, timeout=timeout,
+                                       stdout=output, stderr=subprocess.STDOUT)
         except subprocess.TimeoutExpired:
             return 124
 
@@ -101,7 +132,11 @@ class Bazel:
         self.events.unlink(missing_ok=True)
         print(f"Running {label}", flush=True)
         started = perf_counter()
-        code = self.call(["test", "//...", *flags, f"--build_event_json_file={self.events}"], env)
+        log = self.events.with_suffix(".log")
+        code = self.call(["test", "//...", *flags, f"--build_event_json_file={self.events}"], env,
+                         log=log)
+        text = log.read_text(encoding="utf-8", errors="replace")
+        sys.stdout.write(text)
         seconds = perf_counter() - started
         targets = bep(self.events)
         ids = {name: outcomes(name) for name, row in targets.items() if "status" in row}
@@ -110,7 +145,8 @@ class Bazel:
                 "targets": targets, "ids": ids,
                 "cached": sum(cached(row) for row in targets.values()),
                 "executed": sum("status" in row and not cached(row) for row in targets.values()),
-                "not_run": sorted(name for name, row in targets.items() if "status" not in row)}
+                "not_run": sorted(name for name, row in targets.items() if "status" not in row),
+                "cache_messages": messages(text)}
 
     def clean(self):
         return self.call(["clean"])
@@ -192,6 +228,7 @@ def corrupt(folder, kind):
     files = sorted(path for path in (folder / kind).rglob("*")
                    if path.is_file() and path.stat().st_size)
     chosen = files[::4]
+    names = sorted(path.name for path in chosen)
     for path in chosen:
         data = bytearray(path.read_bytes())
         if kind == "cas":
@@ -199,7 +236,7 @@ def corrupt(folder, kind):
         else:
             del data[len(data) // 2:]
         path.write_bytes(bytes(data))
-    return {"kind": kind, "files": len(files), "corrupted": len(chosen)}
+    return {"kind": kind, "files": len(files), "corrupted": len(chosen), "names": names}
 
 
 class Case:
@@ -284,12 +321,27 @@ def scenario(index, case, temp):
     elif index == 9:
         case.bazel.clean()
         clean = case.run("disk-intact")
+        intact = materialized(clean["targets"])
         damage = []
         for kind in ("cas", "ac"):
             case.bazel.clean()
             damage.append(corrupt(case.bazel.disk, kind))
-            case.note(step="corrupt", **damage[-1])
-            damage.append(case.run(f"disk-{kind}-corrupt"))
+            names = set(damage[-1]["names"])
+            run = case.run(f"disk-{kind}-corrupt")
+            seen = materialized(run["targets"])
+            # CAS file names are SHA-256 digests, so an intact output whose
+            # digest was corrupted can be followed into the next materialization.
+            case.note(step="corrupt", kind=kind, files=damage[-1]["files"],
+                      corrupted=damage[-1]["corrupted"], outputs={
+                          name: {item: {"blob_corrupted": value in names,
+                                        "materialized": seen[name][item] is not None,
+                                        "same_as_intact": seen[name][item] == value,
+                                        "cached": cached(run["targets"][name])}
+                                 for item, value in files.items() if value}
+                          for name, files in intact.items()
+                          if name in seen and any(v in names or seen[name][k] != v
+                                                  for k, v in files.items() if v)})
+            damage.append(run)
         oracle = case.run("disk-oracle", cache="no", disk=False)
         for run in (clean, damage[1], damage[3]):
             case.result["judgements"].append(judge(run, oracle, warm))

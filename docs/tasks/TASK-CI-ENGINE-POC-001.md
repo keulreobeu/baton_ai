@@ -182,3 +182,12 @@ oracle run in the same job. Scenario 7 changes a client environment
 variable and the runner's system Git configuration, both undeclared to
 Bazel. No remote cache, remote execution or cross-run cache is used. The
 unpublished phase 3 report `a59f22d` is part of this first fast-forward.
+
+## Phase 4 second push checkpoint
+
+Run 44618013125 at `e1be9de` completed all 14 jobs. The undeclared system
+Git configuration produced cached results that differed from the uncached
+oracle on Ubuntu and Windows. After disk CAS corruption, five Ubuntu cache
+hits had unreadable result outputs. The second candidate runs only that
+scenario and records which corrupted blobs were materialized, plus
+path-redacted Bazel cache messages.
