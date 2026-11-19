@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-19 CI-VTIER 정착 중단 복구 범위 축소
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) in_progress: 사용자 결정(범위 축소)으로 명시 복구는 통과 없이 BLOCKED `settlement_interrupted`로 끝내고 재검증을 요구한다(Wiki 재평가 없음, blocking 참조 연결, 소유권 미확인 시 해제 안 함). 15차 R1501~R1503 반영. 고도화 복구는 제거·이력 보존, 후속 [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)(착수 전). 독립 검토·공식 V3·원격 CI 대기.
+
 ## 현재 작업 — 2026-11-19 CI-VTIER PR #17 리뷰 반영(정착 중단 복구)
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified → in_progress: PR #17 리뷰(P2, 로컬 정착 1단계 뒤 워커 종료 시 Task 고립) 수정으로 코드가 바뀌어 이전 verified 증거가 무효다. 로컬 1단계에 `settlement_pending` 기록, `resume --recover-running`이 죽은 워커의 2단계를 마친다. V2만 실행, 독립 검토·공식 V3·원격 CI 뒤 재승격.

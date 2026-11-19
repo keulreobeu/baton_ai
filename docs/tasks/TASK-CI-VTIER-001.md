@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md"]
 plan = "docs/plans/ci-vtier.md"
 adr = "docs/adr/ADR-CI-VTIER-001.md"
-scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "src/baton/managed.py", "src/baton/evidence.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json"]
+scope = ["scripts/ci_plan.py", "src/baton/managed_cli.py", "src/baton/orchestrator.py", "src/baton/runtime.py", "src/baton/managed.py", "src/baton/evidence.py", "tests/test_ci_plan.py", "tests/test_managed_harness.py", "tests/test_ci_workflow.py", "tests/test_flow_runtime.py", "AGENTS.md", "docs/sdd.md", "README.md", "docs/plans/ci-optimization.md", "docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md", "docs/plans/ci-vtier.md", "docs/adr/ADR-CI-VTIER-001.md", "docs/tasks/TASK-CI-VTIER-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json", "docs/tasks/TASK-SETTLE-RECOVERY-001.md"]
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
 
 [[verification]]
@@ -246,3 +246,32 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - 수정 전 확인: `9aa79e6` 임시 worktree에 새 테스트를 넣고 결함 구간별로 실행해 모두 실패했다. R1401 `task_cannot_resume`(`recovery_confirmation_required` 불일치 포함), R1402 `wiki_resolution_task_mismatch` 반복 오류, R1403 `('READY', None, False, True)`(READY·control 없음·lease 없음·pending true), R1404 Wiki 평가 호출(`no Wiki verification` 단언). R1401 실제 이전 버전: 자식 워커를 `57ef209` 소스로 실행해 만든 DB의 run·verify 행을 새 코드가 복구하는 것을 같은 R1401 구간으로 확인했다(임시 worktree, 테스트 파일에는 넣지 않음).
 - Task 상태는 `in_progress` 유지(전체 AC `not_run` 기록·독립 검토 `not_run`).
 - V2(작업 트리 = `9aa79e6` + 이 수정, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(910.8초), `PYTHONIOENCODING=utf-8` 371 OK(910.4초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T06:00:38Z~06:15:50Z, 단독 실측 아님). check_sdd `--base 762739f` PASS. 공식 V3·push 없음. verified 아님.
+
+## 정착 중단 복구 범위 축소(사용자 결정, 15차 반영) — 2026-11-19
+
+- 결정: 사용자 결정(2026-11-19, 코디네이터 전달). 설계 메모 `D:/baton_ai/.local_runtime/handoffs/research/CI-VTIER-RECOVERY-REDUCE-20261119.md`의 권고(복구 결과 BLOCKED, Spec revision 1 유지, blocking 참조 연결)와 B안(고도화 복구는 코드에서 제거, 이력 보존)을 확정했다. 복구 책임은 안전한 종료와 재검증 가능한 상태로 전환까지다. 위험 등급 L3 유지. Spec "2026-11-19 사용자 결정: 정착 중단 복구 범위 축소" 문단, ADR Amendment 2026-11-19.
+- 15차 검토(Codex 독립 확인, 대상 `2de9e5b`) FAIL P1 3: R1501(Orca Task의 로컬 checkpoint 검증 중단 시 복구 주체 오판), R1502(HarnessError 외 영구 Wiki 입력 오류로 고립), R1503(기존 blocking Wiki 이벤트가 복구에서 빠져 승인 통과). 보고서: `C:/Users/SSAFY/AppData/Local/Temp/baton-ci-vtier-r15-review/TASK-CI-VTIER-001-review15.md`, 14차: `C:/Users/SSAFY/AppData/Local/Temp/baton-ci-vtier-r14-review/TASK-CI-VTIER-001-review14.md`.
+- 구현:
+  - `orchestrator.finish`: 1단계에 `settlement_owner="local"`, `settlement_lease` 기록.
+  - `recover_settlement`·`_end_interrupted`: 잠금·pid 확인 뒤 한 쓰기로 BLOCKED `settlement_interrupted`, 통과·상태 없음, 결정적 이벤트 ID blocking 참조, pending·lease·pid(·Orca author 슬롯) 해제, `settlement_recovered` 이벤트.
+  - `managed.interrupted_local_settlement`·`local_settlement_lease`: lease 주체로 판별.
+  - `ready`: 한 트랜잭션 판단 유지, 거부 시 `refuse_recovery`가 `settlement_recovery_refused` 이벤트를 남긴다.
+  - `runtime._finish_author_settlement`·`_settle_unstarted_control`: 로컬 소유 가드.
+- 제거(B안): `_finish_settlement`의 `recovering` 분기와 `*_unavailable` 분류, `_legacy_first_step`, 복구의 HEAD·매니페스트 비교와 Wiki 재평가, `_settle_no_pass`, 사유 `settlement_unverifiable`·`wiki_assessment_failed`. 보존: 커밋 `9aa79e6`·`2de9e5b`와 그 시점 회귀(같은 이름 `check_*`의 당시 기대값), 위 메모·검토 보고서. 후속: [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)(착수 전, 자동 착수 금지, PID 재사용·`end_attempt` 포함).
+- 회귀(AC-04 상한 30이라 기존 참조 `FlowRuntimeTests.test_interrupted_second_settlement_step_resumes_and_fallback_skips_it`의 `check_*`, 공통 단언 `assert_interrupted_settlement`):
+  - I1(통과 생성 없음)·I2(검사 목록·매니페스트·`official_v3_unresolved` 보존)·I4(assess 0): `check_dead_local_worker_between_settlement_steps_is_recovered`와 모든 복구 구간(`assert_interrupted_settlement`, `never` patch).
+  - I3(소유권 불확실 시 해제 없음): 같은 함수. task 잠금·worktree 잠금 `worker_busy`, pid 생존 `worker_still_alive`, pid 없음 `worker_ownership_unknown`, 행 불변. 거부 보고는 CLI `resume`(플래그 없음) 종료 코드 2·오류 JSON, `settlement_recovery_refused` 이벤트 사유 목록.
+  - I4(새 Wiki 이벤트 0)·I5(실제 승인 차단): `check_recovery_of_legacy_refused_raced_or_changed_settlements`의 R1503 구간. 실제 Wiki가 1단계에서 blocking 이벤트를 기록한 뒤 자식 종료, 정책 파일이 없는 동안 복구한다. Wiki 이벤트 목록 불변·참조 ID 일치를 확인한다. `approve`는 `approval_requires_validated_result`다. 재검증(`validate --stage checkpoint`)은 같은 이벤트 ID로 기존 blocking 판단을 다시 읽는다. 실제 증거 기록(`attest`) 뒤 `approve`는 `wiki_review_required_before_completion`이다.
+  - R1501: 같은 함수. Orca author 정착 뒤 로컬 checkpoint 자식 종료. 이전 종료 이벤트 재생은 행 불변, `resume --recover-running`은 BLOCKED, `cancel`은 CANCELLED, 통과 없음, author 슬롯 미보유.
+  - R1502·14차 R1402: 깨진 Wiki 설정(`connection.json` = `{`)에서 CLI `resume --recover-running`이 BLOCKED(종료 코드 3), cancel 요청 시 CANCELLED(0).
+  - R1401(이전 버전 행·미증명 행), R1403(경쟁 주입), R1404(트리 변경): 같은 fail-closed.
+  - 살아 있는 워커의 Wiki 예외(BLOCKED·pending false), 정상·제어·크기 거부·Orca 회귀는 그대로다.
+- 수정 전 대조(임시 worktree에 새 테스트를 넣어 구간별 실행):
+  - `2de9e5b`: 모든 구간 실패. 원 지적·R1501은 표시 필드 없음. R1401은 `settlement_unverifiable`·Wiki 호출. R1402/R1502는 CLI가 `invalid_input_or_storage`(종료 2)로 고립. R1403은 pending 잔존. R1404는 `validation_state_changed`. R1503은 복구 중 Wiki 호출.
+  - 같은 커밋 동작 probe:
+    - R1501: 이전 종료 이벤트 재생이 트리 변경 뒤 로컬 lease를 Orca로 정착(REVIEW_REQUIRED·통과 true). `resume`은 `task_cannot_resume`, cancel은 CANCELLED에 통과 true 잔존.
+    - R1502: CLI 오류 JSON `invalid_input_or_storage`(종료 2), cancel 뒤에도 같다.
+    - R1503: 복구가 `SKIP wiki_policy_not_enabled`·통과 true를 기록했고, 실제 증거 뒤 `approve`가 COMPLETED.
+  - `57ef209`: 원 지적·R1401·R1404·R1503 구간이 `task_cannot_resume`, R1403은 `('READY', None, True, True)`, R1501은 표시 없음, R1502는 CLI 오류.
+- Task 상태는 `in_progress` 유지(전체 AC `not_run`·독립 검토 `not_run`). 공식 V3·push 없음.
+- V2(작업 트리 = `2de9e5b` + 이 변경, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음): 9모듈 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(981.8초), `PYTHONIOENCODING=utf-8` 371 OK(982.5초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T06:57:31Z~07:13:55Z, 단독 실측 아님). check_sdd `--base 762739f` PASS. 공식 V3·push 없음. verified 아님.

@@ -156,14 +156,30 @@ def legacy_official_v3_failed(checks):
     return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
 
 
+RESUME_REFUSED = TERMINAL | {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}
+
+
+def local_settlement_lease(result, lease):
+    """15th review R1501: the pending first step is this local lease's own (not an Orca author's)."""
+    return bool(lease) and result.get("settlement_owner") == "local" and result.get("settlement_lease") == lease
+
+
 def interrupted_local_settlement(state, lease, result, body):
-    """A local row whose worker settled a state while holding the lease (the first settlement
-    step, PR #17 review): marked pending, or, stored by an earlier version without the mark
-    (14th review R1401), a lease-held state that a plain resume refuses. Orca rows settle by
-    their end event and never take this path."""
-    return (bool(lease) and body["execution"].get("runtime") != "orca"
-            and (result.get("settlement_pending") is True
-                 or state in TERMINAL or state in {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}))
+    """A row whose local worker settled a state while holding the lease (the first settlement
+    step, PR #17 review), routed by the owner of the current lease, not by the Task's runtime
+    setting (15th review R1501): the marked local first step, also on an Orca Task (an operator's
+    local validation); on a local Task also an earlier version's row without the mark (a
+    lease-held state a plain resume refuses, 14th review R1401); on an Orca Task an earlier
+    version's lease-held settled state over a settled author binding with no pending mark. Every
+    other Orca row settles by its end event (an unmarked pending first step is the author's)."""
+    if not lease:
+        return False
+    if local_settlement_lease(result, lease):
+        return True
+    if body["execution"].get("runtime") == "orca":
+        return (result.get("settlement_pending") is not True and state in RESUME_REFUSED
+                and (result.get("runtime") or {}).get("settled") is True)
+    return result.get("settlement_pending") is True or state in RESUME_REFUSED
 
 
 class ManagedStore:
@@ -365,8 +381,6 @@ class ManagedStore:
             # no lease).
             settle = not automatic and interrupted_local_settlement(r["state"], r["lease"], json.loads(r["result"]),
                                                                     json.loads(r["body"]))
-            if settle and not recover:
-                raise HarnessError("recovery_confirmation_required")
             if not settle:
                 if r["state"] in TERMINAL or r["state"] in {"REVIEW_REQUIRED", "WAITING_FOR_APPROVAL"}:
                     raise HarnessError("task_cannot_resume")
@@ -394,13 +408,20 @@ class ManagedStore:
                 c.execute("UPDATE managed_tasks SET state='READY',lease=NULL,pid=NULL,control=NULL WHERE id=?", (task,))
                 self.event(c, task, "READY", {"recovered": recover})
         if settle:
-            # PR #17 review / 14th review R1401: a local worker that died between the two
-            # settlement steps (also one stored by an earlier version without the pending
-            # mark) left its settled state with the lease held. Recovery finishes or fails
-            # closed that settlement; it does not make the Task READY.
+            # PR #17 review (reduced recovery, user decision 2026-11-19): a local worker that
+            # died between the two settlement steps left its settled state with the lease held.
+            # Recovery ends it with no pass for a new validation; it does not make the Task READY.
+            if not recover:
+                self.refuse_recovery(task, "recovery_confirmation_required")
+                raise HarnessError("recovery_confirmation_required")
             from .orchestrator import Orchestrator
             return Orchestrator(self, providers={}).recover_settlement(task)
         return self.observe_idle_state(task)
+
+    def refuse_recovery(self, task, reason):
+        """A refused settlement recovery leaves the row unchanged and says why (event)."""
+        with self.tx() as c:
+            self.event(c, task, "settlement_recovery_refused", {"reason": reason})
 
     def configure(self, task, *, priority=None, provider=None):
         with self.tx() as c:

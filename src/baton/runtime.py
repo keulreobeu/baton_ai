@@ -348,6 +348,11 @@ def _request_stop(store, task_id, key, client):
         pass
 
 
+def local_settlement_lease(result, lease):
+    from .managed import local_settlement_lease as owned
+    return owned(result, lease)
+
+
 def _settle_unstarted_control(store, task_id):
     """Lock release + pre-submit journal proves no worker-start is in flight."""
     try:
@@ -357,7 +362,8 @@ def _settle_unstarted_control(store, task_id):
             final = "CANCELLED" if row["control"] == "cancel" else "PAUSED"
             for key, role in (("runtime", "author"), ("review_runtime", "reviewer")):
                 binding = row["result"].get(key, {})
-                if key == "runtime" and row["lease"] and row["result"].get("settlement_pending") is True:
+                local = local_settlement_lease(row["result"], row["lease"])
+                if key == "runtime" and row["lease"] and row["result"].get("settlement_pending") is True and not local:
                     # CI-VTIER-001 7th review R701: a stored passing settlement whose second
                     # step failed is completed (the control then pauses/cancels a valid
                     # result), never replaced by a pre-start stop. If the step fails again,
@@ -380,7 +386,10 @@ def _settle_unstarted_control(store, task_id):
                 if key == "runtime" and row["lease"]:
                     if binding.get("settled") and binding.get("attempt") == row["attempt"]:
                         settled = binding  # A local validation controller, not a new remote attempt.
-                    _settle_author(store, task_id, row["lease"], final, {"runtime": settled})
+                    # 15th review R1501: a local validation's pending first step ends here with no
+                    # pass (the control decides), its pending mark cleared with the lease.
+                    _settle_author(store, task_id, row["lease"], final,
+                                   {"runtime": settled, **({"settlement_pending": False} if local else {})})
                 elif key == "review_runtime":
                     _save_binding(store, task_id, key, settled, binding, final_state=final)
                 _reserve_slot(store, task_id, role, row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
@@ -726,7 +735,8 @@ def _finish_author_settlement(store, task_id, lease):
     from .wiki_cli import assess
     row = store.get(task_id)
     result = row["result"]
-    if row["lease"] != lease or result.get("settlement_pending") is not True:
+    if row["lease"] != lease or result.get("settlement_pending") is not True or local_settlement_lease(result, lease):
+        # 15th review R1501: a local lease's pending step is never settled by an Orca end event.
         return row
     wiki = (assess(store, task_id, {"changed_files": result.get("changed_files"), "validation": result.get("validation")})
             if row["state"] == "REVIEW_REQUIRED" and result.get("validation_passed") is True else None)

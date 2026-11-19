@@ -268,19 +268,23 @@ from baton.orchestrator import Orchestrator
 state, root, name, mode, checks = sys.argv[1:6]
 store = ManagedStore(Path(state), Path(root))
 checks = Path(checks).read_text(encoding="utf-8")
-if sys.argv[6:] == ["legacy"]:
-    # The first step as an earlier version (57ef209) stored it: no settlement_pending mark.
+if "legacy" in sys.argv[6:]:
+    # The first step as an earlier version (57ef209) stored it: no settlement mark.
     original = store.update
     def update(task, lease, state, **kwargs):
         if kwargs.get("headroom") and (kwargs.get("result") or {}).get("settlement_pending") is True:
-            kwargs["result"] = {k: v for k, v in kwargs["result"].items() if k != "settlement_pending"}
+            kwargs["result"] = {k: v for k, v in kwargs["result"].items()
+                                if k not in {"settlement_pending", "settlement_owner", "settlement_lease"}}
         return original(task, lease, state, **kwargs)
     store.update = update
 class Author:
     def execute(self, task, context, tree, stop):
         (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
         return ExecutionResult()
+from baton.wiki_cli import assess as real_assess
 def die(*args, **kwargs):
+    if "recorded" in sys.argv[6:]:
+        real_assess(*args, **kwargs)  # The Wiki event is stored, then the process ends.
     os._exit(17)  # The process ends between the stored first step and the Wiki outcome.
 with patch.object(Orchestrator, "validate", lambda *a, **k: json.loads(checks)), patch("baton.wiki_cli.assess", die):
     if mode == "verify":
@@ -290,78 +294,153 @@ with patch.object(Orchestrator, "validate", lambda *a, **k: json.loads(checks)),
 os._exit(0)
 '''
 
-    def check_dead_local_worker_between_settlement_steps_is_recovered(self):
-        """PR #17 review (P2): a local worker process (run, checkpoint verify) that exits after the
-        stored first settlement step but before the Wiki outcome leaves a pending mark with the
-        lease; `resume --recover-running` (ManagedStore.ready(recover=True)) finishes that
-        settlement for a dead worker: validation result kept, Wiki outcome stored once, pending
-        mark, lease and pid released. Before the fix the Task was stranded (task_cannot_resume,
-        worker_busy). A live worker or a held task lock is not fenced, and a failure after the
-        first step in a live worker still ends with no pass and no pending mark."""
+    RECOVERY_CHECKS = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                        "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "",
+                        "stop_reason": None, "planner": None}]
+
+    def crash_local_settlement(self, name, mode, *, legacy=False, recorded=False, orca=None):
+        """Create `name` and end a real child worker (run, or checkpoint verify after a run) between
+        its two local settlement steps. `legacy` stores the first step without the settlement
+        mark (an earlier version), `recorded` lets the real Wiki record its event first, and
+        `orca` (a FakeOrca) makes it an Orca Task whose author settled before the local verify."""
         import os, sys, tempfile
         import baton
-        from baton.runtime import execution_lock
-        checks = [{**deepcopy(self.PASSING[0]), "planner": None}]
+        checks = deepcopy(self.RECOVERY_CHECKS)
         scripts = Path(tempfile.mkdtemp(dir=self.tmp.name))
         (scripts / "worker.py").write_text(self.CRASHING_LOCAL_WORKER, encoding="utf-8")
         (scripts / "checks.json").write_text(json.dumps(checks), encoding="utf-8")
         env = {**os.environ, "PYTHONPATH": str(Path(baton.__file__).resolve().parents[1])}
-        class Author:
-            def execute(_, task, context, tree, stop):
-                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
-                return ExecutionResult()
         skip = {"action": "SKIP", "reason": "first", "blocking": False}
-        wiki = {"event_id": "VALIDATED-" + "9" * 32, "action": "RECORD", "blocking": False}
+        if orca is not None:
+            self.orca(name)
+            row = Orchestrator(self.store, runtime_client=orca).run(name)
+            (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+            did = row["result"]["runtime"]["dispatch_id"]
+            orca.settle(did)
+            with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
+                    patch("baton.wiki_cli.assess", return_value=skip):
+                self.assertEqual(ingest(self.store, name, self.receipt(did), orca)["state"], "REVIEW_REQUIRED")
+        else:
+            body = deepcopy(self.body); body["task_id"] = name
+            self.store.create(body)
+            if mode == "verify":
+                class Author:
+                    def execute(_, task, context, tree, stop):
+                        (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                        return ExecutionResult()
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
+                        patch("baton.wiki_cli.assess", return_value=skip):
+                    self.assertEqual(Orchestrator(self.store, {"mock": Author()}).run(name)["state"], "REVIEW_REQUIRED")
+        extra = (["legacy"] if legacy else []) + (["recorded"] if recorded else [])
+        child = subprocess.run([sys.executable, "-X", "utf8", str(scripts / "worker.py"), str(self.store.directory),
+                                str(self.root), name, mode, str(scripts / "checks.json"), *extra],
+                               env=env, capture_output=True, timeout=120)
+        self.assertEqual(child.returncode, 17, child.stderr[-2000:])
+        row = self.store.get(name)
+        self.assertEqual((row["state"], bool(row["lease"]), row["result"]["validation_passed"]), ("REVIEW_REQUIRED", True, True))
+        return row
+
+    def recovery_events(self, name, kind):
+        import sqlite3
+        c = sqlite3.connect(self.store.path)
+        try:
+            return [json.loads(body) for (body,) in c.execute(
+                "SELECT body FROM managed_events WHERE task_id=? AND kind=? ORDER BY id", (name, kind))]
+        finally:
+            c.close()
+
+    def store_sql(self, statement, *values):
+        import sqlite3
+        c = sqlite3.connect(self.store.path)
+        try:
+            with c:
+                c.execute(statement, values)
+        finally:
+            c.close()
+
+    def assert_interrupted_settlement(self, row, stored, state="BLOCKED"):
+        """Reduced recovery (user decision 2026-11-19): no new pass (I1), the stored checks, manifest
+        and unresolved official V3 record kept (I2), the pending mark, lease and pid released."""
+        from baton.contracts import digest
+        result = row["result"]
+        self.assertEqual((row["state"], row["lease"], row["pid"]), (state, None, None))
+        self.assertEqual((result["validation_passed"], result["validation_status"]), (False, None))
+        self.assertIs(result["settlement_pending"], False)
+        self.assertEqual((result["validation"], result["changed_files"]), (stored["validation"], stored["changed_files"]))
+        self.assertEqual(result.get("official_v3_unresolved"), stored.get("official_v3_unresolved"))
+        if state == "BLOCKED":
+            self.assertEqual(result["reason"], "settlement_interrupted")
+            event = "VALIDATED-" + digest([row["id"], stored["changed_files"], stored["validation"]])[:32]
+            self.assertEqual((result["wiki"]["event_id"], result["wiki"]["blocking"]), (event, True))
+
+    def check_dead_local_worker_between_settlement_steps_is_recovered(self):
+        """PR #17 review (P2), reduced recovery (user decision 2026-11-19): a local worker process
+        (run, checkpoint verify) that exits after the stored first settlement step leaves a pending
+        mark owned by its lease; `resume --recover-running` ends it BLOCKED settlement_interrupted
+        with no pass (I1), the checks, manifest and unresolved V3 flag kept (I2), no Wiki call (I4)
+        and the pending mark, lease and pid released; a new validation then works. A held task or
+        worktree lock, a live pid or an unknown pid refuses it with the row unchanged (I3), and
+        every refusal is reported (CLI error and exit code, settlement_recovery_refused event)."""
+        import io
+        from baton.runtime import execution_lock
+        never = patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki in recovery"))
         for mode in ("run", "verify"):
             with self.subTest(mode=mode):
                 name = "LOCALDEAD" + mode.upper()
-                body = deepcopy(self.body); body["task_id"] = name
-                self.store.create(body)
-                if mode == "verify":
-                    with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
-                            patch("baton.wiki_cli.assess", return_value=skip):
-                        self.assertEqual(Orchestrator(self.store, {"mock": Author()}).run(name)["state"], "REVIEW_REQUIRED")
-                child = subprocess.run([sys.executable, "-X", "utf8", str(scripts / "worker.py"), str(self.store.directory),
-                                        str(self.root), name, mode, str(scripts / "checks.json")],
-                                       env=env, capture_output=True, timeout=120)
-                self.assertEqual(child.returncode, 17, child.stderr[-2000:])
-                row = self.store.get(name)
-                self.assertEqual(row["state"], "REVIEW_REQUIRED")
-                self.assertIsNotNone(row["lease"])
+                row = self.crash_local_settlement(name, mode)
                 stored = row["result"]
-                self.assertEqual((stored["settlement_pending"], stored["validation_passed"]), (True, True))
+                self.assertEqual((stored["settlement_pending"], stored["settlement_owner"], stored["settlement_lease"]),
+                                 (True, "local", row["lease"]))
+                # I2: an unresolved official V3 failure recorded on the row survives recovery.
+                stored["official_v3_unresolved"] = True
+                self.store_sql("UPDATE managed_tasks SET result=? WHERE id=?", json.dumps(stored), name)
                 with self.assertRaisesRegex(HarnessError, "worker_busy"):
                     Orchestrator(self.store, {}).verify(name)
-                with self.assertRaisesRegex(HarnessError, "recovery_confirmation_required"):
-                    self.store.ready(name)
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    code = main(["--state-dir", ".local_runtime/state", "resume", "--task", name], workspace=self.root)
+                self.assertEqual((code, json.loads(out.getvalue())), (2, {"status": "error", "error": "recovery_confirmation_required"}))
                 with patch("baton.isolation.process_alive", return_value=True), \
                         self.assertRaisesRegex(HarnessError, "worker_still_alive"):
                     self.store.ready(name, recover=True)
                 with execution_lock(self.store.root, "task", name), self.assertRaisesRegex(HarnessError, "worker_busy"):
                     self.store.ready(name, recover=True)
-                self.assertEqual(self.store.get(name)["result"], stored)
-                assessed = []
-                def assess(store, task, result):
-                    assessed.append((result["changed_files"], result["validation"]))
-                    return deepcopy(wiki)
-                with patch("baton.wiki_cli.assess", assess):
-                    row = self.store.ready(name, recover=True)
-                    with self.assertRaisesRegex(HarnessError, "task_cannot_resume"):
-                        self.store.ready(name, recover=True)
-                result = row["result"]
-                self.assertEqual((row["state"], row["lease"], row["pid"]), ("REVIEW_REQUIRED", None, None))
-                self.assertEqual(assessed, [(stored["changed_files"], stored["validation"])])
-                self.assertEqual((result["validation_passed"], result["validation"], result["validation_status"]),
-                                 (True, stored["validation"], stored["validation_status"]))
-                self.assertIs(result["settlement_pending"], False)
-                self.assertEqual(result["wiki"], wiki)
+                with execution_lock(self.store.root, "worktree", Path(row["worktree"]).resolve()), \
+                        self.assertRaisesRegex(HarnessError, "worker_busy"):
+                    self.store.ready(name, recover=True)
+                self.store_sql("UPDATE managed_tasks SET pid=NULL WHERE id=?", name)
+                with self.assertRaisesRegex(HarnessError, "worker_ownership_unknown"):
+                    self.store.ready(name, recover=True)
+                self.store_sql("UPDATE managed_tasks SET pid=? WHERE id=?", row["pid"], name)
+                current = self.store.get(name)
+                self.assertEqual((current["result"], current["lease"], current["pid"]), (stored, row["lease"], row["pid"]))
+                self.assertEqual([e["reason"] for e in self.recovery_events(name, "settlement_recovery_refused")],
+                                 ["recovery_confirmation_required", "worker_still_alive", "worker_busy", "worker_busy",
+                                  "worker_ownership_unknown"])
+                out = io.StringIO()
+                with never, redirect_stdout(out):
+                    code = main(["--state-dir", ".local_runtime/state", "resume", "--task", name, "--recover-running"],
+                                workspace=self.root)
+                self.assertEqual((code, json.loads(out.getvalue())["state"]), (3, "BLOCKED"))
+                self.assert_interrupted_settlement(self.store.get(name), stored)
+                self.assertEqual([e["reason"] for e in self.recovery_events(name, "settlement_recovered")],
+                                 ["settlement_interrupted"])
+                # The row can be validated again (the only way back to a pass).
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.RECOVERY_CHECKS)), \
+                        patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "again", "blocking": False}):
+                    again = Orchestrator(self.store, {}).verify(name, stage="checkpoint")
+                self.assertEqual((again["state"], again["result"]["validation_passed"]), ("REVIEW_REQUIRED", True))
                 self.store.control(name, "cancel")
         # A live worker whose Wiki step fails after the stored first step ends with no pass (as
         # before) and leaves no pending mark behind the released lease.
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
         name = "LOCALDEADLIVE"
         body = deepcopy(self.body); body["task_id"] = name
         self.store.create(body)
-        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.RECOVERY_CHECKS)), \
                 patch("baton.wiki_cli.assess", side_effect=HarnessError("wiki_event_id_conflict")):
             row = Orchestrator(self.store, {"mock": Author()}).run(name)
         self.assertEqual((row["state"], row["lease"]), ("BLOCKED", None))
@@ -369,73 +448,36 @@ os._exit(0)
         self.assertIs(row["result"]["settlement_pending"], False)
         self.store.control(name, "cancel")
 
-    def crash_local_settlement(self, name, mode, *, legacy=False):
-        """Create `name` and end a real child worker (run, or checkpoint verify after a run) between
-        its two local settlement steps; `legacy` stores the first step without the pending mark."""
-        import os, sys, tempfile
-        import baton
-        checks = [{**deepcopy(self.PASSING[0]), "planner": None}]
-        scripts = Path(tempfile.mkdtemp(dir=self.tmp.name))
-        (scripts / "worker.py").write_text(self.CRASHING_LOCAL_WORKER, encoding="utf-8")
-        (scripts / "checks.json").write_text(json.dumps(checks), encoding="utf-8")
-        env = {**os.environ, "PYTHONPATH": str(Path(baton.__file__).resolve().parents[1])}
-        body = deepcopy(self.body); body["task_id"] = name
-        self.store.create(body)
-        if mode == "verify":
-            class Author:
-                def execute(_, task, context, tree, stop):
-                    (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
-                    return ExecutionResult()
-            with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(checks)), \
-                    patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "first", "blocking": False}):
-                self.assertEqual(Orchestrator(self.store, {"mock": Author()}).run(name)["state"], "REVIEW_REQUIRED")
-        child = subprocess.run([sys.executable, "-X", "utf8", str(scripts / "worker.py"), str(self.store.directory),
-                                str(self.root), name, mode, str(scripts / "checks.json"), *(["legacy"] if legacy else [])],
-                               env=env, capture_output=True, timeout=120)
-        self.assertEqual(child.returncode, 17, child.stderr[-2000:])
-        row = self.store.get(name)
-        self.assertEqual((row["state"], bool(row["lease"]), row["result"]["validation_passed"]), ("REVIEW_REQUIRED", True, True))
-        return row
-
     def check_recovery_of_legacy_refused_raced_or_changed_settlements(self):
-        """CI-VTIER-001 14th review. R1401: a first step stored by an earlier version (no pending
-        mark) is recovered when its events prove it, and one they do not prove ends with no pass
-        and the lease released. R1402: a permanent Wiki refusal in recovery ends with no pass (a
-        requested cancel is applied); an unavailable Wiki keeps the row for a retry. R1403: a row
-        that becomes a pending settlement while resume runs is never made READY. R1404: a tree
-        changed since the checks is no pass and records no new Wiki verification."""
-        import sqlite3, sys, time
+        """CI-VTIER-001 14th/15th review under the reduced recovery. R1401: an earlier version's
+        stranded first step (also one its events cannot prove) ends with no pass. R1402/R1502: a
+        Wiki that refuses or cannot even be read is never opened by recovery; a requested cancel
+        applies. R1403: a row that becomes a pending settlement while resume runs is never made
+        READY. R1404: a tree changed since the checks gets no pass and no Wiki verification.
+        R1501: an operator's local validation on an Orca Task is recovered locally and never
+        settled by the author's old end event. R1503 (I5): a blocking Wiki verification the first
+        step recorded stays attached, so the real completion approval is refused."""
+        import io, sys, time
         from contextlib import contextmanager
         from baton.contracts import encode
-        wiki = {"event_id": "VALIDATED-" + "8" * 32, "action": "RECORD", "blocking": False}
-        never = patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki verification"))
+        from baton.wiki import Wiki
+        from baton.wiki_contracts import WIKI_DIR
+        from tests.test_flow_evidence import attest
+        never = patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki in recovery"))
         dead = int(subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
                                   capture_output=True, text=True, timeout=60).stdout)
-        def sql(statement, *values):
-            c = sqlite3.connect(self.store.path)
-            try:
-                with c:
-                    c.execute(statement, values)
-            finally:
-                c.close()
         # R1401: an earlier version's stranded first step (run, checkpoint verify).
         for mode in ("run", "verify"):
             with self.subTest(r1401=mode):
                 name = "LEGACY" + mode.upper()
                 stored = self.crash_local_settlement(name, mode, legacy=True)["result"]
-                self.assertIsNot(stored.get("settlement_pending"), True)
+                self.assertNotEqual(stored.get("settlement_lease"), self.store.get(name)["lease"])
                 with self.assertRaisesRegex(HarnessError, "recovery_confirmation_required"):
                     self.store.ready(name)
-                assessed = []
-                with patch("baton.wiki_cli.assess", lambda *a: assessed.append(1) or deepcopy(wiki)):
-                    row = self.store.ready(name, recover=True)
-                result = row["result"]
-                self.assertEqual((row["state"], row["lease"], row["pid"], assessed), ("REVIEW_REQUIRED", None, None, [1]))
-                self.assertEqual((result["validation_passed"], result["validation"], result["wiki"]),
-                                 (True, stored["validation"], wiki))
-                self.assertIs(result["settlement_pending"], False)
+                with never:
+                    self.assert_interrupted_settlement(self.store.ready(name, recover=True), stored)
                 self.store.control(name, "cancel")
-        # R1401: a lease-held settled row whose events do not prove a first step fails closed.
+        # R1401: a lease-held settled row its events do not prove ends the same way.
         name = "LEGACYUNPROVEN"
         body = deepcopy(self.body); body["task_id"] = name
         self.store.create(body)
@@ -443,40 +485,33 @@ os._exit(0)
             def execute(_, task, context, tree, stop):
                 (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
                 return ExecutionResult()
-        with patch.object(Orchestrator, "validate", lambda *a, **k: [{**deepcopy(self.PASSING[0]), "planner": None}]), \
-                patch("baton.wiki_cli.assess", return_value=wiki):
-            before = Orchestrator(self.store, {"mock": Author()}).run(name)["result"]
-        sql("UPDATE managed_tasks SET lease=?, pid=?, started=? WHERE id=?", "0" * 32, dead, time.time(), name)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.RECOVERY_CHECKS)), \
+                patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "x", "blocking": False}):
+            stored = Orchestrator(self.store, {"mock": Author()}).run(name)["result"]
+        self.store_sql("UPDATE managed_tasks SET lease=?, pid=?, started=? WHERE id=?", "0" * 32, dead, time.time(), name)
         with never:
-            row = self.store.ready(name, recover=True)
-        result = row["result"]
-        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "settlement_unverifiable"))
-        self.assertEqual((result["validation_passed"], result["validation_status"], result["validation"]),
-                         (False, None, before["validation"]))
-        self.assertIs(result["settlement_pending"], False)
+            self.assert_interrupted_settlement(self.store.ready(name, recover=True), stored)
         self.store.control(name, "cancel")
-        # R1402: unavailable Wiki stores are retried; a permanent refusal settles with no pass.
+        # R1402/R1502: a Wiki whose settings cannot be read (permanent, not a contract error) is
+        # never opened by recovery; a requested cancel decides the state.
+        policy = self.root / WIKI_DIR / "LIFECYCLE_POLICY.md"
+        policy.parent.mkdir(parents=True, exist_ok=True)
         for control in (None, "cancel"):
-            with self.subTest(r1402=control):
-                name = "WIKIREFUSED" + (control or "").upper()
+            with self.subTest(r1502=control):
+                name = "WIKIBROKEN" + (control or "").upper()
                 stored = self.crash_local_settlement(name, "run")["result"]
-                for transient in (HarnessError("wiki_storage_unavailable"), OSError("wiki down")):
-                    with patch("baton.wiki_cli.assess", side_effect=transient), self.assertRaises(type(transient)):
-                        self.store.ready(name, recover=True)
-                    self.assertEqual(self.store.get(name)["result"], stored)
+                policy.write_text("# Fixture Wiki policy\n", encoding="utf-8")
+                (policy.parent / "connection.json").write_text("{", encoding="utf-8")
                 if control:
                     self.store.control(name, control)
-                    self.assertEqual((self.store.get(name)["control"], bool(self.store.get(name)["lease"])), (control, True))
-                with patch("baton.wiki_cli.assess", side_effect=HarnessError("wiki_resolution_task_mismatch")):
-                    row = self.store.ready(name, recover=True)
-                result = row["result"]
-                self.assertEqual((row["state"], row["lease"], row["pid"]), ("CANCELLED" if control else "BLOCKED", None, None))
-                self.assertEqual((result["validation_passed"], result["validation_status"]), (False, None))
-                self.assertIs(result["settlement_pending"], False)
-                self.assertEqual(result["validation"], stored["validation"])
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    code = main(["--state-dir", ".local_runtime/state", "resume", "--task", name, "--recover-running"],
+                                workspace=self.root)
+                self.assertEqual((code, json.loads(out.getvalue())["state"]), (3 if not control else 0, "CANCELLED" if control else "BLOCKED"))
+                self.assert_interrupted_settlement(self.store.get(name), stored, "CANCELLED" if control else "BLOCKED")
+                (policy.parent / "connection.json").unlink(); policy.unlink()
                 if not control:
-                    self.assertEqual(result["reason"], "wiki_assessment_failed")
-                    self.assertEqual((result["wiki"]["blocking"], result["wiki"]["reason"]), (True, "wiki_resolution_task_mismatch"))
                     self.store.control(name, "cancel")
         # R1403: the row becomes a paused pending settlement between resume's read and its write.
         name = "RACE"
@@ -486,7 +521,8 @@ os._exit(0)
         def settle_pending():
             with real_tx() as c:
                 values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id=?", (name,)).fetchone()[0])
-                values.update(validation_passed=True, settlement_pending=True)
+                values.update(validation_passed=True, settlement_pending=True, settlement_owner="local",
+                              settlement_lease="1" * 32)
                 c.execute("UPDATE managed_tasks SET state='PAUSED', lease=?, pid=?, started=?, control='pause', result=? WHERE id=?",
                           ("1" * 32, dead, time.time(), encode(values), name))
         @contextmanager
@@ -503,20 +539,74 @@ os._exit(0)
                          ("PAUSED", "pause", True, True))
         with never:
             row = self.store.ready(name, recover=True)
-        self.assertEqual((row["state"], row["lease"], row["result"]["settlement_pending"]), ("PAUSED", None, False))
+        self.assertEqual((row["state"], row["lease"], row["result"]["settlement_pending"], row["result"]["validation_passed"]),
+                         ("PAUSED", None, False, False))
         self.store.control(name, "cancel")
         # R1404: the worktree changed after the checks and before recovery.
         name = "CHANGED"
         row = self.crash_local_settlement(name, "run")
-        stored = row["result"]
         (Path(row["worktree"]) / "src/value.py").write_text("value = 3\n", encoding="utf-8")
         with never:
+            self.assert_interrupted_settlement(self.store.ready(name, recover=True), row["result"])
+        self.store.control(name, "cancel")
+        # R1501: a local checkpoint validation of an Orca Task whose author already settled.
+        for how in ("resume", "cancel"):
+            with self.subTest(r1501=how):
+                name = "ORCALOCAL" + how.upper()
+                client = FakeOrca(self.root); client.workspaces = 100 if how == "resume" else 200  # own workspace paths
+                row = self.crash_local_settlement(name, "verify", orca=client)
+                stored = row["result"]
+                self.assertIs(stored["runtime"]["settled"], True)
+                self.assertEqual((stored["settlement_owner"], stored["settlement_lease"]), ("local", row["lease"]))
+                (Path(row["worktree"]) / "src/value.py").write_text("value = 4\n", encoding="utf-8")
+                with never:
+                    # The author's old end event never settles the local lease.
+                    ingest(self.store, name, self.receipt(row["result"]["runtime"]["dispatch_id"]), client)
+                current = self.store.get(name)
+                self.assertEqual((current["result"], current["lease"]), (stored, row["lease"]))
+                with never:
+                    row = (self.store.ready(name, recover=True) if how == "resume"
+                           else request_control(self.store, name, "cancel", client))
+                if how == "resume":
+                    self.assert_interrupted_settlement(row, stored)
+                else:
+                    self.assertEqual((row["state"], row["lease"], row["result"]["validation_passed"],
+                                      row["result"]["settlement_pending"]), ("CANCELLED", None, False, False))
+                self.assertFalse(self.slot_held(name))
+                if how == "resume":
+                    self.store.control(name, "cancel")
+        # R1503 (I4, I5): the first step's real Wiki verification is blocking; recovery runs while
+        # the policy file is missing, records nothing new and keeps the blocking reference, so the
+        # real completion approval is refused before and after a new validation.
+        policy.write_text("# Fixture Wiki policy\n", encoding="utf-8")
+        name = "WIKIBLOCKING"
+        stored = self.crash_local_settlement(name, "run", recorded=True)["result"]
+        wiki = Wiki(self.root)
+        def events():
+            import sqlite3
+            c = sqlite3.connect(wiki.database)
+            try:
+                return [r[0] for r in c.execute("SELECT id FROM events ORDER BY id")]
+            finally:
+                c.close()
+        recorded = events()
+        self.assertEqual(len(recorded), 1)
+        self.assertIs(wiki.decision(recorded[0])["blocking"], True)
+        policy.unlink()
+        with never:
             row = self.store.ready(name, recover=True)
-        result = row["result"]
-        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "validation_state_changed"))
-        self.assertEqual((result["validation_passed"], result["validation_status"], result["validation"]),
-                         (False, None, stored["validation"]))
-        self.assertIs(result["settlement_pending"], False)
+        policy.write_text("# Fixture Wiki policy\n", encoding="utf-8")
+        self.assert_interrupted_settlement(row, stored)
+        self.assertEqual((row["result"]["wiki"]["event_id"], events()), (recorded[0], recorded))
+        with self.assertRaisesRegex(HarnessError, "approval_requires_validated_result"):
+            self.store.approve(name, "operator")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.RECOVERY_CHECKS)):
+            again = Orchestrator(self.store, {}).verify(name, stage="checkpoint")
+        self.assertEqual((again["state"], again["result"]["validation_passed"], again["result"]["wiki"]["event_id"]),
+                         ("REVIEW_REQUIRED", True, recorded[0]))
+        attest(self.store, self.root, name)
+        with self.assertRaisesRegex(HarnessError, "wiki_review_required_before_completion"):
+            self.store.approve(name, "operator")
         self.store.control(name, "cancel")
 
     def test_control_after_a_failed_second_step_keeps_the_settled_result(self):
