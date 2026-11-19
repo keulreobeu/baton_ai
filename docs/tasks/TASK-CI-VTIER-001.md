@@ -339,3 +339,10 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - R1904 P3: HANDOFF 카드 next의 resolve에 사용자 결정 조건, 병합에 사용자 승인 조건을 적었다.
 - `6b95dd4` 공식 V3는 시작했다가(2026-11-19T13:28:37Z, 152/777 진행) 이 반영으로 후보가 바뀌어 중단했다. 증거 아님. 최종 후보 V3는 이 반영 커밋 기준으로 다시 실행한다.
 - Task 상태: `in_progress` 유지. verified·병합 아님.
+
+## 최종 후보 `73ac42e` 공식 로컬 V3와 push 전 커밋 점검 — 2026-11-19
+
+- **공식 로컬 V3(HEAD `73ac42e`, `verify_environment.py --base 762739f`, 재사용 off)**: **PASS**. check_sdd PASS(acs 71·tasks 15·changed_paths 32), 777 tests OK, failures 0, errors 0, skip 0, expected_failures 0, 종료 코드 0. 전체 2026-11-19T13:33:27Z~13:48:09Z(약 882초, 집 PC). `status` PASS, `verified_evidence_eligible` true, `suite_execution` executed, `reuse_decision` not_configured(passed 아님, 전체 실행), `live_provider_validation` NOT_RUN. 이 checkout의 `.venv`(Python 3.12.16), `PYTHONPATH=src`, 임시 `BATON_HOME`, `PYTHONUTF8`·`PYTHONIOENCODING` 미설정. 작업 트리 실행 전후 clean, HEAD 불변. 같은 시간에 다른 워커 없음(19차 검토 워커는 시작 전 종료).
+- 최종 후보 `73ac42e`의 `src/`·`tests/`는 `57ef209`과 같고, `522c3b9` 이후 변경은 문서 5개뿐이다. 이 V3 뒤의 이 기록 커밋도 이 Task 문서만 바꾼다.
+- **push 전 전체 커밋 점검**: `git fetch` 뒤 원격 `codex/ci-vtier-001`=`522c3b9`, `origin/main`=`9a74545`, fast-forward 가능. 원격 refs로 도달할 수 없는 커밋은 `6b95dd4`(18차 반영)·`73ac42e`(19차 반영)와 이 기록 커밋이며, 다른 로컬 branch의 미게시 커밋은 없다. 작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`. 순 변경은 문서 5개(HANDOFF·Spec·Task 2·current), `src/`·`tests/` 0줄. 추가 줄에서 홈 경로·계정 이메일·키·토큰·DB·로그·runtime 파일 0건(R1805 설명의 축약 표기 `D:/…`만). finding 없음.
+- 다음: 사용자 승인 뒤 push → 원격 CI 통과 확인 → verified 재승격 커밋 → push·승격 커밋 CI 확인 → 스레드 응답(resolve는 사용자 결정) → 병합(사용자 승인). Task 상태 `in_progress` 유지.
