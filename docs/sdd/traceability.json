@@ -46,9 +46,38 @@
     "docs/specs/CI-VTIER-001.md",
     "docs/plans/ci-vtier.md",
     "docs/adr/ADR-CI-VTIER-001.md",
-    "docs/tasks/TASK-CI-VTIER-001.md"
+    "docs/tasks/TASK-CI-VTIER-001.md",
+    "docs/specs/CI-ENGINE-POC-001.md",
+    "docs/plans/ci-engine-poc.md",
+    "docs/adr/ADR-CI-ENGINE-POC-001.md",
+    "docs/tasks/TASK-CI-ENGINE-POC-001.md"
   ],
   "features": [
+    {
+      "id": "CI-ENGINE-POC-001",
+      "spec": "docs/specs/CI-ENGINE-POC-001.md",
+      "requirements": [
+        {
+          "id": "CI-ENGINE-POC-001-REQ-01",
+          "acs": ["CI-ENGINE-POC-001-AC-01"]
+        }
+      ],
+      "acs": [
+        {
+          "id": "CI-ENGINE-POC-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_ci_workflow.py",
+              "symbol": "MethodologyDocsTests.test_ladder_terms_present_in_all_docs"
+            },
+            {
+              "file": "tests/test_gms_optional.py",
+              "symbol": "GMSOptionalTests.test_gms_provider_is_registered_only_with_the_flag"
+            }
+          ]
+        }
+      ]
+    },
     {
       "id": "SDD-001",
       "spec": "docs/specs/SDD-001.md",

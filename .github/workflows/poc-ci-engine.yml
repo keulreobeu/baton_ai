@@ -1,0 +1,39 @@
+name: BATON CI engine PoC
+on:
+  push:
+    branches: ['exp/ci-engine-poc-20261120']
+permissions:
+  contents: read
+concurrency:
+  group: ci-engine-poc-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ['3.12']
+        include:
+          - os: windows-latest
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install offline test dependencies
+        run: python -m pip install -e ".[gms]" -r poc/ci-engine/gms-requirements.txt pytest==8.4.2 pytest-xdist==3.8.0
+      - name: Run A, B and C and compare
+        run: python -X utf8 poc/ci-engine/run_ci.py poc/ci-engine/evidence/ci
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-engine-${{ matrix.os }}-py${{ matrix.python }}
+          path: poc/ci-engine/evidence/ci/
+          if-no-files-found: error

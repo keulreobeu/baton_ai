@@ -4,5 +4,8 @@ __pycache__/
 build/
 dist/
 .venv/
+/.venv-poc/
+/poc/ci-engine/evidence/
+/bazel-*
 .local_runtime/
 .codebase-memory/

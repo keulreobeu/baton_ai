@@ -1,0 +1,40 @@
+load("@rules_python//python:py_test.bzl", "py_test")
+
+filegroup(
+    name = "offline_inputs",
+    srcs = glob(
+        [
+            ".github/workflows/**",
+            "docs/**",
+            "scripts/**",
+            "skills/**",
+            "src/**",
+            "tests/**",
+            "tooling/**",
+        ],
+        exclude = ["**/__pycache__/**", "**/*.pyc", "**/*.egg-info/**"],
+    ) + [
+        ".gitattributes",
+        ".gitignore",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "pyproject.toml",
+    ],
+)
+
+[
+    py_test(
+        name = module.removeprefix("tests/").removesuffix(".py"),
+        srcs = [
+            "poc/ci-engine/bazel_entry.py",
+            "poc/ci-engine/collect_ids.py",
+        ],
+        args = [module.removesuffix(".py").replace("/", ".")],
+        data = [":offline_inputs"],
+        deps = ["@poc_pypi//cryptography"],
+        main = "poc/ci-engine/bazel_entry.py",
+        size = "large",
+    )
+    for module in glob(["tests/test*.py"])
+]

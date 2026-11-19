@@ -1,0 +1,8 @@
+startup --windows_enable_symlinks
+build --enable_runfiles
+build --lockfile_mode=off
+test --nocache_test_results
+test --test_output=errors
+# BATON fixtures spawn git and Python and exercise local files and loopback.
+test --test_strategy=local
+test --test_env=PYTHONUTF8=1
