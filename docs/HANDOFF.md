@@ -1,24 +1,26 @@
 <!-- BATON_RESUME_START -->
-# BATON 재개 — 2026-11-06
+# BATON 재개 — 2026-11-19 (CI-VTIER-001 체크포인트, 다른 PC 재개용)
 
 ```text
-repo: D:/baton_ai
-ref: main a061d39 기준 작성(PR #1~#7 병합 완료); 재개시 main HEAD 확인
-handoff: Claude → 다음 담당; 2026-11-06 병합 후 인계
-task/status: TASK-GMS-001 in_progress; TASK-FLOW-001/KAN-48 in_progress; 둘 다 verified 아님
-goal/order: TASK-PORT-001 완료 → TASK-PROFILE → 사용자 지시 후 집담 전환, POWER는 P0 마지막
-done: baton-flow·GMS main 병합, GMS 재승인 기록, GMS-001 Spec/Plan/ADR/Task, cryptography gms extra, 이중 게이트, 불확실 전송 보호, 독립 리뷰 지적 수정
-next: claude/port-review-fixes-20261106의 독립 재검토와 PR CI 확인; 남은 지적은 TASK-PORT-001 참조; 이후 TASK-PROFILE
-scope: 다음 작업의 Task scope를 먼저 확인
-checks: PR #2 CI 8개 PASS(5ee3169, Windows 최대 12분); fb42429 로컬 418개 PASS/skip1, cryptography 없이 315개 PASS/skip13; 모델·GMS 호출 0; docs/validation/gms-credentials.md
-pending: main e3275b6 push CI는 작성 시 진행 중; 드래프트 수정 재리뷰 없음; 실제 GMS·macOS 키체인·관리 화면 JS 미검증; Orca 실제 취소·Codex worker 미검증
-inputs: docs/specs/GMS-001.md; docs/validation/gms-credentials.md; docs/specs/FLOW-001.md
+repo: BATON 원격 저장소(origin), 작업 branch codex/ci-vtier-001(PR #17 ready·미병합)
+ref: main 9a74545(PR #16 CI-OPT-001 병합·verified). branch HEAD=재개 시 git fetch 뒤 git log -1로 확인(이 카드 자신의 SHA는 적지 않음). 코드 트리: src/·tests/ = 57ef209(532e034에서 복원), 그 뒤 커밋은 문서만
+handoff: 회사 PC Claude 워커 → 집 PC 코디네이터·워커; 2026-11-19 체크포인트
+task/status: TASK-CI-VTIER-001 verified(L3, 범위 조정 뒤 재승격); PR #17 ready·미병합
+goal/order: CI-VTIER-001(V1·V2 로컬 실사용) 검증 → PR #17 병합. 자동 정착 복구는 범위 제외(TASK-SETTLE-RECOVERY-001 착수 보류)
+done: 복구 코드 제외(532e034, 9aa79e6·2de9e5b·b16ba12·f790115 이력 보존), Spec/ADR superseded·남은 위험 기록, V2·check_sdd PASS; 공식 로컬 V3 PASS(HEAD 79258f2, 777 OK skip 0, eligible, reuse not_configured); 18차 독립 검토 PASS_WITH_FINDINGS(문서 지적 R1801~R1805, 반영 완료); 19차 Codex 독립 검토(6b95dd4) PASS_WITH_FINDINGS(문서 지적 R1901~R1904, 반영 완료); 체크포인트 522c3b9 원격 CI run 44493732498 success(체크포인트 CI이며 최종 후보 CI 아님)
+next: 승격 커밋 원격 CI 확인(실패 시 verified 유지 안 함·병합 안 함) → 스레드 응답(resolve는 사용자 결정) → 병합(사용자 승인) → 결과 기록·인계 → 정리
+scope: TASK-CI-VTIER-001 scope만; 다른 worktree·branch는 건드리지 않음
+checks: 최종 후보 공식 V3 73ac42e PASS(777 OK skip 0, 재사용 off); 원격 CI run 44537342217(cad9203) plan·3.11·3.12·gate success; 이전 체크포인트 V3 79258f2 PASS(상세: TASK-CI-VTIER-001 "verified 재승격" 절)
+pending: 승격 커밋 원격 CI 미확인; PR #17 리뷰 스레드 4624337778 미해결(남은 위험으로 응답, resolve는 사용자 결정)
+inputs: docs/tasks/TASK-CI-VTIER-001.md; docs/specs/CI-VTIER-001.md("2026-11-19 범위 조정"); docs/tasks/TASK-SETTLE-RECOVERY-001.md
 usage: unknown
-rules: AGENTS.md; DEFERRED_GMS 해제(사용자 직접 실행만, 에이전트의 실호출·키/잔액 조회 금지); GMS-001 Spec은 Claude 작성, 사용자가 본문 확인 여부 미확인; 등록·종료 보류; jipdam 읽기 전용
+rules: AGENTS.md; 실모델·GMS·스케줄러·전원 금지; force·amend·reset 금지; push·병합은 사용자 승인 범위만
 ```
 
-- 작업 위치와 스킬: [브랜치별 작업 위치](workspace-recovery-20261106.md), [스킬 목록](development-skills.md), [현재 환경](environment-20261106.md).
-- 아래는 당시 기록이다. `C:/Users/SSAFY/Desktop/*`는 이전 PC 경로다. 현재 경로는 `D:/baton_ai`, `D:/jipdam`.
+- 다른 PC 복원: `git fetch origin` → `git switch codex/ci-vtier-001`(없으면 `git switch -c codex/ci-vtier-001 --track origin/codex/ci-vtier-001`) → `git status`·`git log -3`로 HEAD 확인 → `scripts/setup-environment.ps1`로 이 checkout의 venv 준비, `. ./scripts/enter-environment.ps1` → 테스트는 `PYTHONPATH=src`, 임시 `BATON_HOME`.
+- 보류 결정(바꾸려면 사용자 결정): `offline_suite` 재사용 기능 분리·비활성(기본 off) 유지; CI-OPT R2201 보류; SQLite A안 유지(B안 보류); Bazel/외부 엔진 검토 결과는 현행 유지, V2 후보 공급자 bazel-diff 부분 PoC는 승인 대기; 병렬 검증 고도화 보류; 병합 뒤 branch → worktree → 에이전트 순 정리(main에 포함된 것만 삭제); 이전 Bazel PoC 보관 위치 `C:/baton_archive`·`D:/baton_archive`(삭제 대상 아님).
+- 남은 위험: 로컬 정착 1·2단계 사이 프로세스 종료 시 Task 고립(운영 고립, 오승격 아님; 수동 조치는 같은 변경을 별도 확보한 뒤 사용자 승인으로 새 Task를 `run` 실행해 재검증. 새 worktree는 현재 HEAD에서 시작하고 `run`은 Orca 배정·provider 실행을 시작하며, `create` 직후 `validate`는 `validation_not_ready`. Orca 런타임 Task는 `cancel`·`pause`가 통과 없이 정착·lease 해제). Spec CI-VTIER-001 해당 문단.
+- 이전 카드(2026-11-06)와 아래 당시 기록은 Git 이력에 있다. 작업 위치와 스킬: [브랜치별 작업 위치](workspace-recovery-20261106.md), [스킬 목록](development-skills.md), [현재 환경](environment-20261106.md).
 <!-- BATON_RESUME_END -->
 
 ---

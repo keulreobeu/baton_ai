@@ -1,5 +1,25 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-19 CI-VTIER verified 재승격
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(범위 조정 뒤 재승격): 공식 로컬 V3(`73ac42e`) 777 OK skip 0, 원격 Windows CI run `44537342217`(headSha `cad9203`) plan·3.11·3.12·gate success, Codex 18·19차 독립 검토 PASS_WITH_FINDINGS 지적 반영. 남은 위험 PR #17 comment 4624337778(TASK-SETTLE-RECOVERY-001 보류). 승격 커밋 CI·스레드 처리·병합은 보고와 사용자 결정으로 넘긴다.
+
+## 현재 작업 — 2026-11-19 CI-VTIER 범위 조정(자동 정착 복구 제외)·체크포인트
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) in_progress: 사용자 결정으로 자동 정착 복구를 범위에서 제외했다. `src/`·`tests/`를 `57ef209` 내용으로 되돌렸고(`532e034`, 이력 보존), 복구 문단은 제외됨(superseded)으로 남겼다. 남은 위험은 PR #17 comment 4624337778(로컬 정착 1·2단계 사이 종료 시 Task 고립, 오승격 아님)이다. 후속 [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)는 착수 보류(자동 착수 금지). 체크포인트 `79258f2` 공식 로컬 V3 PASS(777 OK skip 0), 18차 독립 검토 PASS_WITH_FINDINGS, 체크포인트 `522c3b9` 원격 CI run `44493732498` success. 18차 문서 지적 R1801~R1805를 반영했다. 남은 순서(R1802): 독립 교차검토 → 최종 후보 공식 V3 → 기록 커밋 push·원격 CI 통과 → verified 재승격 커밋 → push·승격 커밋 CI 확인 → 스레드 처리 → 병합. 재개 카드는 [HANDOFF](../HANDOFF.md).
+
+## 이력 — 2026-11-19 CI-VTIER 정착 중단 복구 범위 축소 [제외됨(superseded), 위 범위 조정으로 코드 되돌림]
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) in_progress(당시): 사용자 결정(범위 축소)으로 명시 복구를 통과 없이 BLOCKED `settlement_interrupted`로 끝내고 재검증을 요구하도록 했었다(Wiki 재평가 없음, blocking 참조 연결, 소유권 미확인 시 해제 안 함). 15차 R1501~R1503 반영. 이 동작은 `532e034`에서 제거됐고 현재 코드에 없다.
+
+## 이력 — 2026-11-19 CI-VTIER PR #17 리뷰 반영(정착 중단 복구) [제외됨(superseded), 위 범위 조정으로 코드 되돌림]
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified → in_progress(당시): PR #17 리뷰(P2, 로컬 정착 1단계 뒤 워커 종료 시 Task 고립) 수정으로 코드가 바뀌어 이전 verified 증거가 무효가 됐다. 당시 로컬 1단계에 `settlement_pending`을 기록하고 `resume --recover-running`이 죽은 워커의 2단계를 마치게 했었다. 이 동작은 `532e034`에서 제거됐고 현재 코드에 없다.
+
+## 현재 작업 — 2026-11-19 CI-VTIER verified 승격
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(사용자 결정 2, main `9a74545` 기준 재검증): 공식 로컬 V3(`4187253`) 777 OK skip 0, 원격 Windows CI run `44455837743`(headSha `3675fb8`) plan·3.11·3.12·gate success, Codex 11·12·13차 독립 검토 PASS. 승격 커밋의 ready CI와 PR #17 병합 결과는 보고로 넘긴다. `offline_suite` 재사용은 분리·비활성(not_configured).
+
 ## 현재 작업 — 2026-11-19 CI-OPT verified 승격
 
 - [TASK-CI-OPT-001](TASK-CI-OPT-001.md) verified(사용자 결정 2): 공식 로컬 V3(`b23e309`) 743 OK skip 0, 원격 Windows CI run `44443039202`(headSha `6a02040`) plan·3.11·3.12·gate success, 24차 독립 교차검토 PASS_WITH_FINDINGS(P3 반영). 승격 커밋의 원격 CI와 PR #16 병합 결과는 보고로 넘긴다. `offline_suite` 재사용은 분리·비활성(not_configured).

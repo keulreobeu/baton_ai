@@ -93,8 +93,9 @@ def main(argv=None, *, workspace=None):
         if name == "resume": s.add_argument("--recover-running", action="store_true")
         if name == "validate":
             s.add_argument("--base", help="Adopt the exact current target SHA after the Git owner prepares this source; no Git mutation.")
-            s.add_argument("--stage", choices=("checkpoint", "task_complete"), default="task_complete",
-                           help="Use V2 checkpoint feedback or the final V3 validation; checkpoint does not complete the Task.")
+            s.add_argument("--stage", choices=("in_progress", "checkpoint", "task_complete"), default="task_complete",
+                           help="V1 in_progress or V2 checkpoint feedback, or the final V3 validation; "
+                                "in_progress/checkpoint never complete the Task.")
     sub.add_parser("providers")
     runtime = sub.add_parser("runtime").add_subparsers(dest="runtime_command", required=True)
     runtime.add_parser("doctor")

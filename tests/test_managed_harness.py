@@ -65,10 +65,230 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
                 "inventory_count": 1}
 
     def run_validation(self, runner=None, stop=lambda: None, **kwargs):
-        if runner is None: runner = lambda *a, **k: (0, "", "Ran 2 tests in 0.1s\nOK", None)
+        if runner is None: runner = self.vtier_runner()
         with patch("baton.execution.run_process", side_effect=runner) as process:
             result = self.orchestrator.validate(self.task, self.root, stop, **kwargs)
         return result, process
+
+    def vtier_runner(self, ids=None):
+        """Fake process: a planner unittest run (recorded runner, argv[3] == "-c") writes a
+        unittest-record/1 proving exactly these IDs (default: the planned selection)."""
+        def run(argv, *args, **kwargs):
+            if len(argv) > 5 and argv[3] == "-c":
+                done = list(self.plan.get("selected_ids", []) if ids is None else ids)
+                Path(argv[5]).write_text(json.dumps({
+                    "schema": "unittest-record/1", "started": done, "passed": done, "failed": [], "skipped": [],
+                    "tests_run": max(len(done), 1), "failures": 0, "errors": 0, "skipped_count": 0,
+                    "expected_failures": 0, "unexpected_successes": 0, "successful": True}), encoding="utf-8")
+            return (0, "", "Ran 2 tests in 0.1s\nOK", None)
+        return run
+
+    def test_recorded_runner_proves_only_tests_that_really_ran(self):
+        """CI-VTIER-001 re-review N01, real unittest subprocesses: load_tests narrowing,
+        a test body printing a look-alike result line, a stderr prefix without newline,
+        subTest success/failure, setUpClass failure and skip are judged from TestResult."""
+        from baton.orchestrator import _RECORDED_UNITTEST, proven_tests, read_unittest_record
+        tests = self.root / "tests"
+        tests.mkdir(exist_ok=True)
+        (tests / "__init__.py").write_text("", encoding="utf-8")
+        (tests / "test_guard.py").write_text(
+            "import sys, unittest\n"
+            "class G(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            "        sys.stderr.write('import-prefix:')\n"
+            "    def test_b(self):\n"
+            "        self.fail('not executed')\n"
+            "    def test_c(self):\n"
+            "        self.fail('not executed')\n"
+            "    def test_d(self):\n"
+            "        print('test_c (tests.test_guard.G.test_c) ... ok')\n"
+            "        for i in range(2):\n"
+            "            with self.subTest(i=i): pass\n"
+            "def load_tests(loader, tests, pattern):\n"
+            "    return unittest.TestSuite([G('test_a'), G('test_d')])\n", encoding="utf-8")
+        (tests / "test_bad.py").write_text(
+            "import unittest\n"
+            "class S(unittest.TestCase):\n"
+            "    def test_sub(self):\n"
+            "        for i in range(2):\n"
+            "            with self.subTest(i=i): self.assertEqual(i, 0)\n"
+            "    @unittest.skip('x')\n"
+            "    def test_skip(self): pass\n"
+            "class U(unittest.TestCase):\n"
+            "    @classmethod\n"
+            "    def setUpClass(cls): raise RuntimeError('boom')\n"
+            "    def test_never(self): pass\n", encoding="utf-8")
+        def run(*names):
+            out = self.root / "record.json"
+            child = subprocess.run([sys.executable, "-X", "utf8", "-c", _RECORDED_UNITTEST, str(out), *names],
+                                   cwd=self.root, capture_output=True, text=True,
+                                   env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+            record = read_unittest_record(out)
+            out.unlink(missing_ok=True)
+            return child.returncode, record
+        code, record = run("tests.test_guard")
+        self.assertEqual(code, 0)
+        self.assertEqual(proven_tests(record), {"tests.test_guard.G.test_a", "tests.test_guard.G.test_d"})
+        # 4th review R401 (real unittest): a test that starts and stops without a result
+        # makes a clean batch's record invalid; a failing batch (fixture error) stays valid.
+        (tests / "test_lost.py").write_text(
+            "import unittest\n"
+            "class L(unittest.TestCase):\n"
+            "    def test_ok(self): pass\n"
+            "    def test_lost(self): pass\n"
+            "    def run(self, result=None):\n"
+            "        if self._testMethodName == 'test_lost':\n"
+            "            result.startTest(self); result.stopTest(self); return result\n"
+            "        return super().run(result)\n", encoding="utf-8")
+        code, record = run("tests.test_lost")
+        self.assertEqual(code, 0)
+        self.assertIsNone(record)
+        code, record = run("tests.test_bad")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(proven_tests(record), set())
+        self.assertIn("tests.test_bad.S.test_sub", record["failed"])
+        self.assertEqual(record["skipped_count"], 1)
+        self.assertFalse(record["successful"])
+        # Through validate() with the real process runner: the planned IDs that
+        # load_tests dropped (test_b, test_c) fail the V2, despite the printed line.
+        self.plan.update(effective_tier="V2", direct_checks=[],
+                         selected_ids=["tests.test_guard.G.test_%s" % x for x in "abcd"],
+                         selected_modules=["tests.test_guard"], required_ids=["tests.test_guard.G.test_a"],
+                         required_modules=["tests.test_guard"])
+        self.task["validation"] = [{"argv": ["python", "-c", "pass"], "acs": ["AC1"]}]
+        from baton.execution import run_process as real
+        sdd_ok = lambda argv, *a, **k: (0, "", "", None) if "check_sdd.py" in " ".join(map(str, argv)) else real(argv, *a, **k)
+        result, _ = self.run_validation(sdd_ok, stage="checkpoint", target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        coverage = result[0]["planner"]["executed_checks"][-1]
+        self.assertEqual(coverage["argv"], ["required_tests_executed"])
+        self.assertIn("tests.test_guard.G.test_b", coverage["output"])
+        self.assertIn("tests.test_guard.G.test_c", coverage["output"])
+        self.assertIn("tests.test_guard", coverage["output"].split()[1:2])
+        self.assertEqual(result[0]["planner"]["actual_status"], "failed")
+
+    def test_timeout_with_a_state_change_keeps_the_stop_reason(self):
+        """CI-VTIER-001 6th review R603: when a check times out and the tracked state also
+        changes, the stop reason stays (the state change is recorded apart)."""
+        from baton.orchestrator import validation_stop_reason
+        def run(argv, *args, **kwargs):
+            self.state["tracked"] = "changed"
+            return (124, "", "", "timeout")
+        result, _ = self.run_validation(run, stage="in_progress", target_base="b" * 40)
+        nested = result[0]["planner"]["executed_checks"]
+        self.assertTrue(any(c.get("stop_reason") == "timeout" and c.get("state_changed") for c in nested + result))
+        self.assertEqual(validation_stop_reason(result), "timeout")
+
+    def test_missing_or_malformed_record_is_a_failure(self):
+        """CI-VTIER-001 re-review N01: exit 0 with console text but no valid record fails."""
+        result, _ = self.run_validation(lambda *a, **k: (0, "", "test_value (tests.test_value.T.test_value) ... ok\nRan 1 test\nOK", None),
+                                        stage="in_progress", target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        self.assertEqual(result[0]["planner"]["actual_status"], "failed")
+
+    def test_record_must_agree_with_itself_and_ids_run_once(self):
+        """CI-VTIER-001 3rd review R01: an inconsistent record (count, passed outside
+        started, success flag, failure/skip counts) is no record; an ID proven in two
+        batches is a duplicate run and fails the coverage check."""
+        from baton.orchestrator import read_unittest_record
+        good = {"schema": "unittest-record/1", "started": ["m.T.a", "m.T.b"], "passed": ["m.T.a", "m.T.b"],
+                "failed": [], "skipped": [], "tests_run": 2, "failures": 0, "errors": 0, "skipped_count": 0,
+                "expected_failures": 0, "unexpected_successes": 0, "successful": True}
+        path = self.root / "record.json"
+        def judged(**changes):
+            path.write_text(json.dumps({**good, **changes}), encoding="utf-8")
+            return read_unittest_record(path)
+        self.assertIsNotNone(judged())
+        for label, changes in {"count": {"tests_run": 1}, "count_up": {"tests_run": 3},
+                               "passed_not_started": {"passed": ["m.T.a", "m.T.b", "m.T.c"]},
+                               "repeat_start": {"started": ["m.T.a", "m.T.a"]},
+                               "repeat_pass": {"passed": ["m.T.a", "m.T.a"]},
+                               "flag": {"failures": 1, "failed": ["m.T.b"]},
+                               "failed_count": {"failed": ["m.T.b"]},
+                               "skip_count": {"skipped_count": 1},
+                               # 4th review R401: a clean batch proves every test it started.
+                               "unended": {"passed": ["m.T.a"]}}.items():
+            with self.subTest(case=label):
+                self.assertIsNone(judged(**changes))
+        # Two batches (argv size limit): each batch proves its own IDs; when both also
+        # prove one shared ID, that duplicate run fails the coverage check.
+        ids = ["tests.test_value.T.t%03d_%s" % (i, "x" * 200) for i in range(130)]
+        self.plan.update(selected_ids=ids, direct_checks=[])
+        def batch_runner(shared):
+            def run(argv, *a, **k):
+                if len(argv) > 5 and argv[3] == "-c":
+                    done = list(argv[6:]) + shared
+                    Path(argv[5]).write_text(json.dumps({**good, "started": done, "passed": done,
+                                                         "tests_run": len(done)}), encoding="utf-8")
+                return (0, "", "Ran 1 test\nOK", None)
+            return run
+        result, process = self.run_validation(batch_runner([]), stage="in_progress", target_base="b" * 40)
+        self.assertEqual(sum(1 for c in process.call_args_list if c.args[0][3:4] == ["-c"]), 2)
+        self.assertEqual(result[0]["exit_code"], 0)
+        result, _ = self.run_validation(batch_runner(["tests.test_value.T.shared"]), stage="in_progress",
+                                        target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        self.assertIn("duplicate:tests.test_value.T.shared", result[0]["planner"]["executed_checks"][-1]["output"])
+
+    def test_validation_status_separates_not_run_from_passed(self):
+        """CI-VTIER-001 re-review N04: validation_passed is "no check failed"; whether the
+        planner's tests ran is validation_status (not_run is never test evidence)."""
+        from baton.orchestrator import validation_status
+        self.plan.update(selected_ids=[])
+        result, _ = self.run_validation(stage="in_progress", target_base="b" * 40)
+        self.assertTrue(all(c["exit_code"] == 0 for c in result))
+        self.assertEqual(validation_status(result), "not_run")
+        self.plan.update(selected_ids=["tests.test_value.T.test_value"])
+        result, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                        stage="in_progress", target_base="b" * 40)
+        self.assertEqual(validation_status(result), "passed")
+        self.assertIsNone(validation_status([{"exit_code": 0}]))
+        self.assertEqual(validation_status([{"planner": {"actual_status": "odd"}}]), "failed")
+
+    def test_vtier_required_tests_must_actually_run(self):
+        """CI-VTIER-001 review P1: a required test or required regression module that did
+        not run (e.g. emptied by load_tests) fails a V1/V2 even when the totals look fine."""
+        self.plan.update(effective_tier="V2", required_ids=["tests.test_value.T.test_value"],
+                         required_modules=["tests.test_guard"], selected_modules=["tests.test_guard", "tests.test_value"])
+        result, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                        stage="checkpoint", target_base="b" * 40)
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        check = result[0]["planner"]["executed_checks"][-1]
+        self.assertEqual(check["argv"], ["required_tests_executed"])
+        self.assertIn("tests.test_guard", check["output"])
+        self.assertEqual(result[0]["planner"]["actual_status"], "failed")
+        ok, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value", "tests.test_guard.T.test_guard"]),
+                                    stage="checkpoint", target_base="b" * 40)
+        self.assertEqual(ok[0]["exit_code"], 0)
+        self.plan.update(required_ids=["tests.test_value.T.test_missing"], required_modules=[])
+        missing, _ = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                         stage="checkpoint", target_base="b" * 40)
+        self.assertNotEqual(missing[0]["exit_code"], 0)
+
+    def test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time(self):
+        """CI-VTIER-001 review P2: a V1 that ran no test reports not_run (not passed), and a
+        planner unittest run is bounded by the Task's remaining total time, not 300 s."""
+        self.plan.update(selected_ids=[])
+        result, process = self.run_validation(lambda *a, **k: (0, "", "Ran 1 test in 0.1s\nOK", None),
+                                              stage="in_progress", target_base="b" * 40)
+        self.assertEqual(result[0]["planner"]["actual_status"], "not_run")
+        self.plan.update(selected_ids=["tests.test_value.T.test_value"])
+        _, process = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
+                                         stage="in_progress", target_base="b" * 40)
+        timeouts = [c.args[3] for c in process.call_args_list]
+        self.assertEqual(timeouts[0], 300)  # declared check keeps its limit
+        self.assertGreater(timeouts[1], 300)  # planner unittest uses the remaining total (1200 s)
+
+    def test_vtier_previous_failed_official_v3_is_an_outside_failure(self):
+        """CI-VTIER-001 review P2: after a failed official V3, the planner is told about the
+        unresolved outside-scope failure (and therefore plans V3)."""
+        failed = [{"planner": {"effective_tier": "V3", "actual_status": "failed"}}]
+        self.orchestrator.store.get = lambda task: {"result": {"base_commit": "a" * 40, "validation": failed}}
+        self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]), stage="in_progress", target_base="b" * 40)
+        self.assertIs(self.calls[-1][1].get("outside_failures"), True)
+        self.orchestrator.store.get = lambda task: {"result": {"base_commit": "a" * 40, "validation": []}}
+        self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]), stage="in_progress", target_base="b" * 40)
+        self.assertNotIn("outside_failures", self.calls[-1][1])
 
     def test_v1_direct_and_selected_checks_preserve_declared_ac_checks(self):
         result, process = self.run_validation(stage="in_progress", target_base="b" * 40)
@@ -78,7 +298,8 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         self.assertTrue(callable(self.calls[0][1]["should_stop"]))
         self.assertEqual(len(result), len(self.task["validation"]))
         feedback = result[0]["planner"]["executed_checks"]
-        self.assertEqual(len(feedback), 2)
+        self.assertEqual(len(feedback), 3)  # direct file, selected unittest, required-tests check
+        self.assertEqual(feedback[-1]["argv"], ["required_tests_executed"])
         self.assertEqual(feedback[0]["test_count"], 0)
         self.assertEqual(feedback[0]["acs"], [])
         self.assertEqual(result[0]["acs"], ["AC1"])
@@ -528,13 +749,19 @@ class ManagedHarnessTests(unittest.TestCase):
             checkpoint = json.loads(out.getvalue())
             self.assertEqual(code, 0)
             self.assertEqual(checkpoint["state"], "REVIEW_REQUIRED")
+            with redirect_stdout(io.StringIO()) as out:  # CI-VTIER-001 AC-05: managed CLI V1
+                code = main(["--state-dir", ".local_runtime/harness-managed", "validate", "--task", "TASK-ONE",
+                             "--stage", "in_progress"], workspace=self.root)
+            fast = json.loads(out.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(fast["state"], "REVIEW_REQUIRED")
             with redirect_stdout(io.StringIO()) as out:
                 code = main(["--state-dir", ".local_runtime/harness-managed", "validate", "--task", "TASK-ONE"],
                             workspace=self.root)
             final = json.loads(out.getvalue())
             self.assertEqual(code, 0)
             self.assertEqual(final["state"], "REVIEW_REQUIRED")
-        self.assertEqual(stages, ["in_progress", "checkpoint", "task_complete"])
+        self.assertEqual(stages, ["in_progress", "checkpoint", "in_progress", "task_complete"])
 
     def test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task(self):
         from scripts import ci_plan
@@ -561,6 +788,276 @@ class ManagedHarnessTests(unittest.TestCase):
                          ("in_progress", "passed", 1))
         self.assertGreater(events[0]["executed_test_count"], 0)
         self.assertEqual(events[0]["coverage_state"], "partial")
+
+    def test_failed_official_v3_then_passing_v3_returns_to_v1(self):
+        """CI-VTIER-001 re-review (test item): through the real ManagedStore, a failed
+        official V3 stored by validate is an outside failure for the next plan; a later
+        passing V3 replaces it, and the next worker plan is a plain V1 again."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.assertIsNone(self.store.get("TASK-ONE")["result"]["validation_status"])  # generic root: no planner
+        def official(ok):
+            return [{"argv": ["python", "-m", "unittest", "discover", "-s", "tests"], "acs": ["AC1"],
+                     "exit_code": 0 if ok else 2, "test_count": 1, "skipped": 0, "expected_failures": 0,
+                     "unexpected_successes": 0, "output": "", "stop_reason": None,
+                     "planner": {"effective_tier": "V3", "actual_status": "passed" if ok else "failed",
+                                 "execution_complete": True}}]
+        task = self.store.get("TASK-ONE")["task"]
+        def next_plan_kwargs():
+            seen = []
+            def plan(root, **kwargs):
+                seen.append(kwargs)
+                raise RuntimeError("stop after planning arguments")
+            planner = type("FakePlanner", (), {"baton_root": staticmethod(lambda root: True), "plan": staticmethod(plan)})
+            with patch("baton.orchestrator.validation_planner", return_value=planner), \
+                    self.assertRaisesRegex(HarnessError, "validation_planner_failed"):
+                runner.validate(task, self.root, lambda: None, stage="in_progress", target_base="a" * 40)
+            return seen[-1]
+        self.assertNotIn("outside_failures", next_plan_kwargs())
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(False)):
+            self.assertEqual(runner._verify("TASK-ONE")["state"], "FAILED")
+        self.assertEqual(self.store.get("TASK-ONE")["result"]["validation_status"], "failed")
+        self.assertIs(next_plan_kwargs().get("outside_failures"), True)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(True)):
+            self.assertEqual(runner._verify("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.assertEqual(self.store.get("TASK-ONE")["result"]["validation_status"], "passed")
+        self.assertNotIn("outside_failures", next_plan_kwargs())
+        # 3rd review R02: a failure survives a stopped (paused/cancelled/timed-out) V3 and
+        # is cleared only by a complete passing one; an unreadable store fails closed.
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(False)):
+            runner._verify("TASK-ONE")
+        for control in ("pause", "cancel", "timeout"):
+            with self.subTest(stopped_by=control):
+                def stopped_validate(runner_self, task_arg, tree, stop, **kwargs):
+                    return official(True)
+                with patch.object(Orchestrator, "validate", stopped_validate), \
+                        patch.object(Orchestrator, "control", lambda *a, **k: control):
+                    state = runner._verify("TASK-ONE")["state"]
+                self.assertIn(state, {"PAUSED", "CANCELLED", "INTERRUPTED"})
+                result = self.store.get("TASK-ONE")["result"]
+                self.assertIs(result["official_v3_unresolved"], True)
+                self.assertIsNone(result["validation_status"])
+                self.assertIs(next_plan_kwargs().get("outside_failures"), True)
+                with self.store.tx() as c:  # back to a validatable state for the next case
+                    c.execute("UPDATE managed_tasks SET state='FAILED',control=NULL WHERE id=?", ("TASK-ONE",))
+        incomplete = official(True)
+        incomplete[0]["planner"]["execution_complete"] = False
+        with patch.object(Orchestrator, "validate", lambda *a, **k: incomplete):
+            runner._verify("TASK-ONE")
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], True)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: official(True)):
+            runner._verify("TASK-ONE")
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], False)
+        broken = Orchestrator(type("Broken", (), {"get": lambda self, task: (_ for _ in ()).throw(OSError("db"))})(), providers={})
+        self.assertTrue(broken._previous_official_failed(task))
+
+    def v3_checks(self, ok=True, nested_stop=None, declared_exit=None):
+        planner = {"effective_tier": "V3", "actual_status": "passed" if ok else "failed", "execution_complete": ok,
+                   "executed_checks": [{"argv": ["python", "-m", "unittest"], "exit_code": 0 if ok else 2,
+                                        "stop_reason": nested_stop}]}
+        return [{"argv": ["python", "-m", "unittest", "discover", "-s", "tests"], "acs": ["AC1"],
+                 "exit_code": (0 if ok else 2) if declared_exit is None else declared_exit, "test_count": 1,
+                 "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                 "planner": planner}]
+
+    def set_result(self, state="REVIEW_REQUIRED", **values):
+        with self.store.tx() as c:
+            result = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-ONE'").fetchone()[0])
+            result.update(values)
+            c.execute("UPDATE managed_tasks SET state=?,control=NULL,lease=NULL,result=? WHERE id='TASK-ONE'",
+                      (state, json.dumps(result)))
+
+    def test_latest_control_member_flags_and_member_evidence(self):
+        """CI-VTIER-001 6th review R602/R604/R605: a cancel that arrives after a PAUSED or
+        INTERRUPTED decision wins; a member with an unresolved official V3 failure cannot be
+        bound or approved; an integration tree's failure is recorded on the integration Task
+        and never removes a (COMPLETED) member's evidence."""
+        from baton import evidence
+        for decided in ("PAUSED", "INTERRUPTED"):
+            with self.subTest(decided=decided):
+                self.set_result(state="READY")
+                lease = self.store.claim("TASK-ONE")["lease"]
+                self.store.control("TASK-ONE", "cancel")
+                row = self.store.update("TASK-ONE", lease, decided, release=True, yield_to_control=True)
+                self.assertEqual(row["state"], "CANCELLED")
+                with self.store.tx() as c:
+                    c.execute("UPDATE managed_tasks SET control=NULL WHERE id='TASK-ONE'")
+        member = deepcopy(self.body); member["task_id"] = "TASK-TWO"
+        self.store.create(member)
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-TWO'").fetchone()[0])
+            values.update(official_v3_unresolved=True, review_evidence={"kept": True})
+            c.execute("UPDATE managed_tasks SET state='COMPLETED',result=? WHERE id='TASK-TWO'", (json.dumps(values),))
+        with self.assertRaisesRegex(HarnessError, "integration_member_official_v3_unresolved"):
+            evidence._member_proofs(self.store, ["TASK-TWO"], "TASK-ONE")
+        with self.assertRaisesRegex(HarnessError, "integration_member_official_v3_unresolved"), self.store.tx() as c:
+            evidence.validate_member_records(c, {"TASK-TWO": {}})
+        self.set_result(state="REVIEW_REQUIRED")
+        owner, completed = self.store.get("TASK-ONE"), self.store.get("TASK-TWO")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks(ok=False)), \
+                self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+            evidence._checks(self.store, completed, self.root, note_row=owner)
+        self.assertEqual(self.store.get("TASK-TWO")["result"]["review_evidence"], {"kept": True})
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], True)
+
+    def test_every_check_stop_counts_and_state_change_keeps_it(self):
+        """CI-VTIER-001 6th review R603: a stop in a second declared check or in a project
+        without a planner is a stop (no V3 failure recorded)."""
+        from baton.orchestrator import official_v3_fields, validation_stop_reason
+        second = self.v3_checks() + [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 2,
+                                      "stop_reason": "timeout"}]
+        self.assertEqual(validation_stop_reason(second), "timeout")
+        self.assertEqual(official_v3_fields(second), {})
+        generic = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 2, "stop_reason": "cancel"}]
+        self.assertEqual(validation_stop_reason(generic), "cancel")
+        self.assertIsNone(validation_stop_reason(self.v3_checks(ok=False)))
+
+    def test_late_control_and_nested_stop_leave_no_result_and_release(self):
+        """CI-VTIER-001 5th review R501/R502: a pause that arrives after the last stop
+        check settles PAUSED (lease released, no pass, no Wiki); a passing validation
+        records the Wiki only after the result is stored; a V3 whose nested check timed out
+        (the declared check already failed) is a stop: status null, V3 flag unchanged."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.set_result(validation_passed=True, validation_status="passed", official_v3_unresolved=False)
+        from baton import orchestrator as orch
+        real_scope = orch.check_scope
+        calls = {"n": 0}
+        def scope_then_pause(task, changes):
+            calls["n"] += 1
+            if calls["n"] == 2:  # the check after validation: control arrives now
+                self.store.control("TASK-ONE", "pause")
+            return real_scope(task, changes)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks()), \
+                patch.object(orch, "check_scope", scope_then_pause), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki for a stopped settlement")):
+            row = runner._verify("TASK-ONE")
+        self.assertEqual(row["state"], "PAUSED")
+        self.assertIsNone(row["lease"])
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+        self.assertIs(row["result"]["official_v3_unresolved"], False)
+        self.set_result()
+        seen = []
+        def assess(store, task, result):
+            stored = store.get(task)
+            seen.append((stored["result"]["validation_passed"], stored["lease"] is not None))
+            return {"action": "SKIP", "reason": "test", "blocking": False}
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks()), \
+                patch("baton.wiki_cli.assess", assess):
+            row = runner._verify("TASK-ONE")
+        self.assertEqual((row["state"], row["lease"], seen), ("REVIEW_REQUIRED", None, [(True, True)]))
+        self.assertEqual(row["result"]["wiki"]["reason"], "test")
+        from baton.orchestrator import validation_stop_reason
+        stopped = self.v3_checks(ok=False, nested_stop="timeout", declared_exit=2)
+        self.assertEqual(validation_stop_reason(stopped), "timeout")
+        self.set_result(official_v3_unresolved=False)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: stopped):
+            row = runner._verify("TASK-ONE")
+        self.assertEqual(row["state"], "INTERRUPTED")
+        self.assertIsNone(row["result"]["validation_status"])
+        self.assertIs(row["result"]["official_v3_unresolved"], False)
+
+    def test_failed_gate_v3_invalidates_evidence_and_blocks_approval(self):
+        """CI-VTIER-001 5th review R504: an official V3 failure at the evidence gate removes
+        the earlier review/integration evidence and approval refuses while it is unresolved;
+        evidence recorded from a complete passing V3 resolves it in the same transaction."""
+        from baton import evidence
+        self.assertEqual(self.runner().run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.set_result(review_evidence={"old": True}, integration_evidence={"members": {}})
+        row = self.store.get("TASK-ONE")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.v3_checks(ok=False)), \
+                self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+            evidence._checks(self.store, row, self.root)
+        result = self.store.get("TASK-ONE")["result"]
+        self.assertNotIn("review_evidence", result)
+        self.assertNotIn("integration_evidence", result)
+        self.assertIs(result["official_v3_unresolved"], True)
+        self.set_result(integration_evidence={"members": {}})
+        checked = self.store.get("TASK-ONE")
+        with self.assertRaisesRegex(HarnessError, "official_v3_unresolved"):
+            self.store._approve("TASK-ONE", "reviewer", checked, {})
+        evidence._write(self.store, checked, "review_evidence", {"checks": self.v3_checks()})
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], False)
+
+    def test_new_validation_that_errors_or_is_interrupted_leaves_no_pass(self):
+        """CI-VTIER-001 4th review R402/R403: a new validation that ends by a planner error
+        or an interruption does not keep the previous pass; a record from before the
+        official V3 flag keeps its V3 failure when its validation list is replaced."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        def reset(**result):
+            with self.store.tx() as c:
+                values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-ONE'").fetchone()[0])
+                values.update(validation_passed=True, validation_status="passed", **result)
+                c.execute("UPDATE managed_tasks SET state='REVIEW_REQUIRED',control=NULL,result=? WHERE id='TASK-ONE'",
+                          (json.dumps(values),))
+        for label, error in {"planner_error": HarnessError("validation_planner_failed"),
+                             "keyboard_interrupt": KeyboardInterrupt()}.items():
+            with self.subTest(ended_by=label):
+                reset()
+                with patch.object(Orchestrator, "validate", side_effect=error):
+                    if isinstance(error, KeyboardInterrupt):
+                        with self.assertRaises(KeyboardInterrupt):
+                            runner._verify("TASK-ONE")
+                    else:
+                        runner._verify("TASK-ONE")
+                row = self.store.get("TASK-ONE")
+                self.assertIn(row["state"], {"BLOCKED", "INTERRUPTED"})
+                self.assertIs(row["result"]["validation_passed"], False)
+                self.assertIsNone(row["result"]["validation_status"])
+        legacy = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 2, "test_count": 1,
+                   "planner": {"effective_tier": "V3", "actual_status": "failed"}}]
+        reset(validation=legacy)
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-ONE'").fetchone()[0])
+            values.pop("official_v3_unresolved", None)
+            c.execute("UPDATE managed_tasks SET result=? WHERE id='TASK-ONE'", (json.dumps(values),))
+        task = self.store.get("TASK-ONE")["task"]
+        self.assertTrue(runner._previous_official_failed(task))
+        with patch.object(Orchestrator, "validate", lambda *a, **k: []):
+            runner._verify("TASK-ONE")
+        result = self.store.get("TASK-ONE")["result"]
+        self.assertEqual(result["validation"], [])
+        self.assertIs(result["official_v3_unresolved"], True)
+        self.assertTrue(runner._previous_official_failed(task))
+
+    def test_evidence_gate_v3_failure_stays_unresolved(self):
+        """CI-VTIER-001 4th review R403: an official V3 failure found by the evidence gate
+        is recorded for later plans (and the gate fails)."""
+        from baton import evidence
+        self.assertEqual(self.runner().run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        failed = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 2, "test_count": 1,
+                   "stop_reason": None, "planner": {"effective_tier": "V3", "actual_status": "failed",
+                                                    "execution_complete": True}}]
+        row = self.store.get("TASK-ONE")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: failed), \
+                self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+            evidence._checks(self.store, row, self.root)
+        self.assertIs(self.store.get("TASK-ONE")["result"]["official_v3_unresolved"], True)
+        self.assertTrue(self.runner()._previous_official_failed(row["task"]))
+
+    def test_not_run_is_never_wiki_verified_and_new_base_clears_status(self):
+        """CI-VTIER-001 3rd review R03: a passing validation whose planner ran no test does
+        not record a Wiki task_verified event; adopting a new base clears the old status."""
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        with patch("baton.wiki_cli.assess", side_effect=AssertionError("assess must not run")):
+            self.store.prepare_validation("TASK-ONE")
+            lease = self.store.claim("TASK-ONE", validation_only=True)["lease"]
+            runner.finish("TASK-ONE", lease, "REVIEW_REQUIRED", validation_passed=True, validation_status="not_run")
+        self.assertEqual(self.store.get("TASK-ONE")["result"]["wiki"]["reason"], "validation_not_run")
+        head = git(self.root, "rev-parse", "HEAD").strip()
+        with patch("baton.orchestrator.snapshot", return_value={}), patch("baton.orchestrator.check_scope"), \
+                patch("baton.runtime.repository_key", return_value="same"), \
+                patch("baton.orchestrator.git", return_value=head + "\n"):
+            try:
+                runner._adopt_base("TASK-ONE", head)
+            except HarnessError as exc:
+                self.skipTest("fixture cannot adopt a base here: %s" % exc)
+        result = self.store.get("TASK-ONE")["result"]
+        self.assertIsNone(result["validation_status"])
+        self.assertIs(result["validation_passed"], False)
 
     def test_objective_mode_is_explicit_and_existing_defaults_stay_compatible(self):
         self.assertNotIn("objective_mode", self.store.get("TASK-ONE")["task"]["execution"])

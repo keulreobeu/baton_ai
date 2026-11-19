@@ -12,6 +12,7 @@ import builtins
 import base64
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -413,18 +414,32 @@ class CbmCLI:
         return {"columns": columns, "rows": rows, "returned": len(rows), "total": total,
                 "total_relation": "eq", "has_more": False, "truncated": False}
 
+    def _is_root(self, value):
+        """5th review R505: a required root path is a non-empty string naming this root
+        (Path("") would resolve to the working directory)."""
+        try:
+            return isinstance(value, str) and bool(value.strip()) and Path(value).resolve() == self.root
+        except (OSError, ValueError):
+            return False
+
+    def _status_root(self, status):
+        git_info = status.get("git") if isinstance(status, dict) else None
+        return (isinstance(status, dict) and self._is_root(status.get("root_path"))
+                and isinstance(git_info, dict) and self._is_root(git_info.get("worktree_root")))
+
     def inspect(self, names, base, inv):
         started = self.clock()
         projects = self.call("list_projects", format="json", limit=500)
         need(projects.get("has_more") is False, "CBM_MISSING_PAGE")
-        matches = [p for p in projects.get("projects", [])
-                   if Path(p.get("root_path", "")).resolve() == self.root]
+        # 4th review R404: nested items are checked before use.
+        need(isinstance(projects.get("projects"), list)
+             and all(isinstance(p, dict) and isinstance(p.get("root_path", ""), str) for p in projects["projects"]),
+             "CBM_UNKNOWN_SCHEMA")
+        matches = [p for p in projects["projects"] if self._is_root(p.get("root_path"))]
         need(len(matches) == 1, "CBM_WRONG_ROOT")
         project = matches[0]["name"]
         status = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
-        need(Path(status.get("root_path", "")).resolve() == self.root
-             and Path(status.get("git", {}).get("worktree_root", "")).resolve() == self.root,
-             "CBM_WRONG_ROOT")
+        need(self._status_root(status), "CBM_WRONG_ROOT")
         need(status.get("status") == "ready", "CBM_NOT_READY")
         paths = sorted(set(names) | {t["file"] for t in inv["tests"].values()})
 
@@ -458,9 +473,7 @@ class CbmCLI:
             # index_repository automatically updates the existing index incrementally.
             self.call("index_repository", repo_path=str(self.root), persistence=False)
             status = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
-            need(status.get("status") == "ready" and Path(status.get("root_path", "")).resolve() == self.root
-                 and Path(status.get("git", {}).get("worktree_root", "")).resolve() == self.root,
-                 "CBM_REINDEX_FAILED")
+            need(status.get("status") == "ready" and self._status_root(status), "CBM_REINDEX_FAILED")
             generation, rows = coverage()
         need(all(r.get("freshness") == "metadata_match" for r in rows), "CBM_STALE")
         coverage_ok = all(r.get("status") == "no_recorded_issue" and r.get("coverage") == [] for r in rows)
@@ -543,8 +556,7 @@ class CbmCLI:
                     and audit_static_edges(self.root, inv, impacted, graph_edges))
         after = self.call("index_status", project=project, verbose=True, diagnostics="full", format="json")
         need(after.get("indexed_at") == generation and after.get("root_path") == status.get("root_path")
-             and after.get("status") == "ready"
-             and Path(after.get("git", {}).get("worktree_root", "")).resolve() == self.root,
+             and after.get("status") == "ready" and self._status_root(after),
              "CBM_GENERATION_CHANGED")
         return {"selected": sorted(mapped), "complete": complete,
                 "state": "best_effort", "index_id": fingerprint([project, str(self.root)]),
@@ -646,9 +658,63 @@ def reuse_v3(current, evidence, *, remote=False):
             "remote_ci_skippable": False}
 
 
+# CI-VTIER-001 AC-02: required regression modules for risk paths in a local V2.
+# Exact path or directory prefix (ending with "/") -> test modules.
+RISK_REGRESSION = (
+    ("scripts/ci_plan.py", ("tests.test_ci_plan", "tests.test_ci_workflow")),
+    ("scripts/verify_environment.py", ("tests.test_verify_environment", "tests.test_ci_workflow")),
+    ("scripts/readset.py", ("tests.test_readset", "tests.test_verify_environment")),
+    ("scripts/readset_site/", ("tests.test_readset", "tests.test_verify_environment")),
+    ("scripts/suite_reuse.py", ("tests.test_ci_plan", "tests.test_verify_environment")),
+    ("scripts/check_sdd.py", ("tests.test_sdd",)),
+    ("docs/sdd/", ("tests.test_sdd",)),
+    ("docs/templates/", ("tests.test_sdd",)),
+    (".github/workflows/", ("tests.test_ci_workflow",)),
+    ("src/baton/orchestrator.py", ("tests.test_managed_harness", "tests.test_flow_runtime")),
+    ("src/baton/runtime.py", ("tests.test_flow_runtime",)),  # Orca author settlement stage
+    ("src/baton/evidence.py", ("tests.test_managed_harness",)),
+    ("src/baton/execution.py", ("tests.test_managed_harness",)),
+    ("src/baton/managed.py", ("tests.test_managed_harness",)),
+    ("src/baton/managed_cli.py", ("tests.test_managed_harness",)),
+    ("src/baton/contracts.py", ("tests.test_managed_harness",)),
+    ("AGENTS.md", ("tests.test_sdd", "tests.test_ci_workflow")),
+    ("README.md", ("tests.test_ci_workflow",)),  # methodology text is checked there
+    ("CLAUDE.md", ("tests.test_sdd", "tests.test_ci_workflow")),
+    ("docs/sdd.md", ("tests.test_sdd", "tests.test_ci_workflow")),
+    ("skills/", ("tests.test_sdd", "tests.test_ci_workflow")),
+)
+
+
+def convention_module(name):
+    """`<dir>/<stem>.py` -> `tests.test_<stem>`; a test file is its own module."""
+    p = Path(name)
+    if p.parts and p.parts[0] == "tests" and p.suffix == ".py":
+        return name[:-3].replace("/", ".")
+    return "tests.test_" + p.stem if p.suffix == ".py" else None
+
+
+def risk_regression(name, modules, *, table_only=False):
+    """Required regression modules for a path, or None if none is known.
+
+    CI-VTIER-001 review P1: a module counts only if it has at least one inventoried
+    test (an empty module, or one emptied by load_tests, is not regression coverage)."""
+    for key, mods in RISK_REGRESSION:
+        if name == key or (key.endswith("/") and name.startswith(key)):
+            return set(mods) if all(modules.get(m) for m in mods) else None
+    if table_only:
+        return set()
+    module = convention_module(name)
+    return {module} if modules.get(module) else None
+
+
 def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures=False,
            state_stable=True, event="local"):
-    """Pure policy: callers may raise a tier, never lower its stage default."""
+    """Pure policy: callers may raise a tier, never lower its stage default.
+
+    CI-VTIER-001: in a local in_progress/checkpoint stage, risk paths are
+    recorded instead of forcing V3, a V2 adds required regression modules for
+    them, and an incomplete graph/inventory gives a partial V1/V2 (recorded as
+    PARTIAL_IMPACT_SCOPE) instead of V3. V3, remote events and minimums are unchanged."""
     default = STAGES.get(stage, 3)
     tier = max(default, minimum if type(minimum) is int and minimum in {1, 2, 3} else 3)
     reasons = []
@@ -662,39 +728,84 @@ def choose(stage, names, inv, graph, required=(), *, minimum=1, outside_failures
         tier = max(tier, 2)
     if len(names) > 500:
         tier = 3; reasons.append("CHANGE_COUNT_LIMIT")
-    for name in names:
-        reason = policy_reason(name)
-        if reason:
-            tier = 3; reasons.append(reason)
     if outside_failures:
         tier = 3; reasons.append("OUTSIDE_SCOPE_FAILURE")
     if not state_stable:
         tier = 3; reasons.append("STATE_CHANGED")
+    local_mid = event == "local" and tier < 3
+    risk_names = []
+    for name in names:
+        reason = policy_reason(name)
+        if reason:
+            reasons.append(reason)
+            risk_names.append(name)
+            if not local_mid:
+                tier = 3
+    partial = False
     if tier == 2 and (not names or not inv["complete"] or not graph.get("complete") or not graph.get("selected")):
-        tier = 3; reasons.append("INCOMPLETE_IMPACT_SCOPE")
+        if local_mid and names:
+            partial = True
+            reasons.extend(["INCOMPLETE_IMPACT_SCOPE", "PARTIAL_IMPACT_SCOPE"])
+        else:
+            tier = 3; reasons.append("INCOMPLETE_IMPACT_SCOPE")
     if tier == 1 and not graph.get("complete"):
         reasons.append("FAST_GRAPH_LIMITATION")
+        if local_mid:
+            partial = True
+            reasons.append("PARTIAL_IMPACT_SCOPE")
+    if tier == 1 and not inv["complete"]:
+        # Re-review N03: an incomplete inventory is a partial V1 on its own, whatever
+        # the graph says.
+        reasons.append("INCOMPLETE_INVENTORY")
+        if local_mid:
+            partial = True
+            reasons.append("PARTIAL_IMPACT_SCOPE")
     selected = set(required)
+    required_modules = set()
     if tier < 3:
-        selected.update(graph.get("selected", []))
-        selected.update(key for key, test in inv["tests"].items() if test["file"] in names)
-        if not selected <= inv["tests"].keys():
+        graph_selected = set(graph.get("selected", []))
+        if graph_selected <= inv["tests"].keys():
+            selected.update(graph_selected)
+        else:
             # Bad graph test IDs cannot be trusted, even for fast feedback.
-            selected = set(required) & inv["tests"].keys()
-            if tier == 2:
-                tier = 3
             reasons.append("UNMAPPED_TEST")
+            if tier == 2 and not local_mid:
+                tier = 3
+            elif local_mid:
+                partial = True
+                reasons.append("PARTIAL_IMPACT_SCOPE")
+        selected.update(key for key, test in inv["tests"].items() if test["file"] in names)
+        if local_mid:
+            for name in names:
+                module = convention_module(name)
+                if module in inv["modules"]:
+                    selected.update(inv["modules"][module])
         if tier == 2:
             modules = {key.rsplit(".", 2)[0] for key in selected}
-            selected = {test for module in modules for test in inv["modules"].get(module, [])}
+            if local_mid:
+                for name in names:
+                    mods = risk_regression(name, inv["modules"], table_only=name not in risk_names)
+                    if mods is None:
+                        tier = 3; reasons.append("REGRESSION_UNMAPPED")
+                        break
+                    required_modules |= mods
+                    modules |= mods
+            if tier == 2:
+                selected = {test for module in modules for test in inv["modules"].get(module, [])}
     if tier == 3:
         selected = set(inv["tests"])
     if tier == 2 and not selected:
         tier = 3; selected = set(inv["tests"]); reasons.append("EMPTY_SELECTION")
+    out = set(reasons)
+    if tier == 3 or not partial:
+        out.discard("PARTIAL_IMPACT_SCOPE")
     return {"requested_tier": "V" + str(default), "effective_tier": "V" + str(tier),
             "scope": SCOPES[tier], "selected_ids": sorted(selected),
             "selected_modules": sorted({key.rsplit(".", 2)[0] for key in selected}),
-            "reasons": sorted(set(reasons)), "inventory_count": inv["count"] if inv["complete"] else None,
+            "reasons": sorted(out),
+            # CI-VTIER-001 review P1: modules that must actually run tests in a local V2.
+            "required_modules": sorted(required_modules) if tier == 2 else [],
+            "inventory_count": inv["count"] if inv["complete"] else None,
             "static_inventory_count": inv["count"], "inventory_complete": inv["complete"]}
 
 
@@ -737,19 +848,38 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
                 for ref in ac["tests"]:
                     required.add(ref["file"][:-3].replace("/", ".") + "." + ref["symbol"])
     inv = inventory(root)
-    graph = {"state": "not_run", "complete": False, "selected": [], "seconds": None,
-             "index_id": None, "generation": None, "freshness": "unknown", "coverage": "unknown"}
+    empty_graph = {"state": "not_run", "complete": False, "selected": [], "seconds": None,
+                   "index_id": None, "generation": None, "freshness": "unknown", "coverage": "unknown"}
+    graph = dict(empty_graph)
     # V2's preliminary incompleteness is expected before querying. Risk paths,
     # final stages/events and explicit minimum=3 do not need graph service.
     query_needed = STAGES.get(stage, 3) < 3 and minimum != 3 and event in {"local", "draft"}
-    query_needed &= not any(policy_reason(n) for n in names) and len(names) <= 500 and not outside_failures
+    # CI-VTIER-001 AC-01: risk paths no longer skip the graph for local V1/V2.
+    query_needed &= (event == "local" or not any(policy_reason(n) for n in names)) and len(names) <= 500 and not outside_failures
     if query_needed and names:
         try:
             graph = (adapter or CbmCLI(root, should_stop=should_stop)).inspect(names, sdd.commit(root, base), inv)
-            need(isinstance(graph, dict) and isinstance(graph.get("selected"), list), "CBM_UNKNOWN_SCHEMA")
-        except (PlanError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, sdd.SddError) as exc:
-            graph = {**graph, "state": "failed", "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA",
-                     "selected": [], "complete": False}
+            # CI-VTIER-001 review P2: validity is checked apart from completeness.
+            # Re-review N02: "complete" is a required field (no default).
+            need(isinstance(graph, dict) and isinstance(graph.get("selected"), list)
+                 and all(isinstance(item, str) for item in graph["selected"])
+                 and type(graph.get("complete")) is bool, "CBM_UNKNOWN_SCHEMA")
+            # 3rd review R04: side fields keep their shapes or the answer is discarded.
+            need(all(graph.get(k) is None or isinstance(graph[k], str) for k in ("reason", "state", "freshness",
+                                                                               "coverage", "index_id", "index_id_kind"))
+                 and (graph.get("seconds") is None or (type(graph["seconds"]) in {int, float}
+                                                       and math.isfinite(graph["seconds"]) and graph["seconds"] >= 0))
+                 and (graph.get("generation") is None or type(graph["generation"]) in {str, int}),
+                 "CBM_UNKNOWN_SCHEMA")
+            # 4th review R404: a failed or not-run graph is never complete.
+            need(not (graph["complete"] and graph.get("state") in {"failed", "not_run"}), "CBM_UNKNOWN_SCHEMA")
+        except (PlanError, OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, OverflowError,
+                RecursionError, subprocess.TimeoutExpired, sdd.SddError) as exc:
+            # 4th review R404: any malformed inner structure (e.g. a null project item) is
+            # a failed graph: V1 keeps its direct checks, V2 falls back to V3.
+            # Re-review N02: a malformed (possibly non-dict) answer is discarded, never merged.
+            graph = {**empty_graph, "state": "failed",
+                     "reason": str(exc) if isinstance(exc, PlanError) else "CBM_UNAVAILABLE_OR_SCHEMA"}
     stable = before == freeze(root)
     result = choose(stage, names, inv, graph, required, minimum=minimum, event=event,
                     outside_failures=outside_failures, state_stable=stable)
@@ -762,7 +892,8 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
     result.update(status="PLANNED", stage=stage if stage in STAGES else "unknown", base=basis, target_base=sdd.commit(root, base), code_identity=before,
                   changed_paths=names, required_ids=sorted(required),
                   state_stable=stable, task_ids=sorted(t["id"] for t in selected_tasks.values()), acs=sorted(acs),
-                  direct_checks=checks if tier == "V1" else [], unverified_scope=unverified if tier == "V1" else [],
+                  direct_checks=checks if tier == "V1" or (tier == "V2" and event == "local") else [],
+                  unverified_scope=unverified if tier == "V1" or (tier == "V2" and event == "local") else [],
                   required_checks=required_checks, graph={k: v for k, v in graph.items() if k != "selected"},
                   required_check_status={name: "not_configured" if name in {"independent_review", "remote_ci"}
                                          else "NOT_RUN" for name in required_checks},
@@ -771,7 +902,7 @@ def plan(root, *, base, stage="task_complete", minimum=1, event="local", adapter
                   reuse=reuse_v3(current_identity, prior_evidence, remote=event != "local"))
     if graph.get("reason"):
         result["reasons"] = sorted(set(result["reasons"]) | {graph["reason"]})
-    if tier == "V1" and not graph.get("complete"):
+    if (tier == "V1" and not (graph.get("complete") and inv["complete"])) or "PARTIAL_IMPACT_SCOPE" in result["reasons"]:
         result["unverified_scope"] = sorted(set(result["unverified_scope"]) | {"transitive_impact"})
     # Bounded output must fail, rather than silently truncate a test/check list.
     need(len(json.dumps(result).encode()) <= LIMIT, "PLAN_OUTPUT_LIMIT")

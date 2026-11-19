@@ -95,6 +95,484 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         with execution_lock(self.root, "worktree", Path(tree).resolve()), self.assertRaisesRegex(HarnessError, "worker_busy"):
             Orchestrator(self.store).run("OTHER")
 
+    def test_orca_author_settlement_validates_at_checkpoint(self):
+        """CI-VTIER-001 AC-05: the Orca author's end of work runs a V2 checkpoint, not V3,
+        and still stops at REVIEW_REQUIRED (the evidence gate re-runs V3)."""
+        self.orca(); client = FakeOrca(self.root)
+        row = Orchestrator(self.store, runtime_client=client).run("ORCA")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        stages = []
+        original = Orchestrator.validate
+        def capture(runner, task, tree, stop, **kwargs):
+            stages.append(kwargs.get("stage", "task_complete"))
+            return original(runner, task, tree, stop, **kwargs)
+        with patch.object(Orchestrator, "validate", capture):
+            row = ingest(self.store, "ORCA", self.receipt(), client)
+        self.assertEqual(stages, ["checkpoint"])
+        self.assertEqual(row["state"], "REVIEW_REQUIRED")
+
+    def test_control_during_author_settlement_is_no_pass(self):
+        """CI-VTIER-001 4th review R402 / 5th review R501: a pause/cancel that arrives while
+        the Orca author is validated, or after the checks but before the settlement is
+        stored, leaves no pass, no Wiki verification and the official V3 flag as it was.
+        One that arrives after the validation result is stored (while the Wiki outcome is
+        recorded) pauses a settled, valid result."""
+        import baton.runtime as runtime_module
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        client = FakeOrca(self.root)
+        real_snapshot = runtime_module.snapshot
+        cases = [("during_validation", "pause"), ("before_store", "cancel"), ("after_store", "pause")]
+        for number, (label, action) in enumerate(cases):
+            with self.subTest(arrives=label):
+                name = "ORCA%d" % number
+                self.orca(name)
+                row = Orchestrator(self.store, runtime_client=client).run(name)
+                path = Path(row["worktree"]); (path / "src/value.py").write_text("value = %d\n" % (number + 2), encoding="utf-8")
+                with self.store.tx() as c:
+                    values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id=?", (name,)).fetchone()[0])
+                    values["official_v3_unresolved"] = True
+                    c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (json.dumps(values), name))
+                did = row["result"]["runtime"]["dispatch_id"]
+                client.settle(did)
+                def validate(*args, **kwargs):
+                    if label == "during_validation":
+                        self.store.control(name, action)
+                    return deepcopy(passing)
+                def snapshot(tree, *args, **kwargs):
+                    if label == "before_store" and not args and not kwargs:  # the check after validation
+                        self.store.control(name, action)
+                    return real_snapshot(tree, *args, **kwargs)
+                def assess(*args, **kwargs):
+                    if label != "after_store":
+                        raise AssertionError("no Wiki for an unsettled validation")
+                    self.store.control(name, action)
+                    return {"action": "SKIP", "reason": "test", "blocking": False}
+                with patch.object(Orchestrator, "validate", validate), patch("baton.wiki_cli.assess", assess), \
+                        patch.object(runtime_module, "snapshot", snapshot):
+                    row = ingest(self.store, name, self.receipt(did), client)
+                result = row["result"]
+                self.assertEqual(row["state"], "PAUSED" if action == "pause" else "CANCELLED")
+                self.assertIsNone(row["lease"])
+                if label == "after_store":
+                    self.assertIs(result["validation_passed"], True)
+                    self.assertEqual(result["validation_status"], "passed")
+                    self.assertEqual(result["wiki"]["reason"], "test")
+                    self.assertIs(result["official_v3_unresolved"], False)
+                else:
+                    self.assertIs(result["validation_passed"], False)
+                    self.assertIsNone(result["validation_status"])
+                    self.assertIsNone(result["wiki"])
+                    self.assertIs(result["official_v3_unresolved"], True)
+                if row["state"] == "PAUSED":
+                    self.store.control(name, "cancel")  # release the scope for the next case
+
+    def test_settlement_of_an_unvalidated_tree_or_unrecordable_result_has_no_status(self):
+        """CI-VTIER-001 5th review R503: a passing validation whose tree then changed (HEAD
+        moved) is no result: BLOCKED, status null, V3 flag kept; the compact fallback of an
+        unrecordable settlement states no status and keeps a new V3 failure."""
+        from baton import runtime
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        self.orca("ORCAHEAD"); client = FakeOrca(self.root)
+        row = Orchestrator(self.store, runtime_client=client).run("ORCAHEAD")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 9\n", encoding="utf-8")
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='ORCAHEAD'").fetchone()[0])
+            values.update(official_v3_unresolved=True, validation_status="passed")
+            c.execute("UPDATE managed_tasks SET result=? WHERE id='ORCAHEAD'", (json.dumps(values),))
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        def validate_then_move_head(*args, **kwargs):
+            git(path, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--allow-empty", "-qm", "moved")
+            return deepcopy(passing)
+        with patch.object(Orchestrator, "validate", validate_then_move_head), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki")):
+            row = ingest(self.store, "ORCAHEAD", self.receipt(did), client)
+        self.assertEqual(row["state"], "BLOCKED")
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+        self.assertIs(row["result"]["official_v3_unresolved"], True)
+        calls = []
+        class Store:
+            def update(self, task, lease, state, **options):
+                calls.append((state, options["result"]))
+                if len(calls) == 1:
+                    raise HarnessError("unsafe_payload")
+                return {"state": state}
+            def get(self, task):
+                return {"result": {}}
+        runtime._settle_author(Store(), "T", "L", "REVIEW_REQUIRED",
+                               {"runtime": {"settled": True}, "validation_passed": True, "official_v3_unresolved": True})
+        compact = calls[-1][1]
+        self.assertEqual((calls[-1][0], compact["validation_passed"], compact["validation_status"],
+                          compact["official_v3_unresolved"]), ("BLOCKED", False, None, True))
+
+    def test_interrupted_second_settlement_step_resumes_and_fallback_skips_it(self):
+        """CI-VTIER-001 6th review R601: a Wiki failure after the stored settlement leaves a
+        pending second step that the repeated end event completes (lease released once);
+        a compact fallback that already released skips the second step without an error."""
+        import baton.runtime as runtime_module
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        client = FakeOrca(self.root)
+        self.orca("ORCAWIKI")
+        row = Orchestrator(self.store, runtime_client=client).run("ORCAWIKI")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 11\n", encoding="utf-8")
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(passing)), \
+                patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+            ingest(self.store, "ORCAWIKI", self.receipt(did), client)
+        row = self.store.get("ORCAWIKI")
+        self.assertEqual(row["state"], "REVIEW_REQUIRED")
+        self.assertIsNotNone(row["lease"])
+        self.assertIs(row["result"]["settlement_pending"], True)
+        with patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "resumed", "blocking": False}):
+            row = ingest(self.store, "ORCAWIKI", self.receipt(did), client)
+        self.assertIsNone(row["lease"])
+        self.assertIs(row["result"]["settlement_pending"], False)
+        self.assertEqual(row["result"]["wiki"]["reason"], "resumed")
+        self.store.control("ORCAWIKI", "cancel")
+        self.orca("ORCACOMPACT")
+        row = Orchestrator(self.store, runtime_client=client).run("ORCACOMPACT")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 12\n", encoding="utf-8")
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        real_update = self.store.update
+        def update(task, lease, state, **options):
+            if (options.get("result") or {}).get("settlement_pending") is True:
+                raise HarnessError("unsafe_payload")
+            return real_update(task, lease, state, **options)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(passing)), \
+                patch.object(self.store, "update", update), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no second step after a fallback")):
+            row = ingest(self.store, "ORCACOMPACT", self.receipt(did), client)
+        self.assertEqual(row["state"], "BLOCKED")
+        self.assertIsNone(row["lease"])
+
+    def test_control_after_a_failed_second_step_keeps_the_settled_result(self):
+        """CI-VTIER-001 7th review R701: a pause after the Wiki step failed completes that
+        step and pauses the stored valid result (pending cleared, lease released); if the
+        step fails again the lease and the pending mark stay, and the repeated end event
+        completes it."""
+        from baton.runtime import request_control
+        passing = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                    "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                    "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+        client = FakeOrca(self.root)
+        for number, second_failure in enumerate((False, True)):
+            with self.subTest(second_step_fails_again=second_failure):
+                name = "ORCAPEND%d" % number
+                self.orca(name)
+                row = Orchestrator(self.store, runtime_client=client).run(name)
+                path = Path(row["worktree"]); (path / "src/value.py").write_text("value = %d\n" % (20 + number), encoding="utf-8")
+                did = row["result"]["runtime"]["dispatch_id"]
+                client.settle(did)
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(passing)), \
+                        patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+                    ingest(self.store, name, self.receipt(did), client)
+                again = OSError("still down") if second_failure else None
+                ok = {"action": "SKIP", "reason": "after-pause", "blocking": False}
+                with patch("baton.wiki_cli.assess", side_effect=again, return_value=ok):
+                    row = request_control(self.store, name, "pause", client)
+                result = row["result"]
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["validation_status"], "passed")
+                if second_failure:
+                    self.assertIsNotNone(row["lease"])
+                    self.assertIs(result["settlement_pending"], True)
+                    with patch("baton.wiki_cli.assess", return_value=ok):
+                        row = ingest(self.store, name, self.receipt(did), client)
+                    result = row["result"]
+                self.assertEqual(row["state"], "PAUSED")
+                self.assertIsNone(row["lease"])
+                self.assertIs(result["settlement_pending"], False)
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["wiki"]["reason"], "after-pause")
+                self.store.control(name, "cancel")  # release the scope for the next case
+
+    PASSING = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0, "test_count": 1,
+                "skipped": 0, "expected_failures": 0, "unexpected_successes": 0, "output": "", "stop_reason": None,
+                "planner": {"effective_tier": "V3", "actual_status": "passed", "execution_complete": True}}]
+
+    def slot_held(self, name):
+        directory = self.root / ".local_runtime/baton-locks"
+        return any(json.loads(p.read_text(encoding="utf-8")).get("task") == name for p in directory.glob("*.json"))
+
+    def test_edit_after_the_checks_is_no_validated_settlement(self):
+        """CI-VTIER-001 8th review R801: an allowed file whose contents change after the checks
+        (before the last snapshot) leaves no pass: BLOCKED, status null, checks marked as
+        state-changed, no Wiki verification; the lease and the slot are released."""
+        import baton.runtime as runtime_module
+        from baton.wiki_contracts import WIKI_DIR
+        policy = self.root / WIKI_DIR / "LIFECYCLE_POLICY.md"
+        policy.parent.mkdir(parents=True, exist_ok=True); policy.touch()
+        client = FakeOrca(self.root)
+        self.orca("ORCALATE")
+        row = Orchestrator(self.store, runtime_client=client).run("ORCALATE")
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        real_snapshot = runtime_module.snapshot
+        def edit_before_final_snapshot(tree, *args, **kwargs):
+            if not args and not kwargs:  # the snapshot after validation
+                (path / "src/value.py").write_text("value = 3\n", encoding="utf-8")
+            return real_snapshot(tree, *args, **kwargs)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)), \
+                patch.object(runtime_module, "snapshot", edit_before_final_snapshot), \
+                patch("baton.wiki_cli.assess", side_effect=AssertionError("no Wiki for a changed tree")):
+            row = ingest(self.store, "ORCALATE", self.receipt(did), client)
+        result = row["result"]
+        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "validation_state_changed"))
+        self.assertIs(result["validation_passed"], False)
+        self.assertIsNone(result["validation_status"])
+        self.assertIsNone(result["wiki"])
+        self.assertNotIn("settlement_pending", result)
+        self.assertEqual([(c["exit_code"], c["stop_reason"]) for c in result["validation"]], [(2, "validation_state_changed")])
+        self.assertFalse(self.slot_held("ORCALATE"))
+
+    def test_local_run_and_verify_reject_an_edit_after_the_checks(self):
+        """CI-VTIER-001 8th review R801: the local _run and _verify paths compare the files the
+        checks ran on with the last snapshot; a change is BLOCKED with no pass."""
+        def edit_then_pass(runner, task, tree, stop, **kwargs):
+            (tree / "src/value.py").write_text("value = 7\n", encoding="utf-8")
+            return [{**deepcopy(self.PASSING[0]), "planner": None}]
+        self.assertEqual(self.author()["state"], "REVIEW_REQUIRED")
+        with patch.object(Orchestrator, "validate", edit_then_pass):
+            row = Orchestrator(self.store).verify("FLOW")
+        self.assertEqual((row["state"], row["result"].get("reason")), ("BLOCKED", "validation_state_changed"))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+        body = deepcopy(self.body); body["task_id"] = "FLOWRUN"
+        self.store.create(body)
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
+        with patch.object(Orchestrator, "validate", edit_then_pass):
+            row = Orchestrator(self.store, {"mock": Author()}).run("FLOWRUN")
+        self.assertEqual((row["state"], row["result"].get("reason")), ("BLOCKED", "validation_state_changed"))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertIsNone(row["result"]["validation_status"])
+
+    def large_settlement(self, client, name, filler):
+        self.orca(name)
+        row = Orchestrator(self.store, runtime_client=client).run(name)
+        path = Path(row["worktree"]); (path / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id=?", (name,)).fetchone()[0])
+            values["filler"] = "x" * filler
+            c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (json.dumps(values), name))
+        did = row["result"]["runtime"]["dispatch_id"]
+        client.settle(did)
+        return did
+
+    def test_second_step_refused_for_size_stores_a_compact_wiki_and_releases(self):
+        """CI-VTIER-001 8th review R802: a Wiki outcome too large for the stored record is kept as
+        its compact form (event_id, blocking) with the validation result unchanged, on the end
+        event and on a control after a failed step; the lease, the pending mark and the slot
+        are released and a repeated end event is a no-op."""
+        from baton.contracts import encode
+        from baton.runtime import request_control
+        large = {"event_id": "VALIDATED-" + "a" * 32, "action": "RECORD", "execution": "DONE",
+                 "blocking": False, "documents": ["d" * 130000]}
+        client = FakeOrca(self.root)
+        for number, via_control in enumerate((False, True)):
+            with self.subTest(via_control=via_control):
+                name = "ORCABIG%d" % number
+                did = self.large_settlement(client, name, 90000)
+                with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)):
+                    if via_control:
+                        with patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+                            ingest(self.store, name, self.receipt(did), client)
+                        with patch("baton.wiki_cli.assess", return_value=deepcopy(large)):
+                            row = request_control(self.store, name, "cancel", client)
+                    else:
+                        with patch("baton.wiki_cli.assess", return_value=deepcopy(large)):
+                            row = ingest(self.store, name, self.receipt(did), client)
+                result = row["result"]
+                self.assertEqual(row["state"], "CANCELLED" if via_control else "REVIEW_REQUIRED")
+                self.assertIsNone(row["lease"])
+                self.assertIs(result["settlement_pending"], False)
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["validation_status"], "passed")
+                self.assertEqual(result["wiki"], {"event_id": large["event_id"], "action": "RECORD", "execution": "DONE",
+                                                  "blocking": False, "reason": "wiki_outcome_compacted", "compacted": True})
+                self.assertLessEqual(len(encode(result).encode()), 128000)
+                self.assertFalse(self.slot_held(name))
+                with patch("baton.wiki_cli.assess", side_effect=AssertionError("settled once")):
+                    self.assertEqual(ingest(self.store, name, self.receipt(did), client)["result"], result)
+                if not via_control:
+                    self.store.control(name, "cancel")  # release the scope for the next case
+
+    def test_first_step_without_room_for_the_wiki_outcome_falls_back_and_releases(self):
+        """CI-VTIER-001 8th review R802: a first settlement step that fits the limit but leaves
+        no room for the second step's Wiki outcome takes the compact fallback at once (BLOCKED,
+        no pass, lease and slot released), so no second step can be refused forever."""
+        from baton import managed, runtime as runtime_module
+        from baton.contracts import encode
+        from baton.runtime import request_control
+        # The limit and the reserve as defined (literal values only for a run against older code).
+        PAYLOAD_LIMIT = getattr(managed, "PAYLOAD_LIMIT", 128000)
+        SETTLEMENT_HEADROOM = getattr(runtime_module, "SETTLEMENT_HEADROOM", 2048)
+        client = FakeOrca(self.root)
+        # Measure the stored first step of an equal-sized record (same name length, same paths).
+        did = self.large_settlement(client, "ORCASIZE0", 100000)
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)), \
+                patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+            ingest(self.store, "ORCASIZE0", self.receipt(did), client)
+        measured = len(encode(self.store.get("ORCASIZE0")["result"]).encode())
+        with patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "x", "blocking": False}):
+            request_control(self.store, "ORCASIZE0", "cancel", client)
+        filler = 100000 + PAYLOAD_LIMIT - measured - SETTLEMENT_HEADROOM // 2
+        did = self.large_settlement(client, "ORCASIZE1", filler)
+        wiki = {"event_id": "VALIDATED-" + "b" * 32, "action": "RECORD", "blocking": False, "documents": ["d" * 1500]}
+        with patch.object(Orchestrator, "validate", lambda *a, **k: deepcopy(self.PASSING)), \
+                patch("baton.wiki_cli.assess", return_value=wiki):
+            row = ingest(self.store, "ORCASIZE1", self.receipt(did), client)
+            replay = ingest(self.store, "ORCASIZE1", self.receipt(did), client)
+        self.assertEqual((row["state"], row["lease"], row["result"]["reason"]), ("BLOCKED", None, "result_unrecordable"))
+        self.assertIs(row["result"]["validation_passed"], False)
+        self.assertNotEqual(row["result"].get("settlement_pending"), True)
+        self.assertEqual(replay["result"], row["result"])
+        self.assertFalse(self.slot_held("ORCASIZE1"))
+
+    def local_settlement(self, name, pad, *, verify, wiki, sizes=None):
+        """A local author settled by run (stage in_progress) or by a checkpoint verify, whose
+        passing check output has `pad` bytes; `sizes` collects the first step's record size."""
+        from baton.contracts import encode
+        body = deepcopy(self.body); body["task_id"] = name
+        self.store.create(body)
+        class Author:
+            def execute(_, task, context, tree, stop):
+                (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+                return ExecutionResult()
+        def checks(size):
+            return lambda *a, **k: [{**deepcopy(self.PASSING[0]), "planner": None, "output": "o" * size}]
+        real_update = self.store.update
+        def update(task, lease, state, **options):
+            current = options.get("result") or {}
+            if sizes is not None and current.get("validation_passed") is True:
+                sizes.append(len(encode({**self.store.get(task)["result"], **current}).encode()))
+            return real_update(task, lease, state, **options)
+        calls = []
+        def assess(*args, **kwargs):
+            calls.append(1)
+            return deepcopy(wiki)
+        with patch("baton.wiki_cli.assess", assess):
+            if verify:
+                with patch.object(Orchestrator, "validate", checks(0)):
+                    self.assertEqual(Orchestrator(self.store, {"mock": Author()}).run(name)["state"], "REVIEW_REQUIRED")
+                calls.clear()
+            with patch.object(Orchestrator, "validate", checks(pad)), patch.object(self.store, "update", update):
+                row = (Orchestrator(self.store).verify(name, stage="checkpoint") if verify
+                       else Orchestrator(self.store, {"mock": Author()}).run(name))
+        return row, len(calls)
+
+    def test_local_first_step_without_room_for_the_wiki_outcome_settles_unrecordable(self):
+        """CI-VTIER-001 9th review R901: a local first step (run, checkpoint verify) that fits the
+        limit but leaves no room for the Wiki outcome ends at once with no pass and the lease
+        released, before any Wiki verification is recorded."""
+        from baton import managed, runtime as runtime_module
+        limit = getattr(managed, "PAYLOAD_LIMIT", 128000)
+        headroom = getattr(runtime_module, "SETTLEMENT_HEADROOM", 2048)
+        small = {"action": "SKIP", "reason": "measure", "blocking": False}
+        wiki = {"event_id": "VALIDATED-" + "c" * 32, "action": "RECORD", "blocking": False, "documents": ["d" * 1500]}
+        for verify in (False, True):
+            with self.subTest(verify=verify):
+                sizes = []
+                prefix = "LOCALV" if verify else "LOCALR"
+                self.local_settlement(prefix + "0", 90000, verify=verify, wiki=small, sizes=sizes)
+                self.store.control(prefix + "0", "cancel")
+                # 2 bytes under the limit: before the fix both the Wiki step and the BLOCKED
+                # settlement were refused and the lease stayed held.
+                for number, margin in enumerate((headroom // 2, 2), 1):
+                    name = prefix + str(number)
+                    row, assessed = self.local_settlement(name, 90000 + limit - sizes[0] - margin, verify=verify, wiki=wiki)
+                    result = row["result"]
+                    self.assertEqual((row["state"], row["lease"], result["reason"], assessed),
+                                     ("BLOCKED", None, "result_unrecordable", 0))
+                    self.assertIs(result["validation_passed"], False)
+                    self.assertIsNone(result["validation_status"])
+                    self.assertIsNone(result["wiki"])
+                    self.store.control(name, "cancel")
+
+    def test_local_wiki_outcome_too_large_is_stored_compact_or_fails_closed(self):
+        """CI-VTIER-001 9th review R901: the local second step shares the Orca step: a Wiki outcome
+        the record cannot hold is stored compact (validation result kept, lease released); if even
+        that is refused, the settlement ends with no pass, the lease released and a blocking
+        reference to the Wiki event already recorded (the Task never shows a pass the Wiki
+        verification does not back, nor a Wiki verification without its reference)."""
+        large = {"event_id": "VALIDATED-" + "e" * 32, "action": "RECORD", "execution": "DONE",
+                 "blocking": False, "documents": ["d" * 130000]}
+        for number, verify in enumerate((False, True)):
+            with self.subTest(verify=verify):
+                name = "LOCALC%d" % number
+                row, assessed = self.local_settlement(name, 1000, verify=verify, wiki=large)
+                result = row["result"]
+                self.assertEqual((row["state"], row["lease"], assessed), ("REVIEW_REQUIRED", None, 1))
+                self.assertIs(result["validation_passed"], True)
+                self.assertEqual(result["wiki"], {"event_id": large["event_id"], "action": "RECORD", "execution": "DONE",
+                                                  "blocking": False, "reason": "wiki_outcome_compacted", "compacted": True})
+                self.store.control(name, "cancel")
+        real_update = self.store.update
+        def refuse_wiki(task, lease, state, **options):
+            if "wiki" in (options.get("result") or {}) and state != "BLOCKED":
+                raise HarnessError("unsafe_payload")
+            return real_update(task, lease, state, **options)
+        with patch.object(self.store, "update", refuse_wiki):
+            row, assessed = self.local_settlement("LOCALF0", 1000, verify=False, wiki=large)
+        result = row["result"]
+        self.assertEqual((row["state"], row["lease"], result["reason"], assessed),
+                         ("BLOCKED", None, "wiki_outcome_unrecordable", 1))
+        self.assertIs(result["validation_passed"], False)
+        self.assertIsNone(result["validation_status"])
+        self.assertEqual((result["wiki"]["event_id"], result["wiki"]["blocking"]), (large["event_id"], True))
+
+    def test_pending_row_of_an_earlier_version_settles_without_a_pending_mark(self):
+        """CI-VTIER-001 9th review R902: a pending first step stored by an earlier version (no
+        reserved room) whose every later write is refused for size ends BLOCKED with no pass,
+        the lease and the slot released and settlement_pending false; a repeated end event
+        changes nothing."""
+        from baton import managed, runtime as runtime_module
+        from baton.contracts import encode
+        from baton.runtime import request_control
+        limit = getattr(managed, "PAYLOAD_LIMIT", 128000)
+        client = FakeOrca(self.root)
+        passing = lambda *a, **k: deepcopy(self.PASSING)
+        did = self.large_settlement(client, "ORCAOLD0", 100000)
+        with patch.object(Orchestrator, "validate", passing), \
+                patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+            ingest(self.store, "ORCAOLD0", self.receipt(did), client)
+        measured = len(encode(self.store.get("ORCAOLD0")["result"]).encode())
+        with patch("baton.wiki_cli.assess", return_value={"action": "SKIP", "reason": "x", "blocking": False}):
+            request_control(self.store, "ORCAOLD0", "cancel", client)
+        # The earlier version stored the first step with no reserved room, 3 bytes under the limit.
+        did = self.large_settlement(client, "ORCAOLD1", 100000 + limit - measured - 3)
+        with patch.object(Orchestrator, "validate", passing), patch.object(runtime_module, "SETTLEMENT_HEADROOM", 0), \
+                patch("baton.wiki_cli.assess", side_effect=OSError("wiki down")), self.assertRaises(OSError):
+            ingest(self.store, "ORCAOLD1", self.receipt(did), client)
+        row = self.store.get("ORCAOLD1")
+        self.assertEqual((row["result"]["settlement_pending"], bool(row["lease"])), (True, True))
+        self.assertEqual(len(encode(row["result"]).encode()), limit - 3)
+        wiki = {"event_id": "VALIDATED-" + "f" * 32, "action": "RECORD", "blocking": False}
+        with patch("baton.wiki_cli.assess", return_value=wiki):
+            row = ingest(self.store, "ORCAOLD1", self.receipt(did), client)
+        result = row["result"]
+        # 10th review R1001: the refused Wiki step keeps its own reason in the compact write.
+        self.assertEqual((row["state"], row["lease"], result["reason"]), ("BLOCKED", None, "wiki_outcome_unrecordable"))
+        self.assertIs(result["validation_passed"], False)
+        self.assertIs(result["settlement_pending"], False)
+        self.assertEqual((result["wiki"]["event_id"], result["wiki"]["blocking"]), (wiki["event_id"], True))
+        self.assertFalse(self.slot_held("ORCAOLD1"))
+        with patch("baton.wiki_cli.assess", side_effect=AssertionError("settled once")):
+            self.assertEqual(ingest(self.store, "ORCAOLD1", self.receipt(did), client)["result"], result)
+
     def test_orca_dispatch_notification_and_duplicate_are_idempotent(self):
         self.orca(); client = FakeOrca(self.root)
         row = Orchestrator(self.store, runtime_client=client).run("ORCA")

@@ -357,6 +357,17 @@ def _settle_unstarted_control(store, task_id):
             final = "CANCELLED" if row["control"] == "cancel" else "PAUSED"
             for key, role in (("runtime", "author"), ("review_runtime", "reviewer")):
                 binding = row["result"].get(key, {})
+                if key == "runtime" and row["lease"] and row["result"].get("settlement_pending") is True:
+                    # CI-VTIER-001 7th review R701: a stored passing settlement whose second
+                    # step failed is completed (the control then pauses/cancels a valid
+                    # result), never replaced by a pre-start stop. If the step fails again,
+                    # the lease and the pending mark stay for the repeated end event.
+                    try:
+                        _finish_author_settlement(store, task_id, row["lease"])
+                    except Exception:
+                        continue
+                    _reserve_slot(store, task_id, role, row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
+                    continue
                 pre_start = binding.get("phase") in {"intent", "workspace"}
                 if key == "runtime" and row["lease"] and (not binding or binding.get("settled")):
                     pre_start = True
@@ -554,6 +565,10 @@ def ingest(store, task_id, receipt, client=None):
         if event_id in binding["events"]:
             if binding["events"][event_id] != event_hash: raise HarnessError("runtime_event_conflict")
             if binding.get("settled"):
+                if key == "runtime" and row["lease"] and row["result"].get("settlement_pending") is True:
+                    # 6th review R601: the stored settlement's second step (Wiki outcome and
+                    # lease release) did not finish; complete only that step.
+                    _finish_author_settlement(store, task_id, row["lease"])
                 _reserve_slot(store, task_id, binding["role"], row["task"]["execution"]["orca"].get("max_active_tasks", 2), release=True)
             return store.export(task_id)
         if sequence <= binding["sequence"] or binding.get("settled"):
@@ -630,12 +645,19 @@ def ingest(store, task_id, receipt, client=None):
                 if observed["state"] == "succeeded" and not row["control"]:
                     from .orchestrator import Orchestrator
                     try:
-                        checks = Orchestrator(store).validate(row["task"], path, lambda: store.get(task_id)["control"])
+                        # CI-VTIER-001 AC-05: the author's end of work is a V2 checkpoint; the
+                        # completion/integration evidence gate (evidence._checks) still runs V3.
+                        checks = Orchestrator(store).validate(row["task"], path, lambda: store.get(task_id)["control"],
+                                                              stage="checkpoint")
                     except (HarnessError, OSError, ValueError):
                         checks = []
                     passed = bool(checks) and all(x["exit_code"] == 0 for x in checks)
                     control = store.get(task_id)["control"]
-                    state = "CANCELLED" if control == "cancel" else "PAUSED" if control == "pause" else "REVIEW_REQUIRED" if passed else "FAILED"
+                    from .orchestrator import mark_state_changed, validation_stop_reason
+                    nested_stop = validation_stop_reason(checks)  # 5th review R502: nested stops too
+                    passed = passed and not control and not nested_stop  # 4th review R402
+                    state = ("CANCELLED" if control == "cancel" else "PAUSED" if control == "pause"
+                             else "INTERRUPTED" if nested_stop else "REVIEW_REQUIRED" if passed else "FAILED")
                     final_changes = changes
                     failure = None
                     try:
@@ -643,18 +665,39 @@ def ingest(store, task_id, receipt, client=None):
                         check_scope(row["task"], final_changes)
                         if git(path, "rev-parse", "HEAD").strip() != binding["base_sha"]:
                             raise HarnessError("worktree_head_changed")
+                        if final_changes != changes:
+                            # CI-VTIER-001 8th review R801: the checks ran on the file contents
+                            # of `changes`; a tree whose contents differ now is not the
+                            # validated one (no pass, no Wiki verification).
+                            raise HarnessError("validation_state_changed")
                     except (HarnessError, OSError) as exc:
                         failure = str(exc) if isinstance(exc, HarnessError) else "workspace_snapshot_failed"
                         passed = False
                         if not control: state = "BLOCKED"
+                        if failure == "validation_state_changed":
+                            mark_state_changed(checks)
                     from .wiki_cli import assess
-                    wiki = assess(store, task_id, {"changed_files": final_changes, "validation": checks}) if passed else None
-                    _settle_author(store, task_id, row["lease"], state,
-                                   {"base_commit": binding["base_sha"], "changed_files": final_changes,
-                                    "runtime": binding, "author_worker": "orca:" + binding["dispatch_id"],
-                                    "validation": checks, "validation_passed": passed, "wiki": wiki,
-                                    "reason": failure or ("validation_passed" if passed else "validation_failed")},
-                                   worktree=str(path))
+                    from .orchestrator import settled_validation
+                    # 5th review R503: a tree that is not the validated one (HEAD/scope changed
+                    # after the checks) is no validation result either: status null, V3 flag kept.
+                    outcome = settled_validation(checks, stopped=bool(control or nested_stop or failure))
+                    status = outcome["validation_status"]
+                    skip = status == "not_run"
+                    settled = _settle_author(store, task_id, row["lease"], state,
+                                             {"base_commit": binding["base_sha"], "changed_files": final_changes,
+                                              "runtime": binding, "author_worker": "orca:" + binding["dispatch_id"],
+                                              "validation": checks,
+                                              "wiki": {"action": "SKIP", "reason": "validation_not_run", "blocking": False}
+                                              if passed and skip else None,
+                                              **outcome, "validation_passed": passed,
+                                              **({"settlement_pending": True} if passed and not skip else {}),
+                                              "reason": failure or ("validation_passed" if passed else "validation_failed")},
+                                             worktree=str(path), release=not (passed and not skip))
+                    if passed and not skip and settled.get("lease"):
+                        # 5th review R501 / 6th review R601: the Wiki verification follows the
+                        # stored settlement; a compact fallback already released (no second
+                        # step), and a failure here is resumed by the repeated end event.
+                        _finish_author_settlement(store, task_id, row["lease"])
                 else:
                     state = "CANCELLED" if row["control"] == "cancel" else "PAUSED" if row["control"] == "pause" else "WAITING_FOR_PROVIDER"
                     _settle_author(store, task_id, row["lease"], state,
@@ -676,22 +719,93 @@ def request_control(store, task_id, action, client=None):
     return store.export(task_id)
 
 
+def _finish_author_settlement(store, task_id, lease):
+    """Second step of a passing author settlement (6th review R601): record the Wiki outcome
+    of the stored result and release the lease. Idempotent: it runs only while the stored
+    result says the step is pending and the lease is still held."""
+    from .wiki_cli import assess
+    row = store.get(task_id)
+    result = row["result"]
+    if row["lease"] != lease or result.get("settlement_pending") is not True:
+        return row
+    wiki = (assess(store, task_id, {"changed_files": result.get("changed_files"), "validation": result.get("validation")})
+            if row["state"] == "REVIEW_REQUIRED" and result.get("validation_passed") is True else None)
+    # A transient failure (not unsafe_payload) keeps the retry by the end event.
+    return store_wiki_outcome(
+        lambda outcome: store.update(task_id, lease, row["state"], result={"runtime": result["runtime"], "wiki": outcome,
+                                                                          "settlement_pending": False},
+                                     release=True, settled_external=True),
+        wiki,
+        lambda outcome: _settle_author(store, task_id, lease, "BLOCKED",
+                                       {"runtime": result["runtime"], "wiki": outcome, "settlement_pending": False,
+                                        "reason": "wiki_outcome_unrecordable"}))
+
+
+def compact_wiki(wiki, *, blocking=False):
+    """The Wiki outcome fields the settlement and the completion gate (evidence: event_id,
+    blocking) need, bounded in size. An unclear blocking value is blocking."""
+    if wiki is None:
+        return None
+    event_id = wiki.get("event_id")
+    return {"event_id": event_id if isinstance(event_id, str) and len(event_id) <= 100 else None,
+            "action": str(wiki.get("action"))[:40], "execution": str(wiki.get("execution"))[:40],
+            "blocking": True if blocking else wiki.get("blocking") is not False,
+            "reason": "wiki_outcome_compacted", "compacted": True}
+
+
+def store_wiki_outcome(write, wiki, fail_closed):
+    """Second settlement step shared by the Orca author and the local controller (CI-VTIER-001
+    8th review R802 / 9th review R901). write(outcome) stores the Wiki outcome and releases the
+    lease. A permanent size refusal (unsafe_payload) stores the compact outcome, which fits the
+    space the first step reserved; if that is refused too, fail_closed(outcome) settles with no
+    pass and releases, keeping a blocking reference to a Wiki event already recorded."""
+    for outcome in ([wiki, compact_wiki(wiki)] if wiki is not None else [None]):
+        try:
+            return write(outcome)
+        except HarnessError as exc:
+            if str(exc) != "unsafe_payload": raise
+    return fail_closed(compact_wiki(wiki, blocking=True))
+
+
+# Bytes reserved by a pending first settlement step: the compact Wiki outcome (bounded fields)
+# and a stop request recorded on the binding in between, with margin.
+SETTLEMENT_HEADROOM = 2048
+
+
 def _settle_author(store, task_id, lease, state, result, **options):
-    """A settled attempt must release; a manifest too large or sensitive to store cannot block that."""
+    """A settled attempt must release; a manifest too large or sensitive to store cannot block that.
+
+    CI-VTIER-001 5th review R503: every author settlement states its validation outcome;
+    a path that did not validate the attempt leaves no pass and no status."""
+    result = {"validation_passed": False, "validation_status": None, **result}
+    release = options.pop("release", True)
+    # 8th review R802: a settlement that keeps its lease for the second step reserves the
+    # space that step's Wiki outcome needs; otherwise it takes the compact fallback now.
+    headroom = 0 if release else SETTLEMENT_HEADROOM
     try:
-        store.update(task_id, lease, state, release=True, settled_external=True, result=result, **options)
+        return store.update(task_id, lease, state, release=release, settled_external=True, result=result,
+                            headroom=headroom, **options)
     except HarnessError as exc:
         if str(exc) != "unsafe_payload": raise
         # Stored fields count too, so the fallback must shrink the record, not only add to it.
         stored = store.get(task_id)["result"]
         review = stored.get("review_runtime")
-        compact = {"runtime": result["runtime"], "validation_passed": False, "reason": "result_unrecordable",
-                   "changed_files": {}, "validation": [], "resume_point": None, "wiki": None,
+        compact = {"runtime": result["runtime"], "validation_passed": False, "validation_status": None,
+                   **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
+                   # 10th review R1001: a refused Wiki step keeps its own reason; any other
+                   # refused settlement is result_unrecordable.
+                   "reason": ("wiki_outcome_unrecordable" if result.get("reason") == "wiki_outcome_unrecordable"
+                              else "result_unrecordable"),
+                   "changed_files": {}, "validation": [], "resume_point": None,
+                   # 9th review R902: the fallback releases the lease, so no second step is pending;
+                   # a compact Wiki reference (blocking) of an event already recorded is kept.
+                   "settlement_pending": False,
+                   "wiki": result["wiki"] if isinstance(result.get("wiki"), dict) and result["wiki"].get("compacted") else None,
                    "candidate": None, "review_evidence": None, "integration_evidence": None,
                    "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
         if review:
             compact["review_runtime"] = {k: v for k, v in review.items() if k != "report"}
-        store.update(task_id, lease, "BLOCKED", release=True, settled_external=True, result=compact, **options)
+        return store.update(task_id, lease, "BLOCKED", release=True, settled_external=True, result=compact, **options)
 
 
 def _confirm_not_started(store, task_id, key, row, operator):

@@ -15,6 +15,163 @@ from .isolation import check_scope, git, pack_context, prepare_worktree, reposit
 from .managed import ACTIVE, ManagedStore
 
 
+# CI-VTIER-001 re-review N01: planner unittest checks record what actually ran through
+# unittest's own TestResult callbacks instead of parsing console text (test bodies can
+# print look-alike lines, and a prefix without a newline hides a real one).
+_RECORDED_UNITTEST = r'''
+import json, sys, unittest
+out, names = sys.argv[1], sys.argv[2:]
+record = {"schema": "unittest-record/1", "started": [], "passed": [], "failed": [], "skipped": []}
+class Result(unittest.TextTestResult):
+    def startTest(self, test):
+        record["started"].append(test.id()); super().startTest(test)
+    def addSuccess(self, test):
+        record["passed"].append(test.id()); super().addSuccess(test)
+    def addFailure(self, test, err):
+        record["failed"].append(test.id()); super().addFailure(test, err)
+    def addError(self, test, err):
+        record["failed"].append(test.id()); super().addError(test, err)
+    def addSkip(self, test, reason):
+        record["skipped"].append(test.id()); super().addSkip(test, reason)
+    def addSubTest(self, test, subtest, err):
+        if err is not None: record["failed"].append(test.id())
+        super().addSubTest(test, subtest, err)
+    def addExpectedFailure(self, test, err):
+        record["failed"].append(test.id()); super().addExpectedFailure(test, err)
+    def addUnexpectedSuccess(self, test):
+        record["failed"].append(test.id()); super().addUnexpectedSuccess(test)
+result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(
+    unittest.defaultTestLoader.loadTestsFromNames(names))
+record.update(tests_run=result.testsRun, failures=len(result.failures), errors=len(result.errors),
+              skipped_count=len(result.skipped), expected_failures=len(result.expectedFailures),
+              unexpected_successes=len(result.unexpectedSuccesses), successful=result.wasSuccessful())
+with open(out, "w", encoding="utf-8") as stream:
+    json.dump(record, stream)
+sys.exit(0 if result.wasSuccessful() else 1)
+'''
+
+
+def read_unittest_record(path):
+    """The recorded run, or None when missing or malformed (never a pass)."""
+    try:
+        with open(path, encoding="utf-8") as stream:
+            record = json.load(stream)
+    except (OSError, ValueError):
+        return None
+    lists = ("started", "passed", "failed", "skipped")
+    counts = ("tests_run", "failures", "errors", "skipped_count", "expected_failures", "unexpected_successes")
+    if not (isinstance(record, dict) and record.get("schema") == "unittest-record/1"
+            and all(isinstance(record.get(k), list) and all(isinstance(i, str) for i in record[k]) for k in lists)
+            and all(type(record.get(k)) is int and record[k] >= 0 for k in counts)
+            and type(record.get("successful")) is bool):
+        return None
+    # CI-VTIER-001 3rd review R01: the record must agree with itself. Deliberate forgery
+    # by the test code in the same process is accepted as CI-OPT-001 RA-4.
+    started, passed = record["started"], record["passed"]
+    if not (len(set(started)) == len(started) == record["tests_run"]
+            and len(set(passed)) == len(passed) and set(passed) <= set(started)
+            and len(record["skipped"]) == record["skipped_count"]
+            and len(record["failed"]) == (record["failures"] + record["errors"]
+                                          + record["expected_failures"] + record["unexpected_successes"])
+            and record["successful"] == (record["failures"] == 0 and record["errors"] == 0
+                                         and record["unexpected_successes"] == 0)):
+        return None
+    # 4th review R401: a batch with no failure, error, skip, expected failure or
+    # unexpected success must show a success for every test it started (a test whose
+    # result never arrived is not proven). Failed batches keep fixture errors as is.
+    clean = not (record["failures"] or record["errors"] or record["skipped_count"]
+                 or record["expected_failures"] or record["unexpected_successes"])
+    if clean and set(started) != set(passed):
+        return None
+    return record
+
+
+def proven_tests(record):
+    """IDs that started, succeeded and never failed (a failed subTest is a failure)."""
+    return (set(record["started"]) & set(record["passed"])) - set(record["failed"]) - set(record["skipped"])
+
+
+def validation_status(checks):
+    """CI-VTIER-001 re-review N04: what the planner's own tests showed, apart from
+    validation_passed (no declared or planner check failed). "not_run" means no planner
+    test ran and is never test evidence; None means no planner (generic root)."""
+    for check in checks or []:
+        planner = check.get("planner") if isinstance(check, dict) else None
+        if isinstance(planner, dict):
+            status = planner.get("actual_status")
+            return status if status in {"passed", "failed", "not_run"} else "failed"
+    return None
+
+
+STOP_REASONS = {"pause", "cancel", "timeout"}
+
+
+def validation_stop_reason(checks):
+    """5th review R502: a validation stopped by pause, cancel or the time budget, seen in
+    the planner check or in any of its nested executed checks (a declared check that
+    already failed does not receive the nested stop reason). None when not stopped."""
+    # 6th review R603: every top-level check (a second declared check, a project without
+    # a planner) and every nested planner check.
+    for check in checks or []:
+        if not isinstance(check, dict):
+            continue
+        planner = check.get("planner")
+        nested = planner.get("executed_checks") or [] if isinstance(planner, dict) else []
+        for item in [check, *nested]:
+            if isinstance(item, dict) and item.get("stop_reason") in STOP_REASONS:
+                return item["stop_reason"]
+    return None
+
+
+def mark_state_changed(results):
+    """A check result whose tree changed after it ran proves nothing about the current tree.
+    CI-VTIER-001 8th review R801: also applied when the change appears after validate returned."""
+    for result in results or []:
+        if not isinstance(result, dict):
+            continue
+        result["exit_code"] = 2
+        result["state_changed"] = True
+        # 6th review R603: a stop reason (pause/cancel/timeout) is kept.
+        if result.get("stop_reason") not in STOP_REASONS:
+            result["stop_reason"] = "validation_state_changed"
+    return results
+
+
+def official_v3_fields(checks, *, stopped=False):
+    """CI-VTIER-001 3rd review R02: an unresolved official V3 failure is kept in the Task
+    result apart from the latest validation. A V3 that failed sets it; only a complete,
+    passing V3 clears it; a stopped V3 leaves it as it was. {} when no V3 ran."""
+    for check in checks or []:
+        planner = check.get("planner") if isinstance(check, dict) else None
+        if isinstance(planner, dict) and planner.get("effective_tier") == "V3":
+            # 4th review R402: a V3 whose own process was stopped (pause, cancel or the
+            # Task time budget) is no result either.
+            if stopped or check.get("stop_reason") or validation_stop_reason(checks):
+                return {}
+            ok = (planner.get("actual_status") == "passed" and planner.get("execution_complete") is True
+                  and all(isinstance(c, dict) and c.get("exit_code") == 0 and not c.get("stop_reason") for c in checks))
+            return {"official_v3_unresolved": not ok}
+    return {}
+
+
+def settled_validation(checks, *, stopped=False):
+    """4th review R402: the one rule every path that ends a validation applies.
+
+    A stopped validation (or none) is no result: validation_passed false, status
+    null, the official V3 flag left as it was. Otherwise the status and V3 flag come
+    from the checks; callers decide validation_passed from their own criteria."""
+    if stopped or checks is None:
+        return {"validation_passed": False, "validation_status": None}
+    if validation_stop_reason(checks):
+        # Callers route a stopped validation to their stop branch first (5th review R502);
+        # this keeps the status empty and the V3 flag unchanged if one reaches here.
+        return {"validation_status": None}
+    return {"validation_status": validation_status(checks), **official_v3_fields(checks)}
+
+
+CLEARED_VALIDATION = {"validation_passed": False, "validation_status": None}
+
+
 def persisted_text(value):
     from .execution import redact
     value = redact(value)
@@ -141,17 +298,58 @@ class Orchestrator:
         return row["control"]
 
     def finish(self, task, lease, state, **result):
-        if result.get("validation_passed") is True:
-            from .wiki_cli import assess
-            result["wiki"] = assess(self.store, task, result)
-            if state == "COMPLETED" and result["wiki"].get("blocking"):
-                state = "REVIEW_REQUIRED"
-        self.store.update(task, lease, state, result=result, release=True)
+        wiki_due = False
+        if result.get("validation_passed") is True and result.get("validation_status") == "not_run":
+            # 3rd review R03: no planner test ran, so nothing is recorded as verified.
+            result["wiki"] = {"action": "SKIP", "reason": "validation_not_run", "blocking": False}
+        elif result.get("validation_passed") is True:
+            wiki_due = True
+        # 5th review R501: a control that arrived after the last stop check turns this
+        # settlement into PAUSED/CANCELLED in the same transaction (no validation result,
+        # lease released) instead of failing and leaving the lease held.
+        from .runtime import SETTLEMENT_HEADROOM, store_wiki_outcome
+        try:
+            # CI-VTIER-001 9th review R901: as on the Orca path, a first step that keeps the
+            # lease for the Wiki outcome reserves that outcome's space.
+            row = self.store.update(task, lease, state, result=result, release=not wiki_due, yield_to_control=True,
+                                    headroom=SETTLEMENT_HEADROOM if wiki_due else 0)
+        except HarnessError as exc:
+            if str(exc) != "unsafe_payload": raise
+            row, wiki_due = self._settle_unrecordable(task, lease, result, None, "result_unrecordable"), False
+        if wiki_due:
+            # The Wiki records a verification only once the validation result is stored as
+            # the settled result; the lease is held until the Wiki outcome is stored too.
+            wiki = None
+            if row["state"] == state:
+                from .wiki_cli import assess
+                wiki = assess(self.store, task, result)
+                if state == "COMPLETED" and wiki.get("blocking"):
+                    state = "REVIEW_REQUIRED"
+            final = state if wiki else row["state"]
+            row = store_wiki_outcome(
+                lambda outcome: self.store.update(task, lease, final, result={"wiki": outcome},
+                                                  release=True, yield_to_control=True),
+                wiki,
+                lambda outcome: self._settle_unrecordable(task, lease, result, outcome, "wiki_outcome_unrecordable"))
+        state = row["state"]
         self.store.observe_idle_state(task)
         if state == "COMPLETED":
             from .autocommit import auto_commit_task
             return auto_commit_task(self.store, task)
         return self.store.export(task)
+
+    def _settle_unrecordable(self, task, lease, result, wiki, reason):
+        """CI-VTIER-001 9th review R901: a settlement the record cannot hold ends with no pass,
+        in one write that also releases the lease. Stored fields count too, so the large
+        validation and diagnostic fields are cleared (as in the Orca compact fallback)."""
+        stored = self.store.get(task)["result"]
+        compact = {"validation_passed": False, "validation_status": None, "reason": reason,
+                   **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
+                   "validation": [], "changed_files": {}, "summary": None, "provider_events": [],
+                   "resume_point": None, "wiki": wiki,
+                   "candidate": None, "review_evidence": None, "integration_evidence": None,
+                   "base_history": [{"base_sha": item.get("base_sha")} for item in stored.get("base_history", [])]}
+        return self.store.update(task, lease, "BLOCKED", result=compact, release=True, yield_to_control=True)
 
     def run(self, task_id):
         from .runtime import dispatch, execution_lock
@@ -194,7 +392,7 @@ class Orchestrator:
             metrics = self.store.observe(task_id, "begin", row, tree)
             if metrics:
                 self.store.update(task_id, lease, "PLANNING", result={"metrics_run_id": metrics["run_id"]})
-            self.store.update(task_id, lease, "PLANNING", worktree=str(tree), result={"base_commit": base, "validation_passed": False,
+            self.store.update(task_id, lease, "PLANNING", worktree=str(tree), result={"base_commit": base, **CLEARED_VALIDATION,
                               "author_worker": "local:" + task_id + ":" + str(row["attempt"])})
             before = snapshot(tree); check_scope(task, before)
             context = pack_context(task, tree, row["result"].get("validation"))
@@ -273,30 +471,42 @@ class Orchestrator:
                 validation = self.validate(task, tree, stop, stage="in_progress", target_base=base)
                 if metrics:
                     self.store.observe(task_id, "phase", metrics, "validation", time.monotonic() - validation_started)
-                reason = stop()
+                reason = stop() or validation_stop_reason(validation)
                 if reason:
-                    return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason)
+                    # 3rd review R02/R03: a stopped validation is no result; stale status is cleared.
+                    return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason,
+                                       **settled_validation(validation, stopped=True))
                 final_changes = snapshot(tree); check_scope(task, final_changes)
                 if git(tree, "rev-parse", "HEAD").strip() != base: raise HarnessError("worktree_head_changed")
+                if final_changes != after:
+                    # CI-VTIER-001 8th review R801: the checks ran on the files of `after`;
+                    # different file contents now are no validated tree (BLOCKED, no pass).
+                    raise HarnessError("validation_state_changed")
                 passed = all(c["exit_code"] == 0 for c in validation)
                 if passed:
                     state = "REVIEW_REQUIRED"  # Completion always requires independent evidence.
-                    return self.finish(task_id, lease, state, validation=validation, validation_passed=True, changed_files=final_changes)
+                    return self.finish(task_id, lease, state, validation=validation, validation_passed=True,
+                                       changed_files=final_changes, **settled_validation(validation))
                 if row["attempt"] < task["execution"]["max_attempts"]:
-                    self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False, "retry_cause": "validation_failed"}, release=True)
+                    self.store.update(task_id, lease, "RETRYING", result={"validation": validation, "validation_passed": False,
+                                                                      "retry_cause": "validation_failed",
+                                                                      **settled_validation(validation)}, release=True)
                     close_metrics()
                     self.store.ready(task_id, automatic=True)
                     return self._run(task_id)
-                return self.finish(task_id, lease, "FAILED", reason="validation_failed", validation=validation, validation_passed=False)
+                return self.finish(task_id, lease, "FAILED", reason="validation_failed", validation=validation, validation_passed=False,
+                                   **settled_validation(validation))
         except HarnessError as exc:
             if self.store.get(task_id)["lease"] != lease:
                 return self.store.export(task_id)
             reason = self.control(task_id, lease)
-            return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "BLOCKED", reason=str(exc))
+            return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "BLOCKED", reason=str(exc),
+                               **CLEARED_VALIDATION)
         except BaseException as exc:
             # No reflected exception text or provider diagnostics in state.
             try:
-                self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error")
+                self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error",
+                            **CLEARED_VALIDATION)
             finally:
                 if isinstance(exc, (KeyboardInterrupt, SystemExit)): raise
             return self.store.export(task_id)
@@ -329,7 +539,10 @@ class Orchestrator:
                 target_base = target_base or self.store.get(task["task_id"])["result"].get("base_commit")
                 if not target_base:
                     raise HarnessError("validation_base_required")
-                local_plan = planner.plan(tree, base=target_base, stage=stage, should_stop=bounded_stop)
+                # CI-VTIER-001 review P2: an unresolved failure of the previous official V3
+                # (possibly outside the current selection) raises this plan to V3.
+                extra = {"outside_failures": True} if self._previous_official_failed(task) else {}
+                local_plan = planner.plan(tree, base=target_base, stage=stage, should_stop=bounded_stop, **extra)
                 target_base = local_plan["target_base"]
                 execution_state = planner.freeze(tree)
             except Exception:
@@ -358,7 +571,9 @@ class Orchestrator:
                         batch.append(target); size += len(target) + 1
                     if batch: batches.append(batch)
                     for batch in batches:
-                        internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": []})
+                        # Runs through _RECORDED_UNITTEST; the recorded IDs are checked
+                        # against the plan below (re-review N01).
+                        internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": [], "recorded": True})
                 if tier == "V2":
                     internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/check_sdd.py"), "--base", target_base], "acs": []})
                 for direct in local_plan["direct_checks"]:
@@ -385,6 +600,7 @@ class Orchestrator:
             # Retain every declared Task/AC check, including generic commands.
             checks.extend(internal)
         internal_ids = {id(check) for check in internal}
+        executed_ids, duplicate_ids = set(), set()
         for check in checks:
             argv = list(check["argv"])
             if argv[0] == "python": argv[0] = sys.executable
@@ -399,10 +615,25 @@ class Orchestrator:
                                 "_planner_internal": id(check) in internal_ids})
                 break
             timeout = min(300, task["execution"]["timeout_seconds"])
-            if check.get("official"):
+            if check.get("official") or id(check) in internal_ids:
+                # CI-VTIER-001 review P2: planner checks (a V2 module run can exceed 300 s)
+                # are bounded by the Task's remaining total time, like the official V3.
                 timeout = max(0.05, total - (time.monotonic() - started))
-            rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
-                                              env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
+            record = None
+            if check.get("recorded"):
+                import shutil
+                import tempfile
+                record_dir = tempfile.mkdtemp(prefix="baton-unittest-")
+                record_path = os.path.join(record_dir, "record.json")
+                argv = [sys.executable, "-X", "utf8", "-c", _RECORDED_UNITTEST, record_path, *argv[3:]]
+            try:
+                rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
+                                                  env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
+                if check.get("recorded"):
+                    record = read_unittest_record(record_path)
+            finally:
+                if check.get("recorded"):
+                    shutil.rmtree(record_dir, ignore_errors=True)
             output = out + "\n" + err
             counts = re.findall(r"Ran (\d+) tests?", output) if argv[1:3] == ["-m", "unittest"] else re.findall(r"(\d+) passed", output) if argv[1:3] == ["-m", "pytest"] else []
             skipped = sum(int(n) for n in re.findall(r"(?:skipped[= ]|skip=)(\d+)", output))
@@ -411,6 +642,14 @@ class Orchestrator:
             expected += sum(int(n) for n in re.findall(r"(\d+) xfailed", output))
             unexpected = sum(int(count) for pair in re.findall(r"(\d+) xpassed|unexpected successes[= ](\d+)", output) for count in pair if count)
             code = rc if rc is not None else -1
+            if check.get("recorded"):
+                # Counts come from the record only; a missing/malformed record is a failure.
+                counts = [str(record["tests_run"])] if record else []
+                skipped = record["skipped_count"] if record else 0
+                expected = record["expected_failures"] if record else 0
+                unexpected = record["unexpected_successes"] if record else 0
+                if record is None or not record["successful"] or record["tests_run"] <= 0 or skipped or expected or unexpected:
+                    code = code or 2
             if check.get("official"):
                 summary = None
                 for line in output.splitlines():
@@ -441,6 +680,10 @@ class Orchestrator:
                 results[-1]["suite"] = suite
             if local_plan is not None:
                 results[-1]["_planner_internal"] = id(check) in internal_ids
+                if id(check) in internal_ids and record is not None:
+                    proven = proven_tests(record)
+                    duplicate_ids |= executed_ids & proven
+                    executed_ids |= proven
             if reason: break
         if local_plan is not None:
             try:
@@ -448,12 +691,27 @@ class Orchestrator:
             except Exception:
                 stable = False
             if not stable:
-                for result in results:
-                    result["exit_code"] = 2
-                    result["stop_reason"] = "validation_state_changed"
+                mark_state_changed(results)
             if not results:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
+            coverage = None
+            if local_plan["effective_tier"] != "V3" and not any(r.get("stop_reason") for r in results):
+                # CI-VTIER-001 review P1 / re-review N01: every selected and required test
+                # ID (a V2 selection is every inventoried test of its modules, required
+                # regression modules included) must be recorded as run and passed; a test
+                # dropped by load_tests or never started fails the check.
+                wanted = set(local_plan.get("selected_ids", [])) | set(local_plan.get("required_ids", []))
+                missing = sorted(wanted - executed_ids)
+                missing = sorted({m for m in local_plan.get("required_modules", [])
+                                  if any(i.startswith(m + ".") for i in missing)
+                                  or not any(i.startswith(m + ".") for i in executed_ids)}) + missing
+                missing += ["duplicate:" + i for i in sorted(duplicate_ids)]
+                coverage = {"argv": ["required_tests_executed"], "acs": [], "exit_code": 2 if missing else 0,
+                            "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
+                            "output": ("required_tests_not_executed: " + " ".join(missing[:20])) if missing
+                            else "required_tests_executed", "stop_reason": None, "_planner_internal": True}
+                results.append(coverage)
             # evidence.py intentionally requires one result per declared check.
             # Keep planner checks in separate metadata, propagate their failures
             # into a declared result, and never credit their counts/ACs as tests.
@@ -464,7 +722,7 @@ class Orchestrator:
                 self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
                 raise HarnessError("validation_not_run")
             execution_complete = (len(declared) == len(task["validation"])
-                                  and len(feedback) == len(internal) + len(local_plan["direct_checks"])
+                                  and len(feedback) == len(internal) + len(local_plan["direct_checks"]) + (1 if coverage else 0)
                                   and not any(r.get("stop_reason") for r in results))
             failed = [r for r in feedback if r["exit_code"] != 0 or r.get("stop_reason")]
             if failed and declared[0]["exit_code"] == 0:
@@ -474,11 +732,28 @@ class Orchestrator:
                 declared[0]["exit_code"] = 2
             declared[0]["planner"] = {**local_plan, "executed_checks": feedback,
                                        "execution_complete": execution_complete,
-                                       "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared) else "passed",
+                                       "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared)
+                                       else "not_run" if local_plan["effective_tier"] != "V3" and not sum(
+                                           r.get("test_count", 0) for r in feedback if r["argv"][1:3] == ["-m", "unittest"])
+                                       else "passed",
                                        "final_evidence_eligible": False}
             results = declared
             self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
         return results
+
+    def _previous_official_failed(self, task):
+        """True while an official V3 failure of this Task is unresolved (3rd review R02:
+        kept apart from the latest validation, cleared only by a complete passing V3).
+        An unreadable store fails closed (True: the next plan is V3)."""
+        try:
+            result = self.store.get(task["task_id"]).get("result") or {}
+            checks = result.get("validation") or []
+            if result.get("official_v3_unresolved") is not None:
+                return result["official_v3_unresolved"] is True
+            from .managed import legacy_official_v3_failed
+            return legacy_official_v3_failed(checks)
+        except Exception:
+            return True
 
     def _record_ci_observation(self, task, tree, planner, local_plan, results, validation_seconds):
         """Record execution facts without changing validation or Task outcomes."""
@@ -564,7 +839,7 @@ class Orchestrator:
         self.store.observe(task["task_id"], "record_ci_validation", observation)
 
     def verify(self, task_id, *, base_sha=None, stage="task_complete"):
-        if stage not in {"checkpoint", "task_complete"}:
+        if stage not in {"in_progress", "checkpoint", "task_complete"}:  # CI-VTIER-001 AC-05
             raise HarnessError("invalid_validation_stage")
         from .runtime import execution_lock
         row = self.store.get(task_id)
@@ -602,7 +877,7 @@ class Orchestrator:
         if len(history) > 20: raise HarnessError("base_history_limit")
         for key in ("candidate", "review_evidence", "integration_evidence", "review_runtime"):
             result.pop(key, None)
-        result.update(base_commit=base_sha, changed_files=changes, validation_passed=False,
+        result.update(base_commit=base_sha, changed_files=changes, validation_passed=False, validation_status=None,
                       base_history=history, reason="base_adopted_requires_revalidation")
         safe(result)
         with self.store.tx() as c:
@@ -619,24 +894,31 @@ class Orchestrator:
         started = time.monotonic()
         try:
             tree = prepare_worktree(self.store, row)
-            check_scope(task, snapshot(tree))
-            self.store.update(task_id, lease, "VALIDATING")
+            before = snapshot(tree); check_scope(task, before)
+            # 4th review R402: a new validation replaces the previous result even when it
+            # ends by an error or an interruption.
+            self.store.update(task_id, lease, "VALIDATING", result=dict(CLEARED_VALIDATION))
             def stop():
                 return self.control(task_id, lease) or ("timeout" if row["elapsed"] + time.monotonic() - started >= task["execution"]["total_timeout_seconds"] else None)
             checks = self.validate(task, tree, stop, stage=stage,
                                    target_base=row["result"].get("base_commit"))
-            reason = stop()
+            reason = stop() or validation_stop_reason(checks)
             if reason:
-                return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason)
+                return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason,
+                                   **settled_validation(checks, stopped=True))
             changes = snapshot(tree); check_scope(task, changes)
             if git(tree, "rev-parse", "HEAD").strip() != row["result"].get("base_commit"):
                 raise HarnessError("worktree_head_changed")
+            if changes != before:
+                raise HarnessError("validation_state_changed")  # 8th review R801, as in _run.
             passed = bool(checks) and all(check["exit_code"] == 0 for check in checks)
-            return self.finish(task_id, lease, "REVIEW_REQUIRED" if passed else "FAILED", validation=checks, validation_passed=passed, changed_files=changes)
+            return self.finish(task_id, lease, "REVIEW_REQUIRED" if passed else "FAILED", validation=checks, validation_passed=passed,
+                               changed_files=changes, **settled_validation(checks))
         except HarnessError as exc:
-            return self.finish(task_id, lease, "BLOCKED", reason=str(exc))
+            return self.finish(task_id, lease, "BLOCKED", reason=str(exc), **CLEARED_VALIDATION)
         except BaseException as exc:
-            self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error")
+            self.finish(task_id, lease, "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "BLOCKED", reason="runtime_error",
+                        **CLEARED_VALIDATION)
             if isinstance(exc, (KeyboardInterrupt, SystemExit)): raise
             return self.store.export(task_id)
 

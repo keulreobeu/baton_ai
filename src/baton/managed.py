@@ -11,6 +11,8 @@ import uuid
 
 from .contracts import HarnessError, canonical_path, digest, encode, identifier, overlaps, replace_file, safe
 
+PAYLOAD_LIMIT = 128_000  # contracts.safe's size limit
+
 ACTIVE = {"PLANNING", "RUNNING", "VALIDATING", "RETRYING"}
 TERMINAL = {"COMPLETED", "CANCELLED"}
 STATES = ACTIVE | TERMINAL | {"CREATED", "READY", "REVIEW_REQUIRED", "FAILED", "BLOCKED", "PAUSED",
@@ -145,6 +147,15 @@ def validate(body, root):
         raise HarnessError("invalid_task") from None
 
 
+def legacy_official_v3_failed(checks):
+    """A failed official V3 in a validation list written before official_v3_unresolved
+    existed (CI-VTIER-001 3rd/4th review R02/R403)."""
+    if not isinstance(checks, list):
+        return False
+    planners = [c.get("planner") for c in checks if isinstance(c, dict) and isinstance(c.get("planner"), dict)]
+    return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
+
+
 class ManagedStore:
     def __init__(self, directory, root):
         self.directory, self.root = Path(directory).resolve(), Path(root).resolve()
@@ -263,7 +274,9 @@ class ManagedStore:
             self.event(c, task, "PLANNING", {"lease": lease, "pid": os.getpid()})
         return self.get(task)
 
-    def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False):
+    def update(self, task, lease, state, *, result=None, worktree=None, release=False, settled_external=False,
+               yield_to_control=False, headroom=0):
+        overridden = False
         if state not in STATES:
             raise HarnessError("invalid_state")
         with self.tx() as c:
@@ -275,7 +288,15 @@ class ManagedStore:
                         or not result or result.get("runtime", {}).get("settled") is not True):
                     raise HarnessError("orca_settlement_required")
                 if r["control"]:
+                    overridden = state not in {"PAUSED", "CANCELLED"}
                     state = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
+            if r["control"] and yield_to_control:
+                # CI-VTIER-001 5th review R501 / 6th review R602: the latest control decides the
+                # final state, also over a PAUSED or INTERRUPTED decision (a later cancel wins).
+                latest = "CANCELLED" if r["control"] == "cancel" else "PAUSED"
+                overridden = state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}
+                if state != latest and not (state == "CANCELLED" and latest == "PAUSED"):
+                    state = latest
             if r["control"] and state not in {"PAUSED", "CANCELLED", "INTERRUPTED"}:
                 raise HarnessError("control_requested")
             values = json.loads(r["result"])
@@ -289,8 +310,22 @@ class ManagedStore:
                 if actual and incoming.get("attempt") != actual.get("attempt"):
                     self.event(c, task, "runtime_checkpoint", {"role": "author", "binding": actual})
                 result = {**result, "runtime": incoming}
-            values.update(result or {})
+            result = dict(result or {})
+            if overridden and ({"validation", "validation_passed", "validation_status", "official_v3_unresolved"} & set(result)):
+                # CI-VTIER-001 4th review R402: a settlement turned into PAUSED/CANCELLED by a
+                # control that arrived first is no validation result (atomically, here).
+                result.update(validation_passed=False, validation_status=None, wiki=None)
+                result.pop("official_v3_unresolved", None)
+            if ("validation" in result and "official_v3_unresolved" not in result
+                    and "official_v3_unresolved" not in values and legacy_official_v3_failed(values.get("validation"))):
+                # 4th review R403: a record from before the flag keeps its official V3
+                # failure when its validation list is replaced.
+                result["official_v3_unresolved"] = True
+            values.update(result)
             safe(values)
+            if headroom and len(encode(values).encode()) + headroom > PAYLOAD_LIMIT:
+                # CI-VTIER-001 8th review R802: room a later write to this record must still have.
+                raise HarnessError("unsafe_payload")
             elapsed = r["elapsed"] + (max(0, time.time() - r["started"]) if release else 0)
             c.execute("UPDATE managed_tasks SET state=?,result=?,worktree=?,lease=?,pid=?,elapsed=? WHERE id=?", (state, encode(values), worktree or r["worktree"], None if release else lease, None if release else r["pid"], elapsed, task))
             self.event(c, task, state, result)
@@ -378,8 +413,11 @@ class ManagedStore:
                 raise HarnessError("approval_requires_validated_result")
             if digest(result) != digest(checked["result"]) or r["hash"] != checked["hash"] or r["control"]:
                 raise HarnessError("changes_since_validation")
+            if result.get("official_v3_unresolved") is True:
+                # CI-VTIER-001 5th review R504: an unresolved official V3 failure blocks approval.
+                raise HarnessError("official_v3_unresolved")
             from .evidence import validate_member_records
-            validate_member_records(c, result["integration_evidence"]["members"])
+            validate_member_records(c, result["integration_evidence"]["members"])  # incl. members' V3 (R604)
             c.execute("UPDATE managed_tasks SET state='COMPLETED' WHERE id=?", (task,))
             self.event(c, task, "COMPLETED", {"reviewer": reviewer, "result_hash": digest(result), "proof": proof})
         return self.observe_idle_state(task)

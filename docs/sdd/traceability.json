@@ -42,7 +42,11 @@
     "docs/tasks/TASK-CI-TIME-001.md",
     "docs/plans/ci-windows-time.md",
     "docs/adr/ADR-CI-TIME-001.md",
-    "docs/tasks/TASK-JIPDAM-SKIP-001.md"
+    "docs/tasks/TASK-JIPDAM-SKIP-001.md",
+    "docs/specs/CI-VTIER-001.md",
+    "docs/plans/ci-vtier.md",
+    "docs/adr/ADR-CI-VTIER-001.md",
+    "docs/tasks/TASK-CI-VTIER-001.md"
   ],
   "features": [
     {
@@ -1535,13 +1539,260 @@
         {"id": "CI-OPT-001-AC-04", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "PrMainWorkflowTests.test_pr_number_group_cancels_pr_only_and_main_sha_is_retained"}]},
         {"id": "CI-OPT-001-AC-05", "tests": [{"file": "tests/test_sdd.py", "symbol": "SddTests.test_shared_task_selection_preserves_status_level_and_path_boundaries"}]},
         {"id": "CI-OPT-001-AC-06", "tests": [{"file": "tests/test_sdd.py", "symbol": "SddTests.test_pull_request_uses_base_sha_and_only_post_base_changes"}, {"file": "tests/test_sdd.py", "symbol": "SddTests.test_pull_request_missing_base_fails_cli"}]},
-        {"id": "CI-OPT-001-AC-07", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "PolicyTests.test_v1_partial_failure_does_not_full_fallback_v2_does"}, {"file": "tests/test_ci_plan.py", "symbol": "SyntheticGitTests.test_failed_graph_v1_direct_checks_and_v2_full"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v1_direct_and_selected_checks_preserve_declared_ac_checks"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v2_uses_same_planner_and_base_sdd_preserving_commands"}]},
+        {"id": "CI-OPT-001-AC-07", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "PolicyTests.test_incomplete_graph_gives_partial_local_v1_v2_and_remote_v3"}, {"file": "tests/test_ci_plan.py", "symbol": "SyntheticGitTests.test_failed_graph_gives_partial_local_v1_v2"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v1_direct_and_selected_checks_preserve_declared_ac_checks"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v2_uses_same_planner_and_base_sdd_preserving_commands"}]},
         {"id": "CI-OPT-001-AC-08", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_draft_v2_and_ready_main_windows_pair_are_contractual"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_windows_pair_required_for_every_event_and_non_windows_rejected"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_absent_planner_blocks_baton_and_unknown_identity_without_running_checks"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_absent_planner_keeps_generic_declared_only_validation"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_final_evidence_rejects_baton_candidate_when_planner_absent"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_present_planner_blocks_unknown_or_disagreeing_baton_identity"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_packaged_layout_absent_and_broken_controller_in_real_process"}]},
         {"id": "CI-OPT-001-AC-09", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_stale_incremental_rechecks_and_persistence_disabled"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_partial_or_missing_test_edge_is_not_complete"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_test_method_with_unrelated_tests_edge_is_selected"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_test_file_helper_selects_whole_test_module"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_test_class_selects_whole_test_module"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_unmapped_support_file_stays_incomplete_and_v2_falls_full"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_cancel_after_cbm_call_prevents_remaining_queries"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_identity_detector_is_positive_bounded_and_marks_unknown"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_interrupted_policy_import_is_not_cached_and_next_load_can_succeed"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_present_planner_blocks_unknown_or_disagreeing_baton_identity"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_packaged_layout_absent_and_broken_controller_in_real_process"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_detect_changes_arguments_obey_installed_cli_bounds"}]},
         {"id": "CI-OPT-001-AC-10", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_main_dispatch_full_explicit_base_and_missing_invalid_base"}]},
         {"id": "CI-OPT-001-AC-11", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_gate_requires_plan_and_matrix_aggregate_success_without_reuse"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_official_requires_nonzero_no_skip_eligible_summary"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_v2_rejects_empty_skipped_expected_and_unexpected_success"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_remote_process_streams_output_and_rejects_exit_zero_skip"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_v2_test_body_and_atexit_skip_words_are_not_result_counts"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_v2_rejects_multiple_summaries_in_either_order"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_v2_rejects_summary_shaped_atexit_output_after_skip"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_v2_rejects_fake_summary_after_real_summary_evicted_from_tail"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_v2_uses_stream_boundaries_when_tail_starts_midline"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_output_tail_preserves_final_official_summary_after_large_output"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_remote_main_logs_ac12_identity_for_every_event_without_raw_event_data"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_partial_rerun_attempt_mismatch_fails_closed_and_regenerated_plan_passes"}]},
         {"id": "CI-OPT-001-AC-12", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_exact_complete_v3_only_and_never_remote"}, {"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_every_identity_field_changed_unknown_partial_missing"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_zero_exit_with_cancel_or_timeout_never_records_full_success"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_cancel_on_final_official_process_is_partial_despite_success_summary"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_plan_identity_changed_before_execution_runs_no_checks"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_unread_doc_candidate_and_outside_section_change_reuse"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_inputs_that_must_invalidate"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_ignored_read_listing_outside_env_manifest_git_invalidate"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_unsuccessful_or_untrusted_sources_reject"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_non_reusable_tests_always_and_expiry"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_reproduces_2026_11_13_five_run_case"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_grandchildren_are_tokenized_and_attributed"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_no_launch_without_its_hook_is_explained_away"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_lost_child_log_of_a_real_child_is_partial"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_log_lost_or_rewritten_after_a_partial_merge_is_incomplete"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_exit_proof_values_and_duplicate_hook_tokens"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_listing_change_never_hides_a_content_env_or_alias_change"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_listing_and_content_change_together_is_unstable"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_input_read_again_must_still_be_what_was_first_read"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_log_sequence_is_strict_with_one_exit_proof"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_numbers_match_file_order_under_threads"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_failed_listing_keeps_its_error_type"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_listing_changed_by_the_suite_uses_the_fallback_and_is_not_reused"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_native_allowlist_ctypes_repo_load_and_mmap"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_alive_at_stop_and_nested_propagation"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_link_targets_resolver_and_missing_listing_are_inputs"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_execute_then_reuse_then_reexecute_after_input_change"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_failed_run_is_recorded_but_never_reused_and_sdd_failure_runs_nothing"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_suite_execution_combinations"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v3_reused_suite_is_recorded_without_counting_as_new_run"}]},
         {"id": "CI-OPT-001-AC-13", "tests": [{"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_events_preserve_status_unknowns_and_existing_report"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_rejects_untrusted_fields_and_invalid_values"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_large_ci_selection_keeps_full_set_digest_under_existing_payload_cap"}, {"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_measurements_preserve_unknowns_and_no_new_database"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task"}]}
+      ]
+    },
+    {
+      "id": "CI-VTIER-001",
+      "spec": "docs/specs/CI-VTIER-001.md",
+      "requirements": [
+        {
+          "id": "CI-VTIER-001-REQ-01",
+          "acs": [
+            "CI-VTIER-001-AC-01",
+            "CI-VTIER-001-AC-02"
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-REQ-02",
+          "acs": [
+            "CI-VTIER-001-AC-03",
+            "CI-VTIER-001-AC-04"
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-REQ-03",
+          "acs": [
+            "CI-VTIER-001-AC-05",
+            "CI-VTIER-001-AC-06"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "CI-VTIER-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_risk_paths_raise_final_and_remote_but_not_local_v1"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_final_stages_and_events_do_not_depend_on_graph"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_empty_regression_module_is_not_coverage"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_risk_paths_add_required_regression_modules"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_bad_graph_ids_mark_a_partial_v1"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_incomplete_graph_gives_partial_local_v1_v2_and_remote_v3"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_unmapped_graph_id_is_not_trusted"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "SyntheticGitTests.test_failed_graph_gives_partial_local_v1_v2"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "SyntheticGitTests.test_malformed_graph_answer_is_discarded_not_merged"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_incomplete_inventory_alone_gives_partial_local_v1"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "ImpactedTestFileTests.test_impacted_unmapped_support_file_stays_incomplete_and_v2_falls_full"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_vtier_required_tests_must_actually_run"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_recorded_runner_proves_only_tests_that_really_ran"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_missing_or_malformed_record_is_a_failure"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_validation_status_separates_not_run_from_passed"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_failed_official_v3_then_passing_v3_returns_to_v1"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_record_must_agree_with_itself_and_ids_run_once"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_not_run_is_never_wiki_verified_and_new_base_clears_status"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_new_validation_that_errors_or_is_interrupted_leaves_no_pass"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_evidence_gate_v3_failure_stays_unresolved"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_control_during_author_settlement_is_no_pass"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_late_control_and_nested_stop_leave_no_result_and_release"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_failed_gate_v3_invalidates_evidence_and_blocks_approval"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_settlement_of_an_unvalidated_tree_or_unrecordable_result_has_no_status"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_latest_control_member_flags_and_member_evidence"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_every_check_stop_counts_and_state_change_keeps_it"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_timeout_with_a_state_change_keeps_the_stop_reason"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_interrupted_second_settlement_step_resumes_and_fallback_skips_it"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_control_after_a_failed_second_step_keeps_the_settled_result"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_edit_after_the_checks_is_no_validated_settlement"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_local_run_and_verify_reject_an_edit_after_the_checks"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_second_step_refused_for_size_stores_a_compact_wiki_and_releases"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_first_step_without_room_for_the_wiki_outcome_falls_back_and_releases"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_local_first_step_without_room_for_the_wiki_outcome_settles_unrecordable"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_local_wiki_outcome_too_large_is_stored_compact_or_fails_closed"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_pending_row_of_an_earlier_version_settles_without_a_pending_mark"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_vtier_previous_failed_official_v3_is_an_outside_failure"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_empty_regression_module_is_not_coverage"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_minimum_only_raises_scope_state_empty_and_limits"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_vtier_risk_paths_add_required_regression_modules"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_vtier_v1_without_tests_is_not_run_and_planner_checks_use_total_time"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_orca_author_settlement_validates_at_checkpoint"
+            }
+          ]
+        },
+        {
+          "id": "CI-VTIER-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_incomplete_graph_gives_partial_local_v1_v2_and_remote_v3"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "PolicyTests.test_risk_paths_raise_final_and_remote_but_not_local_v1"
+            }
+          ]
+        }
       ]
     }
   ]
