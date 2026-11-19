@@ -191,3 +191,20 @@ oracle on Ubuntu and Windows. After disk CAS corruption, five Ubuntu cache
 hits had unreadable result outputs. The second candidate runs only that
 scenario and records which corrupted blobs were materialized, plus
 path-redacted Bazel cache messages.
+
+### Phase 4 evidence
+
+Runs 44618013125 (`e1be9de`) and 44623175035 (`457b5df`) completed 15
+jobs. Every cached run with a hit was compared per ID with a same-job
+uncached oracle. Unchanged inputs were reused without stale hits on Ubuntu.
+Any change to the shared data, PATH, or Python toolchain invalidated all 34
+targets. The undeclared system Git hook produced stale hits on 15 Ubuntu
+targets (245 IDs) and 17 Windows targets (280 IDs). On Windows, `auto`
+cached a pass from a nondeterministic Readset test, which then disagreed
+with the oracle. `auto` never reused failed results and `yes` did.
+Corrupted disk CAS blobs were served as cache hits, and four or five
+targets had unreadable result files. The client environment change was
+isolated and the clock was not tested; both are undecidable. The collected
+cache messages were path-only debug lines. The pushed ref read back as
+`457b5dff11968603d452793d15d3a88db9ae96cd`. Official V3 reuse is not
+supported by this evidence and remains a user decision.

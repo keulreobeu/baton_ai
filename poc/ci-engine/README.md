@@ -561,3 +561,180 @@ fast-forward했고 원격 SHA `eda8fcabc123491dd4fc941e38923c11e78db477`을
 `poc/ci-engine/evidence/phase3-local-valid/`에 있으며, 원격 각 시나리오의
 원자료에는 `impact.json`과 Ubuntu 두 결과 JSON이 있다.
 [첫 실행](https://github.com/keulreobeu/baton_ai/actions/runs/44612983547) · [두 번째 실행](https://github.com/keulreobeu/baton_ai/actions/runs/44614138110) · [최종 실행과 artifact](https://github.com/keulreobeu/baton_ai/actions/runs/44615330033)
+
+## 4단계 테스트 결과 캐시 안전성
+
+각 job 안에서만 Bazel 로컬 disk cache(`--disk_cache=$RUNNER_TEMP/dc`)와
+테스트 결과 캐시를 켰다. 실험 명령행에서 `.bazelrc`의 `--nocache_test_results`를
+`--cache_test_results=auto`(Bazel 기본값)로 덮어썼다. 시나리오 8에서만 `yes`도 확인했다.
+원격 캐시, 원격 실행, actions/cache 기반 교차 run 캐시는 쓰지 않았다.
+BUILD는 1~3단계의 공용 data 구성(34개 `py_test`)을 그대로 사용했다.
+실행기는 `poc/ci-engine/cache.py`이며 GitHub Actions 밖에서는 Bazel을 실행하지 않는다.
+
+캐시 on 실행 뒤에는 같은 job에서 같은 입력으로 `--nocache_test_results` 실행을 했다.
+disk cache 없이 만든 이 결과를 정답(oracle)으로 두고 ID별로 대조했다.
+BEP `testResult`의 `cachedLocally` 또는 `executionInfo.cachedRemotely`(`disk cache hit`)가
+켜진 타깃을 캐시 적중으로 셌다. 캐시 결과는 새 실행으로 세지 않았다.
+적중 타깃의 결과가 정답과 다르면 stale hit다. 적중하지 않은 타깃이 다르면
+비캐시 불일치로 따로 셌다. 정답이 변경 전 warm 실행과 같으면
+그 변경은 결과를 바꾸지 않은 것이며 stale 여부는 판정 불가로 적었다.
+Windows는 적중이 0개인 단계의 정답 실행을 생략했다. 적중이 없으면
+stale hit가 생길 수 없다. 원본 BEP와 로그에는 경로와 환경 정보가 있어
+artifact에 넣지 않고 요약 `cache.json`만 남겼다.
+
+### 시나리오 표
+
+셀은 **적중/재실행 타깃 · stale hit 타깃(ID) · 캐시 on 초 / 정답(off) 초**다.
+정답 변화는 warm 대비 정답에서 결과가 바뀐 ID 수다. Ubuntu의 재실행 3개는
+기준선에서 실패하는 `test_ci_plan`, `test_managed_harness`, `test_readset`이다.
+`auto`는 직전 실패 타깃을 다시 실행한다. Windows의 기준 실패 타깃은
+`test_managed_harness`와 `test_readset`이다.
+
+| 시나리오 | 변경 | Ubuntu 3.12 | 정답 변화 | Windows 3.12 | 정답 변화 |
+|---|---|---|---:|---|---:|
+| 1 같은 입력 | 없음 | 31/3 · 0 · 8.5 / 52.7 | 0 | 32/2 · 0 · 53.2 / 524.2 | 0 |
+| 1b 미선언·미사용 파일 | `poc/ci-engine/README.md` | 31/3 · 0 · 8.4 / 100.2 | 0 | 33/1 · 1(1) · 57.4 / 415.7 | 0 |
+| 2 문서 | `docs/specs/CI-OPT-001.md` | 0/34 · 0 · 34.0 / 34.8 | 1 | — | — |
+| 3 단일 모듈 | `src/baton/__main__.py` | 0/34 · 0 · 43.6 / 41.9 | 3 | 0/34 · 0 · 438.2 / 생략 | 미측정 |
+| 4 공통 의존성 | `src/baton/state.py` | 0/34 · 0 · 36.9 / 42.6 | 8 | — | — |
+| 5 테스트 코드 | `tests/test_gms_optional.py` | 0/34 · 0 · 29.2 / 27.1 | 1 | — | — |
+| 6a PATH | 빈 디렉터리를 앞에 추가 | 0/34 · 0 · 32.7 / 39.6 | 0 | 0/34 · 0 · 449.3 / 생략 | 미측정 |
+| 6b Python | toolchain 3.12 → 3.11 | 0/34 · 0 · 47.6 / 36.7 | 0 | 0/34 · 0 · 526.5 / 생략 | 미측정 |
+| 7a 미선언 환경 변수 | client env의 `GIT_CONFIG_*` hook | 31/3 · 0 · 8.9 / 39.1 | 0 | 32/2 · 0 · 64.0 / 501.1 | 0 |
+| 7b 미선언 외부 파일 | system Git `core.hooksPath`의 실패 hook | 31/3 · **15(245)** · 5.8 / 16.0 | 305 | 33/1 · **17(280)** · 18.8 / 119.3 | 306 |
+| 7c 시계 | 미시도 | 판정 불가 | — | 판정 불가 | — |
+| 8 실패 뒤 재실행 | 5번 변경 유지 | 아래 절 | 1 | — | — |
+| 9 disk cache 손상 | CAS·AC 일부 변조 | 아래 절 | 0 | — | — |
+| 10 `--nocache_test_results` | 없음 | 0/34 · 0 · 29.9 / warm 84.3 | 0 | — | — |
+
+warm 실행(빈 캐시, 전 타깃 실행)은 Ubuntu 72.0~253.3초, Windows 522.5~672.2초였다.
+Ubuntu 1번 warm 253.3초는 그 job의 cold 분석과 toolchain 준비를 포함한다.
+10번 뒤 `auto` 실행은 31/3 적중, 6.5초였고 nocache 결과와 일치했다.
+정답 실행(`--disk_cache` 없음) 다음 단계의 적중은 로컬 대신 disk cache에서 왔다(1b, 7b).
+
+### stale hit 상세와 원인
+
+- **7b system Git 설정**은 Bazel에 선언되지 않았다. runner의 system gitconfig에
+  `core.hooksPath`를 넣어 실패하는 `pre-commit`을 연결했다. 테스트 fixture의 `git commit`이
+  이 설정을 읽는다. 정답에서는 Ubuntu 305개, Windows 306개 ID가 pass에서 error/fail로 바뀌었다.
+  캐시 실행은 Ubuntu 31개, Windows 33개 타깃을 disk cache에서 재사용했다.
+  그중 Ubuntu 15개 타깃 245개 ID, Windows 17개 타깃 280개 ID가 옛 pass를 보고했다.
+  Windows 수치에는 아래 비결정 1건이 포함된다. 나머지 정답 변화 ID는 기준 실패 때문에
+  재실행된 타깃에 있었고 올바르게 반영됐다. 공통 타깃은 `test_flow_evidence`,
+  `test_flow_runtime`, `test_git_lifecycle`, `test_gms_optional`, `test_handoff`,
+  `test_harness_operations`, `test_input_check`, `test_lean_metrics`, `test_memory`,
+  `test_memory_mcp`, `test_observability`, `test_scope_path`, `test_sdd`,
+  `test_verify_environment`, `test_wiki_lifecycle`다. Windows는 `test_ci_plan`과
+  `test_readset`이 더해진다. Bazel 캐시 키에는 Git 실행 파일, system/global 설정,
+  hook 내용이 없다. 테스트 안에서 Git을 실행하는 타깃은 캐시 금지 후보다.
+- **Windows `test_readset` 비결정**: `ReadsetTests.test_input_read_again_must_still_be_what_was_first_read`는
+  34개 타깃을 모두 실행한 warm과 정답에서 fail이었다. 두 타깃만 재실행된 캐시 단계에서는 pass였고
+  `auto`가 이 pass를 저장했다. 다음 단계(1b, 7b)는 입력 변화 없이 그 pass를 재사용해
+  정답 fail과 달랐다. 1b의 stale 1건이다. 같은 job의 동시 실행 부하에 따라 결과가 바뀌는 것과
+  일치하지만 원인은 확정하지 않았다. 실패 뒤 재실행에서 pass한 비결정 테스트를
+  `auto`가 고정할 수 있다. 이 타깃도 캐시 금지 후보다.
+- **7a 미선언 환경 변수**는 Bazel이 테스트 환경에 전달하지 않았다(`--test_env`는 PATH만).
+  정답도 바뀌지 않았으므로 stale 여부는 판정 불가다. 격리된 결과와 일치한다.
+- **7c 시계**는 runner 시스템 시계를 바꾸지 않아 미시도이며 판정 불가다.
+  임시 홈과 `BATON_HOME`은 런처가 실행마다 `TEST_TMPDIR` 안에 새로 만든다.
+  이전 내용이 남는 미선언 입력이 아니어서 따로 변조하지 않았다.
+
+### 실패 결과와 손상 캐시
+
+시나리오 8(Ubuntu)은 테스트 1건을 실패시킨 상태를 유지했다.
+
+| 단계 | 적중/재실행 | 결과 | 초 | stale |
+|---|---|---|---:|---:|
+| 첫 실행 | 0/34 | 30 PASSED, 4 FAILED | 29.7 | 0 |
+| 같은 입력 `auto` | 30/4 (로컬) | 실패 4개 재실행 | 6.5 | 0 |
+| `bazel clean` 뒤 `auto` | 30/4 (disk) | 실패 결과는 disk cache에서 오지 않음 | 14.4 | 0 |
+| `yes` | 34/0 (로컬) | 실패 4개도 캐시 결과로 보고 | 0.9 | 0 |
+| `yes` 반복 | 34/0 | 같음 | 0.3 | 0 |
+
+정답 실행은 33.4초였다. `auto`는 실패 결과를 재사용하지 않았고 `yes`는 재사용했다.
+
+시나리오 9(Ubuntu)는 `bazel clean` 뒤 disk cache에서 결과를 받았다. 그다음
+CAS 파일 4개 중 1개의 가운데 바이트를 바꿨다. 크기는 같고 이름(SHA-256)과 내용이 맞지 않는다.
+다시 clean한 뒤 AC 항목 4개 중 1개를 절반으로 잘랐다. CAS 손상은 그대로 남겼다.
+
+| run | 손상 | 적중/재실행 | ID 결과 파일 읽기 불가 | stale |
+|---|---|---|---|---:|
+| 44618013125 | 없음 | 31/3 | 0 | 0 |
+| 44618013125 | CAS 74/294 | 24/10 | 5개 타깃(PASSED 적중) | 0 |
+| 44618013125 | +AC 20/77 | 25/9 | 같은 5개 | 0 |
+| 44623175035 | 없음 | 31/3 | 0 | 0 |
+| 44623175035 | CAS 74/296 | 24/10 | 4개 타깃(PASSED 적중) | 0 |
+| 44623175035 | +AC 21/81 | 21/13 | 같은 4개 | 0 |
+
+손상된 AC는 miss로 처리되어 재실행됐다. 손상된 CAS blob은 검증 없이 사용됐다.
+두 번째 run에서 손상 대상 이름과 같은 digest의 `test.xml`을 추적했다. disk cache 적중 7개
+타깃에서 원래 digest와 다른 `test.xml`이 생성됐다. 각 run의 4~5개 타깃은 PASSED 적중을
+보고했지만 ID 결과 JSON을 읽을 수 없었다. 손상은 다음 clean 뒤에도 남았다.
+읽을 수 있는 ID의 결과는 정답과 같아 상태 기준 stale hit는 0이다.
+결과 증거의 무결성은 보장되지 않았다. disk cache 읽기 검증 옵션은 이번에 확인하지 않았다.
+ID 결과는 zip이 아닌 `test.outputs/ids.json`으로 남아 blob 추적 대상에서 빠졌다.
+경로를 지운 Bazel 캐시 메시지 수집은 경로만 있는 DEBUG 줄만 잡아 진단 정보가 없었다.
+
+### 공용 data BUILD와 세분 BUILD
+
+현행 BUILD는 `docs/**`, `scripts/**`, `skills/**`, `src/**`, `tests/**`, `tooling/**`,
+workflow, 루트 설정 문서를 모든 타깃의 data로 둔다. 이 경로의 파일 하나만 바뀌어도
+34개 타깃이 모두 재실행된다(2~5번 적중 0). 런처 두 파일, BUILD·MODULE·`.bazelrc`,
+테스트 환경(PATH)과 Python 설정도 전체 무효화를 일으킨다(6번 적중 0).
+적중은 입력이 그대로인 반복, data 밖 파일 변경(1b), 기준 실패 외 타깃의
+재검증에서만 생겼다. 개발 중 변경에는 이점이 없고 같은 입력 재실행에서만 절감된다.
+같은 입력 반복은 Ubuntu 8.5초 대 정답 52.7초, Windows 53.2초 대 524.2초다.
+
+3단계 AST 세분 그래프는 미선언 data로 mutation 22건을 놓쳤다.
+그 그래프를 캐시 키로 쓰면 같은 누락이 stale hit가 된다. spec 문서(04), HTML/JS
+삭제·rename(06/07), 문자열 경로로 읽는 스킬(08), Memory MCP 자식 CLI(01)가 해당한다.
+이 입력이 바뀌어도 이전 pass가 재사용된다. 7b는 공용 data BUILD에서도
+저장소 밖 입력으로 같은 현상이 생김을 보였다. 세분 BUILD는 여기에 저장소 내부의
+선언 누락을 더한다.
+
+### suite_reuse와의 안전성 비교 (코드·문서 검토, 실행 안 함)
+
+| 항목 | `scripts/suite_reuse.py` (AC-12 rev5, 기본 off) | Bazel 테스트 결과 캐시 |
+|---|---|---|
+| 재사용 단위 | `offline_suite` 전체 1개 | 타깃(모듈)별 |
+| 입력 범위 | 실행 중 관측한 read set(저장소·저장소 밖 파일, 절, 목록, 별칭, 읽은 환경 변수) | BUILD에 선언한 srcs/data/toolchain, 명령행·설정, `--test_env` 값 |
+| 환경 | 환경 변수 전체 digest, 인터프리터·stdlib·site-packages manifest | 선언된 env만 전달하여 나머지는 격리 |
+| Git | 실행 파일 해시, version, 유효 config 파일 전체, attributes | 없음(7b stale hit) |
+| 기타 외부 | trust store, hosts·hostname, 정책 스크립트 해시 | 없음 |
+| 불완전 관측 | partial이면 재사용 거부 | 선언 밖 읽기를 알 수 없음 |
+| 실패 결과 | 성공·skip 0인 실행만 재사용 | `auto`는 재사용 안 함, `yes`는 재사용 |
+| 시간·비결정 | `NON_REUSABLE_TESTS` 만료 규칙, 시계·난수는 RA-1 수용 | 없음, 비결정 pass를 고정할 수 있음 |
+| 증거 무결성 | 증거 SHA-256 재확인 | disk cache CAS 손상 미검출(9번) |
+| 원격 CI | 재사용 금지 | 이번 실험은 job 안에서만 사용 |
+
+suite_reuse는 실제로 읽은 입력과 Git 설정 같은 외부 상태를 지문에 넣는다.
+7b는 지문 변경으로 거부되는 설계다. 대신 하나라도 바뀌면 suite 전체를 재실행하고
+RA-2/RA-3의 관측 불가 상태가 남는다. Bazel 캐시는 타깃 단위로 세밀하지만
+선언 밖 입력이 바뀌면 조용히 재사용한다. 현행 BUILD에서는 적중이 같은 입력 반복에만 생긴다.
+
+### 공식 V3 적용 조건 (사용자 승인 대상)
+
+이번 결과는 공식 V3 재사용을 지지하지 않는다. 적용을 검토하려면 아래 결정이 먼저 필요하다.
+
+1. Git을 실행하는 타깃과 비결정 타깃(`test_readset` 등)은 `external` 또는 `no-cache`로 둔다.
+   아니면 Git 실행 파일, 유효 config, hook을 선언 입력이나 `--test_env`로 고정한다.
+2. 미선언 data와 저장소 밖 입력의 완전성을 별도로 검증한다. 3단계 누락 22건의 해소 증거가 필요하다.
+3. `--cache_test_results=auto`만 사용하여 실패 결과를 재사용하지 않는다.
+4. disk cache를 신뢰 경계 안에 두고 손상 검증 방법을 정한다. 교차 run·원격 캐시는 별도 승인 대상이다.
+5. 캐시 적중을 실행 증거로 기록하지 않는다. V3의 `sdd_static`, 독립 검토, 원격 CI는 재사용하지 않는다.
+6. 시계(7c), Windows 정답 비교가 생략된 3·6번, Windows 2·4·5·8·9·10번을 추가로 측정한다.
+
+### 4단계 원격 실행과 게시 점검
+
+| push | 게시 커밋 | run | 결과 |
+|---:|---|---|---|
+| 1 | `a59f22d`, `e1be9de` | 44618013125 | 14 job 성공, Ubuntu 10·Windows 4 |
+| 2 | `457b5df` | 44623175035 | Ubuntu 9번 1 job 성공, 손상 blob 추적 |
+
+각 push 전에 `git fetch origin` 뒤 미게시 커밋 전부의 파일 범위, 민감정보 패턴,
+보호 경로 diff, `git diff --check`, `check_sdd.py --base 8e44620`을 확인했다.
+민감정보 패턴 일치는 테스트 이름의 `secret` 단어뿐이었다. 원격 SHA
+`457b5dff11968603d452793d15d3a88db9ae96cd`을 `git ls-remote`로 확인했다.
+job 시간은 Ubuntu 2~7분, Windows 16~28분이었다. 원자료는 로컬
+`poc/ci-engine/evidence/phase4-remote-1/`, `phase4-remote-2/`와 각 run artifact에 있다.
+[첫 실행](https://github.com/keulreobeu/baton_ai/actions/runs/44618013125) · [두 번째 실행](https://github.com/keulreobeu/baton_ai/actions/runs/44623175035)
