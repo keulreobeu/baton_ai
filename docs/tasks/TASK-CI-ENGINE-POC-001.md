@@ -23,6 +23,12 @@ command = "GitHub Actions PoC run 44578022938 (1a18f70), matrix A/B/C and per-ID
 result = "failed"
 evidence = "poc/ci-engine/README.md#결과"
 acs = ["CI-ENGINE-POC-001-AC-01"]
+
+[[verification]]
+command = "GitHub Actions phase 2 PoC run 44586768909 (5a0d233), repetitions and per-ID comparisons"
+result = "failed"
+evidence = "poc/ci-engine/README.md#2단계-병렬-실행과-자원-사용량"
+acs = ["CI-ENGINE-POC-001-AC-01"]
 ```
 
 Base: `8e44620`. Independent review and the experiment matrix are pending.
@@ -102,3 +108,26 @@ native-child module diagnostic. The phase 1 evidence-only commit
 `bd608d2` is included in the initial phase 2 fast-forward. Its two
 documentation paths and all phase 2 candidate changes are included in
 the unpublished-commit, scope, and sensitive-pattern audit.
+
+### Phase 2 remote evidence
+
+The first phase 2 push fast-forwarded `bd608d2` and `5a0d233` to
+`exp/ci-engine-poc-20261120`. Both unpublished commits and the final
+candidate passed the file scope, sensitive-pattern, diff and SDD checks.
+The exact remote SHA read-back was `5a0d233185b37c18f20d6e560f5ab51e41f84ed6`.
+Run 44586768909 ended with 23 successful jobs, one failed job and 24
+artifacts. All three same-job Bazel gates were equivalent. The native
+child diagnostic differed on ManagedHarness in both Windows lanes and on
+Readset in 3.12. All 26 pytest repetitions matched. Bazel matched on 25
+of 26 performance repetitions. The first Windows 3.11 two-slot run had a
+CredentialServer error and its time was excluded. No official gate was
+promoted by this experiment.
+
+### Phase 2 local evidence
+
+All 20 local comparisons and all 62 remote comparisons were reproduced
+directly from their result files. The 12-logical-CPU host matched the
+baseline on all 3 sequential runs, 15 single-worktree pytest repeats and
+both concurrent four-worker runs. The best single-worktree median was
+230.202 seconds at 12 workers. The concurrent pair took 420.616 seconds
+in total, and its temporary detached worktree was removed.
