@@ -255,7 +255,7 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 
 ## 정착 중단 복구 범위 축소(사용자 결정, 15차 반영) — 2026-11-19
 
-- 결정: 사용자 결정(2026-11-19, 코디네이터 전달). 설계 메모 `D:/baton_ai/.local_runtime/handoffs/research/CI-VTIER-RECOVERY-REDUCE-20261119.md`의 권고(복구 결과 BLOCKED, Spec revision 1 유지, blocking 참조 연결)와 B안(고도화 복구는 코드에서 제거, 이력 보존)을 확정했다. 복구 책임은 안전한 종료와 재검증 가능한 상태로 전환까지다. 위험 등급 L3 유지. Spec "2026-11-19 사용자 결정: 정착 중단 복구 범위 축소" 문단, ADR Amendment 2026-11-19.
+- 결정: 사용자 결정(2026-11-19, 코디네이터 전달). 설계 메모 `<LOCAL_RUNTIME>/handoffs/research/CI-VTIER-RECOVERY-REDUCE-20261119.md`(작성 PC 전용)의 권고(복구 결과 BLOCKED, Spec revision 1 유지, blocking 참조 연결)와 B안(고도화 복구는 코드에서 제거, 이력 보존)을 확정했다. 복구 책임은 안전한 종료와 재검증 가능한 상태로 전환까지다. 위험 등급 L3 유지. Spec "2026-11-19 사용자 결정: 정착 중단 복구 범위 축소" 문단, ADR Amendment 2026-11-19.
 - 15차 검토(Codex 독립 확인, 대상 `2de9e5b`) FAIL P1 3: R1501(Orca Task의 로컬 checkpoint 검증 중단 시 복구 주체 오판), R1502(HarnessError 외 영구 Wiki 입력 오류로 고립), R1503(기존 blocking Wiki 이벤트가 복구에서 빠져 승인 통과). 보고서: `<TEMP>/baton-ci-vtier-r15-review/TASK-CI-VTIER-001-review15.md`, 14차: `<TEMP>/baton-ci-vtier-r14-review/TASK-CI-VTIER-001-review14.md`.
 - 구현:
   - `orchestrator.finish`: 1단계에 `settlement_owner="local"`, `settlement_lease` 기록.
@@ -302,11 +302,11 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - 되돌린 방식: 커밋 `532e034`에서 `git checkout 57ef209 -- src tests`로 파일 내용을 복원했다(`git diff 57ef209 532e034 -- src tests` 0줄). `9aa79e6`·`2de9e5b`·`b16ba12`·`f790115`의 `src/baton/managed.py`·`orchestrator.py`·`runtime.py`·`evidence.py`·`tests/test_flow_runtime.py` 변경이 대상이다. 문서 변경은 되돌리지 않고 Spec 네 문단·ADR Amendment에 제외됨(superseded)을 표시했다(git revert는 문서까지 되돌리므로 택하지 않음).
 - 함께 되돌린 비복구 변경: 없음. 네 커밋의 코드 변경은 모두 복구 경로(`settlement_pending` 로컬 표시, `recover_settlement`·`_end_interrupted`, `interrupted_local_settlement`·`local_settlement_lease`, `ready` 분기·`refuse_recovery`, runtime 로컬 소유 가드, `_settle_unrecordable`의 `settlement_pending`·`extra`, `approval_proof`의 `wiki_blocking_refs`)이거나 그것을 위한 정리(`_finish_settlement`·`_settled` 추출)였다. `traceability.json` 변경은 없었다.
 - 코드 상태: `src/`·`tests/`는 `57ef209`과 같다. `57ef209` 코드 트리는 로컬 공식 V3 `4187253`(777 OK)과 원격 CI run `44455837743`(`3675fb8`)이 통과한 트리와 같은 코드다. 그래도 같은 SHA·이전 증거로 재사용하지 않으므로(AGENTS 검증 사다리) 이 후보에 새 독립 검토와 공식 V3가 필요하다.
-- 남은 위험: PR #17 comment 4624337778(P2). 로컬 정착 1·2단계 사이 프로세스 종료 시 Task 고립(REVIEW_REQUIRED·lease·pid 보유, `resume --recover-running` → `task_cannot_resume`, 재검증 → `worker_busy`). 영향은 운영 고립이며 오승격이 아니다(`ManagedStore._approve`가 lease 보유 행을 `approval_requires_validated_result`로 거부). 수동 조치: 지원 CLI 해제 경로 없음. 고립 Task는 이력으로 두고 새 Task로 재검증한다. 관리 DB 직접 수정은 계약 밖. 스레드 응답·resolve 여부는 사용자 결정.
+- 남은 위험: PR #17 comment 4624337778(P2). 로컬 정착 1·2단계 사이 프로세스 종료 시 Task 고립(REVIEW_REQUIRED·lease·pid 보유, `resume --recover-running` → `task_cannot_resume`, 재검증 → `worker_busy`). 영향은 운영 고립이며 오승격이 아니다(`ManagedStore._approve`가 lease 보유 행을 `approval_requires_validated_result`로 거부). 수동 조치: 지원 CLI 해제 경로 없음. 고립 Task는 이력으로 두고, 같은 변경을 새 Task로 `run` 실행해 새 worktree에서 재검증한다(`create` 직후 `validate`는 `validation_not_ready`, 18차 R1801로 정정). 관리 DB 직접 수정은 계약 밖. 스레드 응답·resolve 여부는 사용자 결정.
 - 문서: Spec CI-VTIER-001(새 문단, 네 문단 superseded 표시), ADR Amendment (2), TASK-SETTLE-RECOVERY-001(배경·보존 SHA·지적 표·착수 보류·PID 재사용·`end_attempt`), current.md, docs/HANDOFF.md 재개 카드(다른 PC 재개용). scope에 `docs/HANDOFF.md` 추가.
 - Task 상태: `in_progress` 유지. 전체 AC 마지막 기록 `not_run`, 독립 검토 `not_run`. verified 아님.
 - V2(코드 후보 `532e034` = `src/`·`tests/` `57ef209`, 작업 트리에 이 문서 변경만 추가, `PYTHONPATH=src`, 실행마다 임시 `BATON_HOME`, `-X utf8` 없음, 이 checkout에 venv가 없어 다른 checkout의 venv 인터프리터 사용): 9모듈(`test_ci_plan`·`test_managed_harness`·`test_flow_runtime`·`test_flow_evidence`·`test_observability`·`test_readset`·`test_verify_environment`·`test_ci_workflow`·`test_sdd`) 기본 Windows(`PYTHONUTF8`·`PYTHONIOENCODING` 미설정) 371 OK(1052.9초), `PYTHONIOENCODING=utf-8` 371 OK(1049.1초), 실패·오류·skip 0(두 실행 병렬, 2026-11-19T08:23:26Z~08:40:59Z, 단독 실측 아님). check_sdd `--base 762739f` PASS(changed_paths 32). 공식 V3는 실행하지 않았다(다음 단계).
-- 다음 단계(코디네이터가 별도 워커로 진행): 독립 교차검토 → 공식 V3(`verify_environment.py --base 762739f`, 재사용 off) → verified 재승격 → push·원격 CI → 리뷰 스레드 응답·resolve(사용자 결정) → 병합.
+- 다음 단계(코디네이터가 별도 워커로 진행): 독립 교차검토 → 공식 V3(`verify_environment.py --base 762739f`, 재사용 off) → verified 재승격 → push·원격 CI → 리뷰 스레드 응답·resolve(사용자 결정) → 병합. (18차 R1802로 순서 정정: 아래 "18차 문서 지적 반영" 절.)
 - **push 전 전체 커밋 점검(체크포인트, 사용자 결정 1의 push 승인 범위)**: `git fetch` 뒤 원격 `codex/ci-vtier-001`=`57ef209`, `origin/main`=`9a74545`, fast-forward 가능. 원격 refs로 도달할 수 없는 커밋은 `9aa79e6`·`2de9e5b`·`b16ba12`·`f790115`(복구 구현·이력 보존용, 코드는 다음 커밋에서 되돌림)·`532e034`(src/tests 복원)·`c134315`(문서)와 이 기록 커밋이다. 작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`. 원격 대비 순 변경은 문서 6개(HANDOFF·ADR·Spec·Task 2·current)뿐이고 `src/`·`tests/` 순 변경 0. 추가 줄에서 키·토큰·계정 이메일·DB·로그·runtime 파일 0건. 앞선 커밋의 검토 보고서 임시 경로(사용자 홈 아래 Temp)는 main에 이미 게시된 같은 형태의 경로(`docs/validation/multi-agent-flow.md` 의도적 게시 목록)와 같은 수준이며 현재 Task 본문은 `<TEMP>/`로 바꿨다. finding 없음. PR #17 병합·ready 해제·스레드 resolve는 하지 않는다. push가 일으키는 원격 CI 결과는 기다리지 않고 run id만 보고한다.
 
 ## 공식 로컬 V3와 18차 독립 검토(체크포인트 후보 `79258f2`) — 2026-11-19
@@ -319,3 +319,13 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
   - R1804 P3: current.md의 superseded 복구 항목이 현재형이다. HANDOFF 카드 SHA 표기를 정리한다.
   - R1805 P3: 현재 문서에 남은 작성 PC 홈 경로를 `<TEMP>`·상대 경로로 바꾼다.
 - Task 상태: `in_progress` 유지. 이 V3는 18차 지적 반영 전 후보의 증거다. 지적 반영은 문서만 바꾸지만 같은 SHA·이전 증거로 재사용하지 않는다는 규칙에 따라, verified 재승격에 쓸 증거는 반영 후 최종 후보 기준으로 다시 판단한다. verified·병합 아님.
+
+## 18차 문서 지적 반영(R1801~R1805) — 2026-11-19
+
+- 대상: 체크포인트 `522c3b9`(코드 트리 `57ef209`과 같음) 위의 문서만 고쳤다. `src/`·`tests/` 변경 0.
+- R1801: Spec "2026-11-19 범위 조정" 남은 위험 문단, 이 Task "범위 조정" 절, TASK-SETTLE-RECOVERY-001, HANDOFF 카드의 수동 조치를 정정했다. `ManagedStore.create`는 worktree 없는 READY Task를 만들고 `prepare_validation`이 `validation_not_ready`로 거부하므로, 재검증은 같은 변경을 새 Task로 `run` 실행해 새 worktree에서 결과를 만든 뒤 필요하면 `validate`를 쓰는 것이다. 고립 Task·worktree는 이력으로 둔다.
+- R1802: HANDOFF·current.md의 남은 순서를 "최종 후보 V3 → 기록 커밋 push·원격 CI 통과 → verified 재승격 커밋 → push·승격 커밋 CI 확인"(Q3=B)으로 고쳤다. 체크포인트 `522c3b9` 원격 CI run `44493732498`(plan·windows 3.11·3.12·gate success)은 체크포인트 증거이며 최종 후보 CI가 아니다. 이 Task "범위 조정" 절의 이전 다음 단계 줄에는 정정 표시만 달았다(이력 보존).
+- R1803: Spec 남은 위험 문단의 "`cancel`·`pause`는 제어 요청만 남긴다"를 로컬 런타임 설정 Task로 한정하고, Orca 런타임 설정 Task에서는 `_settle_unstarted_control`→`_settle_author`로 CANCELLED·PAUSED 정착·lease 해제(통과 부여 없음)임을 적었다.
+- R1804: current.md의 superseded 복구 항목 두 개를 "이력 — … [제외됨(superseded)]"으로 바꾸고 과거형으로 고쳤다. HANDOFF 카드의 SHA 표기를 정리했다(카드 자신의 SHA는 적지 않고 `git log -1`로 확인, 코드 트리 `57ef209`).
+- R1805: Spec·이 Task의 설계 메모 경로 `D:/…/.local_runtime/…`를 `<LOCAL_RUNTIME>/…`(작성 PC 전용)로 바꿨다. 검토 보고서 경로는 이미 `<TEMP>/`다. HANDOFF 하단의 2026-11-03 기록 경로는 main에 의도적으로 게시된 이력(`docs/validation/multi-agent-flow.md`)이라 그대로 둔다.
+- Task 상태: `in_progress` 유지. 독립 교차검토·최종 후보 공식 V3·원격 CI는 아직이다. verified·병합 아님.
