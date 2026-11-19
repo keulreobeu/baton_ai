@@ -317,3 +317,247 @@ RAM 두 행은 같은 호스트에서 수집했다. 동시 실행은 한 쌍이�
 저장된 로컬 비교 20개를 원본으로 다시 계산했다. 성능에 사용할 수 있는 실행은 20/20회다.
 로컬에서는 ID별 결과 변화나 종료 직후 남은 자손 프로세스를 관측하지 않았다.
 로컬 원자료는 gitignore가 적용된 `poc/ci-engine/evidence/phase2-local/`에 보존했다.
+
+2단계 절대 시간은 모든 반복에 `GIT_TRACE2_EVENT`를 켠 실측이다. 실행당 약 2만 Git 시작을 기록한 비용이 벽시계를 키웠을 수 있다(로컬 A 중앙값 2단계 1024초, 1단계 475초). 2단계 시간은 계측 조건 내 상대 비교에만 사용한다.
+
+## 3단계 V1·V2 영향 범위 분석
+
+각 변경은 임시 detached worktree에 격리했다. `05`와 `10`은 각각
+미추적 상태와 미커밋 상태를 유지했고 나머지는 임시 커밋으로 적용했다.
+Ubuntu에서 변경 전후 전체 unittest 결과를 대조했다. 같은 ID의 상태가
+달라지거나 새 상태가 생긴 ID를 mutation 기준으로 삼았다. Ubuntu의
+기존 실패와 skip이 같은 상태로 남으면 기준에 넣지 않았다. Windows는
+선택기와 시간만 측정했으므로 Windows 고유 테스트의 결과 변화를
+검증하지 않았다. mutation은 해당 결함에 대한 근사 기준이다.
+
+공식 `ci_plan.py`는 수정 없이 호출했다. 등록된 PoC Task에 시나리오
+경로를 임시로 더해 실제 SDD와 AC 경로를 사용했고, 외부 엔진을 호출하기
+전에 Task 파일을 복원했다. 로컬 `in_progress`와 `checkpoint`에 더해
+원격 draft 정책의 V3 상향을 재현했다. 선택 계획에서 테스트 실행 여부는
+`NOT_RUN`이다.
+
+현행 BUILD는 1단계의 공용 data 구성을 유지했다. 세분 BUILD는 코드의
+정적 import를 AST에서 읽고 순환 컴포넌트만 기계적으로 합쳤다.
+동적 import, subprocess 명령, 문자열 파일 경로에 수동 의존성을
+추가하지 않았다. rdeps는 현재 스냅샷의 선언을 사용하고 삭제·rename의
+옛 경로는 기준 스냅샷에서도 조회해 합쳤다. bazel-diff와 Target
+Determinator는 현행 BUILD를 사용했다.
+
+시간은 Trace2를 끈 별도 실행의 벽시계다. Git 시작 수는 동일 명령의
+Trace2 재실행에서 셌다. rdeps의 Git 변경 파일 확인은 공통 입력 단계로
+별도 기록했다. 현행 rdeps는 먼저 실행했고 세분 rdeps는 같은
+Bazel 작업 환경에서 후속 실행했다. 세분 수치를 별도 cold startup
+비용으로 해석할 수 없다.
+
+원격 도구는 Bazel 9.3.2, bazel-diff v79.0.1, Target Determinator
+v0.34.1이다. 두 외부 분석 도구는 플랫폼별 릴리스 SHA-256을 고정해
+runner에서 내려받고 검증했다.
+[bazel-diff 릴리스](https://github.com/Tinder/bazel-diff/releases/tag/v79.0.1) · [Target Determinator 릴리스](https://github.com/bazel-contrib/target-determinator/releases/tag/v0.34.1)
+
+초기 로컬 표본에서는 PATH를 거른 뒤에도 공식 코드가 `LOCALAPPDATA`의
+고정 경로를 찾아 unsigned CBM을 실행했다. 작업을 중단하고 임시
+worktree와 스크래치를 제거했으며, 해당 표본은 결과에서 제외했다.
+교정 후 Windows planner 자식 프로세스에 빈 `LOCALAPPDATA`와 필터링한
+PATH를 적용했다. 로컬 10개 시나리오의 V1/V2는 실제 `CBM_ABSENT`
+fallback이며 CBM 그래프 성능은 미측정이다.
+
+### 시나리오와 mutation 기준
+
+| 시나리오 | 변경 | 달라진 ID | 실행 건수 |
+|---|---|---:|---:|
+| 01-single | `src/baton/__main__.py` | 3 | 777 → 777 |
+| 02-common | `src/baton/state.py` | 8 | 777 → 777 |
+| 03-test | `tests/test_gms_optional.py` | 1 | 777 → 777 |
+| 04-spec | `docs/specs/CI-OPT-001.md` | 1 | 777 → 777 |
+| 05-untracked | `tests/test_poc_untracked.py` | 1 | 777 → 778 |
+| 06-delete | `src/baton/static/credentials.html` | 11 | 777 → 777 |
+| 07-rename | `src/baton/static/credentials.js` → `src/baton/static/credentials-poc.js` | 2 | 777 → 777 |
+| 08-dynamic | `skills/baton-flow/SKILL.md` | 7 | 777 → 777 |
+| 09-config | `pyproject.toml` | 0 | 777 → 777 |
+| 10-dirty | `tests/test_run_tests_fast.py` | 1 | 777 → 777 |
+
+Ubuntu 각 기준선은 771 pass, 4 fail, 1 error, 1 skip이었다. 기준 ID가
+사라진 경우는 없었다. 세 원격 run에서 10개 결과 변화 집합을 모두 재현했다.
+09의 프로젝트 버전 변경에는 실행 결과 변화가 관측되지 않았다.
+
+### 도구별 측정
+
+셀의 순서는 **선택 ID/모듈 · miss/과다 선택 · 초 · Git 시작 수**다.
+과다 선택은 해당 mutation에서 상태가 그대로인 선택 건수다.
+오류 셀은 실제 오류·시간·Git 시작 수를 표시한다.
+Git 변경 경로 입력은 시나리오마다 별도 Git 시작 2회를 사용했다.
+
+#### Ubuntu
+
+| 시나리오 | V1 fallback | V2 fallback | draft 상향 | rdeps 현행 | rdeps 세분 | bazel-diff | Target Determinator |
+|---|---|---|---|---|---|---|---|
+| 01-single | 2/2 V1 · 3/2 · 3.915s · 27 | 31/2 V2 · 3/31 · 3.930s · 27 | 777/34 V3 · 0/774 · 3.902s · 27 | 777/34 · 0/774 · 12.177s · 0 | 40/2 · 1/38 · 0.153s · 0 | 777/34 · 0/774 · 8.007s · 0 | 777/34 · 0/774 · 42.740s · 18 |
+| 02-common | 2/2 V1 · 8/2 · 6.255s · 27 | 31/2 V2 · 8/31 · 6.073s · 27 | 777/34 V3 · 0/769 · 6.312s · 27 | 777/34 · 0/769 · 13.513s · 0 | 447/20 · 0/439 · 0.193s · 0 | 777/34 · 0/769 · 10.849s · 0 | 777/34 · 0/769 · 48.244s · 18 |
+| 03-test | 11/2 V1 · 0/10 · 5.405s · 27 | 31/2 V2 · 0/30 · 5.376s · 27 | 777/34 V3 · 0/776 · 5.353s · 26 | 777/34 · 0/776 · 10.144s · 0 | 10/1 · 0/9 · 0.163s · 0 | 777/34 · 0/776 · 8.651s · 0 | 777/34 · 0/776 · 31.156s · 18 |
+| 04-spec | 2/2 V1 · 1/2 · 6.311s · 27 | 31/2 V2 · 0/30 · 6.338s · 27 | 777/34 V3 · 0/776 · 6.404s · 27 | 777/34 · 0/776 · 11.136s · 0 | 0/0 · 1/0 · 0.219s · 0 | 777/34 · 0/776 · 10.664s · 0 | 777/34 · 0/776 · 36.432s · 18 |
+| 05-untracked | 3/3 V1 · 0/2 · 6.211s · 27 | 32/3 V2 · 0/31 · 6.556s · 27 | 778/35 V3 · 0/777 · 6.317s · 26 | 778/35 · 0/777 · 13.297s · 0 | 1/1 · 0/0 · 0.428s · 0 | 778/35 · 0/777 · 12.745s · 0 | 778/35 · 0/777 · 64.448s · 18 |
+| 06-delete | 2/2 V1 · 11/2 · 6.103s · 27 | 777/34 V3 · 0/766 · 6.077s · 27 | 777/34 V3 · 0/766 · 6.121s · 26 | 777/34 · 0/766 · 23.389s · 0 | 0/0 · 11/0 · 0.465s · 0 | 777/34 · 0/766 · 4.267s · 0 | 777/34 · 0/766 · 50.045s · 18 |
+| 07-rename | 2/2 V1 · 2/2 · 4.099s · 27 | 777/34 V3 · 0/775 · 4.019s · 27 | 777/34 V3 · 0/775 · 3.987s · 26 | 777/34 · 0/775 · 18.677s · 0 | 0/0 · 2/0 · 0.295s · 0 | 777/34 · 0/775 · 2.715s · 0 | 777/34 · 0/775 · 35.232s · 18 |
+| 08-dynamic | 2/2 V1 · 7/2 · 6.164s · 27 | 61/3 V2 · 7/61 · 6.269s · 27 | 777/34 V3 · 0/770 · 6.207s · 26 | 777/34 · 0/770 · 11.695s · 0 | 0/0 · 7/0 · 0.189s · 0 | 777/34 · 0/770 · 10.742s · 0 | 777/34 · 0/770 · 33.881s · 18 |
+| 09-config | 2/2 V1 · 0/2 · 5.868s · 27 | 777/34 V3 · 0/777 · 5.872s · 27 | 777/34 V3 · 0/777 · 5.820s · 26 | 777/34 · 0/777 · 12.637s · 0 | 0/0 · 0/0 · 0.222s · 0 | 777/34 · 0/777 · 11.729s · 0 | 777/34 · 0/777 · 38.337s · 18 |
+| 10-dirty | 11/3 V1 · 0/10 · 5.832s · 27 | 40/3 V2 · 0/39 · 5.828s · 27 | 777/34 V3 · 0/776 · 6.134s · 26 | 777/34 · 0/776 · 12.102s · 0 | 9/1 · 0/8 · 0.355s · 0 | 777/34 · 0/776 · 11.328s · 0 | 777/34 · 0/776 · 51.071s · 18 |
+
+#### Windows
+
+| 시나리오 | V1 fallback | V2 fallback | draft 상향 | rdeps 현행 | rdeps 세분 | bazel-diff | Target Determinator |
+|---|---|---|---|---|---|---|---|
+| 01-single | 2/2 V1 · 3/2 · 6.777s · 27 | 31/2 V2 · 3/31 · 5.743s · 27 | 777/34 V3 · 0/774 · 5.816s · 27 | 777/34 · 0/774 · 18.886s · 0 | 40/2 · 1/38 · 0.308s · 0 | 777/34 · 0/774 · 11.755s · 0 | 0/0 · 3/0 · 23.830s · 22 |
+| 02-common | 2/2 V1 · 8/2 · 4.325s · 27 | 31/2 V2 · 8/31 · 4.573s · 27 | 777/34 V3 · 0/769 · 4.513s · 27 | 777/34 · 0/769 · 13.805s · 0 | 447/20 · 0/439 · 0.240s · 0 | 777/34 · 0/769 · 11.383s · 0 | 0/0 · 8/0 · 19.459s · 22 |
+| 03-test | 11/2 V1 · 0/10 · 7.527s · 27 | 31/2 V2 · 0/30 · 7.841s · 27 | 777/34 V3 · 0/776 · 7.376s · 26 | 777/34 · 0/776 · 38.543s · 0 | 10/1 · 0/9 · 0.377s · 0 | 777/34 · 0/776 · 15.905s · 0 | 0/0 · 1/0 · 23.800s · 22 |
+| 04-spec | 2/2 V1 · 1/2 · 7.761s · 27 | 31/2 V2 · 0/30 · 7.804s · 27 | 777/34 V3 · 0/776 · 8.189s · 27 | 777/34 · 0/776 · 21.436s · 0 | 0/0 · 1/0 · 0.550s · 0 | 777/34 · 0/776 · 19.804s · 0 | 0/0 · 1/0 · 26.190s · 22 |
+| 05-untracked | 3/3 V1 · 0/2 · 5.607s · 27 | 32/3 V2 · 0/31 · 5.564s · 27 | 778/35 V3 · 0/777 · 5.630s · 26 | 778/35 · 0/777 · 14.957s · 0 | 1/1 · 0/0 · 0.283s · 0 | 778/35 · 0/777 · 11.528s · 0 | dirty_worktree · 0.422s · 7 |
+| 06-delete | 2/2 V1 · 11/2 · 5.889s · 27 | 777/34 V3 · 0/766 · 5.978s · 27 | 777/34 V3 · 0/766 · 6.108s · 26 | 777/34 · 0/766 · 30.193s · 0 | 0/0 · 11/0 · 0.645s · 0 | 777/34 · 0/766 · 5.478s · 0 | 777/34 · 0/766 · 44.356s · 22 |
+| 07-rename | 2/2 V1 · 2/2 · 5.790s · 27 | 777/34 V3 · 0/775 · 5.931s · 27 | 777/34 V3 · 0/775 · 6.001s · 26 | 777/34 · 0/775 · 22.636s · 0 | 0/0 · 2/0 · 0.713s · 0 | 777/34 · 0/775 · 5.471s · 0 | 777/34 · 0/775 · 24.411s · 22 |
+| 08-dynamic | 2/2 V1 · 7/2 · 5.852s · 27 | 61/3 V2 · 7/61 · 5.765s · 27 | 777/34 V3 · 0/770 · 5.944s · 26 | 777/34 · 0/770 · 17.170s · 0 | 0/0 · 7/0 · 0.343s · 0 | 777/34 · 0/770 · 14.803s · 0 | 0/0 · 7/0 · 39.283s · 22 |
+| 09-config | 2/2 V1 · 0/2 · 7.659s · 27 | 777/34 V3 · 0/777 · 7.686s · 27 | 777/34 V3 · 0/777 · 7.574s · 26 | 777/34 · 0/777 · 27.438s · 0 | 0/0 · 0/0 · 0.527s · 0 | 777/34 · 0/777 · 15.871s · 0 | 0/0 · 0/0 · 53.186s · 22 |
+| 10-dirty | 11/3 V1 · 0/10 · 7.393s · 27 | 40/3 V2 · 0/39 · 7.313s · 27 | 777/34 V3 · 0/776 · 7.214s · 26 | 777/34 · 0/776 · 18.704s · 0 | 9/1 · 0/8 · 0.368s · 0 | 777/34 · 0/776 · 16.182s · 0 | dirty_worktree · 0.574s · 7 |
+
+#### 로컬 Windows
+
+| 시나리오 | V1 fallback | V2 fallback | draft 상향 |
+|---|---|---|---|
+| 01-single | 2/2 V1 · 3/2 · 5.031s · 27 | 31/2 V2 · 3/31 · 4.838s · 27 | 777/34 V3 · 0/774 · 4.947s · 27 |
+| 02-common | 2/2 V1 · 8/2 · 4.995s · 27 | 31/2 V2 · 8/31 · 5.135s · 27 | 777/34 V3 · 0/769 · 5.171s · 27 |
+| 03-test | 11/2 V1 · 0/10 · 5.000s · 27 | 31/2 V2 · 0/30 · 4.915s · 27 | 777/34 V3 · 0/776 · 4.732s · 26 |
+| 04-spec | 2/2 V1 · 1/2 · 4.948s · 27 | 31/2 V2 · 0/30 · 5.693s · 27 | 777/34 V3 · 0/776 · 5.578s · 27 |
+| 05-untracked | 3/3 V1 · 0/2 · 5.112s · 27 | 32/3 V2 · 0/31 · 4.818s · 27 | 778/35 V3 · 0/777 · 4.788s · 26 |
+| 06-delete | 2/2 V1 · 11/2 · 5.011s · 27 | 777/34 V3 · 0/766 · 4.878s · 27 | 777/34 V3 · 0/766 · 4.849s · 26 |
+| 07-rename | 2/2 V1 · 2/2 · 5.096s · 27 | 777/34 V3 · 0/775 · 4.859s · 27 | 777/34 V3 · 0/775 · 4.850s · 26 |
+| 08-dynamic | 2/2 V1 · 7/2 · 5.038s · 27 | 61/3 V2 · 7/61 · 4.958s · 27 | 777/34 V3 · 0/770 · 4.893s · 26 |
+| 09-config | 2/2 V1 · 0/2 · 4.929s · 27 | 777/34 V3 · 0/777 · 4.895s · 27 | 777/34 V3 · 0/777 · 4.804s · 26 |
+| 10-dirty | 11/3 V1 · 0/10 · 4.952s · 27 | 40/3 V2 · 0/39 · 4.890s · 27 | 777/34 V3 · 0/776 · 4.949s · 26 |
+
+성공한 명령 기준 miss 합계와 시간 중앙값(초)이다. 같은 ID가 다른
+시나리오에서 빠지면 각각 센다. 실행 오류는 별도 집계다.
+
+| 도구 | Ubuntu 성공/오류 · miss · 초 | Windows 성공/오류 · miss · 초 |
+|---|---|---|
+| V1 | 10/0 · 32 · 5.985 | 10/0 · 32 · 6.333 |
+| V2 | 10/0 · 18 · 5.973 | 10/0 · 18 · 5.955 |
+| draft | 10/0 · 0 · 6.127 | 10/0 · 0 · 6.054 |
+| rdeps 현행 | 10/0 · 0 · 12.407 | 10/0 · 0 · 20.161 |
+| rdeps 세분 | 10/0 · 22 · 0.220 | 10/0 · 22 · 0.372 |
+| bazel-diff | 10/0 · 0 · 10.703 | 10/0 · 0 · 13.279 |
+| TD | 10/0 · 0 · 40.539 | 8/2 · 20 · 25.301 |
+
+### 누락 ID
+
+V1·V2 누락은 세 환경에서 같았고 세분 rdeps 누락은 두 원격 환경에서 같았다.
+TD-W는 Windows Target Determinator 성공 응답에서의 누락이다.
+
+- **01-single**
+  - `tests.test_memory_mcp.MemoryMcpTests.test_real_pipe_recovers_from_invalid_utf8_and_startup_errors_use_stderr` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_quota_window.QuotaWindowTests.test_cli_wiring_through_baton_main` · V1, V2, TD-W
+  - `tests.test_quota_window_status.QuotaStatusTests.test_cli_json_reports_missing_and_keeps_exit_zero` · V1, V2, TD-W
+- **02-common**
+  - `tests.test_harness.HarnessStateTests.test_checkpoint_corruption_and_secret_rejection` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_event_cursor_and_idempotent_task_conflict` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_process_kill_resume_and_failed_attempt_history` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_quoted_secrets_and_windows_trailing_aliases_rejected` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_routes_evidence_and_verified_gate` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_scope_aliases_and_two_slot_limit` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_scope_claim_and_tampered_artifact` · V1, V2, TD-W
+  - `tests.test_harness.HarnessStateTests.test_stop_resume_fences_old_worker_and_preserves_finished_stage` · V1, V2, TD-W
+- **03-test**
+  - `tests.test_gms_optional.GMSOptionalTests.test_gms_provider_is_registered_only_with_the_flag` · TD-W
+- **04-spec**
+  - `tests.test_ci_workflow.VStageContractTests.test_v3_gate_and_reuse_require_complete_matching_evidence` · V1, 세분 rdeps, TD-W
+- **06-delete**
+  - `tests.test_credential_server.CredentialServerTests.test_alias_only_http_registration_and_folder_move` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_api_provider_can_be_changed_through_edit_endpoint` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_folder_delete_requires_confirmation_and_reports_cascade_count` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_host_header_rejects_dns_rebinding_names` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_key_api_never_returns_or_logs_secret_and_no_browser_storage` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_mutation_rejects_wrong_origin_and_missing_csrf` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_query_string_is_rejected_and_requests_are_not_cached` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_secret_validation_error_does_not_echo_request_value` · V1, 세분 rdeps
+  - `tests.test_credential_server.CredentialServerTests.test_server_binds_loopback_and_serves_hardened_local_page` · V1, 세분 rdeps
+  - `tests.test_gms_budget.GMSBudgetHTTPTests.test_balance_policy_quote_execute_http_and_cli` · V1, 세분 rdeps
+  - `tests.test_gms_switch.PageTests.test_two_pages_link_each_other_and_split_their_content` · V1, 세분 rdeps
+- **07-rename**
+  - `tests.test_credential_server.CredentialServerTests.test_key_api_never_returns_or_logs_secret_and_no_browser_storage` · V1, 세분 rdeps
+  - `tests.test_gms_switch.PageTests.test_all_assets_are_served` · V1, 세분 rdeps
+- **08-dynamic**
+  - `tests.test_flow_skill.FlowSkillTests.test_all_host_targets_install_identical_bytes_and_repeat_is_noop` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_flow_skill.FlowSkillTests.test_busy_install_preserves_existing_lock` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_flow_skill.FlowSkillTests.test_cli_requires_explicit_host_destination_and_reports_conflict` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_flow_skill.FlowSkillTests.test_failed_atomic_publish_leaves_no_partial_skill_or_owned_lock` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_flow_skill.FlowSkillTests.test_immutable_upstream_and_adapted_source_integrity` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_flow_skill.FlowSkillTests.test_source_and_destination_symlink_components_are_rejected` · V1, V2, 세분 rdeps, TD-W
+  - `tests.test_flow_skill.FlowSkillTests.test_unmanaged_or_modified_skill_is_preserved` · V1, V2, 세분 rdeps, TD-W
+
+### 필수 선택 검증
+
+| 외부 도구 | 플랫폼 | 정상 응답 | Task 필수 ID 누락 | V2 필수 회귀 모듈 누락 |
+|---|---|---:|---:|---:|
+| rdeps 현행 | Ubuntu | 10/10 | 0 | 0 |
+| rdeps 세분 | Ubuntu | 10/10 | 18 | 2 |
+| bazel-diff | Ubuntu | 10/10 | 0 | 0 |
+| TD | Ubuntu | 10/10 | 0 | 0 |
+| rdeps 현행 | Windows | 10/10 | 0 | 0 |
+| rdeps 세분 | Windows | 10/10 | 18 | 2 |
+| bazel-diff | Windows | 10/10 | 0 | 0 |
+| TD | Windows | 8/10 | 12 | 3 |
+
+세분 rdeps의 누락 22건 중 21건은 선언되지 않은 data에서 나왔다.
+spec 문서(04), 삭제·rename된 HTML/JS(06/07), 문자열 경로로 읽는 스킬(08)이
+해당한다. 나머지 한 건은 정적 import가 연결하지 못한 Memory MCP의 자식
+Python CLI 경로(01)다. 설정 파일(09)도 세분 그래프에 선언되지 않았으며
+이 mutation에서 관측된 결과 변화는 0건이다. 미추적 테스트(05)와
+미커밋 테스트(10)는 현행·세분 BUILD에서 모두 선택됐다.
+
+Windows Target Determinator는 삭제·rename에서 34개 모듈을 선택했다.
+내용만 바뀐 커밋에서는 성공 종료와 0개 선택이 함께 나타났다. Windows
+cquery의 소스 위치 필드 1개에 드라이브 접두사가 있었고, 고정 버전의 첫
+콜론 분할을 적용하면 드라이브 문자 하나만 남았다. 이 버전은 읽을 수
+없는 소스 경로를 빈 해시로 처리하는 경로가 있어 관측 결과를 설명한다.
+미추적(05)과 미커밋(10)은 Windows에서 dirty worktree로 거부됐고, Ubuntu에서는
+두 사례 모두 선택을 반환했다.
+[v0.34.1 소스 위치와 해시 처리](https://github.com/bazel-contrib/target-determinator/blob/v0.34.1/pkg/hash_cache.go)
+
+공식 planner의 V1 10건은 모두 partial이었다. 로컬 checkpoint 요청은
+partial V2 7건과 V3 3건(06/07/09)으로 나뉘었고 draft 10건은 모두
+V3를 선택했다. 관측한 공식 계획에서 Task AC 필수 ID와 필수 회귀 모듈의
+누락은 0건이다. 직접 변경 경로 11개 중 지원된 9개는 검사로 표시됐다.
+rename에서 새로 생긴 JS와 TOML은 V1의 `unverified_scope`에 기록됐다.
+이는 계획 결과이며 각 검사의 실행은 이 측정 범위 밖이다.
+
+외부 선택기의 선언 부재, 오류, 지원되지 않는 dirty 상태는 partial이나
+상향의 입력으로 표현할 수 있다. 성공한 빈 선택도 Windows Target
+Determinator처럼 불완전할 수 있다. 직접 검사, Task AC 필수 ID, 회귀
+모듈, freshness/coverage와 V3 상향은 공식 planner 정책으로 유지해야 한다.
+
+### V1·V2 권고
+
+- **V1**은 공식 직접 검사와 partial 표시를 유지한다. 현행 rdeps의
+  중앙값은 Ubuntu 12.407초, Windows 20.161초였고 선택 범위는 전체
+  모듈이었다. 세분 rdeps는 후속 조회가 0.220초와 0.372초로 짧았지만,
+  각 플랫폼에서 mutation 22건과 AC 필수 ID 18건을 놓쳤다. 정적 그래프는
+  보조 피드백 후보로만 두고 cold 비용은 별도로 검증해야 한다.
+- **V2**는 현재 필수 회귀 및 AC ID와 불완전할 때의 상향을 유지한다.
+  현행 BUILD의 bazel-diff는 miss 0건이었고 모든 모듈을 선택했다.
+  이번 결과는 선택 범위 축소를 뒷받침하지 않는다. Windows의 Target
+  Determinator v0.34.1은 영향 범위 결정에 사용할 수 없다.
+  서명된 CBM의 정상 그래프 측정, 완전한 data 선언, Windows 실제
+  mutation 결과는 미검증이다.
+
+### 원격 실행과 게시 점검
+
+| push | 게시 커밋 | run | 결과 |
+|---:|---|---|---|
+| 1 | `ff4b8be`, `691f388` | 44612983547 | 20 job worktree 정리 실패, 중간 증거 보존 |
+| 2 | `1597c83` | 44614138110 | 20 job 완료, Windows rename query 오류 기록 |
+| 3 | `eda8fca` | 44615330033 | 20 job 완료, rename 조회 성공, Windows TD의 dirty 오류와 내용 변경 누락 기록 |
+
+각 push 전에 원격 refs를 갱신해 미게시 커밋 전부의 범위와 민감정보 패턴을
+점검했다. SDD 정적 검사와 보호 경로 diff를 통과했다. 실험 ref에서만
+fast-forward했고 원격 SHA `eda8fcabc123491dd4fc941e38923c11e78db477`을
+재확인했다. 로컬 임시 worktree와 등록은 제거했다. 로컬 원자료는
+`poc/ci-engine/evidence/phase3-local-valid/`에 있으며, 원격 각 시나리오의
+원자료에는 `impact.json`과 Ubuntu 두 결과 JSON이 있다.
+[첫 실행](https://github.com/keulreobeu/baton_ai/actions/runs/44612983547) · [두 번째 실행](https://github.com/keulreobeu/baton_ai/actions/runs/44614138110) · [최종 실행과 artifact](https://github.com/keulreobeu/baton_ai/actions/runs/44615330033)

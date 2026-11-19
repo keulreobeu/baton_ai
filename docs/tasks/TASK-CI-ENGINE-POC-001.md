@@ -155,3 +155,20 @@ The second run completed the Windows worktrees and exposed a rename
 query transport failure. The next candidate passes the expression via
 Bazel's query file and adds a Windows source-location diagnostic for
 Target Determinator's drive-letter handling.
+
+### Phase 3 evidence
+
+Runs 44612983547, 44614138110, and 44615330033 reproduced all ten Ubuntu
+mutation deltas. The final run collected all twenty Windows and Ubuntu
+artifacts. The shared-data query and bazel-diff had no mutation misses
+and selected the entire suite. The generated AST graph missed 22 mutation
+cases per platform. Windows Target Determinator missed 20 in its eight
+successful invocations and rejected two dirty cases. A Windows cquery
+location probe reproduced drive-letter truncation by its path algorithm.
+
+All ten corrected local fallback runs reported CBM absence. The initial
+unsigned-CBM launch remains a boundary failure and its evidence is excluded.
+The official plans accounted for required IDs, modules, and directly changed
+paths through checks or explicit unverified scope. The published experiment
+ref is `eda8fcabc123491dd4fc941e38923c11e78db477`. Raw comparisons and
+the phase 2 Trace2 qualification are summarized in the local README.
