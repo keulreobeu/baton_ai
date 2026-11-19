@@ -5,13 +5,13 @@
 repo: BATON 원격 저장소(origin), 작업 branch codex/ci-vtier-001(PR #17 ready·미병합)
 ref: main 9a74545(PR #16 CI-OPT-001 병합·verified). branch HEAD=재개 시 git fetch 뒤 git log -1로 확인(이 카드 자신의 SHA는 적지 않음). 코드 트리: src/·tests/ = 57ef209(532e034에서 복원), 그 뒤 커밋은 문서만
 handoff: 회사 PC Claude 워커 → 집 PC 코디네이터·워커; 2026-11-19 체크포인트
-task/status: TASK-CI-VTIER-001 in_progress(L3); 최종 후보의 전체 AC·독립 검토·원격 CI는 대기(체크포인트 증거는 아래 done)
+task/status: TASK-CI-VTIER-001 verified(L3, 범위 조정 뒤 재승격); PR #17 ready·미병합
 goal/order: CI-VTIER-001(V1·V2 로컬 실사용) 검증 → PR #17 병합. 자동 정착 복구는 범위 제외(TASK-SETTLE-RECOVERY-001 착수 보류)
 done: 복구 코드 제외(532e034, 9aa79e6·2de9e5b·b16ba12·f790115 이력 보존), Spec/ADR superseded·남은 위험 기록, V2·check_sdd PASS; 공식 로컬 V3 PASS(HEAD 79258f2, 777 OK skip 0, eligible, reuse not_configured); 18차 독립 검토 PASS_WITH_FINDINGS(문서 지적 R1801~R1805, 반영 완료); 19차 Codex 독립 검토(6b95dd4) PASS_WITH_FINDINGS(문서 지적 R1901~R1904, 반영 완료); 체크포인트 522c3b9 원격 CI run 44493732498 success(체크포인트 CI이며 최종 후보 CI 아님)
-next: 최종 후보 공식 V3(verify_environment.py --base 762739f, 재사용 off) → 기록 커밋 push·원격 CI 통과 → verified 재승격 커밋 → push·승격 커밋 CI 확인 → 스레드 응답(resolve는 사용자 결정) → 병합(사용자 승인)
+next: 승격 커밋 원격 CI 확인(실패 시 verified 유지 안 함·병합 안 함) → 스레드 응답(resolve는 사용자 결정) → 병합(사용자 승인) → 결과 기록·인계 → 정리
 scope: TASK-CI-VTIER-001 scope만; 다른 worktree·branch는 건드리지 않음
-checks: V2 9모듈 371 OK x2 + check_sdd --base 762739f PASS; 공식 V3 79258f2 PASS(상세: TASK-CI-VTIER-001 "범위 조정"·"공식 로컬 V3와 18차" 절)
-pending: 최종 후보 V3·원격 CI 미확인(TASK-CI-VTIER-001 '18차 문서 지적 반영'·'19차' 절); PR #17 리뷰 스레드 4624337778 미해결(남은 위험으로 응답, resolve는 사용자 결정)
+checks: 최종 후보 공식 V3 73ac42e PASS(777 OK skip 0, 재사용 off); 원격 CI run 44537342217(cad9203) plan·3.11·3.12·gate success; 이전 체크포인트 V3 79258f2 PASS(상세: TASK-CI-VTIER-001 "verified 재승격" 절)
+pending: 승격 커밋 원격 CI 미확인; PR #17 리뷰 스레드 4624337778 미해결(남은 위험으로 응답, resolve는 사용자 결정)
 inputs: docs/tasks/TASK-CI-VTIER-001.md; docs/specs/CI-VTIER-001.md("2026-11-19 범위 조정"); docs/tasks/TASK-SETTLE-RECOVERY-001.md
 usage: unknown
 rules: AGENTS.md; 실모델·GMS·스케줄러·전원 금지; force·amend·reset 금지; push·병합은 사용자 승인 범위만

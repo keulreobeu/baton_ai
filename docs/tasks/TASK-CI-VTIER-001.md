@@ -3,7 +3,7 @@
 ```toml
 kind = "task"
 id = "TASK-CI-VTIER-001"
-status = "in_progress"
+status = "verified"
 owner = "Claude"
 level = 3
 specs = ["docs/specs/CI-VTIER-001.md", "docs/specs/CI-OPT-001.md"]
@@ -46,9 +46,31 @@ result = "not_run"
 evidence = "docs/tasks/TASK-CI-VTIER-001.md#범위-조정-자동-정착-복구-제외--2026-11-19"
 acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
 
+[[verification]]
+command = "python -X utf8 scripts/verify_environment.py --base 762739f (official local V3, HEAD 73ac42e final candidate after scope change and 18th/19th review doc fixes, suite reuse off)"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-재승격--2026-11-19"
+acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+tests_run = 777
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions verify.yml run 44537342217 attempt 1 (pull_request, headSha cad9203): plan, offline windows-latest 3.11/3.12 official V3, gate"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-재승격--2026-11-19"
+acs = ["CI-VTIER-001-AC-01", "CI-VTIER-001-AC-02", "CI-VTIER-001-AC-03", "CI-VTIER-001-AC-04", "CI-VTIER-001-AC-05", "CI-VTIER-001-AC-06"]
+tests_run = 777
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
-result = "not_run"
-evidence = "docs/tasks/TASK-CI-VTIER-001.md#범위-조정-자동-정착-복구-제외--2026-11-19"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VTIER-001.md#verified-재승격--2026-11-19"
 ```
 
 A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화"): 로컬 V1/V2 실사용 활성화. B Task(Bazel-diff 사전 연구)는 별도이며 이 Task 파일을 수정하지 않는다.
@@ -346,3 +368,17 @@ A Task(2026-11-17 사용자 지시 "BATON 검증 시스템 단계별 고도화")
 - 최종 후보 `73ac42e`의 `src/`·`tests/`는 `57ef209`과 같고, `522c3b9` 이후 변경은 문서 5개뿐이다. 이 V3 뒤의 이 기록 커밋도 이 Task 문서만 바꾼다.
 - **push 전 전체 커밋 점검**: `git fetch` 뒤 원격 `codex/ci-vtier-001`=`522c3b9`, `origin/main`=`9a74545`, fast-forward 가능. 원격 refs로 도달할 수 없는 커밋은 `6b95dd4`(18차 반영)·`73ac42e`(19차 반영)와 이 기록 커밋이며, 다른 로컬 branch의 미게시 커밋은 없다. 작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`. 순 변경은 문서 5개(HANDOFF·Spec·Task 2·current), `src/`·`tests/` 0줄. 추가 줄에서 홈 경로·계정 이메일·키·토큰·DB·로그·runtime 파일 0건(R1805 설명의 축약 표기 `D:/…`만). finding 없음.
 - 다음: 사용자 승인 뒤 push → 원격 CI 통과 확인 → verified 재승격 커밋 → push·승격 커밋 CI 확인 → 스레드 응답(resolve는 사용자 결정) → 병합(사용자 승인). Task 상태 `in_progress` 유지.
+
+## verified 재승격 — 2026-11-19
+
+- 근거: 사용자 결정(2026-11-19, 이 세션) "재승격·push·CI"와 2026-11-16 Q3=B(원격 Windows 3.11/3.12 성공 후 verified). 범위 조정(자동 정착 복구 제외, 사용자 결정) 뒤 후보 기준. Task level 3(L3).
+- 요건 대조:
+  | 요건 | 증거 |
+  | --- | --- |
+  | 전체 AC(CI-VTIER-001-AC-01~06) 마지막 기록 passed, tests_run>0, 실패·오류·skip·expected failure 0 | 공식 로컬 V3(최종 후보 HEAD `73ac42e`, base `762739f`, 재사용 off) 777 OK skip 0, eligible true, `reuse_decision` not_configured(전체 실행) |
+  | 원격 Windows CI | run `44537342217` attempt 1(pull_request, ready PR #17, headSha `cad9203` = `73ac42e` + Task 기록 커밋): plan·offline windows-latest 3.11(777)·3.12(777)·gate 모두 success, 두 job failures·errors·skipped 0, `verified_evidence_eligible=true`, `reuse_decision=not_configured` |
+  | L3 독립 검토 | 18차 Codex(후보 `79258f2`, 코드 = `57ef209`) PASS_WITH_FINDINGS(문서 R1801~R1805 반영), 19차 Codex Orca worker(후보 `6b95dd4`) PASS_WITH_FINDINGS(문서 R1901~R1904, `73ac42e`에서 반영). 남은 지적은 문서뿐이었고 모두 반영됐으며 미해결 finding 없음을 `independent_review.result=passed`로 기록. 14~17차 FAIL 지적은 범위 제외로 TASK-SETTLE-RECOVERY-001에 이관 |
+  | 승인 문서 | Spec `CI-VTIER-001`·`CI-OPT-001` approved, Plan `ci-vtier` active, ADR `ADR-CI-VTIER-001` accepted |
+- 남은 위험(수용): PR #17 comment 4624337778(로컬 정착 1·2단계 사이 종료 시 Task 고립, 오승격 아님). Spec "2026-11-19 범위 조정" 문단. 스레드 응답·resolve와 병합은 사용자 결정으로 남는다.
+- `73ac42e` 이후와 이 승격 커밋은 Task·current·HANDOFF 문서만 바꾼다. 이 커밋 SHA의 원격 CI는 커밋 뒤 확인하며 Task에 다시 커밋하지 않고 보고로 넘긴다. 결과가 실패하면 verified를 유지하지 않고 병합하지 않는다.
+- `offline_suite` 재사용은 분리·비활성(`reuse_decision=not_configured`, passed 아님)이며 재사용 절감은 주장하지 않는다.

@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-19 CI-VTIER verified 재승격
+
+- [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(범위 조정 뒤 재승격): 공식 로컬 V3(`73ac42e`) 777 OK skip 0, 원격 Windows CI run `44537342217`(headSha `cad9203`) plan·3.11·3.12·gate success, Codex 18·19차 독립 검토 PASS_WITH_FINDINGS 지적 반영. 남은 위험 PR #17 comment 4624337778(TASK-SETTLE-RECOVERY-001 보류). 승격 커밋 CI·스레드 처리·병합은 보고와 사용자 결정으로 넘긴다.
+
 ## 현재 작업 — 2026-11-19 CI-VTIER 범위 조정(자동 정착 복구 제외)·체크포인트
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) in_progress: 사용자 결정으로 자동 정착 복구를 범위에서 제외했다. `src/`·`tests/`를 `57ef209` 내용으로 되돌렸고(`532e034`, 이력 보존), 복구 문단은 제외됨(superseded)으로 남겼다. 남은 위험은 PR #17 comment 4624337778(로컬 정착 1·2단계 사이 종료 시 Task 고립, 오승격 아님)이다. 후속 [TASK-SETTLE-RECOVERY-001](TASK-SETTLE-RECOVERY-001.md)는 착수 보류(자동 착수 금지). 체크포인트 `79258f2` 공식 로컬 V3 PASS(777 OK skip 0), 18차 독립 검토 PASS_WITH_FINDINGS, 체크포인트 `522c3b9` 원격 CI run `44493732498` success. 18차 문서 지적 R1801~R1805를 반영했다. 남은 순서(R1802): 독립 교차검토 → 최종 후보 공식 V3 → 기록 커밋 push·원격 CI 통과 → verified 재승격 커밋 → push·승격 커밋 CI 확인 → 스레드 처리 → 병합. 재개 카드는 [HANDOFF](../HANDOFF.md).
