@@ -139,3 +139,14 @@ tool runs. The local CBM executable returned Authenticode `NotSigned`; the
 PoC removes it from the planner's PATH and measures fallback only. The
 unpublished phase 2 report `ff4b8be` is part of this first fast-forward and
 is in the pre-push file scope and sensitive-pattern audit.
+
+### Phase 3 correction
+
+The initial workstation smoke encountered a second CBM lookup under
+`LOCALAPPDATA` and launched the unsigned executable. That sample is
+excluded. The run was interrupted and its temporary worktree was removed.
+The corrected planner subprocess uses an isolated empty `LOCALAPPDATA`
+on Windows and the filtered PATH. This does not change system settings.
+The hosted first run also exposed Git worktree cleanup failures after
+Bazel analysis. Apply lockfile suppression to query commands and remove
+only Bazel's generated untracked lockfile from the disposable worktrees.

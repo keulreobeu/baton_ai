@@ -65,8 +65,19 @@ def invoke(args, root, env, timeout=240):
 def git(root, *args):
     result = invoke(["git", *map(str, args)], root, environment())
     if result[0]:
-        raise RuntimeError(f"git {args[0]} failed")
+        raise RuntimeError(f"git {args[0]} failed: {reason(result[2], result[0])}")
     return result[1].strip()
+
+
+def clean_lockfile(root):
+    lock = root / "MODULE.bazel.lock"
+    if not lock.is_file():
+        return False
+    tracked = git(root, "ls-files", "--", lock.name)
+    if tracked:
+        return False
+    lock.unlink()
+    return True
 
 
 @contextmanager
@@ -75,6 +86,14 @@ def checkout(path, commit):
     try:
         yield path
     finally:
+        clean_lockfile(path)
+        # Bazel convenience links can hold a junction on Windows. Each is
+        # under this disposable root; remove the link, never its target.
+        for link in path.glob("bazel-*"):
+            if link.is_symlink():
+                link.unlink()
+            elif link.is_junction():
+                link.rmdir()
         git(ROOT, "worktree", "remove", path)
 
 
@@ -151,6 +170,11 @@ def select(result):
 
 
 def plan(root, base, stage, event, env):
+    if os.name == "nt":
+        # The planner also searches a fixed path below LOCALAPPDATA.
+        profile = root.parent / "planner-localappdata"
+        profile.mkdir(exist_ok=True)
+        env = dict(env, LOCALAPPDATA=str(profile))
     result = invoke([sys.executable, "scripts/ci_plan.py", "--base", base,
                      "--stage", stage, "--event", event], root, env)
     try:
@@ -313,15 +337,22 @@ def run_case(index, evidence, hosted):
                         select_tools = Selectors(base, head, commit, temp, result["git_input"]["paths"])
                         try:
                             for key, operation in (("query-current", select_tools.query),
-                                                   ("bazel-diff", select_tools.diff),
-                                                   ("target-determinator", select_tools.td)):
+                                                   ("bazel-diff", select_tools.diff)):
                                 series[key] = measured(key, operation, env, temp)
                                 write(dest / "impact.json", result)
+                            result["generated_lock_removed"] = {"head": clean_lockfile(head),
+                                                                "base": clean_lockfile(base)}
+                            result["td_preflight_dirty_entries"] = len(
+                                git(head, "status", "--porcelain").splitlines())
+                            series["target-determinator"] = measured(
+                                "target-determinator", select_tools.td, env, temp)
+                            write(dest / "impact.json", result)
                             fine_head, result["fine_head"] = build(head)
                             fine_base, result["fine_base"] = build(base)
                             with patch(head, {"BUILD.bazel": fine_head.encode()}), patch(
                                     base, {"BUILD.bazel": fine_base.encode()}):
                                 series["query-fine"] = measured("query-fine", select_tools.query, env, temp)
+                            write(dest / "impact.json", result)
                         finally:
                             select_tools.close()
                 write(dest / "impact.json", result)
