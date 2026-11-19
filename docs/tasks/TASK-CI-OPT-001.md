@@ -1736,3 +1736,37 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 469 s) |
   | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 465 s) |
   `check_sdd.py --base 5c07aea` PASS. 원격 CI 재실행은 push 뒤 확인 대상이다(미게시).
+
+## 23차 독립 교차검토 FAIL 반영 — 2026-11-19
+
+- 검토: Codex, 대상 `a2f107d`, 범위 `27312df..a2f107d`, 판정 FAIL(P1 2, P2 2, P3 1). 지적을 묶어 반영했다.
+- R2301(P1): readset 테스트의 기대 키가 `normcase(str(path))`라 8.3 짧은 경로를 펼치지 않았다(기록 키는 긴 실제 경로).
+  - 수정: 실제 경로를 비교하는 단언은 `real_key`(normcase(realpath))를 쓴다. 대상은 리뷰의 5곳과, 그 실패에 가려져 있던 목록 단언 3곳(`check_listing_inside_the_runtime_environment`)이다.
+  - 관측 철자를 검증하는 junction·alias 단언과 `_canonical`을 패치하는 단언은 그대로 둔다.
+  - 코드 쪽 점검: 남은 `normcase` 비교는 모두 실제 경로끼리이거나 관측 철자를 키로 쓰는 의도된 경우다(`_display`, `_note_alias`, `suite_reuse` alias 비교).
+- R2302(P1): `verify_environment.py`의 환경 전체 스냅샷(`dict(os.environ)`)을 `--enable-suite-reuse`일 때만 같은 시점에 수집한다. 꺼짐 프로브는 환경 전체 열거 0회를 확인한다.
+- R2303(P2): MetricsStore가 suite 없는 낮은 단계(V1/V2)에서 `reuse_decision=not_configured`를 거부한다(`invalid_ci_suite_execution`).
+- R2304(P2): 재사용 옵션이 주어졌는지는 `None`으로 판단한다. 빈 값(공백 포함)은 스위치가 있든 없든 인수 오류(종료 코드 2)다.
+- R2305(P3): 8.3 대체 테스트의 확장 단언은 Windows에서만 하고, 다른 플랫폼에서는 별칭 보존을 확인한다(비Windows 실제 실행은 범위 밖, 미실행).
+- 수정 전 실패 확인:
+  | 지적 | 수정 전 코드 결과 |
+  | R2301 | 8.3 TEMP `tests.test_readset` 37건 중 22 실패. 기대 키만 고친 중간 상태에서도 가려졌던 목록 단언 2건이 실패 |
+  | R2302 | 꺼짐 프로브 환경 열거 2회 |
+  | R2304 | `--evidence-dir ''`가 SystemExit 없이 실행 |
+  | R2303 | V2/V1 `not_configured` 저장 성공(ValueError 없음) |
+  | R2305 | 실제 비Windows 실행은 하지 않았다 |
+- 8.3 TEMP 재현 방법(원격 `C:\Users\RUNNER~1` 조건 모사): 다음 순서로 새 인터프리터를 띄운다. 원격 머신은 쓰지 않는다.
+  1. 긴 이름의 임시 폴더를 만든다.
+  2. `GetShortPathNameW`로 짧은 이름을 구한다(긴 이름과 다른지 확인).
+  3. 자식의 `TMPDIR`·`TEMP`·`TMP`를 그 짧은 이름으로 설정한다.
+  4. 자식의 `tempfile.gettempdir()`가 짧은 이름을 고르는지 확인한다.
+  5. `python -X utf8 -m unittest tests.test_readset`를 실행한다.
+- V2(같은 8모듈) + 8.3 TEMP:
+  | 환경 | 결과 |
+  | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 487 s) |
+  | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 477 s) |
+  | 8.3 TEMP `tests.test_readset` | 37 OK(실패·오류·skip 0) |
+  `check_sdd.py --base 5c07aea` PASS.
+- 참고(요구 범위 밖, 이번에 수정하지 않음): 8.3 TEMP로 8모듈 전체를 돌리면 `tests.test_flow_runtime` 12건이 오류다. 원인은 `git_lifecycle._scan_range`의 `git rev-list` 실패(`git_operation_failed_rev-list`)다.
+  이 경로는 이번 변경 밖의 제품 코드다. 원격 CI run 44425214483(`RUNNER~1` TEMP)에서는 readset 1건 외에 실패가 없었으므로 로컬 모사 조건의 차이일 수 있다. 원인 확정과 처리는 코디네이터 결정 대상이다.
+- 공식 V3·push는 하지 않았다(독립 델타 검토 뒤). 원격 CI 미확인.

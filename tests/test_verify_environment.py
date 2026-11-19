@@ -29,6 +29,21 @@ def env_marks(environ):
     return {"env": sorted(k for k in environ if k.startswith("BATON_READSET")),
             "site": "readset_site" in environ.get("PYTHONPATH", "")}
 original, start_env = current(), env_marks(os.environ)
+class CountingEnviron(type(os.environ)):
+    # 23rd review R2302: a whole-environment enumeration (the fingerprint's input).
+    enumerations = 0
+    def __iter__(self):
+        type(self).enumerations += 1
+        return super().__iter__()
+    def keys(self):
+        type(self).enumerations += 1
+        return super().keys()
+    def items(self):
+        type(self).enumerations += 1
+        return super().items()
+    def copy(self):
+        type(self).enumerations += 1
+        return super().copy()
 REUSE_MODULES = ("scripts.readset", "readset", "scripts.suite_reuse", "suite_reuse")
 start_modules = {m for m in REUSE_MODULES if m in sys.modules}
 from scripts import verify_environment as verify
@@ -39,11 +54,13 @@ class Case(unittest.TestCase):
         pass
 seen = []
 def fake_suite(names=None):
+    enumerated = CountingEnviron.enumerations  # before this probe's own reads below
     child = real_run([sys.executable, "-X", "utf8", "-c", CHILD], capture_output=True, text=True, timeout=60)
     seen.append({"changed": sorted(k for k, v in current().items() if v is not original[k]),
                  "modules": sorted(m for m in REUSE_MODULES if m in sys.modules and m not in start_modules
                                    and not getattr(sys.modules[m], "POISON", False)),
-                 "env": env_marks(os.environ) == start_env, "child": json.loads(child.stdout) == start_env})
+                 "env": env_marks(os.environ) == start_env, "child": json.loads(child.stdout) == start_env,
+                 "environ_enumerations": enumerated})
     return unittest.TextTestRunner(stream=io.StringIO()).run(unittest.TestSuite([Case("test_ok")]))
 real_run = subprocess.run
 def fake_run(command, *args, **kwargs):
@@ -71,7 +88,11 @@ for poisoned in (False, True):
                     sys.modules[name] = Poison(name)
                     if name.startswith("scripts."):
                         setattr(scripts, name.split(".")[1], sys.modules[name])
-        codes.append(verify.main(["--base", "fake-base"]))
+        os.environ.__class__, CountingEnviron.enumerations = CountingEnviron, 0
+        try:
+            codes.append(verify.main(["--base", "fake-base"]))
+        finally:
+            os.environ.__class__ = CountingEnviron.__bases__[0]
     summaries.append(json.loads(out.getvalue().strip().splitlines()[-1]))
 print(json.dumps({"codes": codes, "seen": seen, "touched": touched, "summaries": summaries}))
 """
@@ -337,7 +358,8 @@ class EvidenceReuseTests(unittest.TestCase):
         data = json.loads(probe.stdout.strip().splitlines()[-1])
         self.assertEqual((data["codes"], data["touched"], len(data["seen"])), ([0, 0], [], 2))
         for seen in data["seen"]:
-            self.assertEqual(seen, {"changed": [], "modules": [], "env": True, "child": True})
+            self.assertEqual(seen, {"changed": [], "modules": [], "env": True, "child": True,
+                                    "environ_enumerations": 0})
         for summary in data["summaries"]:
             self.assertEqual((summary["status"], summary["suite_execution"], summary["suite_fingerprint"],
                               summary["reuse_decision"], summary["executed_tests"], summary["tests_run"]),
@@ -451,7 +473,11 @@ class EvidenceReuseTests(unittest.TestCase):
         options alone are a usage error (exit 2) before SDD or any suite runs."""
         for argv in (["--evidence-dir", str(self.evidence)], ["--lock-home", str(self.home)],
                      ["--readset-out", "x.json"], ["--evidence-dir", str(self.evidence), "--lock-home", str(self.home)],
-                     ["--enable-suite-reuse"]):
+                     ["--enable-suite-reuse"],
+                     # 23rd review R2304: an explicitly empty value is given, and invalid.
+                     ["--evidence-dir", ""], ["--lock-home", ""], ["--readset-out", ""],
+                     ["--enable-suite-reuse", "--evidence-dir", ""], ["--enable-suite-reuse", "--readset-out", " "],
+                     ["--enable-suite-reuse", "--evidence-dir", str(self.evidence), "--lock-home", ""]):
             with self.subTest(argv=argv), patch.object(verify, "prepare_git_path") as prepare, \
                     patch.object(verify.subprocess, "run") as checked, patch.object(verify, "_run_suite") as suite, \
                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:

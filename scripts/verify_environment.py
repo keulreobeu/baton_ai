@@ -93,13 +93,16 @@ def main(argv=None):
                         help="Requires --enable-suite-reuse: Task evidence directory for offline_suite reuse/evidence")
     parser.add_argument("--lock-home", metavar="DIR", help="Requires --evidence-dir: directory for the per-fingerprint lock")
     args = parser.parse_args(argv)
-    if not args.enable_suite_reuse:
-        for flag, name in REUSE_ONLY_OPTIONS:
-            if getattr(args, name):
-                parser.error(f"{flag} requires --enable-suite-reuse")
-    elif not (args.evidence_dir or args.readset_out):
+    # 23rd review R2304: an option is given when it is not None; an empty value is an error.
+    for flag, name in REUSE_ONLY_OPTIONS:
+        value = getattr(args, name)
+        if value is not None and not args.enable_suite_reuse:
+            parser.error(f"{flag} requires --enable-suite-reuse")
+        if value is not None and not value.strip():
+            parser.error(f"{flag} must not be empty")
+    if args.enable_suite_reuse and args.evidence_dir is None and args.readset_out is None:
         parser.error("--enable-suite-reuse requires --evidence-dir or --readset-out")
-    if args.lock_home and not args.evidence_dir:
+    if args.lock_home is not None and args.evidence_dir is None:
         parser.error("--lock-home requires --evidence-dir")
     prepare_git_path()
     # sdd_static always runs first on the current state and is never reused.
@@ -108,7 +111,9 @@ def main(argv=None):
     if args.ci: command += ["--ci"]
     checked = subprocess.run(command, cwd=ROOT, timeout=120)
     if checked.returncode: return checked.returncode
-    environ = dict(os.environ)  # environment inputs before any recorder additions
+    # Environment inputs before any recorder additions; collected only for the opted-in
+    # reuse feature (23rd review R2302: no input observation while it is off).
+    environ = dict(os.environ) if args.enable_suite_reuse else None
     sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     if args.enable_suite_reuse:

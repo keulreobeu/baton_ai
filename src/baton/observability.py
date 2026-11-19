@@ -56,7 +56,8 @@ def suite_execution(request, executed, source_evidence):
     def bad():
         raise ValueError("invalid_ci_suite_execution")
     if suite is None:
-        if request["effective_level"] == 3 or fp is not None or reused is not None:
+        # 23rd review R2303: not_configured belongs to an executed V3 suite only.
+        if request["effective_level"] == 3 or fp is not None or reused is not None or decision == "not_configured":
             bad()
         return None
     if suite not in CI_SUITE_EXECUTIONS or request["effective_level"] != 3:

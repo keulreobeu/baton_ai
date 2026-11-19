@@ -48,6 +48,13 @@ def _held_dir():
     return path
 
 
+def real_key(path):
+    """23rd review R2301: the key of a recorded real path (the read set records real paths,
+    8.3 short names expanded): normcase(realpath). Assertions about an observed spelling
+    (alias paths through a junction) keep that spelling instead."""
+    return os.path.normcase(os.path.realpath(str(path)))
+
+
 class ReadsetTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -607,12 +614,12 @@ class ReadsetTests(unittest.TestCase):
                 self.assertTrue(data["complete"], rec.partial_samples)
                 self.assertTrue(suite_reuse.valid_readset(data))
                 shown = {os.path.normcase(r["path"]): r for r in data["listings"]}
-                listed = shown.get(os.path.normcase(str(target)))
+                listed = shown.get(real_key(target))
                 self.assertEqual((listed or {}).get("scope"), "outside", data["listings"])
                 self.assertEqual(listed["entries"], [])
-                missing = shown.get(os.path.normcase(str(prefix / "Lib" / "missing")))
+                missing = shown.get(real_key(prefix / "Lib" / "missing"))
                 self.assertEqual((missing or {}).get("error"), "FileNotFoundError", data["listings"])
-                self.assertNotIn(os.path.normcase(str(own)), shown)
+                self.assertNotIn(real_key(own), shown)
                 fixed = dict(environ={"FIXTURE": "1"}, manifest={"digest": "f" * 64, "files": 1},
                              git={"exe_sha256": "a" * 64, "version": "fixture", "config": "b" * 64},
                              resolver="r" * 64, trust="t" * 64)
@@ -655,7 +662,7 @@ class ReadsetTests(unittest.TestCase):
             rec.stop()
         data = rec.as_dict()
         seen = {os.path.normcase(r["path"]): r["sha256"] for r in data["env_reads"]}
-        self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", data["env_reads"])
+        self.assertEqual(seen.get(real_key(target)), "dir", data["env_reads"])
         self.assertTrue(suite_reuse.valid_readset(data))
 
     def check_directory_kind_and_writes_after_creation(self):
@@ -686,7 +693,7 @@ class ReadsetTests(unittest.TestCase):
                     self.assertEqual(done.returncode, 0, done.stderr)
                 rec.stop()
                 seen = {os.path.normcase(r["path"]): r["sha256"] for r in rec.as_dict()["outside_reads"]}
-                self.assertEqual(seen.get(os.path.normcase(str(target))), "dir", seen)
+                self.assertEqual(seen.get(real_key(target)), "dir", seen)
                 self.assertTrue(suite_reuse.valid_readset(rec.as_dict()))
                 target.rmdir()
                 target.write_bytes(b"database")
@@ -774,7 +781,7 @@ class ReadsetTests(unittest.TestCase):
                         expected = "missing" if not target.exists() else readset._sha(str(target))
                         seen = {os.path.normcase(r["path"]): ("missing" if r.get("absent") else r["sha256"])
                                 for r in rec.as_dict()["outside_reads"]}
-                        self.assertEqual(seen.get(os.path.normcase(str(target))), expected, seen)
+                        self.assertEqual(seen.get(real_key(target)), expected, seen)
                     else:
                         self.assertIn("MUTATION_UNVERIFIABLE", rec.partial_reasons, rec.partial_samples)
                     if target.exists():
@@ -827,7 +834,7 @@ class ReadsetTests(unittest.TestCase):
                     for r in rec.as_dict()["outside_reads"]}
 
         def key(path):
-            return os.path.normcase(str(path))
+            return real_key(path)
 
         for mode in ("wb", "ab", "r+b"):
             with self.subTest(case="write open %s" % mode):
@@ -915,7 +922,7 @@ class ReadsetTests(unittest.TestCase):
                     for r in rec.as_dict()["outside_reads"]}
 
         def key(path):
-            return os.path.normcase(str(path))
+            return real_key(path)
 
         def exclusive(target):
             with open(target, "xb") as stream:
@@ -1485,7 +1492,8 @@ class ReadsetTests(unittest.TestCase):
         root = short / "repo"
         point(root / "link-r83", outside)
         if os.path.normcase(str(short)) == os.path.normcase(str(long_dir)):
-            # No 8.3 name here: a fake short spelling that expands to the real path.
+            # No 8.3 name here: a fake short spelling that expands to the real path. Only
+            # Windows expands short names (23rd review R2305); elsewhere the alias is kept.
             fake = str(long_dir.parent / "NOLONG~9")  # no real short name can collide
             def expand(path):
                 return str(long_dir) + path[len(fake):] if os.path.normcase(path).startswith(os.path.normcase(fake)) else path
@@ -1494,7 +1502,10 @@ class ReadsetTests(unittest.TestCase):
             self.addCleanup(rec.stop)
             canonical = readset._canonical(long_dir / "repo" / "own")
             with patch.object(readset, "_long_name", expand):
-                self.assertIsNone(rec._alias_of(str(root / "own"), canonical))
+                if os.name == "nt":
+                    self.assertIsNone(rec._alias_of(str(root / "own"), canonical))
+                else:
+                    self.assertTrue(rec._alias_of(str(root / "own"), canonical))
                 self.assertTrue(rec._alias_of(str(long_dir / "repo" / "link-r83" / "in.cfg"),
                                               readset._canonical(outside / "in.cfg")))
             self.assertTrue(rec._alias_of(str(root / "own"), canonical))  # without the expansion

@@ -284,7 +284,12 @@ class LedgerTests(unittest.TestCase):
                         dict(off, reused_test_count=5),
                         dict(off, suite_execution="reused", executed_test_count=0, reused_test_count=100,
                              suite_fingerprint="e" * 64, source_evidence=refs),
-                        dict(off, suite_execution="not_run", status="not_run", executed_test_count=0)):
+                        dict(off, suite_execution="not_run", status="not_run", executed_test_count=0),
+                        # 23rd review R2303: a lower tier carries no suite, so no not_configured.
+                        dict(requested_level=2, effective_level=2, stage="checkpoint", status="passed",
+                             executed_test_count=1, suite_execution=None, reuse_decision="not_configured"),
+                        dict(requested_level=1, effective_level=1, stage="editing", status="not_run",
+                             executed_test_count=0, suite_execution=None, reuse_decision="not_configured")):
             with self.subTest(invalid=changes), self.assertRaises(ValueError):
                 self.metrics.record_ci_validation(self.ci_observation(run_id=run_id, event_id="CI-OFF-BAD", **changes))
 
