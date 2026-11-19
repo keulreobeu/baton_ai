@@ -36,8 +36,8 @@ Bazel 9.3.2, rules_python 2.5.1을 고정한다. 모듈 파일당 `py_test` 하�
 공용 data로 테스트가 읽는 소스, 문서, workflow, 스킬, 스크립트와 설정을 선언한다.
 runfiles 디렉터리를 활성화하고 Windows에서는 symlink를 활성화한다. Windows
 output root는 runner 임시 경로의 짧은 하위 폴더를 사용한다. Git 및 로컬
-loopback fixture 때문에 `standalone` test strategy를 사용한다. Bazel 테스트 결과 캐시는
-비활성화한다.
+loopback fixture 때문에 `standalone` test strategy와 로컬 TestRunner를 사용한다.
+Bazel 테스트 결과 캐시는 비활성화한다. [Bazel 9.3.2 릴리스](https://github.com/bazelbuild/bazel/releases/tag/9.3.2) · [rules_python 2.5.1](https://registry.bazel.build/modules/rules_python/2.5.1/)
 
 테스트 런처는 `imports`로 PoC 수집 모듈의 디렉터리를 받는다.
 
@@ -92,3 +92,50 @@ rules_python의 `PYTHONSAFEPATH` 상속으로 대표 2건의 실패를 재현했
 | OS/Python | CPU | A 실행 건수/초 | B 실행 건수/초 | C 실행 건수/초 | A↔B | A↔C |
 |---|---:|---:|---:|---:|---|---|
 | Ubuntu 3.12.16 | 4 | 777 / 102.105 | 777 / 36.022 | 777 / 96.947 | 일치 | 결과 불일치 6 |
+
+세 번째 run의 Windows 두 조합도 후속 push로 취소됐다. 네 번째이자 마지막
+[run 44578022938](https://github.com/keulreobeu/baton_ai/actions/runs/44578022938),
+`1a18f7084c3a3944abd0671c36a37ce7c16e23b9`의 실측은 아래와 같다.
+
+| 환경 | 논리 CPU | A 실행 건수/초 | B 실행 건수/초 | C 실행 건수/초 | A↔B | A↔C |
+|---|---:|---:|---:|---:|---|---|
+| 로컬 Windows 3.12.16 | 12 | 777 / 475.414 | 777 / 147.812 | 미실행 | 일치 | 미검증 |
+| Actions Windows 3.11 | 4 | 777 / 1054.017 | 777 / 459.540 | 777 / 491.608 | 일치 | 결과 불일치 4 |
+| Actions Windows 3.12 | 4 | 777 / 1108.254 | 777 / 433.112 | 777 / 658.588 | 일치 | 결과 불일치 5 |
+| Ubuntu 3.12.16 | 4 | 777 / 88.799 | 777 / 32.608 | 777 / 88.995 | 일치 | 결과 불일치 1 |
+
+Actions Windows 3.11에서는 A/B가 3.11.9, C가 3.11.18을 사용했다.
+Windows 3.12에서는 A/B가 3.12.10, C가 3.12.16을 사용했다.
+각 조합에서 A/B는 777 pass다. C의 3.11은 773 pass, 1 fail, 3 error,
+3.12는 772 pass, 2 fail, 3 error다. Windows 세 도구 모두 skip 0이다.
+두 조합에서 공통인 error 3건은 `Path.home()`에서 발생했다(SuiteReuse 2건,
+QuotaWindow CLI 1건).
+Windows 자식 프로세스에서 `USERPROFILE`·`HOMEDRIVE`·`HOMEPATH`를 제외해
+3건을 재현했고, 격리된 임시 `USERPROFILE`을 지정하니 세 표본이 모두 통과했다.
+공통 fail은 아래의 ManagedHarness 테스트다. Windows 3.12에서만 Readset의
+`test_input_read_again_must_still_be_what_was_first_read`가 추가로 실패했다.
+Readset은 Bazel Python runfiles 경로를 포함한 자식 프로세스 관측을 불완전으로
+분류했다. runfiles 배치와 Python patch 버전의 영향을 분리 검증할 증거는 없다.
+
+Ubuntu는 세 도구에서 같은 777개 ID를 실행했으며, 누락·추가·중복은 0건이다.
+A/B는 771 pass, 4 fail, 1 error, 1 skip이다. C는 770 pass, 5 fail, 1 error,
+1 skip이다. Windows 자격 증명 통합 검사 skip과 기존 Linux 기준선 실패 5건이
+공통이며, Bazel에서만 추가로 실패한 ID는
+`tests.test_managed_harness.ManagedHarnessTests.test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task`다.
+이 테스트의 작업 결과가 `REVIEW_REQUIRED` 대신 `FAILED`였다. Windows에서
+`PYTHONSAFEPATH`를 유지한 채 fixture cwd를 명시한 표본은 해당 ID를 포함한
+6건이 통과했다. Ubuntu의 잔여 불일치에 대한 세부 원인은 확정되지 않았다.
+
+최종 세 원격 조합에서 Bazel은 각 34개 타깃으로 777건을 실행했다.
+모든 A↔B/A↔C 비교에서 누락·추가·중복·0건 실행은 0건이다.
+Windows native runfiles와 Ubuntu runfiles 모두 결과 파일을 남겼다.
+Bazel에만 남은 오류가 있어 전체 동등성 기준에 미달했다. 다음 병렬도 실험은
+Windows 홈 환경과 공통 ManagedHarness 실패, Windows 3.12 Readset
+실패를 해소하고 동등성을 다시 확인한 뒤 판단한다. Linux의 기존 기준선
+실패와 skip은 Windows와 별도로 다뤄야 한다. 임시 홈 보정의 원격 검증과
+독립 검토는 미실행이다.
+
+전체 PoC 시간 기록은 실행별 artifact의 `wall.json`, 테스트별 기록은
+`baseline.json`, `pytest.xml`, `bazel-targets/`, ID 차이는 `A-B.json`과
+`A-C.json`에 있다. 로컬 증거는 gitignore로 제외된
+`poc/ci-engine/evidence/local-final/`에 있다.

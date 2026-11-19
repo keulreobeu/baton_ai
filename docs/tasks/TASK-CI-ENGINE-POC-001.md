@@ -17,6 +17,12 @@ command = "Run and compare unittest, pytest-xdist, and Bazel"
 result = "not_run"
 evidence = "poc/ci-engine/README.md#결과"
 acs = ["CI-ENGINE-POC-001-AC-01"]
+
+[[verification]]
+command = "GitHub Actions PoC run 44578022938 (1a18f70), matrix A/B/C and per-ID comparisons"
+result = "failed"
+evidence = "poc/ci-engine/README.md#결과"
+acs = ["CI-ENGINE-POC-001-AC-01"]
 ```
 
 Base: `8e44620`. Independent review and the experiment matrix are pending.
@@ -62,3 +68,27 @@ launcher safe-path environment applied locally, representative CI plan and
 harness tests reproduced the failure. The final push aligns the child
 environment with A/B and uses the last authorized push. The audit covers
 the unpublished commit and full diff, and the remote destination is rechecked.
+
+## Final evidence
+
+| Push | Experiment commit | GitHub Actions run | Ubuntu 3.12 | Windows 3.11 / 3.12 |
+|---|---|---:|---|---|
+| 1 | `ec2024e` | 44573966541 | Failed before Bazel execution | Cancelled / cancelled |
+| 2 | `b481228` | 44575579235 | All Bazel launchers failed before running tests | Cancelled / cancelled |
+| 3 | `c8f9421` | 44576569511 | A↔C differed on 6 outcomes | Cancelled / cancelled |
+| 4 | `1a18f70` | 44578022938 | A↔C differed on 1 outcome | Failed, 4 differences / failed, 5 differences |
+
+All four pushes were fast-forwards or the initial creation of the authorized
+ref. A fresh fetch showed exactly one unpublished commit for each push.
+Each commit and the full candidate diff passed scope, sensitive-pattern,
+`git diff --check`, and task-base SDD checks. Read-back verified
+`origin/exp/ci-engine-poc-20261120` at
+`1a18f7084c3a3944abd0671c36a37ce7c16e23b9`.
+The official workflow, validation entry points, product source and tests
+have no diff from the base. The four-push limit was reached.
+
+The local run and every final CI job matched A/B on 777 IDs and all outcomes.
+Each final CI job captured 777 IDs across 34 Bazel target reports. The
+Bazel outcome differences remain unresolved at the level required by this
+task. The full equivalence criterion failed, and parallelism experiments
+remain out of scope. Independent review and official V3 promotion remain pending.
