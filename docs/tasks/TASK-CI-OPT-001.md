@@ -3,7 +3,7 @@
 ```toml
 kind = "task"
 id = "TASK-CI-OPT-001"
-status = "in_progress"
+status = "verified"
 owner = "Codex"
 level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
@@ -11,6 +11,32 @@ plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
 scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py", "scripts/readset.py", "scripts/readset_site/sitecustomize.py", "scripts/verify_environment.py", "scripts/suite_reuse.py", "tests/test_readset.py", "tests/test_verify_environment.py"]
 acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
+
+[[verification]]
+command = "python -X utf8 scripts/verify_environment.py --base 5c07aea (official local V3, HEAD b23e309, suite reuse off)"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-OPT-001.md#최종-후보-b23e309-공식-로컬-v3--2026-11-19"
+acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
+tests_run = 743
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "GitHub Actions verify.yml run 44443039202 attempt 1 (pull_request, headSha 6a02040): plan, offline windows-latest 3.11/3.12 official V3, gate"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-OPT-001.md#verified-승격--2026-11-19"
+acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
+tests_run = 743
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[independent_review]
+result = "passed"
+evidence = "docs/tasks/TASK-CI-OPT-001.md#24차-독립-교차검토--2026-11-19"
 
 ```
 
@@ -1821,3 +1847,17 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
   추가 줄에서 홈 경로·계정 이메일·키·토큰·DB·로그·runtime 파일 0건. 계약 문서 `AGENTS.md`·`README.md`·`docs/sdd.md`는 `ef82cd5` 한 커밋에서 각 3줄(+3/-3)만 바뀌었고, 내용은 2026-11-19 사용자 결정인 `offline_suite` 재사용 분리·기본 비활성화(`not_configured`는 passed 아님) 반영 문구로 세 문서가 같다. 그 밖의 계약 확대 없음. finding 없음.
   최종 후보: 코드 `957de59`(+ `b23e309` 문서), 최종 후보 HEAD `b23e309` 공식 로컬 V3 PASS(743 OK, skip 0, eligible true, reuse `not_configured`), 24차 독립 교차검토(Codex, 대상 `957de59`) PASS_WITH_FINDINGS(P1·P2 0, P3 2 반영). `b23e309..` 이후와 이 기록은 Task 문서만 바꾼다(테스트 재실행 없음).
   push는 이 기록 커밋까지 fast-forward만 한다. 원격 CI 결과는 Task에 커밋하지 않고 보고로 넘긴다. Task는 verified로 올리지 않는다.
+
+## verified 승격 — 2026-11-19
+
+- 근거: 사용자 결정 2(2026-11-19, 코디네이터 전달) "원격 CI 통과 뒤 #16부터 verified 승격·main 병합"과 2026-11-16 Q3=B(원격 Windows 3.11/3.12 성공 후 verified). Git 게시·병합 담당이 기록한다.
+- 요건 대조(`docs/sdd.md` 문서와 상태, `check_sdd.py` verified 검사):
+  | 요건 | 증거 |
+  | --- | --- |
+  | 전체 AC(01~13) 마지막 기록 passed, tests_run>0, 실패·오류·skip·expected failure 0 | 공식 로컬 V3(HEAD `b23e309`) 743 OK skip 0, eligible true |
+  | 원격 Windows CI | run `44443039202` attempt 1(pull_request, headSha `6a02040`): plan·offline windows-latest 3.11(743 OK)·3.12(743 OK)·gate 모두 success, 두 job `verified_evidence_eligible=true` |
+  | L3 독립 검토 | 24차 Codex 교차검토(대상 `957de59`) PASS_WITH_FINDINGS, P1·P2 0, P3 2(R2401·R2402)는 `b23e309`에서 문서로 반영. 미해결 finding 없음을 `independent_review.result=passed`로 기록 |
+  | 승인 문서 | Spec approved, Plan active, ADR accepted |
+- 같은 job의 "Base install without the gms" 단계(30 tests, skipped=6)는 선택 의존성 `gms` 미설치 확인 단계이며 공식 V3 suite(743, skip 0)와 별개다.
+- `b23e309` 이후와 이 승격 커밋은 Task·current 문서만 바꾼다. 이 커밋 SHA의 원격 CI(draft·ready)는 커밋 뒤 확인하며 Task에 다시 커밋하지 않고 보고로 넘긴다. 결과가 실패하면 verified를 유지하지 않고 병합하지 않는다.
+- `offline_suite` 재사용은 분리·비활성(`reuse_decision=not_configured`, passed 아님)이며 재사용 절감은 주장하지 않는다. R2201 보류·SQLite A안 유지.
