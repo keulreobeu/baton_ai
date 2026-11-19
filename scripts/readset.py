@@ -1,8 +1,12 @@
 """Input recorder for offline test runs (stdlib only).
 
 CI-OPT-001 AC-12 revision 5 (R1-R5): records what the suite actually reads so
-that ``scripts/ci_plan.py`` can fingerprint it. Anything the recorder cannot
+that ``scripts/suite_reuse.py`` can fingerprint it. Anything the recorder cannot
 observe completely makes the read set ``partial`` (fail-closed).
+
+2026-11-19: part of the separated, disabled-by-default reuse feature. Only
+``verify_environment.py --enable-suite-reuse`` installs it; the common validation
+path never imports this module.
 
 Real events (file opens, listings, Python child launches, sockets, ...) are
 delivered to every active recorder, so a recorder created inside the suite
@@ -27,7 +31,7 @@ import time
 # R5: stdlib native modules observed loading in the 2026-11-16 full-suite
 # measurement (Windows, CPython 3.12). Any other native module import makes the
 # read set partial. Changing this list changes the policy digest
-# (ci_plan.policy_identity hashes this file).
+# (suite_reuse.policy_identity hashes this file).
 STDLIB_NATIVE_ALLOWED = ("_asyncio", "_bz2", "_ctypes", "_decimal", "_elementtree", "_hashlib", "_lzma",
                          "_multiprocessing", "_overlapped", "_queue", "_socket", "_sqlite3", "_ssl", "_uuid",
                          "math", "pyexpat", "select", "unicodedata")
@@ -123,6 +127,47 @@ def _real(value):
         return os.path.realpath(os.path.abspath(raw))
     except (OSError, ValueError, TypeError):
         return None
+
+
+_LONG = None
+
+
+def _long_name(path):
+    """Remote CI 2026-11-19 (TEMP under C:\\Users\\RUNNER~1): the absolute path with the
+    8.3 short names of its existing part expanded (GetLongPathNameW). Links are not
+    resolved, so a path through a symlink or junction still differs from its real target.
+    The path itself when it cannot be expanded (an alias is then kept: fail-closed)."""
+    global _LONG
+    if os.name != "nt" or "~" not in path:
+        return path
+    if _LONG is None:
+        try:
+            import ctypes
+            function = ctypes.WinDLL("kernel32", use_last_error=True).GetLongPathNameW
+            function.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong]
+            function.restype = ctypes.c_ulong
+            def expand(text):
+                size = function(text, None, 0)
+                if not size:
+                    return None
+                buffer = ctypes.create_unicode_buffer(size)
+                written = function(text, buffer, size)
+                return buffer.value if 0 < written < size else None
+            _LONG = expand
+        except (OSError, AttributeError):
+            _LONG = lambda text: None
+    head, tail = path, []
+    try:
+        while not os.path.lexists(head):
+            parent, name = os.path.split(head)
+            if parent == head or not name:
+                return path
+            tail.append(name)
+            head = parent
+        expanded = _LONG(head)
+    except (OSError, ValueError, TypeError):
+        return path
+    return path if expanded is None else os.path.join(expanded, *reversed(tail))
 
 
 def _canonical(value):
@@ -419,7 +464,7 @@ def _is_loopback(host):
 
 def _local_name(host):
     """Loopback literal, 'localhost' or no host: answered from the hosts file
-    (fingerprinted by ci_plan) without a network service."""
+    (fingerprinted by suite_reuse) without a network service."""
     if host is None:
         return True
     if isinstance(host, bytes):
@@ -661,6 +706,13 @@ class Recorder:
         key = os.path.normcase(observed) if os.name == "nt" else observed
         if key == canonical:
             return None
+        if os.name == "nt":
+            # Remote CI 2026-11-19: an 8.3 short spelling of the same path is no alias; a
+            # link on the path keeps it different from the real target (still an alias).
+            with self._quiet():
+                expanded = _long_name(observed)
+            if expanded != observed and os.path.normcase(expanded) == canonical:
+                return None
         target = _real(observed)
         return False if target is None else (observed, target)
 
@@ -1566,7 +1618,7 @@ class Recorder:
             if not _local_name(host):
                 self._partial("NETWORK", event); self._network_violations += 1
             return
-        # socket.gethostname: the host name is fingerprinted (ci_plan resolver component)
+        # socket.gethostname: the host name is fingerprinted (suite_reuse resolver component)
 
     def _owned(self, sock, address):
         """Only a loopback endpoint bound successfully by this run and still open."""

@@ -62,66 +62,6 @@ def _summary(result, **suite):
     return value
 
 
-class _Counts:
-    """unittest-like result for a reused suite plus the tests re-run now."""
-
-    def __init__(self, ran, reused):
-        self.ran, self.reused = ran, reused
-        self.testsRun = (ran.testsRun if ran else 0) + reused
-        self.failures = list(ran.failures) if ran else []
-        self.errors = list(ran.errors) if ran else []
-        self.skipped = list(ran.skipped) if ran else []
-        self.expectedFailures = list(ran.expectedFailures) if ran else []
-        self.unexpectedSuccesses = list(ran.unexpectedSuccesses) if ran else []
-
-    def wasSuccessful(self):
-        return (not self.failures and not self.errors and not self.unexpectedSuccesses
-                and (self.ran is None or self.ran.wasSuccessful()))
-
-
-def _utc():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
-
-
-def _candidates(directory, limit=20):
-    """Content-addressed Task evidence files, newest first; anything else is ignored."""
-    import hashlib
-    if not directory.is_dir():
-        return []
-    rows = []
-    for file in directory.glob("suite-*.json"):
-        try:
-            raw = file.read_bytes()
-        except OSError:
-            continue
-        digest = hashlib.sha256(raw).hexdigest()
-        if file.name != f"suite-{digest}.json":
-            continue
-        try:
-            evidence = json.loads(raw.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            continue
-        if isinstance(evidence, dict) and evidence.get("execution") == "executed" and evidence.get("status") == "passed":
-            rows.append((file.stat().st_mtime, digest, raw, evidence))
-    rows.sort(key=lambda row: row[0], reverse=True)
-    return rows[:limit]
-
-
-def _try_reuse(cp, environ, directory, manifest, git):
-    reasons = []
-    for _, digest, raw, evidence in _candidates(directory):
-        try:
-            current = cp.suite_fingerprint(ROOT, evidence.get("readset"), environ=environ, manifest=manifest, git=git)
-        except cp.PlanError as exc:
-            reasons.append(str(exc)); continue
-        decision = cp.decide_suite_reuse(current, evidence, digest, raw, now_utc=_utc())
-        if decision["allowed"]:
-            return current, evidence, decision, reasons
-        reasons.extend(decision["reasons"])
-    return None, None, None, reasons
-
-
 def _run_suite(names=None):
     loader = unittest.defaultTestLoader
     suite = (loader.loadTestsFromNames(names) if names is not None
@@ -129,28 +69,40 @@ def _run_suite(names=None):
     return unittest.TextTestRunner(verbosity=1, resultclass=ModuleProgressResult).run(suite)
 
 
-def _write_evidence(directory, evidence):
-    import hashlib
-    raw = (json.dumps(evidence, sort_keys=True, ensure_ascii=True) + "\n").encode("utf-8")
-    digest = hashlib.sha256(raw).hexdigest()
-    directory.mkdir(parents=True, exist_ok=True)
-    final = directory / f"suite-{digest}.json"
-    temporary = directory / f".suite-{digest}.tmp"
-    temporary.write_bytes(raw)
-    os.replace(temporary, final)
-    return digest
+def disabled_suite_fields(result):
+    """Summary fields when the separated suite reuse feature is off (2026-11-19 user
+    decision): the whole offline_suite was executed; reuse is not configured, which is
+    neither a pass nor a failure of the run."""
+    return {"suite_execution": "executed", "suite_fingerprint": None, "executed_tests": result.testsRun,
+            "reused_test_count": None, "source_evidence": [], "reuse_decision": "not_configured",
+            "reuse_reasons": [], "equality_checks": {}}
+
+
+REUSE_ONLY_OPTIONS = (("--evidence-dir", "evidence_dir"), ("--lock-home", "lock_home"), ("--readset-out", "readset_out"))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base")
     parser.add_argument("--ci", action="store_true")
-    parser.add_argument("--readset-out", metavar="PATH")
+    parser.add_argument("--enable-suite-reuse", action="store_true",
+                        help="Opt in to the separated, disabled-by-default CI-OPT-001 AC-12 rev5 "
+                             "offline_suite reuse and input observation (scripts/suite_reuse.py)")
+    parser.add_argument("--readset-out", metavar="PATH", help="Requires --enable-suite-reuse")
     parser.add_argument("--evidence-dir", metavar="DIR",
-                        help="Task evidence directory: enables CI-OPT-001 AC-12 rev5 offline_suite reuse/evidence")
-    parser.add_argument("--lock-home", metavar="DIR", help="Directory for the per-fingerprint lock")
+                        help="Requires --enable-suite-reuse: Task evidence directory for offline_suite reuse/evidence")
+    parser.add_argument("--lock-home", metavar="DIR", help="Requires --evidence-dir: directory for the per-fingerprint lock")
     args = parser.parse_args(argv)
-    if args.lock_home and not args.evidence_dir:
+    # 23rd review R2304: an option is given when it is not None; an empty value is an error.
+    for flag, name in REUSE_ONLY_OPTIONS:
+        value = getattr(args, name)
+        if value is not None and not args.enable_suite_reuse:
+            parser.error(f"{flag} requires --enable-suite-reuse")
+        if value is not None and not value.strip():
+            parser.error(f"{flag} must not be empty")
+    if args.enable_suite_reuse and args.evidence_dir is None and args.readset_out is None:
+        parser.error("--enable-suite-reuse requires --evidence-dir or --readset-out")
+    if args.lock_home is not None and args.evidence_dir is None:
         parser.error("--lock-home requires --evidence-dir")
     prepare_git_path()
     # sdd_static always runs first on the current state and is never reused.
@@ -159,119 +111,19 @@ def main(argv=None):
     if args.ci: command += ["--ci"]
     checked = subprocess.run(command, cwd=ROOT, timeout=120)
     if checked.returncode: return checked.returncode
-    environ = dict(os.environ)  # environment inputs before any recorder additions
+    # Environment inputs before any recorder additions; collected only for the opted-in
+    # reuse feature (23rd review R2302: no input observation while it is off).
+    environ = dict(os.environ) if args.enable_suite_reuse else None
     sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-    if not args.evidence_dir:
-        recorder = None
-        if args.readset_out:
-            from scripts.readset import Recorder
-            recorder = Recorder(ROOT)
-        try:
-            result = _run_suite()
-        finally:
-            if recorder:
-                recorder.stop()
-                recorder.write(args.readset_out)
-        print(json.dumps(_summary(result), sort_keys=True))
-        return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
-    return _evidence_main(args, environ)
-
-
-def suite_lock_key(cp, root):
-    """One lock per repository (common git directory): equal input fingerprints may
-    come from different commits or worktrees of it (CI-OPT-001 final cross review F05)."""
-    common = cp.sdd.git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
-    return cp.fingerprint(["suite-lock/1", str(Path(common).resolve()).casefold()])
-
-
-def _evidence_main(args, environ):
-    import uuid
-    from contextlib import nullcontext
-    from scripts import ci_plan as cp
-    from scripts.readset import Recorder
-    directory = Path(args.evidence_dir).resolve()
-    exact_readset = {"schema": cp.READSET_SCHEMA, "complete": False, "partial_reasons": ["EXACT_STATE"],
-                     "repo_reads": [], "outside_reads": [], "env_reads": [], "listings": [], "added_env": [],
-                     # CI-OPT-001 re-review N03: every READSET_REQUIRED_FIELDS entry.
-                     "aliases": [], "children": {}, "trust_store": False}
-    # Lock key: the exact repository state. Every fingerprint input is then
-    # computed inside the lock (a concurrent run may have changed nothing or
-    # produced evidence meanwhile).
-    # CI-OPT-001 final cross review F05: suites with the same input fingerprint can
-    # come from different commits or worktrees, so the lock is per repository
-    # (its common git directory), not per commit/worktree state.
-    lock_key = suite_lock_key(cp, ROOT)
-    lock = cp.fingerprint_lock(args.lock_home, lock_key) if args.lock_home else nullcontext()
-    with lock:
-        manifest, git = cp.runtime_manifest(), cp.git_identity(ROOT)
-        current, source, decision, reasons = _try_reuse(cp, environ, directory, manifest, git)
-        if decision is not None:
-            ran = _run_suite(decision["run_tests"]) if decision["run_tests"] else None
-            result = _Counts(ran, decision["reused_test_count"])
-            print(json.dumps(_summary(result, suite_execution="reused", suite_fingerprint=current["fingerprint"],
-                                      executed_tests=ran.testsRun if ran else 0,
-                                      reused_test_count=decision["reused_test_count"],
-                                      source_evidence=decision["source_evidence"], reuse_decision="accepted",
-                                      reuse_reasons=[], equality_checks=decision["equality_checks"]),
-                             sort_keys=True))
-            return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
-        before = cp.freeze(ROOT)
-        resolver = cp.resolver_identity()
-        trust = cp.trust_store_identity()
-        started = _utc()
-        recorder = Recorder(ROOT)
-        try:
-            result = _run_suite()
-        finally:
-            recorder.stop()
-        readset = recorder.as_dict()
-        if args.readset_out:
-            recorder.write(args.readset_out)
-        # Repository, interpreter/installed files and Git identity must be the
-        # same after the suite as before it.
-        # 3rd review R301: a change the recorder itself saw during the run (an alias
-        # retargeted between reads) is an unstable run too.
-        stable = ("INPUT_CHANGED_DURING_RUN" not in readset.get("partial_reasons", [])
-                  and cp.freeze(ROOT) == before and cp.runtime_manifest() == manifest
-                  and cp.git_identity(ROOT) == git and cp.resolver_identity() == resolver
-                  and cp.trust_store_identity() == trust)
-        try:
-            # The snapshot compared before/after the suite is the one fingerprinted.
-            fp = cp.suite_fingerprint(ROOT, readset, environ=environ, manifest=manifest, git=git,
-                                      resolver=resolver, trust=trust, verify_observed=True)
-        except cp.PlanError as exc:
-            # LISTING_CHANGED_DURING_RUN (re-review N05) only refuses reuse: the suite may
-            # write into a directory it listed, and stability is the freeze check above.
-            if str(exc) in {"INPUT_CHANGED_DURING_RUN", "STATE_CHANGED"}:
-                stable = False
-            # The run stays a real execution, but its evidence is not reusable.
-            readset = dict(readset, complete=False,
-                           partial_reasons=sorted(set(readset.get("partial_reasons", [])) | {"FINGERPRINT_" + str(exc)}))
-            try:
-                fp = cp.suite_fingerprint(ROOT, exact_readset, environ=environ, manifest=manifest, git=git,
-                                          resolver=resolver, trust=trust)
-            except cp.PlanError:
-                fp, stable = None, False
-        returncode = 0 if result.wasSuccessful() and result.testsRun > 0 else 1
-        summary = _summary(result, suite_execution="executed", suite_fingerprint=fp["fingerprint"] if fp else None,
-                           executed_tests=result.testsRun, reused_test_count=None, source_evidence=[],
-                           reuse_decision="rejected" if reasons else "not_requested",
-                           reuse_reasons=sorted(set(reasons))[:32], equality_checks={},
-                           readset_complete=readset.get("complete") is True)
-        if fp is not None:
-            evidence = cp.suite_evidence(
-                run_id=uuid.uuid4().hex, commit=before["head"], fingerprint_record=fp, readset=readset,
-                result={"tests_run": result.testsRun, "failures": len(result.failures), "errors": len(result.errors),
-                        "skipped": len(result.skipped), "expected_failures": len(result.expectedFailures),
-                        "unexpected_successes": len(result.unexpectedSuccesses)},
-                returncode=returncode, state_stable=stable, started_utc=started, finished_utc=_utc())
-            summary["evidence_sha256"] = _write_evidence(directory, evidence)
-        if not stable:
-            summary.update(status="FAIL", verified_evidence_eligible=False)
-            returncode = returncode or 1
-        print(json.dumps(summary, sort_keys=True))
-        return returncode
+    if args.enable_suite_reuse:
+        # The only import of the reuse feature (and of scripts/readset.py).
+        from scripts import suite_reuse
+        return suite_reuse.verify_main(args, environ, root=ROOT, run_suite=_run_suite, summarize=_summary,
+                                       disabled_fields=disabled_suite_fields)
+    result = _run_suite()
+    print(json.dumps(_summary(result, **disabled_suite_fields(result)), sort_keys=True))
+    return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
 
 
 if __name__ == "__main__":

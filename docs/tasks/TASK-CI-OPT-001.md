@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/CI-OPT-001.md", "docs/specs/SDD-001.md"]
 plan = "docs/plans/ci-optimization.md"
 adr = "docs/adr/ADR-CI-OPT-001.md"
-scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py", "scripts/readset.py", "scripts/readset_site/sitecustomize.py", "scripts/verify_environment.py", "tests/test_readset.py", "tests/test_verify_environment.py"]
+scope = ["docs/specs/CI-OPT-001.md", "docs/plans/ci-optimization.md", "docs/adr/ADR-CI-OPT-001.md", "docs/tasks/TASK-CI-OPT-001.md", "docs/proposals/T1-contract-revisions.md", "docs/sdd/traceability.json", "docs/tasks/current.md", "AGENTS.md", "README.md", "docs/sdd.md", ".github/workflows/verify.yml", "scripts/check_sdd.py", "tests/test_sdd.py", "scripts/ci_plan.py", "tests/test_ci_plan.py", "tests/test_ci_workflow.py", ".gitignore", "src/baton/observability.py", "tests/test_observability.py", "src/baton/orchestrator.py", "src/baton/managed_cli.py", "tests/test_managed_harness.py", "scripts/readset.py", "scripts/readset_site/sitecustomize.py", "scripts/verify_environment.py", "scripts/suite_reuse.py", "tests/test_readset.py", "tests/test_verify_environment.py"]
 acs = ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02", "CI-OPT-001-AC-03", "CI-OPT-001-AC-04", "CI-OPT-001-AC-05", "CI-OPT-001-AC-06", "CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09", "CI-OPT-001-AC-10", "CI-OPT-001-AC-11", "CI-OPT-001-AC-12", "CI-OPT-001-AC-13"]
 
 ```
@@ -33,6 +33,7 @@ AC 연결: T3d에서 실제 테스트 symbol을 연결하고 traceability 원장
 | 작업 T3b V-planner·CBM adapter | AC-07/09/12 | `scripts/ci_plan.py`, `tests/test_ci_plan.py`, `.gitignore`, `src/baton/orchestrator.py`, `tests/test_managed_harness.py`, 승인 정책 문서·정적 테스트 | b50ec38 adapter/상태 결합/중단/F-B 보강, 로컬 수렴·공식 V3 692 tests PASS; graph/inventory partial로 실제 narrowing 미자격 |
 | 작업 T3c workflow·dispatch·gate | AC-08/10/11/12 | `.github/workflows/verify.yml`, `scripts/ci_plan.py`, `tests/test_ci_plan.py`, 정적 테스트·안내 문서 | revision 4 Windows 2 matrix·plan/gate 구현, b50ec38 로컬 수렴·공식 V3 PASS; 원격 두 matrix·개별 job E2E NOT_RUN |
 | 작업 T3d 기존 계측·원장 | AC-02/07/08/12/13 | `src/baton/observability.py`, `src/baton/orchestrator.py`, `src/baton/managed_cli.py`, 관련 테스트·Task/traceability/current | worker V1·checkpoint V2·기본 V3/기존 MetricsStore 구현, b50ec38 공식 V3 692 tests·로컬 수렴 확인; runtime reuse caller 미연결·원격 CI pending |
+| 재사용 기능 분리·비활성화 — 2026-11-19 | AC-01/12/13 | `scripts/suite_reuse.py`(신규), `scripts/ci_plan.py`, `scripts/verify_environment.py`, `src/baton/orchestrator.py`, `src/baton/observability.py`, 관련 테스트, 안내·계약 문서 | 구현·V2, 독립 교차검토·공식 V3·원격 CI 대기. AC-12 rev5 재사용은 deferred(분리·off) |
 | 범위 경계 | AC-13 | 전 단계 | 상시 |
 | 승인 확인 | REQ/AC 전체 | `docs/specs/CI-OPT-001.md` | 과거 approved 유지 및 revision 4 Windows-first 사용자 결정 반영; 현재 유효 범위는 Spec 최신 승인/처분 표 |
 | 사용자 결정 | P-01·P-06·P-07 | `docs/specs/CI-OPT-001.md`, 이 Task | P-01 확정/반영; P-02/03/08/09 superseded; P-04/05/06 re-scoped; P-07 기존 CI owner 경계 유지. 새 보류 결정은 아래 전체 검토 목록 |
@@ -1683,3 +1684,135 @@ main 병합 없음. 홈 경로는 B안(범용 표기), 최종 SHA 검증은 B안
     | `MUTATION_UNVERIFIABLE` | 5 | 열린 descriptor 4, `.local_runtime/harness-managed/test-tmp` mkdir 1 |
     | `OUTPUT_OWNERSHIP_UNCERTAIN` | 5 | 임시 lock·SQLite 파일 |
   이 증거의 read set은 partial이므로 다음 실행의 `offline_suite` 재사용 원본이 될 수 없다(재사용 범위는 사용자 결정 대상). 원격 Windows 두 조합은 확인하지 않았다. Task는 원격 CI 확인 전 verified로 올리지 않는다.
+- **2026-11-19 push 전 전체 커밋 점검(Git 게시 담당, 사용자 승인 push·원격 CI 확인)**: `git fetch` 뒤 원격 `codex/ci-opt-001-r5`=`e78b685`(지시값과 일치), 로컬 HEAD `11b7747`.
+  범위 `origin/codex/ci-opt-001-r5..codex/ci-opt-001-r5` 미게시 커밋 33개(`e826341`~`11b7747`, 병합 커밋 0), 작성자·커밋터 모두 저장소 로컬 신원 `lwwde07`.
+  변경 파일 6개(`docs/specs/CI-OPT-001.md`, `docs/tasks/TASK-CI-OPT-001.md`, `scripts/ci_plan.py`, `scripts/readset.py`, `tests/test_ci_plan.py`, `tests/test_readset.py`). 추가 줄에서 홈 경로·이메일·키·토큰·DB·로그·runtime 파일 0건(저장소 상대 fixture 경로 언급만 있음). finding 없음.
+  최종 후보: 코드 `b3a69cd`, 최종 후보 HEAD `5f42d00` 공식 로컬 V3 PASS(743 OK, skip 0), 22차 독립 교차검토 PASS_WITH_FINDINGS(P1 0, R2201 알려진 한계). `5f42d00..11b7747`과 이 기록은 Task 문서만 바꾼다(테스트 재실행 없음).
+  push 대상은 이 기록 커밋까지 fast-forward만 한다. 원격 CI 결과는 SHA를 바꾸지 않도록 이 Task에 커밋하지 않고 보고로 넘긴다. Task는 verified로 올리지 않는다.
+
+## 재사용 기능 분리·비활성화 — 2026-11-19
+
+- 근거: 2026-11-19 사용자 결정(Spec "Eng Review Amendments — 2026-11-19 재사용 기능 분리·비활성화"). 설계 메모 승인은 코디네이터 msg_361a8bca2bad(Q1~Q5)다. L3, 독립 Codex 교차검토는 코디네이터가 띄운다.
+- 변경(분리에 필요한 것만, 추가 최적화 없음):
+  - `scripts/ci_plan.py`의 rev5 블록(`suite-fp/1` 지문·재사용 판정·증거·lock)을 `scripts/suite_reuse.py`로 코드 변경 없이 옮겼다. `policy_identity`는 옮긴 모듈도 해시한다.
+  - 검증기 재사용 경로(`_evidence_main`·`_try_reuse`·`_candidates`·`_Counts`·`_write_evidence`·`suite_lock_key`)와 `--readset-out` 처리도 같은 모듈로 옮겼다.
+  - `verify_environment.py --enable-suite-reuse`(기본 off)만 이 모듈을 import한다. `--evidence-dir`·`--lock-home`·`--readset-out`을 스위치 없이 주면 종료 코드 2(SDD·suite 미실행)다.
+  - 꺼진 요약: `suite_execution=executed`, `suite_fingerprint=null`, `reuse_decision=not_configured`, suite-*.json 미작성.
+  - Orchestrator V3 caller는 `--evidence-dir/--lock-home`을 넘기지 않는다. `official_suite`와 MetricsStore `ci.validation` 표는 `not_configured`를 executed 전용(지문 null)으로 받는다. 성공 판정(PASS·nonzero·no-skip·eligible)과 `evidence.py`는 그대로다.
+  - `scripts/readset.py`·`readset_site`는 경로와 동작을 유지한다(주석만 갱신). R2201 보류, SQLite A안 유지. rev2 `reuse_v3`는 공통 planner에 남긴다.
+- 꺼진 상태 증명(기존 AC-12 테스트에서 호출하는 `check_*`, traceability 참조 수 변화 없음):
+  - `check_reuse_off_installs_no_recorder_child_hook_or_fingerprint`: 새 인터프리터에서 기본 `main` 2회. builtins/io/os/sqlite3/Popen/socket 교체 0, 재사용 모듈 import 0, BATON_READSET·readset_site 추가 0(자식 포함), 독 모듈 접근 0, 요약 not_configured. 기본 경로에 `Recorder` 설치를 넣은 변형에서 실패함을 확인했다.
+  - `check_reuse_options_require_the_switch_and_run_nothing`, `check_reuse_feature_import_boundary`(공통 경로 AST import 경계, 검증기는 `if args.enable_suite_reuse:` 안 1곳)
+  - `check_reuse_off_summary_is_judged_by_the_executed_suite`(harness), `check_reuse_not_configured_is_an_executed_suite_only`(MetricsStore)
+- 기존 재사용·readset 단위 테스트는 같은 파일에서 기본 discover로 계속 실행한다(참조만 `suite_reuse`로 바꿈, 재사용 테스트는 `--enable-suite-reuse` 명시).
+- V2(영향 8모듈 `test_readset·test_ci_plan·test_verify_environment·test_managed_harness·test_flow_runtime·test_observability·test_ci_workflow·test_sdd`):
+  | 환경 | 결과 |
+  | --- | --- |
+  | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 464 s) |
+  | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 468 s) |
+  `check_sdd.py --base 5c07aea` PASS. 공식 V3는 교차검토 뒤 1회 실행한다(이번에는 실행하지 않음). 원격 CI 미확인.
+
+## 원격 CI 8.3 짧은 경로 실패 수정 — 2026-11-19
+
+- 실패: PR #16 원격 CI run 44425214483(headSha `27312df`)의 Windows 3.11·3.12 두 job이 같은 1건으로 결정적으로 실패했다.
+  위치는 `tests.test_readset` `test_input_read_again_must_still_be_what_was_first_read`의 `check_every_exempt_object_and_link_is_kept`다.
+  실행이 직접 만든 `own-area-r1002`가 `C:\Users\RUNNER~1\…`(관측) → `C:\Users\runneradmin\…`(실제) 별칭으로 기록됐다.
+- 원인(로컬 재현): 러너 TEMP가 8.3 짧은 이름이다. 새 디렉터리를 만들면 "없음" 입력 판정(`_absent_chain`)이 별칭을 입력으로 남긴다.
+  `_alias_of`는 관측 경로와 realpath(긴 이름)가 다르면 링크가 없어도 별칭으로 봤다. 이 PC에서 8.3 이름이 있는 경로를 root로 두고 같은 결과를 재현했다.
+- 수정(`scripts/readset.py`): `_long_name`이 존재하는 부분의 짧은 이름만 `GetLongPathNameW`로 펼친다.
+  - 링크는 해석하지 않으므로 junction·symlink를 지나는 경로는 계속 별칭이다.
+  - 펼친 경로가 실제 경로와 같을 때만 별칭이 아니다. 펼치지 못하면 기존처럼 별칭을 남긴다(fail-closed).
+  - 링크 판정(`_links_on`, lstat·reparse tag)과 exempt 규칙은 바꾸지 않았다.
+- 회귀: 같은 AC-12 테스트에서 호출하는 `check_short_name_spelling_is_no_alias`(참조 수 변화 없음).
+  - 실제 8.3 경로(GetShortPathNameW)에 대해 다음을 확인한다.
+    - 자기 디렉터리를 만들고 지우는 동안 별칭 0, read set complete
+    - 실행 전에 있던 junction을 짧은 이름 경로로 지나 읽은 입력은 별칭 유지
+  - 8.3 이름이 없으면 skip하지 않고 대체 확장 함수로 `_alias_of` 단위 판정을 한다.
+  - 결과(수정 전 → 수정 후):
+    | 분기 | 수정 전 | 수정 후 |
+    | --- | --- | --- |
+    | 실제 8.3 경로 | 실패(별칭 `TMPU0F~1\LONG-D~1\repo\own-area-r83`) | 통과 |
+    | 대체 분기(GetShortPathNameW 0 강제) | 실패 | 통과 |
+- V2(같은 영향 8모듈):
+  | 환경 | 결과 |
+  | --- | --- |
+  | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 469 s) |
+  | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 465 s) |
+  `check_sdd.py --base 5c07aea` PASS. 원격 CI 재실행은 push 뒤 확인 대상이다(미게시).
+
+## 23차 독립 교차검토 FAIL 반영 — 2026-11-19
+
+- 검토: Codex, 대상 `a2f107d`, 범위 `27312df..a2f107d`, 판정 FAIL(P1 2, P2 2, P3 1). 지적을 묶어 반영했다.
+- R2301(P1): readset 테스트의 기대 키가 `normcase(str(path))`라 8.3 짧은 경로를 펼치지 않았다(기록 키는 긴 실제 경로).
+  - 수정: 실제 경로를 비교하는 단언은 `real_key`(normcase(realpath))를 쓴다. 대상은 리뷰의 5곳과, 그 실패에 가려져 있던 목록 단언 3곳(`check_listing_inside_the_runtime_environment`)이다.
+  - 관측 철자를 검증하는 junction·alias 단언과 `_canonical`을 패치하는 단언은 그대로 둔다.
+  - 코드 쪽 점검: 남은 `normcase` 비교는 모두 실제 경로끼리이거나 관측 철자를 키로 쓰는 의도된 경우다(`_display`, `_note_alias`, `suite_reuse` alias 비교).
+- R2302(P1): `verify_environment.py`의 환경 전체 스냅샷(`dict(os.environ)`)을 `--enable-suite-reuse`일 때만 같은 시점에 수집한다. 꺼짐 프로브는 환경 전체 열거 0회를 확인한다.
+- R2303(P2): MetricsStore가 suite 없는 낮은 단계(V1/V2)에서 `reuse_decision=not_configured`를 거부한다(`invalid_ci_suite_execution`).
+- R2304(P2): 재사용 옵션이 주어졌는지는 `None`으로 판단한다. 빈 값(공백 포함)은 스위치가 있든 없든 인수 오류(종료 코드 2)다.
+- R2305(P3): 8.3 대체 테스트의 확장 단언은 Windows에서만 하고, 다른 플랫폼에서는 별칭 보존을 확인한다(비Windows 실제 실행은 범위 밖, 미실행).
+- 수정 전 실패 확인:
+  | 지적 | 수정 전 코드 결과 |
+  | --- | --- |
+  | R2301 | 8.3 TEMP `tests.test_readset` 37건 중 22 실패. 기대 키만 고친 중간 상태에서도 가려졌던 목록 단언 2건이 실패 |
+  | R2302 | 꺼짐 프로브 환경 열거 2회 |
+  | R2304 | `--evidence-dir ''`가 SystemExit 없이 실행 |
+  | R2303 | V2/V1 `not_configured` 저장 성공(ValueError 없음) |
+  | R2305 | 실제 비Windows 실행은 하지 않았다 |
+- 8.3 TEMP 재현 방법(원격 `C:\Users\RUNNER~1` 조건 모사): 다음 순서로 새 인터프리터를 띄운다. 원격 머신은 쓰지 않는다.
+  1. 긴 이름의 임시 폴더를 만든다.
+  2. `GetShortPathNameW`로 짧은 이름을 구한다(긴 이름과 다른지 확인).
+  3. 자식의 `TMPDIR`·`TEMP`·`TMP`를 그 짧은 이름으로 설정한다.
+  4. 자식의 `tempfile.gettempdir()`가 짧은 이름을 고르는지 확인한다.
+  5. `python -X utf8 -m unittest tests.test_readset`를 실행한다.
+- V2(같은 8모듈) + 8.3 TEMP:
+  | 환경 | 결과 |
+  | --- | --- |
+  | `PYTHONUTF8`·`PYTHONIOENCODING` 미설정 | 324 OK(실패·오류·skip 0, 487 s) |
+  | `PYTHONIOENCODING=utf-8` | 324 OK(실패·오류·skip 0, 477 s) |
+  | 8.3 TEMP `tests.test_readset` | 37 OK(실패·오류·skip 0) |
+  `check_sdd.py --base 5c07aea` PASS.
+- 참고(요구 범위 밖, 이번에 수정하지 않음): 8.3 TEMP로 8모듈 전체를 돌리면 `tests.test_flow_runtime` 12건이 오류다. 원인은 `git_lifecycle._scan_range`의 `git rev-list` 실패(`git_operation_failed_rev-list`)다.
+  이 경로는 이번 변경 밖의 제품 코드다. 원격 CI run 44425214483(`RUNNER~1` TEMP)에서는 readset 1건 외에 실패가 없었으므로 로컬 모사 조건의 차이일 수 있다. 원인 확정과 처리는 코디네이터 결정 대상이다.
+- 공식 V3·push는 하지 않았다(독립 델타 검토 뒤). 원격 CI 미확인.
+
+## 24차 독립 교차검토 — 2026-11-19
+
+- 검토: Codex, 대상 `957de59`, 23차 반영 범위 `a2f107d..957de59`, 회귀 범위 `27312df..957de59`. 판정 **PASS_WITH_FINDINGS**(P1 0, P2 0, P3 2).
+- R2301~R2305: 모두 resolved.
+  - R2301: 실제 8.3 TEMP에서 readset 37 OK, `a2f107d` 테스트 본문으로는 22 실패 재현
+  - R2302: 꺼짐 프로브 환경 열거 0회
+  - R2303: V1·V2 `not_configured` 거부
+  - R2304: 빈 값 종료 2
+  - R2305: Windows 전용 확장 단언
+- 검토자 실행: 8모듈 기본 324 OK(529 s), 8.3 TEMP 8모듈 324 OK(529 s, Git 오류 진단 0), 8.3 TEMP readset 37 OK, flow runtime 단독 56 OK. `check_sdd.py --base 5c07aea` PASS.
+- 8.3 flow 오류(23차 반영 때 로컬 보조 실행의 `test_flow_runtime` 12건): 검토자 환경에서는 재현되지 않았다.
+  - 원격 run 44425214483의 두 Windows job은 `RUNNER~1` 경로에서 flow runtime을 실행했고 실패는 readset 1건뿐이었다.
+  - 8.3 표기만으로 flow 오류가 난다는 근거와 이 후보가 원격에 추가한 실패라는 근거는 없다. 당시 로컬 12건의 정확한 Git 원인은 미확정이다(래퍼가 stderr를 전달하지 않음). 제품 코드는 이번 범위에서 바뀌지 않았다.
+- 지적 반영(문서만):
+  - R2401: Spec 분리 Amendment의 "내부 변경 없음"이 분리 커밋 `ef82cd5` 시점의 설명임을 명시하고 후속 `a2f107d`·`957de59`를 연결했다.
+  - R2402: 이 Task의 2026-11-19 기록 표(분리·8.3·23차)에 Markdown 구분 행을 추가했다.
+- 다음: 이 기록 커밋을 최종 후보 HEAD로 두고 공식 로컬 V3를 1회 실행한다.
+
+## 최종 후보 `b23e309` 공식 로컬 V3 — 2026-11-19
+
+- 명령: `verify_environment.py --base 5c07aea`(재사용 off, 재사용 옵션 없음). `PYTHONPATH=src`, 임시 `BATON_HOME`, `PYTHONUTF8`·`PYTHONIOENCODING` 미설정. 1회 실행했다.
+- 실행 조건: 실행 전후 HEAD `b23e309`(같음), 작업 트리 변경 0(전후). 실행 중 worktree 파일과 git 설정은 바꾸지 않았다.
+- 결과: **PASS**, returncode 0.
+  | 항목 | 값 |
+  | --- | --- |
+  | tests_run / executed_tests | 743 / 743 |
+  | failures / errors / skipped / expected_failures | 0 / 0 / 0 / 0 |
+  | verified_evidence_eligible | true |
+  | suite_execution | executed |
+  | reuse_decision | not_configured(passed 아님, 재사용 미설정) |
+  | suite_fingerprint / reused_test_count / source_evidence | null / null / [] |
+  | 소요 | 1213 s(suite 1208.3 s) |
+  | `check_sdd.py --base 5c07aea`(검증기 선행 단계) | PASS(AC 65, 문서 41, Task 14, provider 호출 0) |
+- 꺼짐 상태 확인:
+  - 요약에 `readset_complete`·`evidence_sha256`이 없다.
+  - suite-*.json 재사용 증거를 만들지 않았다(임시 `BATON_HOME` 비어 있음, `--evidence-dir` 없음).
+  - 출력에 `BATON_READSET`·`readset_site` 흔적이 0이다.
+  - 같은 suite 안의 꺼짐 프로브(기록기·자식 훅·sitecustomize·지문 계산·환경 열거 0)와 import 경계 테스트가 통과했다.
+  - 이 꺼짐 경로에는 재사용 경로의 freeze 전후 비교가 없다. 상태 안정성은 실행 전후 HEAD·작업 트리 비교로 확인했다.
+- 재사용 절감은 없다(기본 off). 원격 Windows 3.11·3.12와 plan/gate는 미확인이고, push 전 전체 미게시 커밋 점검이 필요하다. Task는 verified로 올리지 않는다.

@@ -251,9 +251,14 @@ def official_suite(summary):
     if (execution not in {"executed", "reused", "not_run"} or type(executed) is not int or executed < 0
             or not isinstance(refs, list) or not isinstance(equality, dict)
             or any(not isinstance(k, str) or v not in SUITE_EQUALITY for k, v in equality.items())
-            or decision not in {"accepted", "rejected", "not_requested"}):
+            or decision not in {"accepted", "rejected", "not_requested", "not_configured"}):
         return None
-    if execution == "executed" and not (hexfp and reused is None and decision != "accepted"):
+    # not_configured (reuse feature off, 2026-11-19): a full execution with no fingerprint.
+    # It records only that reuse is off; success still comes from the executed counts.
+    if execution == "executed" and not (reused is None and decision != "accepted"
+                                        and (fp is None if decision == "not_configured" else hexfp)):
+        return None
+    if execution != "executed" and decision == "not_configured":
         return None
     if execution == "reused" and not (hexfp and type(reused) is int and reused > 0 and decision == "accepted"
                                       and len(refs) == 3 and all(isinstance(r, str) for r in refs)
@@ -550,12 +555,10 @@ class Orchestrator:
         if local_plan is not None:
             tier = local_plan["effective_tier"]
             if tier == "V3":
-                # CI-OPT-001 AC-12 rev5: Task evidence directory for suite-fp/1
-                # evidence and reuse; sdd_static always runs inside the verifier.
-                home = Path(getattr(self.store, "directory", None) or (Path(tree) / ".local_runtime/harness-managed"))
-                safe_task = re.sub(r"[^A-Za-z0-9_.-]", "_", str(task["task_id"]))[:128] or "task"
-                internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/verify_environment.py"), "--base", target_base,
-                                          "--evidence-dir", str(home / "evidence" / safe_task), "--lock-home", str(home)],
+                # CI-OPT-001 2026-11-19: the separated offline_suite reuse feature is off, so
+                # the official verifier executes the whole suite (reuse_decision
+                # not_configured); sdd_static always runs inside the verifier.
+                internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/verify_environment.py"), "--base", target_base],
                                  "acs": [], "official": True})
             else:
                 if local_plan["selected_ids"]:

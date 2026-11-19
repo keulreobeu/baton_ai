@@ -40,7 +40,7 @@ CI_FRESHNESS = {"fresh", "stale", "failed", "partial", "unknown", "not_run"}
 CI_COVERAGE = {"complete", "partial", "unknown", "unavailable", "not_run"}
 CI_STAGES = {"editing", "in_progress", "debugging", "checkpoint", "task_complete", "pre_merge", "pull_request", "main", "dispatch"}
 CI_STATUSES = {"passed", "failed", "not_run"}
-CI_REUSE = {"accepted", "rejected", "not_requested", "unknown"}
+CI_REUSE = {"accepted", "rejected", "not_requested", "not_configured", "unknown"}
 CI_MEASUREMENTS = {"measured", "measured_calculation", "assumed", "unknown"}
 
 
@@ -56,7 +56,8 @@ def suite_execution(request, executed, source_evidence):
     def bad():
         raise ValueError("invalid_ci_suite_execution")
     if suite is None:
-        if request["effective_level"] == 3 or fp is not None or reused is not None:
+        # 23rd review R2303: not_configured belongs to an executed V3 suite only.
+        if request["effective_level"] == 3 or fp is not None or reused is not None or decision == "not_configured":
             bad()
         return None
     if suite not in CI_SUITE_EXECUTIONS or request["effective_level"] != 3:
@@ -66,6 +67,10 @@ def suite_execution(request, executed, source_evidence):
     if suite == "executed":
         ok = (reused is None and decision in {"not_requested", "rejected"}
               and ((status == "passed" and executed > 0 and hexfp) or (status == "failed" and (hexfp or fp is None))))
+        # CI-OPT-001 2026-11-19: reuse feature off. No fingerprint is computed; the
+        # status is the executed suite's own result (not_configured is not a pass).
+        ok = ok or (reused is None and decision == "not_configured" and fp is None
+                    and ((status == "passed" and executed > 0) or status == "failed"))
     elif suite == "reused":
         refs = source_evidence
         ok = (status in {"passed", "failed"} and hexfp and decision == "accepted" and reused is not None
