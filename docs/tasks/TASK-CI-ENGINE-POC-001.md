@@ -150,3 +150,8 @@ on Windows and the filtered PATH. This does not change system settings.
 The hosted first run also exposed Git worktree cleanup failures after
 Bazel analysis. Apply lockfile suppression to query commands and remove
 only Bazel's generated untracked lockfile from the disposable worktrees.
+
+The second run completed the Windows worktrees and exposed a rename
+query transport failure. The next candidate passes the expression via
+Bazel's query file and adds a Windows source-location diagnostic for
+Target Determinator's drive-letter handling.

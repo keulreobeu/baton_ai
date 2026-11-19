@@ -155,6 +155,8 @@ def reason(stderr, code):
         (r"unrecognized|unexpected argument|unknown flag", "cli_argument"),
         (r"cycle in|dependency cycle", "cycle"),
         (r"repository.*fetch|failed to fetch|download", "fetch"),
+        (r"query.*(syntax|expression)|parse error", "query_parse"),
+        (r"server.*(died|terminated)|io exception|input/output error", "server_io"),
         (r"could not start", "not_started"),
         (r"no such target|not declared", "missing_target"),
     ):
@@ -254,18 +256,24 @@ class Selectors:
         queries = [(self.head, self.paths)] + ([(self.base, stale)] if stale else [])
         code = 0
         error = None
+        endpoints = []
         for root, paths in queries:
             regex = "^//:(" + "|".join(path.replace(".", "[.]") for path in paths) + ")$"
             seeds = f'filter("{regex}", kind("source file", deps(//...)))'
             expr = f'kind("py_test rule", rdeps(//..., {seeds})) + {seeds}'
-            rc, stdout, stderr = invoke([self.bazel, self.startup, "query", expr, "--output=label"],
-                                         root, env)
+            query_file = self.temp / "selection.query"
+            query_file.write_text(expr + "\n", encoding="utf-8")
+            rc, stdout, stderr = invoke([self.bazel, self.startup, "query",
+                                         f"--query_file={query_file}", "--output=label"], root, env)
             code = code or rc
-            error = error or reason(stderr, rc)
+            problem = reason(stderr, rc)
+            error = error or problem
+            endpoints.append({"snapshot": "candidate" if root == self.head else "base",
+                              "exit": rc, "error": problem})
             modules.update("tests." + item for item in TARGET.findall(stdout))
             declared.update(path for path in paths if "//:" + path in stdout.splitlines())
         return {"exit": code, "error": error, "modules": sorted(modules),
-                "undeclared_paths": sorted(set(self.paths) - declared)}
+                "undeclared_paths": sorted(set(self.paths) - declared), "endpoints": endpoints}
 
     def diff(self, env):
         start, end = self.temp / "before.json", self.temp / "after.json"
@@ -289,6 +297,19 @@ class Selectors:
                               "-cache-dir", str(self.temp / "td"),
                               "-targets", 'kind("py_test rule", //...)', self.commit],
                              self.head, env, timeout=360))
+
+    def windows_location_probe(self, env):
+        # Compare the pinned Target Determinator's first-colon split with the
+        # configured Bazel source location, without recording absolute paths.
+        rc, output, stderr = invoke([self.bazel, self.startup, "cquery",
+                                     "//:src/baton/__main__.py", "--output=textproto"],
+                                    self.head, env)
+        paths = re.findall(r'\blocation:\s*"([^"]+)"', output)
+        drives = [path for path in paths if re.match(r"^[A-Za-z]:[/\\]", path)]
+        return {"exit": rc, "error": reason(stderr, rc), "location_fields": len(paths),
+                "drive_prefixed_fields": len(drives),
+                "truncated_to_drive_letter": sum(len(path.split(":", 1)[0]) == 1
+                                                for path in drives)}
 
     def close(self):
         for folder in (self.base, self.head):
@@ -352,6 +373,8 @@ def run_case(index, evidence, hosted):
                             with patch(head, {"BUILD.bazel": fine_head.encode()}), patch(
                                     base, {"BUILD.bazel": fine_base.encode()}):
                                 series["query-fine"] = measured("query-fine", select_tools.query, env, temp)
+                            if sys.platform == "win32" and index == 1:
+                                result["td_location_probe"] = select_tools.windows_location_probe(env)
                             write(dest / "impact.json", result)
                         finally:
                             select_tools.close()
