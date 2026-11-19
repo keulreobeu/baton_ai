@@ -6,34 +6,125 @@ permissions:
   contents: read
 concurrency:
   group: ci-engine-poc-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
-  compare:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+  gate:
+    runs-on: ${{ matrix.lane.os }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        python: ['3.12']
-        include:
-          - os: windows-latest
-            python: '3.11'
+        lane:
+          - {os: windows-latest, python: '3.11.9', id: win311}
+          - {os: windows-latest, python: '3.12.10', id: win312}
+          - {os: ubuntu-latest, python: '3.12.16', id: linux312}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
-      - name: Install offline test dependencies
-        run: python -m pip install -e ".[gms]" -r poc/ci-engine/gms-requirements.txt pytest==8.4.2 pytest-xdist==3.8.0
-      - name: Run A, B and C and compare
-        run: python -X utf8 poc/ci-engine/run_ci.py poc/ci-engine/evidence/ci
-      - name: Upload results
+          python-version: ${{ matrix.lane.python }}
+      - run: python -m pip install -e ".[gms]" -r poc/ci-engine/gms-requirements.txt pytest==8.4.2 pytest-xdist==3.8.0
+      - name: Measure reference and check same-job Bazel equivalence
+        run: python -X utf8 poc/ci-engine/bench.py gate poc/ci-engine/evidence/gate
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: ci-engine-${{ matrix.os }}-py${{ matrix.python }}
-          path: poc/ci-engine/evidence/ci/
+          name: gate-${{ matrix.lane.id }}
+          path: |
+            poc/ci-engine/evidence/gate/
+            !poc/ci-engine/evidence/gate/**/test.log
+          if-no-files-found: error
+  pytest:
+    needs: gate
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.lane.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - {os: windows-latest, python: '3.11.9', id: win311}
+          - {os: windows-latest, python: '3.12.10', id: win312}
+          - {os: ubuntu-latest, python: '3.12.16', id: linux312}
+        workers: [1, 2, 4, 6]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.lane.python }}
+      - run: python -m pip install -e ".[gms]" -r poc/ci-engine/gms-requirements.txt pytest==8.4.2 pytest-xdist==3.8.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: gate-${{ matrix.lane.id }}
+          path: poc/ci-engine/evidence/reference
+      - name: Measure pytest-xdist and compare every repetition
+        env:
+          POC_REPEATS: ${{ (matrix.workers == 6 || (matrix.lane.os == 'windows-latest' && matrix.workers == 1)) && '1' || '3' }}
+          POC_WORKERS: ${{ matrix.workers }}
+        run: python -X utf8 poc/ci-engine/bench.py pytest poc/ci-engine/evidence/condition --workers "$env:POC_WORKERS" --repeats "$env:POC_REPEATS" --baseline poc/ci-engine/evidence/reference/A-1/ids.json
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-${{ matrix.lane.id }}-n${{ matrix.workers }}
+          path: |
+            poc/ci-engine/evidence/condition/
+            !poc/ci-engine/evidence/condition/**/test.log
+          if-no-files-found: error
+  bazel:
+    needs: gate
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.lane.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - {os: windows-latest, python: '3.11.9', id: win311}
+          - {os: windows-latest, python: '3.12.10', id: win312}
+          - {os: ubuntu-latest, python: '3.12.16', id: linux312}
+        group:
+          - {workers: '1,6', id: '1-6'}
+          - {workers: '2', id: '2'}
+          - {workers: '4', id: '4'}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: gate-${{ matrix.lane.id }}
+          path: poc/ci-engine/evidence/reference
+      - name: Read same-job equivalence gate
+        id: eligibility
+        run: |
+          $gate = Get-Content poc/ci-engine/evidence/reference/gate.json -Raw | ConvertFrom-Json
+          "eligible=$($gate.eligible.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force poc/ci-engine/evidence/condition | Out-Null
+          Copy-Item poc/ci-engine/evidence/reference/gate.json poc/ci-engine/evidence/condition/
+        shell: pwsh
+      - uses: actions/setup-python@v5
+        if: steps.eligibility.outputs.eligible == 'true'
+        with:
+          python-version: ${{ matrix.lane.python }}
+      - if: steps.eligibility.outputs.eligible == 'true'
+        run: python -m pip install -e ".[gms]" -r poc/ci-engine/gms-requirements.txt
+      - name: Measure equivalent Bazel condition
+        if: steps.eligibility.outputs.eligible == 'true'
+        env:
+          POC_REPEATS: ${{ (matrix.lane.os == 'windows-latest' && matrix.group.id == '1-6') && '1' || '3' }}
+          POC_WORKERS: ${{ matrix.group.workers }}
+        run: python -X utf8 poc/ci-engine/bench.py bazel poc/ci-engine/evidence/condition --workers "$env:POC_WORKERS" --repeats "$env:POC_REPEATS" --baseline poc/ci-engine/evidence/reference/A-1/ids.json --gate poc/ci-engine/evidence/reference/gate.json
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bazel-${{ matrix.lane.id }}-j${{ matrix.group.id }}
+          path: |
+            poc/ci-engine/evidence/condition/
+            !poc/ci-engine/evidence/condition/**/test.log
           if-no-files-found: error

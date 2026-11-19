@@ -14,4 +14,12 @@ locally. The experiment workflow runs on the single approved branch.
 
 ## Eng Review Amendments
 
-None recorded.
+Phase 2 keeps the Bazel parent interpreter and supplies a separate checkout
+interpreter for subprocesses via the launcher. Recheck the affected modules
+with native Bazel child Python as a runfiles diagnostic. Give Windows Bazel
+tests an isolated temp profile to support `Path.home()`. Preserve the
+existing Bazel cwd entry for subprocess import semantics.
+
+Measure Bazel only after same-job equality with the baseline. Separate
+pytest repetition jobs by worker count and preserve earlier completed jobs
+when publishing another candidate.

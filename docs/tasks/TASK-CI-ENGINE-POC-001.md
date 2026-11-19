@@ -92,3 +92,13 @@ Each final CI job captured 777 IDs across 34 Bazel target reports. The
 Bazel outcome differences remain unresolved at the level required by this
 task. The full equivalence criterion failed, and parallelism experiments
 remain out of scope. Independent review and official V3 promotion remain pending.
+
+## Phase 2 first push checkpoint
+
+The phase 2 dispatch accepts the 1a18f70 pytest equivalence results and
+authorizes a new same-job Bazel gate. The experiment uses a synthetic
+Windows profile, a child Python outside the Bazel runfiles layout, and a
+native-child module diagnostic. The phase 1 evidence-only commit
+`bd608d2` is included in the initial phase 2 fast-forward. Its two
+documentation paths and all phase 2 candidate changes are included in
+the unpublished-commit, scope, and sensitive-pattern audit.
