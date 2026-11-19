@@ -172,3 +172,13 @@ The official plans accounted for required IDs, modules, and directly changed
 paths through checks or explicit unverified scope. The published experiment
 ref is `eda8fcabc123491dd4fc941e38923c11e78db477`. Raw comparisons and
 the phase 2 Trace2 qualification are summarized in the local README.
+
+## Phase 4 first push checkpoint
+
+The phase 4 dispatch authorizes a job-local Bazel disk cache and test
+result cache. The workflow replaces the impact matrix with 10 Ubuntu and
+4 Windows cache jobs. Each cached run is compared per ID with an uncached
+oracle run in the same job. Scenario 7 changes a client environment
+variable and the runner's system Git configuration, both undeclared to
+Bazel. No remote cache, remote execution or cross-run cache is used. The
+unpublished phase 3 report `a59f22d` is part of this first fast-forward.
