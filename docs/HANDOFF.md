@@ -7,11 +7,11 @@ ref: main 9a74545(PR #16 CI-OPT-001 병합·verified). branch HEAD=이 카드를
 handoff: 회사 PC Claude 워커 → 집 PC 코디네이터·워커; 2026-11-19 체크포인트
 task/status: TASK-CI-VTIER-001 in_progress(L3), 전체 AC 마지막 기록 not_run, 독립 검토 not_run; V2 PASS만
 goal/order: CI-VTIER-001(V1·V2 로컬 실사용) 검증 → PR #17 병합. 자동 정착 복구는 범위 제외(TASK-SETTLE-RECOVERY-001 착수 보류)
-done: 복구 코드 제외(532e034, 9aa79e6·2de9e5b·b16ba12·f790115 이력 보존), Spec/ADR superseded·남은 위험 기록, V2·check_sdd PASS
-next: 독립 교차검토 → 공식 V3(verify_environment.py --base 762739f, 재사용 off) → verified 재승격 → push·CI → 스레드 응답·resolve → 병합(진행 중, 코디네이터가 이어서 수행)
+done: 복구 코드 제외(532e034, 9aa79e6·2de9e5b·b16ba12·f790115 이력 보존), Spec/ADR superseded·남은 위험 기록, V2·check_sdd PASS; 공식 로컬 V3 PASS(HEAD 79258f2, 777 OK skip 0, eligible, reuse not_configured); 18차 독립 검토 PASS_WITH_FINDINGS(문서 지적 R1801~R1805)
+next: 18차 문서 지적 R1801~R1805 반영 → 독립 교차검토 → 공식 V3(verify_environment.py --base 762739f, 재사용 off) → verified 재승격 → push·CI → 스레드 응답·resolve → 병합(진행 중, 코디네이터가 이어서 수행)
 scope: TASK-CI-VTIER-001 scope만; 다른 worktree·branch는 건드리지 않음
-checks: V2 9모듈 기본 Windows·PYTHONIOENCODING=utf-8 + check_sdd --base 762739f(상세: TASK-CI-VTIER-001 "범위 조정" 절)
-pending: 공식 V3·독립 검토 미실행; 체크포인트 push의 원격 CI 결과 미확인; PR #17 리뷰 스레드 4624337778 미해결(남은 위험으로 응답, resolve는 사용자 결정)
+checks: V2 9모듈 371 OK x2 + check_sdd --base 762739f PASS; 공식 V3 79258f2 PASS(상세: TASK-CI-VTIER-001 "범위 조정"·"공식 로컬 V3와 18차" 절)
+pending: R1801~R1805 미반영(TASK-CI-VTIER-001 '공식 로컬 V3와 18차' 절); 반영 후 최종 후보의 V3·검토·원격 CI 미확인; 체크포인트 push 원격 CI 결과 미확인; PR #17 리뷰 스레드 4624337778 미해결(남은 위험으로 응답, resolve는 사용자 결정)
 inputs: docs/tasks/TASK-CI-VTIER-001.md; docs/specs/CI-VTIER-001.md("2026-11-19 범위 조정"); docs/tasks/TASK-SETTLE-RECOVERY-001.md
 usage: unknown
 rules: AGENTS.md; 실모델·GMS·스케줄러·전원 금지; force·amend·reset 금지; push·병합은 사용자 승인 범위만
