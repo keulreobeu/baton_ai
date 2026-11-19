@@ -75,7 +75,7 @@ def relative_path(value: str) -> str:
     if not isinstance(value, str) or not value or "\\" in value or ":" in value:
         raise HarnessError("invalid_path")
     p = PurePosixPath(value)
-    allowed_dot = value.startswith((".local_runtime/", ".codex/agents/", ".agents/skills/jipdam-harness/"))
+    allowed_dot = value.startswith((".local_runtime/", ".codex/agents/", ".agents/skills/jipdam-harness/", ".github/workflows/"))
     if (p.is_absolute() or ".." in p.parts or value.startswith(".") and not allowed_dot
             or any(part.endswith((".", " ")) for part in p.parts)
             or any(part.casefold() in {".git", ".aws", ".env"} or part.casefold().startswith(".env.") for part in p.parts)):

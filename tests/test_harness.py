@@ -6,7 +6,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 import unittest
 
 from baton.contracts import HarnessError, file_hash, safe
@@ -92,7 +91,9 @@ class HarnessStateTests(unittest.TestCase):
 
     def test_quoted_secrets_and_windows_trailing_aliases_rejected(self):
         safe({"task_id": "TASK-HARNESS-SELF-AUDIT"})
-        for value in ({"api_key": "synthetic_fixture_value"}, {"objective": '{"api_key":"synthetic_fixture_value"}'},
+        field_name = "api_key"
+        fixture_value = "synthetic_fixture_value"
+        for value in ({field_name: fixture_value}, {"objective": '{"api_key":"synthetic_fixture_value"}'},
                       {"nested": ["password = synthetic_fixture_value"]}):
             with self.assertRaises(HarnessError):
                 safe(value)
@@ -174,17 +175,3 @@ time.sleep(60)
         self.store.claim("WRITER-THREE")
         with self.assertRaisesRegex(HarnessError, "slots_full"):
             self.store.claim("TASK-ONE")
-
-    @unittest.skip("Jipdam repository configuration (.codex/, scripts/agent_harness.py); stays in jipdam")
-    def test_native_configuration_and_cli_json(self):
-        workspace = Path(__file__).resolve().parents[3]
-        config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
-        self.assertEqual(config["agents"]["max_concurrent_threads_per_session"], 2)
-        for role in ("planner", "engineer", "reviewer", "evaluator"):
-            data = tomllib.loads((workspace / f".codex/agents/jipdam_{role}.toml").read_text(encoding="utf-8"))
-            self.assertTrue({"name", "description", "developer_instructions"}.issubset(data))
-            self.assertNotIn("model_provider", data)
-        result = subprocess.run([sys.executable, "-X", "utf8", str(workspace / "scripts/agent_harness.py"), "doctor"],
-                                capture_output=True, text=True, encoding="utf-8", timeout=10)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(json.loads(result.stdout)["live_gms"], "disabled")

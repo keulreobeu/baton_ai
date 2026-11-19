@@ -211,6 +211,70 @@ class SddTests(unittest.TestCase):
         self.rejected("CHANGE_WITHOUT_UPDATED_TASK", changed=[self.task, "other/module.py"])
         self.rejected("CHANGE_WITHOUT_UPDATED_TASK", changed=[self.task, "src/baton/power.py"])
 
+    def test_shared_task_selection_preserves_status_level_and_path_boundaries(self):
+        task = {"status": "in_progress", "level": 3, "scope": ["src", "README.md"]}
+        tasks = [(self.task, task)]
+        for status in ("ready", "in_progress", "verified", "draft", "blocked"):
+            with self.subTest(status=status):
+                task["status"] = status
+                expected = tasks if status in {"ready", "in_progress", "verified"} else []
+                self.assertEqual(sdd.eligible_tasks("src/module.py", tasks, [self.task]), expected)
+        task["status"] = "in_progress"
+        for level in (1, 2, 3):
+            with self.subTest(level=level):
+                task["level"] = level
+                expected = tasks if level == 3 else []
+                self.assertEqual(sdd.eligible_tasks("src/baton/power.py", tasks, [self.task]), expected)
+        self.assertEqual(sdd.eligible_tasks("README.md", tasks, [self.task]), tasks)
+        self.assertEqual(sdd.eligible_tasks("src/module.py", tasks, []), [])
+        self.assertEqual(sdd.eligible_tasks("src_other/module.py", tasks, [self.task]), [])
+        self.assertEqual(sdd.eligible_tasks("README.md.bak", tasks, [self.task]), [])
+
+    def prepare_pull_request_history(self):
+        self.init_git()
+        self.write("src/before_base.py", "historical = True\n")
+        self.git("add", "."); self.git("commit", "-m", "adopt fixture before PR base")
+        base = self.git("rev-parse", "HEAD")
+        self.write("src/module.py", "changed = True\n")
+        self.write(self.task, (self.root / self.task).read_text(encoding="utf-8") + "\nPR candidate fixture\n")
+        self.git("add", "."); self.git("commit", "-m", "PR candidate")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        return base
+
+    def test_pull_request_uses_base_sha_and_only_post_base_changes(self):
+        base = self.prepare_pull_request_history()
+        event = {"pull_request": {"base": {"sha": base}}}
+        changed, basis = sdd.changes(self.root, self.registry, ci_event=event)
+        self.assertEqual(changed, [self.task, "src/module.py"])
+        self.assertEqual(basis, {"requested_base": base, "effective_base": base,
+                                 "pre_adoption_history_excluded": False})
+        with tempfile.TemporaryDirectory() as events:
+            event_path = Path(events) / "event.json"
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            output = io.StringIO()
+            with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_path)}), redirect_stdout(output):
+                code = sdd.main(["--ci", "--root", str(self.root)])
+        self.assertEqual(code, 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["basis"], basis)
+        self.assertEqual(result["changed_paths"], 2)
+        self.assertEqual(set(result), {"status", "documents", "features", "acs", "tasks",
+                                       "changed_paths", "basis", "provider_calls", "meaning"})
+        self.assertEqual(result["provider_calls"], 0)
+
+    def test_pull_request_missing_base_fails_cli(self):
+        self.prepare_pull_request_history()
+        with tempfile.TemporaryDirectory() as events:
+            event_path = Path(events) / "event.json"
+            event_path.write_text(json.dumps({"pull_request": {}}), encoding="utf-8")
+            output = io.StringIO()
+            with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_path)}), redirect_stdout(output):
+                code = sdd.main(["--ci", "--root", str(self.root)])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(output.getvalue()),
+                         {"status": "FAIL", "error_code": "INVALID_INPUT_OR_STORAGE", "provider_calls": 0})
+
     def test_l3_requires_plan_and_adr(self):
         self.write(self.task, self.task_text.replace("level=1", "level=3").replace("{extra}", ""))
         self.rejected("L3_DOCUMENT_REQUIRED")

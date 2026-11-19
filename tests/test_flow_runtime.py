@@ -640,7 +640,9 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         (tree / "src/value.py").write_text("value = 3\n", encoding="utf-8")
         self.store.ready("ORCA")
         row = dispatch(self.store, "ORCA", client)  # Fails before any start.
-        self.assertEqual(row["result"]["runtime"]["previous_dispatch_ids"], ["dispatch-1"])
+        # The owning settled binding stays (SCOPE-PATH-001-AC-03); the failed attempt is recorded beside it.
+        self.assertEqual(row["result"]["runtime"]["dispatch_id"], "dispatch-1")
+        self.assertEqual([x["attempt"] for x in row["result"]["runtime"]["failed_redispatches"]], [2])
         (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
         self.store.ready("ORCA"); client.lose_reply = True
         dispatch(self.store, "ORCA", client); client.lose_reply = False
@@ -686,6 +688,74 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         with self.assertRaisesRegex(HarnessError, "unsafe_payload"):
             self.inbox({**done, "body": json.dumps({"note": "password=hunter2-exact"})}).review_report("d")
 
+    def review_dispatch(self, client):
+        """SCOPE-PATH-001-AC-04 fixture: an author candidate, then one reviewer dispatch whose prompt is kept."""
+        prompts = []
+        start = client.start
+        client.start = lambda config, task, prompt, workspace: (prompts.append(prompt), start(config, task, prompt, workspace))[1]
+        self.orca(); row = dispatch(self.store, "ORCA", client)
+        (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1"); ingest(self.store, "ORCA", self.receipt(), client); self.candidate("ORCA")
+        row = dispatch(self.store, "ORCA", client, review=True)
+        return row, prompts[-1]
+
+    def test_review_prompt_states_the_json_findings_notes_and_windows_rules(self):
+        client = FakeOrca(self.root)
+        _, prompt = self.review_dispatch(client)
+        self.assertIn("Do not edit or commit", prompt)
+        self.assertIn("exactly one valid JSON object with these keys, with no other text", prompt)
+        self.assertIn('"findings":[],"notes":[]', prompt)
+        self.assertIn("verdict PASS requires findings to be []", prompt)
+        self.assertIn("informational, non-blocking remark in the optional notes list of strings, never in findings", prompt)
+        self.assertIn("verdict FAIL lists every blocking finding in findings", prompt)
+        self.assertIn("do not pass the JSON as a native argument from PowerShell 5.1", prompt)
+        self.assertIn("POSIX shell such as Git Bash with the body in single quotes, or escape the quotes", prompt)
+        self.assertIn("'orca orchestration inbox --full --json'", prompt)
+        example = json.loads(prompt.split("with no other text: ", 1)[1].split("\n", 1)[0])
+        self.assertEqual(set(example), {"candidate_sha", "base_sha", "verdict", "findings", "notes"})
+        self.assertEqual((example["findings"], example["notes"]), ([], []))
+
+    def test_pass_report_with_notes_and_empty_findings_is_accepted(self):
+        from baton.evidence import record
+        report = {"candidate_sha": "a", "base_sha": "b", "verdict": "PASS", "findings": [], "notes": ["style nit, not blocking"]}
+        done = {"type": "worker_done", "payload": json.dumps({"dispatchId": "d"}), "body": json.dumps(report)}
+        self.assertEqual(self.inbox(done).review_report("d"), report)
+        client = FakeOrca(self.root)
+        self.review_dispatch(client)
+        client.report = {"candidate_sha": self.candidate_sha, "base_sha": self.base, "verdict": "PASS", "findings": [], "notes": ["informational"]}
+        client.settle("dispatch-2"); row = ingest(self.store, "ORCA", self.receipt("dispatch-2", role="reviewer"), client)
+        self.assertEqual(row["result"]["review_runtime"]["verdict"], "PASS")
+        row = record(self.store, "ORCA", self.proof("review", task_id="ORCA", reviewer_worker="orca:dispatch-2"))
+        self.assertEqual(row["result"]["review_evidence"]["reviewer_worker"], "orca:dispatch-2")
+
+    def test_non_json_body_and_pass_with_findings_stay_rejected(self):
+        from baton.evidence import record
+        # The body PowerShell 5.1 delivers once it has stripped the double quotes of a JSON argument.
+        stripped = "{candidate_sha:a,base_sha:b,verdict:PASS,findings:[],notes:[]}"
+        done = {"type": "worker_done", "payload": json.dumps({"dispatchId": "d"}), "body": stripped}
+        with self.assertRaisesRegex(HarnessError, "invalid_review_report"):
+            self.inbox(done).review_report("d")
+        client = FakeOrca(self.root)
+        self.review_dispatch(client)
+        client.report = {"candidate_sha": self.candidate_sha, "base_sha": self.base, "verdict": "PASS",
+                         "findings": ["informational remark"], "notes": []}
+        client.settle("dispatch-2"); ingest(self.store, "ORCA", self.receipt("dispatch-2", role="reviewer"), client)
+        with self.assertRaisesRegex(HarnessError, "review_dispatch_proof_required"):
+            record(self.store, "ORCA", self.proof("review", task_id="ORCA", reviewer_worker="orca:dispatch-2"))
+        with self.assertRaisesRegex(HarnessError, "independent_review_not_passed"):
+            record(self.store, "ORCA", self.proof("review", task_id="ORCA", reviewer_worker="orca:dispatch-2",
+                                                  findings=["informational remark"], notes=[]))
+
+    def test_reviewer_with_a_notes_report_still_cannot_edit(self):
+        client = FakeOrca(self.root)
+        row, _ = self.review_dispatch(client)
+        client.report = {"candidate_sha": self.candidate_sha, "base_sha": self.base, "verdict": "PASS", "findings": [], "notes": []}
+        (workspace_path(row["result"]["review_runtime"]["workspace_id"]) / "src/value.py").write_text("value = 7\n", encoding="utf-8")
+        client.settle("dispatch-2")
+        with self.assertRaisesRegex(HarnessError, "reviewer_changed_candidate"):
+            ingest(self.store, "ORCA", self.receipt("dispatch-2", role="reviewer"), client)
+        self.assertEqual(self.store.get("ORCA")["result"]["review_runtime"]["verdict"], "FAIL")
+
     def test_every_earlier_dispatch_stays_unadoptable_once_released(self):
         self.orca(max_attempts=3); client = FakeOrca(self.root)
         for number in (1, 2):
@@ -709,6 +779,61 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         client.settle("dispatch-1"); client.workers["dispatch-1"]["ownership_state"] = "released"
         ingest(self.store, "ORCA", self.receipt(), client)
         self.assertEqual(Orchestrator(self.store).verify("ORCA")["state"], "REVIEW_REQUIRED")
+
+    def settled_then_failed_reuse(self, *, user_owned=False, tamper=None):
+        """Settle dispatch-1 with work, edit after the checkpoint, then a reuse redispatch fails before start."""
+        self.orca(max_attempts=3); client = FakeOrca(self.root)
+        tree = Path(dispatch(self.store, "ORCA", client)["worktree"])
+        (tree / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1", "failed")
+        if user_owned:
+            client.workers["dispatch-1"]["ownership_state"] = "user_owned"
+            with self.assertRaisesRegex(HarnessError, "orca_workspace_ownership_unproven"):
+                ingest(self.store, "ORCA", self.receipt(), client)
+        else:
+            ingest(self.store, "ORCA", self.receipt(), client)
+        if tamper:
+            from baton.contracts import encode
+            result = self.store.get("ORCA")["result"]; result["runtime"].update(tamper)
+            with self.store.tx() as c: c.execute("UPDATE managed_tasks SET result=? WHERE id='ORCA'", (encode(result),))
+        (tree / "src/value.py").write_text("value = 1 + 1\n", encoding="utf-8")  # In scope, after the checkpoint.
+        self.store.ready("ORCA")
+        row = dispatch(self.store, "ORCA", client)
+        self.assertEqual((row["state"], row["result"]["reason"]), ("BLOCKED", "pre_dispatch_failed"))
+        self.assertEqual(client.starts, 1)
+        return row
+
+    def test_failed_reuse_before_start_keeps_the_owner_for_validation(self):
+        row = self.settled_then_failed_reuse()
+        runtime = row["result"]["runtime"]
+        self.assertEqual((runtime["dispatch_id"], runtime["owner_dispatch_id"], runtime["ownership_state"]),
+                         ("dispatch-1", "dispatch-1", "owned"))
+        self.assertEqual(runtime["failed_redispatches"],
+                         [{"attempt": 2, "state": "failed", "reason": "pre_dispatch_failed", "base_sha": self.base}])
+        checkpoints = [e["body"]["binding"] for e in self.store.events("ORCA") if e["kind"] == "runtime_checkpoint"]
+        self.assertTrue(any(b["dispatch_id"] is None and b["reason"] == "pre_dispatch_failed" and b["attempt"] == 2
+                            for b in checkpoints))  # The failed attempt itself is journaled, not lost.
+        verified = Orchestrator(self.store).verify("ORCA")
+        self.assertEqual(verified["state"], "REVIEW_REQUIRED")
+        self.assertEqual(verified["result"]["runtime"]["dispatch_id"], "dispatch-1")
+
+    def test_failed_reuse_does_not_lend_ownership_that_was_never_proven(self):
+        cases = {"recorded owner differs": {"tamper": {"owner_dispatch_id": "dispatch-9"}},
+                 "never owned": {"tamper": {"dispatch_id": None, "owner_dispatch_id": None, "ownership_state": None}},
+                 "settled as user owned": {"user_owned": True}}
+        for label, options in cases.items():
+            with self.subTest(label):
+                self.fresh_fixture()
+                row = self.settled_then_failed_reuse(**options)
+                self.assertIsNone(row["result"]["runtime"]["dispatch_id"])
+                self.assertNotIn("failed_redispatches", row["result"]["runtime"])
+                verified = Orchestrator(self.store).verify("ORCA")
+                self.assertEqual((verified["state"], verified["result"]["reason"]),
+                                 ("BLOCKED", "orca_workspace_ownership_unproven"))
+
+    def fresh_fixture(self):
+        """Each subtest needs its own repository and store."""
+        self.setUp()
 
     def test_atomic_replace_survives_a_briefly_refused_file(self):
         from baton.contracts import replace_file

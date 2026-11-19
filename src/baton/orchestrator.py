@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
 import sys
 import time
+import uuid
 
 from .contracts import HarnessError, safe, digest, encode
 from .isolation import check_scope, git, pack_context, prepare_worktree, repository_lock, snapshot
@@ -19,6 +21,108 @@ def persisted_text(value):
     try: safe(value)
     except HarnessError: return "[diagnostic redacted]"
     return value
+
+
+def validation_planner():
+    """Load controller-owned policy, never an arbitrary connected-project script."""
+    import importlib.util
+    import types
+    directory = Path(__file__).resolve().parents[2] / "scripts"
+    if not (directory / "ci_plan.py").is_file():
+        return None
+    package_name = "_baton_validation_" + digest(str(directory))[:12]
+    if package_name not in sys.modules:
+        package = types.ModuleType(package_name)
+        package.__path__ = [str(directory)]
+        sys.modules[package_name] = package
+    name = package_name + ".ci_plan"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, directory / "ci_plan.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException as exc:
+            # Never reuse a partially initialised policy, including after an
+            # interrupted import. Preserve cancellation/exit exceptions.
+            sys.modules.pop(name, None)
+            if not isinstance(exc, Exception):
+                raise
+            raise HarnessError("validation_planner_unavailable") from None
+    return sys.modules[name]
+
+
+BATON_MARKERS = ("src/baton/orchestrator.py", "scripts/verify_environment.py",
+                 "scripts/check_sdd.py", "docs/sdd/traceability.json")
+
+
+def baton_development_root(root):
+    """Bounded development-root identity, independent of planner bootstrap.
+
+    Reads only pyproject metadata and marker existence; never imports or executes
+    candidate code. True = BATON development root, False = generic project,
+    None = BATON markers present but the project name cannot be established.
+    """
+    import tomllib
+    root = Path(root)
+    try:
+        if not all((root / marker).is_file() for marker in BATON_MARKERS):
+            return False
+        project = root / "pyproject.toml"
+        if project.is_symlink() or not project.is_file() or project.stat().st_size > 256 * 1024:
+            return None
+        name = tomllib.loads(project.read_text(encoding="utf-8-sig")).get("project", {}).get("name")
+    except (OSError, ValueError, UnicodeError, AttributeError, RecursionError):
+        return None
+    if not isinstance(name, str):
+        return None
+    return name == "baton-ai"
+
+
+SUITE_EQUALITY = {"equal", "different", "unknown", "missing"}
+
+
+def official_suite(summary):
+    """CI-OPT-001 AC-12 rev5 fields of the official verifier summary, or None if malformed."""
+    if not isinstance(summary, dict):
+        return None
+    execution = summary.get("suite_execution")
+    fp, executed, reused = summary.get("suite_fingerprint"), summary.get("executed_tests"), summary.get("reused_test_count")
+    refs, decision = summary.get("source_evidence", []), summary.get("reuse_decision")
+    equality = summary.get("equality_checks", {})
+    hexfp = isinstance(fp, str) and re.fullmatch(r"[a-f0-9]{64}", fp) is not None
+    if (execution not in {"executed", "reused", "not_run"} or type(executed) is not int or executed < 0
+            or not isinstance(refs, list) or not isinstance(equality, dict)
+            or any(not isinstance(k, str) or v not in SUITE_EQUALITY for k, v in equality.items())
+            or decision not in {"accepted", "rejected", "not_requested", "not_configured"}):
+        return None
+    # not_configured (reuse feature off, 2026-11-19): a full execution with no fingerprint.
+    # It records only that reuse is off; success still comes from the executed counts.
+    if execution == "executed" and not (reused is None and decision != "accepted"
+                                        and (fp is None if decision == "not_configured" else hexfp)):
+        return None
+    if execution != "executed" and decision == "not_configured":
+        return None
+    if execution == "reused" and not (hexfp and type(reused) is int and reused > 0 and decision == "accepted"
+                                      and len(refs) == 3 and all(isinstance(r, str) for r in refs)
+                                      and summary.get("tests_run") == executed + reused):
+        return None
+    if execution == "executed" and summary.get("tests_run") != executed:
+        return None
+    return {"suite_execution": execution, "suite_fingerprint": fp if hexfp else None, "executed_tests": executed,
+            "reused_test_count": reused if execution == "reused" else None, "source_evidence": list(refs),
+            "reuse_decision": decision, "equality_checks": dict(sorted(equality.items()))}
+
+
+def suite_observation(effective, status, suite):
+    """Map a V3 result onto the ci.validation suite_execution table."""
+    if effective != 3:
+        return {"suite_execution": None, "suite_fingerprint": None, "reused_test_count": None}
+    if suite is None or status == "not_run":
+        # Planner/SDD or verifier failure before a trustworthy suite result.
+        return {"suite_execution": "not_run", "suite_fingerprint": None, "reused_test_count": None}
+    return {"suite_execution": suite["suite_execution"], "suite_fingerprint": suite["suite_fingerprint"],
+            "reused_test_count": suite["reused_test_count"]}
 
 
 class Orchestrator:
@@ -166,7 +270,7 @@ class Orchestrator:
                     return self.finish(task_id, lease, "WAITING_FOR_PROVIDER" if provider_name == "gms" else "BLOCKED" if error in {"auth", "permission", "unknown"} else "FAILED", reason=error, **uncertain)
                 self.store.update(task_id, lease, "VALIDATING")
                 validation_started = time.monotonic()
-                validation = self.validate(task, tree, stop)
+                validation = self.validate(task, tree, stop, stage="in_progress", target_base=base)
                 if metrics:
                     self.store.observe(task_id, "phase", metrics, "validation", time.monotonic() - validation_started)
                 reason = stop()
@@ -199,18 +303,106 @@ class Orchestrator:
         finally:
             close_metrics()
 
-    def validate(self, task, tree, stop):
+    def validate(self, task, tree, stop, *, stage="task_complete", target_base=None):
         from .execution import redact, run_process
         results = []
-        for check in task["validation"]:
+        # The optional API exposes fast/checkpoint validation; current completion
+        # callers retain task_complete. No public validation-command relaxation.
+        planner = validation_planner()
+        try:
+            planner_root = planner is not None and planner.baton_root(tree)
+        except Exception:
+            raise HarnessError("validation_planner_failed") from None
+        if not planner_root and baton_development_root(tree) is not False:
+            # Missing policy or unknown/disagreeing BATON identity cannot
+            # silently degrade to declared-only checks. Generic roots retain
+            # their own validation contract.
+            raise HarnessError("validation_planner_unavailable" if planner is None
+                               else "validation_planner_failed")
+        local_plan = None
+        started = time.monotonic()
+        total = task["execution"]["total_timeout_seconds"]
+        def bounded_stop():
+            return stop() or ("timeout" if time.monotonic() - started >= total else None)
+        if planner_root:
+            try:
+                target_base = target_base or self.store.get(task["task_id"])["result"].get("base_commit")
+                if not target_base:
+                    raise HarnessError("validation_base_required")
+                local_plan = planner.plan(tree, base=target_base, stage=stage, should_stop=bounded_stop)
+                target_base = local_plan["target_base"]
+                execution_state = planner.freeze(tree)
+            except Exception:
+                # Bootstrap/SDD failure must not turn into a successful full plan.
+                raise HarnessError("validation_planner_failed") from None
+            if execution_state != local_plan["code_identity"]:
+                raise HarnessError("validation_state_changed")
+        checks = list(task["validation"])
+        internal = []
+        if local_plan is not None:
+            tier = local_plan["effective_tier"]
+            if tier == "V3":
+                # CI-OPT-001 2026-11-19: the separated offline_suite reuse feature is off, so
+                # the official verifier executes the whole suite (reuse_decision
+                # not_configured); sdd_static always runs inside the verifier.
+                internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/verify_environment.py"), "--base", target_base],
+                                 "acs": [], "official": True})
+            else:
+                if local_plan["selected_ids"]:
+                    targets = local_plan.get("selected_modules", local_plan["selected_ids"]) if tier == "V2" else local_plan["selected_ids"]
+                    # Bound argv size on Windows, preserving the entire selection.
+                    batches, batch, size = [], [], 0
+                    for target in targets:
+                        if batch and size + len(target) + 1 > 24000:
+                            batches.append(batch); batch, size = [], 0
+                        batch.append(target); size += len(target) + 1
+                    if batch: batches.append(batch)
+                    for batch in batches:
+                        internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": []})
+                if tier == "V2":
+                    internal.append({"argv": [sys.executable, "-X", "utf8", str(tree / "scripts/check_sdd.py"), "--base", target_base], "acs": []})
+                for direct in local_plan["direct_checks"]:
+                    # AST/UTF-8 checks execute here without writing bytecode. They
+                    # are fast feedback with test_count=0, not AC test evidence.
+                    code = 0
+                    try:
+                        if bounded_stop():
+                            raise HarnessError("validation_stopped")
+                        file = planner.sdd.path(tree, direct["file"], exists=False)
+                        if direct["kind"] == "deleted":
+                            if file.exists(): raise ValueError()
+                        elif direct["kind"] == "python_ast":
+                            planner.ast.parse(planner.sdd.read(tree, direct["file"]))
+                        else:
+                            planner.sdd.read(tree, direct["file"])
+                    except Exception:
+                        code = 2
+                    results.append({"argv": ["direct_file", direct["kind"], direct["file"]], "acs": [],
+                                    "exit_code": code, "test_count": 0, "skipped": 0,
+                                    "expected_failures": 0, "unexpected_successes": 0,
+                                    "output": "direct_file_passed" if code == 0 else "direct_file_failed",
+                                    "stop_reason": bounded_stop(), "_planner_internal": True})
+            # Retain every declared Task/AC check, including generic commands.
+            checks.extend(internal)
+        internal_ids = {id(check) for check in internal}
+        for check in checks:
             argv = list(check["argv"])
             if argv[0] == "python": argv[0] = sys.executable
             if argv[1:3] == ["-m", "pytest"]:
                 argv[3:3] = ["-o", "addopts=", "-p", "no:cacheprovider"]
             from .runtime import project_paths
             source_paths = os.pathsep.join(str(tree / p) for p in project_paths(tree)["source_roots"] + ["."])
-            rc, out, err, reason = run_process(argv, tree, "", min(300, task["execution"]["timeout_seconds"]), stop,
-                                              env_overrides={"PYTHONPATH": source_paths})
+            if local_plan is not None and bounded_stop():
+                results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": -1,
+                                "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
+                                "output": "validation_stopped", "stop_reason": bounded_stop(),
+                                "_planner_internal": id(check) in internal_ids})
+                break
+            timeout = min(300, task["execution"]["timeout_seconds"])
+            if check.get("official"):
+                timeout = max(0.05, total - (time.monotonic() - started))
+            rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
+                                              env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
             output = out + "\n" + err
             counts = re.findall(r"Ran (\d+) tests?", output) if argv[1:3] == ["-m", "unittest"] else re.findall(r"(\d+) passed", output) if argv[1:3] == ["-m", "pytest"] else []
             skipped = sum(int(n) for n in re.findall(r"(?:skipped[= ]|skip=)(\d+)", output))
@@ -219,15 +411,161 @@ class Orchestrator:
             expected += sum(int(n) for n in re.findall(r"(\d+) xfailed", output))
             unexpected = sum(int(count) for pair in re.findall(r"(\d+) xpassed|unexpected successes[= ](\d+)", output) for count in pair if count)
             code = rc if rc is not None else -1
+            if check.get("official"):
+                summary = None
+                for line in output.splitlines():
+                    try:
+                        value = json.loads(line)
+                        if isinstance(value, dict) and value.get("scope") == "offline_tests_only": summary = value
+                    except (ValueError, TypeError):
+                        continue
+                suite = official_suite(summary)
+                valid = (summary is not None and summary.get("status") == "PASS"
+                         and summary.get("verified_evidence_eligible") is True
+                         and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
+                         and all(type(summary.get(k)) is int and summary[k] == 0
+                                 for k in ("failures", "errors", "skipped", "expected_failures"))
+                         and suite is not None and suite["suite_execution"] in {"executed", "reused"})
+                if not valid: code = 2
+                counts = [str(summary["tests_run"])] if summary and type(summary.get("tests_run")) is int else []
+                skipped = summary.get("skipped", 0) if summary else 0
+                expected = summary.get("expected_failures", 0) if summary else 0
             if argv[1:3] in (["-m", "unittest"], ["-m", "pytest"]) and (sum(int(n) for n in counts) <= 0 or skipped or expected or unexpected):
                 code = 2
+            if reason and local_plan is not None:
+                code = code or 2
             results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": code,
                             "test_count": int(counts[-1]) if counts else 0, "skipped": skipped, "expected_failures": expected, "unexpected_successes": unexpected,
                             "output": persisted_text(output)[-6000:], "stop_reason": reason})
+            if check.get("official"):
+                results[-1]["suite"] = suite
+            if local_plan is not None:
+                results[-1]["_planner_internal"] = id(check) in internal_ids
             if reason: break
+        if local_plan is not None:
+            try:
+                stable = execution_state == planner.freeze(tree)
+            except Exception:
+                stable = False
+            if not stable:
+                for result in results:
+                    result["exit_code"] = 2
+                    result["stop_reason"] = "validation_state_changed"
+            if not results:
+                self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
+                raise HarnessError("validation_not_run")
+            # evidence.py intentionally requires one result per declared check.
+            # Keep planner checks in separate metadata, propagate their failures
+            # into a declared result, and never credit their counts/ACs as tests.
+            feedback, declared = [], []
+            for result in results:
+                (feedback if result.pop("_planner_internal", False) else declared).append(result)
+            if not declared:
+                self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
+                raise HarnessError("validation_not_run")
+            execution_complete = (len(declared) == len(task["validation"])
+                                  and len(feedback) == len(internal) + len(local_plan["direct_checks"])
+                                  and not any(r.get("stop_reason") for r in results))
+            failed = [r for r in feedback if r["exit_code"] != 0 or r.get("stop_reason")]
+            if failed and declared[0]["exit_code"] == 0:
+                declared[0]["exit_code"] = failed[0]["exit_code"]
+                declared[0]["stop_reason"] = failed[0]["stop_reason"]
+            if not execution_complete and declared[0]["exit_code"] == 0:
+                declared[0]["exit_code"] = 2
+            declared[0]["planner"] = {**local_plan, "executed_checks": feedback,
+                                       "execution_complete": execution_complete,
+                                       "actual_status": "failed" if failed or any(r["exit_code"] != 0 for r in declared) else "passed",
+                                       "final_evidence_eligible": False}
+            results = declared
+            self._record_ci_observation(task, tree, planner, local_plan, results, time.monotonic() - started)
         return results
 
-    def verify(self, task_id, *, base_sha=None):
+    def _record_ci_observation(self, task, tree, planner, local_plan, results, validation_seconds):
+        """Record execution facts without changing validation or Task outcomes."""
+        if not hasattr(self.store, "observe"):
+            return
+        try:
+            run_id = self.store.get(task["task_id"])["result"].get("metrics_run_id")
+        except (KeyError, TypeError, AttributeError):
+            return
+        if not run_id:
+            return
+        details = results[0].get("planner", {}) if results else {}
+        graph = local_plan.get("graph", {})
+        requested = int(local_plan["requested_tier"][1:])
+        effective = int(local_plan["effective_tier"][1:])
+        freshness = graph.get("freshness", "unknown")
+        freshness = {"checked": "fresh", "metadata_match": "fresh"}.get(freshness, freshness)
+        if graph.get("state") == "failed":
+            freshness = "failed"
+        if freshness not in {"fresh", "stale", "failed", "partial", "unknown", "not_run"}:
+            freshness = "unknown"
+        coverage = graph.get("coverage", "unknown")
+        coverage = {"mapped": "complete"}.get(coverage, coverage)
+        if coverage not in {"complete", "partial", "unknown", "unavailable", "not_run"}:
+            coverage = "unknown"
+        if graph.get("state") == "not_run":
+            freshness = coverage = "not_run"
+        status = details.get("actual_status")
+        status = status if status in {"passed", "failed"} else "not_run"
+        executed = list(details.get("executed_checks", [])) + [
+            {key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes", "stop_reason")}
+            for check in results]
+        suites = [check.get("suite") for check in details.get("executed_checks", []) if "suite" in check]
+        suite = suites[-1] if suites else None
+        # A reused offline_suite is not a new run: count only what actually ran.
+        executed_test_count = sum(check.get("test_count", 0) for check in details.get("executed_checks", [])
+                                  if "suite" not in check and type(check.get("test_count", 0)) is int)
+        executed_test_count += sum(check.get("test_count", 0) for check in results
+                                   if type(check.get("test_count", 0)) is int)
+        if suite is not None:
+            executed_test_count += suite["executed_tests"]
+        if effective == 3:
+            # AC-12 rev5 table: a V3 event counts only the offline_suite tests
+            # this run actually executed (declared checks stay in evidence).
+            executed_test_count = suite["executed_tests"] if suite is not None else 0
+        # Direct-file checks may succeed without producing test evidence. Keep
+        # the observation instead of sending an invalid passed/tests0 event to
+        # the shadow collector and silently losing it.
+        reused_suite = suite is not None and suite["suite_execution"] == "reused"
+        if status == "passed" and ((executed_test_count <= 0 and not reused_suite) or local_plan.get("inventory_count") == 0):
+            status = "not_run"
+        digest_basis = {"code_identity": local_plan["code_identity"], "target_base": local_plan["target_base"],
+                        "task_ids": local_plan["task_ids"], "acs": local_plan["acs"],
+                        "selected_ids": local_plan["selected_ids"], "effective_tier": local_plan["effective_tier"],
+                        "execution_complete": details.get("execution_complete", False), "status": status,
+                        "checks": [{key: check.get(key) for key in ("exit_code", "test_count", "skipped", "expected_failures", "unexpected_successes", "stop_reason")}
+                                   for check in executed]}
+        escalations = [f"V{requested}_TO_V{effective}"] if effective > requested else []
+        observation = {
+            "run_id": run_id, "event_id": uuid.uuid4().hex,
+            "evidence_sha256": planner.fingerprint(digest_basis),
+            "task_id": task["task_id"], "commit_sha": local_plan["code_identity"]["head"],
+            "worktree": hashlib.sha256(os.fsencode(str(Path(tree).resolve()))).hexdigest(),
+            "target_base": local_plan["target_base"], "index_id": graph.get("index_id"),
+            "generation": graph.get("generation"), "freshness": freshness, "coverage": coverage,
+            "requested_level": requested, "effective_level": effective, "stage": local_plan["stage"],
+            "status": status, "selected_tests": local_plan["selected_ids"],
+            "total_tests": local_plan.get("inventory_count"),
+            "executed_test_count": executed_test_count,
+            "selection_reasons": local_plan["reasons"],
+            "graph_seconds": graph.get("seconds"), "ci_seconds": None,
+            "validation_seconds": round(max(0.0, validation_seconds), 3),
+            "escalations": escalations, "fallback_reasons": local_plan["reasons"] if escalations else [],
+            "reuse_decision": suite["reuse_decision"] if suite else "not_requested",
+            "equality_checks": suite["equality_checks"] if suite else {},
+            "source_evidence": (suite["source_evidence"] if suite and suite["suite_execution"] == "reused"
+                                else ["task:" + task_id for task_id in local_plan["task_ids"]]),
+            "v3_only_defects": [], "measurement_kind": "measured",
+            "coverage_state": "complete" if effective == 3 and status == "passed"
+                              and details.get("execution_complete") is True else "partial",
+            **suite_observation(effective, status, suite),
+        }
+        self.store.observe(task["task_id"], "record_ci_validation", observation)
+
+    def verify(self, task_id, *, base_sha=None, stage="task_complete"):
+        if stage not in {"checkpoint", "task_complete"}:
+            raise HarnessError("invalid_validation_stage")
         from .runtime import execution_lock
         row = self.store.get(task_id)
         if row["lease"]: raise HarnessError("worker_busy")
@@ -236,7 +574,7 @@ class Orchestrator:
             with execution_lock(self.store.root, "worktree", target.resolve()):
                 if base_sha is not None:
                     self._adopt_base(task_id, base_sha)
-                return self._verify(task_id)
+                return self._verify(task_id, stage=stage)
 
     def _adopt_base(self, task_id, base_sha):
         """Accept a Git-owner-prepared source; never checkout/rebase/reset here."""
@@ -274,7 +612,7 @@ class Orchestrator:
             c.execute("UPDATE managed_tasks SET state='FAILED',result=? WHERE id=?", (encode(result), task_id))
             self.store.event(c, task_id, "base_adopted", {"base_sha": base_sha, "previous_base": row["result"].get("base_commit")})
 
-    def _verify(self, task_id):
+    def _verify(self, task_id, *, stage="task_complete"):
         self.store.prepare_validation(task_id)
         row = self.store.claim(task_id, validation_only=True)
         lease, task = row["lease"], row["task"]
@@ -285,7 +623,8 @@ class Orchestrator:
             self.store.update(task_id, lease, "VALIDATING")
             def stop():
                 return self.control(task_id, lease) or ("timeout" if row["elapsed"] + time.monotonic() - started >= task["execution"]["total_timeout_seconds"] else None)
-            checks = self.validate(task, tree, stop)
+            checks = self.validate(task, tree, stop, stage=stage,
+                                   target_base=row["result"].get("base_commit"))
             reason = stop()
             if reason:
                 return self.finish(task_id, lease, "PAUSED" if reason == "pause" else "CANCELLED" if reason == "cancel" else "INTERRUPTED", reason=reason)

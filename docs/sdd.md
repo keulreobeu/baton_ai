@@ -65,6 +65,23 @@ CI --ci는 push의 before/after 또는 PR base와 현재 HEAD를 사용하며 �
 verified_evidence_eligible=false를 공개한다. exit0만으로 Task 전체를 verified로 만들지 않는다.
 CI 파일은 준비할 수 있지만 원격 push/PR/merge는 현재 별도 승인 전 실행하지 않는다.
 
+## 검증 사다리 (CI-OPT-001 AC-01)
+
+편집 중(in_progress/debugging)=V1 `graph_affected` 대상 테스트. 작업 단위/checkpoint=V2 `affected_modules` 전체 테스트 + Task 시작 base 기준 `check_sdd.py --base`. 리뷰 반영은 지적을 묶은 뒤 V2 1회이며 회차마다 push하지 않는다. 최종 L2/L3 후보(task_complete/pre_merge)=V3 `full`: 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
+CBM 선택 전 freshness/coverage 확인·stale incremental index·재확인을 요구한다. L3 경로·workflow/검증 진입점·의존성/설정 변경·이전 범위 밖 실패는 V3로 상향한다. graph stale/failed/partial·테스트 매핑 불가는 V2에서 V3로 fallback한다. V1은 가용 CBM 영향 범위와 전체 Task-base Git diff의 직접 변경 파일 검사를 합친다. 그래프 불완전/조회 실패만으로 V1을 full로 올리거나 실패시키지 않는다. 잘못된 root/generation/schema 결과는 폐기하고 직접 파일 검사를 실행한다. 실행 검사 실패는 V1 실패, 검사 없음은 NOT_RUN이며 passed가 아니다. graph 실패가 검사를 생략하지 않는다. V1=L1 Fast Feedback, V2=L2 Impact Validation, V3=L3 Full Validation은 SDD 변경 위험 등급 L1/L2/L3와 구별한다. 기존 fast runner는 보조 피드백이며 공식 V3를 대체하지 않는다.
+같은 SHA만으로 검증 재사용을 결정하지 않는다. V3의 `sdd_static`·독립 검토·원격 CI는 재사용하지 않는다. `offline_suite` 입력 지문 재사용(AC-12 revision 5)은 2026-11-19 사용자 결정으로 독립 기능(`scripts/suite_reuse.py`)으로 분리·비활성화(기본 off)됐다. 기본 V3는 매번 `offline_suite` 전체를 실행하고 `reuse_decision=not_configured`를 남기며 이는 passed가 아니다. 켜는 것은 재설계·사용자 결정 뒤다. 켜진 경우에만 `offline_suite`만 AC-12 revision 5 입력 지문(`suite-fp/1`: 실행 중 관측한 read set 기반 파일·절·목록·외부 입력, 환경 변수 전체, 실행 환경 manifest, git, 정책)이 같고 원본 read set이 complete이며 원본이 성공한 실행일 때만 재사용하고, unknown/partial이면 재실행한다. 지문 입력이 바뀌면 관련 증거는 무효다. 잔여 위험은 Spec Risk Acceptance RA-1/RA-2/RA-3다.
+최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. CBM 선택과 (분리·비활성인) AC-12 입력 지문 V3 재사용만 허용하며 새 검증 DB·두 번째 정책 엔진은 금지한다. 기존 MetricsStore·Task 증거를 사용하고 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다. merge에는 유효한 V3가 필요하고 미설정 검사는 `not_configured`이며 passed가 아니다.
+worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다. V1/V2 결과는 Task 완료 상태를 올리지 않는다. draft PR=V2 범위, ready/main=V3 Windows 전체 2 matrix이며 로컬 재사용이 필수 원격 CI를 생략하지 않는다. hosted runner에 CBM이 없어 현재 draft도 V3 fallback이다.
+현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 현재 기본 V3로 보수적으로 실행한다. `offline_suite` 재사용은 2026-11-19부터 분리·비활성화되어 Orchestrator V3 caller와 원격 CI는 재사용·입력 관측 없이 실행하며(`verify_environment.py --enable-suite-reuse`로만 켠다) 재사용 절감은 실측 전이라 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
+fast runner 결과는 SDD 검사가 아니며 verified 증거로 쓰지 않는다.
+
+## Worker 입출력과 묶음 반영 (CI-OPT-001 AC-02)
+
+Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한한다. 결과는 기능/계약 변화·검증·후보 SHA·미해결·다음 행동으로
+요약하고 raw transcript를 재전달하지 않는다. 가까운 수정·리뷰 지적은 묶어서 반영한다.
+관측 기록은 CI-OPT 작업 T2부터 기존 계측(MetricsStore·Task 증거)으로 시작한다. 수집 불가 값은 `unknown`/`partial`/`null`로 두며
+0으로 바꾸지 않는다. 이 지침은 모델 호출·Orca 배정·push를 승인하지 않는다.
+
 ## P0 우선순위
 
 SDD 고급 기능보다 P0를 우선한다. P0는 quota-window(구현됨)이고, 마지막 단계로 TASK-POWER-001
@@ -72,3 +89,5 @@ SDD 고급 기능보다 P0를 우선한다. P0는 quota-window(구현됨)이고,
 포함하며 quota-window의 핑 타이밍 제어와 혼동하지 않는다. 작업 자동 실행·분배는 P1이다. 이후
 Provider, Backup, 외부 Policy 발견, 조건부 Review 순서다. 실제 핑/등록/종료·유료 API는 금지다. GMS는 GMS-001 범위에서 사용자가 직접 실행할 때만 허용한다.
 이 문서는 연결 프로젝트를 온보딩하거나 규칙/host 등록본을 수정하는 명령을 만들지 않는다.
+
+Windows 우선 안정화(2026-11-13 사용자 결정): 현재 CI는 windows-latest × Python 3.11/3.12 두 검증 조합이며 plan/gate도 Windows다. Linux/Ubuntu 검증은 후속 확장이고 로컬 Git 가속용 Ubuntu/WSL은 띄우지 않는다. 필수 Windows 검사의 nonzero/no-skip 규칙은 유지한다.

@@ -41,6 +41,17 @@ L3는 Spec/Plan/ADR/Task·독립 검토와 필요한 사용자 승인을 유지�
 GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위는 [GMS-001](docs/specs/GMS-001.md)의 로컬 키 관리와 사용자가 직접 켠 GMS 실행이다.
 에이전트는 테스트·검증 목적으로 실제 GMS를 호출하거나 키·잔액을 조회하지 않는다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.
 
+## 검증 사다리와 Worker 입출력 — CI-OPT-001 (2026-11-11)
+
+- 검증 사다리: 편집 중(in_progress/debugging)=V1 `graph_affected` 대상 테스트. 작업 단위/checkpoint=V2 `affected_modules` 전체 테스트 + Task 시작 base 기준 `check_sdd.py --base`. 리뷰 반영은 지적을 묶은 뒤 V2 1회이며 회차마다 push하지 않는다. 최종 L2/L3 후보(task_complete/pre_merge)=V3 `full`: 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
+- CBM 선택 전 freshness/coverage 확인·stale incremental index·재확인을 요구한다. L3 경로·workflow/검증 진입점·의존성/설정 변경·이전 범위 밖 실패는 V3로 상향한다. graph stale/failed/partial·테스트 매핑 불가는 V2에서 V3로 fallback한다. V1은 가용 CBM 영향 범위와 전체 Task-base Git diff의 직접 변경 파일 검사를 합친다. 그래프 불완전/조회 실패만으로 V1을 full로 올리거나 실패시키지 않는다. 잘못된 root/generation/schema 결과는 폐기하고 직접 파일 검사를 실행한다. 실행 검사 실패는 V1 실패, 검사 없음은 NOT_RUN이며 passed가 아니다. graph 실패가 검사를 생략하지 않는다. V1=L1 Fast Feedback, V2=L2 Impact Validation, V3=L3 Full Validation은 SDD 변경 위험 등급 L1/L2/L3와 구별한다. 기존 fast runner는 보조 피드백이며 공식 V3를 대체하지 않는다.
+- 같은 SHA만으로 검증 재사용을 결정하지 않는다. V3의 `sdd_static`·독립 검토·원격 CI는 재사용하지 않는다. `offline_suite` 입력 지문 재사용(AC-12 revision 5)은 2026-11-19 사용자 결정으로 독립 기능(`scripts/suite_reuse.py`)으로 분리·비활성화(기본 off)됐다. 기본 V3는 매번 `offline_suite` 전체를 실행하고 `reuse_decision=not_configured`를 남기며 이는 passed가 아니다. 켜는 것은 재설계·사용자 결정 뒤다. 켜진 경우에만 `offline_suite`만 AC-12 revision 5 입력 지문(`suite-fp/1`: 실행 중 관측한 read set 기반 파일·절·목록·외부 입력, 환경 변수 전체, 실행 환경 manifest, git, 정책)이 같고 원본 read set이 complete이며 원본이 성공한 실행일 때만 재사용하고, unknown/partial이면 재실행한다. 지문 입력이 바뀌면 관련 증거는 무효다. 잔여 위험은 Spec Risk Acceptance RA-1/RA-2/RA-3다.
+- 최근 1~3개 커밋 조회는 빠른 파악용이며 최종 diff 범위는 Task base 또는 통합 대상이다. CBM 선택과 (분리·비활성인) AC-12 입력 지문 V3 재사용만 허용하며 새 검증 DB·두 번째 정책 엔진은 금지한다. 기존 MetricsStore·Task 증거를 사용하고 `evidence.py`의 후보/통합 검사(전체 AC·nonzero·no-skip)는 바뀌지 않는다. merge에는 유효한 V3가 필요하고 미설정 검사는 `not_configured`이며 passed가 아니다.
+- worker 실행은 V1, 명시 `validate --stage checkpoint`는 V2, 기본 완료 validate/verify는 V3다. V1/V2 결과는 Task 완료 상태를 올리지 않는다. draft PR=V2 범위, ready/main=V3 Windows 전체 2 matrix이며 로컬 재사용이 필수 원격 CI를 생략하지 않는다. hosted runner에 CBM이 없어 현재 draft도 V3 fallback이다.
+- 현재 구현 한계(2026-11-13, 안전한 설계·사용자 결정 전): worker V1은 `Orchestrator._run` 직접 실행 피드백이며 Orca author settle 경로는 현재 기본 V3로 보수적으로 실행한다. `offline_suite` 재사용은 2026-11-19부터 분리·비활성화되어 Orchestrator V3 caller와 원격 CI는 재사용·입력 관측 없이 실행하며(`verify_environment.py --enable-suite-reuse`로만 켠다) 재사용 절감은 실측 전이라 주장하지 않는다. 원격 plan은 run attempt에 묶여 있어 부분 재실행(Re-run failed jobs)은 fail-closed로 실패하므로 현재 구현에서는 Re-run all jobs가 필요하다. 이는 승인된 영구 정책이 아니라 안전한 부분 재실행 설계/결정 전 한계다. plan/gate 로그는 event 종류·activity·event 시점 draft·merge-ref SHA/tree·PR head·입력/해결 base·run id/attempt·event/plan digest·고정 matrix를 기록하며 raw event·PR 본문·사용자 식별·env를 기록하지 않는다. 첫 merge parent는 비교 base/단계를 바꾸지 않는 실제 Git 관측값이며 확인할 수 없으면 null이다.
+- Worker 입력은 Task·base·소유 scope·AC·정책·증거 경로로 제한하고, 결과는 기능/계약 변화·검증·후보 SHA·미해결·다음 행동으로 요약한다. raw transcript를 재전달하지 않는다. 가까운 수정·리뷰 지적은 묶어서 반영한다. 관측 기록은 기존 계측(MetricsStore·Task 증거)으로 남기고 수집 불가 값은 `unknown`/`partial`/`null`이며 0으로 바꾸지 않는다.
+- 이 지침은 모델 호출·Orca 배정·push를 승인하지 않는다. 상세는 [docs/sdd.md](docs/sdd.md).
+
 
 ## Git 작업 완료와 push — 2026-11-04 사용자 승인
 
@@ -48,4 +59,8 @@ GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위
 - 커밋 직전 branch/HEAD·dirty·index·scope를 재확인한다. 다른 작업자가 작성 중이면 고정 snapshot의 SHA/파일 해시로 검증 대상을 고정하고 Git 담당자 한 명만 저장한다. 기존 staged 변경·원본·키·로그·DB·raw·runtime을 포함하지 않는다. 커밋 후 포함 파일·검증 내용 일치와 실제 HEAD를 확인한다. 커밋 실패는 실패로 보고하고 완료 저장으로 표시하지 않는다.
 - push 전 실제 원격 refs를 확인하고, 대상 branch에서 원격 refs로 도달할 수 없는 **기존 커밋 전부**와 새 커밋을 목록화한다. 각 커밋의 변경/민감정보/승인 범위를 점검하고 최종 후보의 계약·관련 회귀·필요 독립 검토를 확인한다. HEAD만 검사해 과거 미게시 커밋을 생략하지 않는다. 다른 로컬 branch의 미게시 커밋은 미포함 목록으로 남긴다.
 - 점검 결과를 Task에 남긴 뒤 현재 요청으로 정해진 원격·branch·범위만 push한다. 점검 이후 HEAD나 원격 상태가 달라지면 다시 확인한다. 실패·차단·미확인 finding이 남거나 대상이 정해지지 않았으면 push 대기다. push 후 원격 SHA read-back 전에는 게시 완료라고 하지 않는다.
-- 최초 push로 실행되는 실제 CI는 push 전 로컬 검증과 구분하고 결과 확인 전 Task/Jira 완료로 승격하지 않는다. 이 지시는 main 병합·타인 branch 정리·강제 갱신·실모델·GMS·전원 실행 승인으로 확대하지 않는다.
+- PR(draft 포함)의 첫 CI는 push 전 로컬 검증과 구분하고 결과 확인 전 Task/Jira 완료로 승격하지 않는다. CI가 실행되지 않은 push는 CI 증거가 아니다. 이 지시는 PR 생성·main 병합·타인 branch 정리·강제 갱신·실모델·GMS·전원 실행 승인으로 확대하지 않는다.
+
+## Windows 우선 안정화 — 2026-11-13 사용자 결정
+
+현재 CI는 windows-latest × Python 3.11/3.12 두 검증 조합이며 plan/gate도 Windows다. Linux/Ubuntu 검증은 후속 확장으로 미룬다. 로컬 Git 가속용 Ubuntu/WSL은 띄우지 않는다. 필수 Windows 검사의 nonzero/no-skip과 모델/원격 Git 제한은 유지한다.

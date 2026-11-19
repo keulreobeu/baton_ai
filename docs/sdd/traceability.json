@@ -30,7 +30,19 @@
     "docs/specs/MEMORY-001.md",
     "docs/plans/shared-memory.md",
     "docs/adr/ADR-MEMORY-001.md",
-    "docs/tasks/TASK-MEMORY-001.md"
+    "docs/tasks/TASK-MEMORY-001.md",
+    "docs/specs/CI-OPT-001.md",
+    "docs/plans/ci-optimization.md",
+    "docs/adr/ADR-CI-OPT-001.md",
+    "docs/tasks/TASK-CI-OPT-001.md",
+    "docs/specs/SCOPE-PATH-001.md",
+    "docs/plans/scope-path.md",
+    "docs/adr/ADR-SCOPE-PATH-001.md",
+    "docs/tasks/TASK-SCOPE-PATH-001.md",
+    "docs/tasks/TASK-CI-TIME-001.md",
+    "docs/plans/ci-windows-time.md",
+    "docs/adr/ADR-CI-TIME-001.md",
+    "docs/tasks/TASK-JIPDAM-SKIP-001.md"
   ],
   "features": [
     {
@@ -244,6 +256,30 @@
             {
               "file": "tests/test_harness_gateway.py",
               "symbol": "HarnessGatewayTests.test_storage_held_by_another_connection_fails_closed_before_call"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "GitPathTests.test_windows_bin_and_cmd_use_same_install_case_insensitively"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "GitPathTests.test_non_windows_never_resolves_or_changes_git"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_progress_is_flushed_on_module_start_and_keeps_nested_order"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_main_preserves_json_exit_and_unittest_accounting"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_sdd_failure_stops_before_discovery"
             }
           ]
         },
@@ -1362,6 +1398,150 @@
             }
           ]
         }
+      ]
+    },
+    {
+      "id": "SCOPE-PATH-001",
+      "spec": "docs/specs/SCOPE-PATH-001.md",
+      "requirements": [
+        {
+          "id": "SCOPE-PATH-001-REQ-01",
+          "acs": [
+            "SCOPE-PATH-001-AC-01"
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-REQ-02",
+          "acs": [
+            "SCOPE-PATH-001-AC-02"
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-REQ-03",
+          "acs": [
+            "SCOPE-PATH-001-AC-03"
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-REQ-04",
+          "acs": [
+            "SCOPE-PATH-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "SCOPE-PATH-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "WorkflowScopePathTests.test_workflow_files_are_accepted_as_scope_paths"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "WorkflowScopePathTests.test_other_dot_paths_stay_rejected"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "WorkflowScopePathTests.test_workflow_scope_does_not_widen_context_files"
+            }
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_ignored_pycache_bytecode_is_not_a_change"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_every_other_ignored_or_tracked_file_is_still_reported"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_tracked_or_unignored_bytecode_is_still_reported"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_modified_tracked_bytecode_under_ignored_pycache_still_blocks"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_deleted_or_staged_removal_of_tracked_bytecode_under_ignored_pycache_still_blocks"
+            },
+            {
+              "file": "tests/test_scope_path.py",
+              "symbol": "InterpreterCacheSnapshotTests.test_worker_context_asks_for_no_bytecode"
+            }
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_reuse_before_start_keeps_the_owner_for_validation"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_failed_reuse_does_not_lend_ownership_that_was_never_proven"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_stale_dispatch_stays_unadoptable_across_an_attempt_that_never_started"
+            }
+          ]
+        },
+        {
+          "id": "SCOPE-PATH-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_review_prompt_states_the_json_findings_notes_and_windows_rules"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_pass_report_with_notes_and_empty_findings_is_accepted"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_non_json_body_and_pass_with_findings_stay_rejected"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_reviewer_with_a_notes_report_still_cannot_edit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CI-OPT-001",
+      "spec": "docs/specs/CI-OPT-001.md",
+      "requirements": [
+        {"id": "CI-OPT-001-REQ-01", "acs": ["CI-OPT-001-AC-01", "CI-OPT-001-AC-02"]},
+        {"id": "CI-OPT-001-REQ-02", "acs": ["CI-OPT-001-AC-03", "CI-OPT-001-AC-04"]},
+        {"id": "CI-OPT-001-REQ-03", "acs": ["CI-OPT-001-AC-05", "CI-OPT-001-AC-06"]},
+        {"id": "CI-OPT-001-REQ-04", "acs": ["CI-OPT-001-AC-07", "CI-OPT-001-AC-08", "CI-OPT-001-AC-09"]},
+        {"id": "CI-OPT-001-REQ-05", "acs": ["CI-OPT-001-AC-10"]},
+        {"id": "CI-OPT-001-REQ-06", "acs": ["CI-OPT-001-AC-11", "CI-OPT-001-AC-12"]},
+        {"id": "CI-OPT-001-REQ-07", "acs": ["CI-OPT-001-AC-13"]}
+      ],
+      "acs": [
+        {"id": "CI-OPT-001-AC-01", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "MethodologyDocsTests.test_ladder_terms_present_in_all_docs"}]},
+        {"id": "CI-OPT-001-AC-02", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "WorkerIoDocsTests.test_worker_io_terms_present_in_all_docs"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_events_preserve_status_unknowns_and_existing_report"}]},
+        {"id": "CI-OPT-001-AC-03", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "PrMainWorkflowTests.test_only_supported_pr_activities_and_main_push"}]},
+        {"id": "CI-OPT-001-AC-04", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "PrMainWorkflowTests.test_pr_number_group_cancels_pr_only_and_main_sha_is_retained"}]},
+        {"id": "CI-OPT-001-AC-05", "tests": [{"file": "tests/test_sdd.py", "symbol": "SddTests.test_shared_task_selection_preserves_status_level_and_path_boundaries"}]},
+        {"id": "CI-OPT-001-AC-06", "tests": [{"file": "tests/test_sdd.py", "symbol": "SddTests.test_pull_request_uses_base_sha_and_only_post_base_changes"}, {"file": "tests/test_sdd.py", "symbol": "SddTests.test_pull_request_missing_base_fails_cli"}]},
+        {"id": "CI-OPT-001-AC-07", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "PolicyTests.test_v1_partial_failure_does_not_full_fallback_v2_does"}, {"file": "tests/test_ci_plan.py", "symbol": "SyntheticGitTests.test_failed_graph_v1_direct_checks_and_v2_full"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v1_direct_and_selected_checks_preserve_declared_ac_checks"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v2_uses_same_planner_and_base_sdd_preserving_commands"}]},
+        {"id": "CI-OPT-001-AC-08", "tests": [{"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_draft_v2_and_ready_main_windows_pair_are_contractual"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_windows_pair_required_for_every_event_and_non_windows_rejected"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_absent_planner_blocks_baton_and_unknown_identity_without_running_checks"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_absent_planner_keeps_generic_declared_only_validation"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_final_evidence_rejects_baton_candidate_when_planner_absent"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_present_planner_blocks_unknown_or_disagreeing_baton_identity"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_packaged_layout_absent_and_broken_controller_in_real_process"}]},
+        {"id": "CI-OPT-001-AC-09", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_stale_incremental_rechecks_and_persistence_disabled"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_partial_or_missing_test_edge_is_not_complete"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_test_method_with_unrelated_tests_edge_is_selected"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_test_file_helper_selects_whole_test_module"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_test_class_selects_whole_test_module"}, {"file": "tests/test_ci_plan.py", "symbol": "ImpactedTestFileTests.test_impacted_unmapped_support_file_stays_incomplete_and_v2_falls_full"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_cancel_after_cbm_call_prevents_remaining_queries"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_identity_detector_is_positive_bounded_and_marks_unknown"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_interrupted_policy_import_is_not_cached_and_next_load_can_succeed"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_present_planner_blocks_unknown_or_disagreeing_baton_identity"}, {"file": "tests/test_managed_harness.py", "symbol": "PlannerUnavailableTests.test_packaged_layout_absent_and_broken_controller_in_real_process"}, {"file": "tests/test_ci_plan.py", "symbol": "AdapterTests.test_detect_changes_arguments_obey_installed_cli_bounds"}]},
+        {"id": "CI-OPT-001-AC-10", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_main_dispatch_full_explicit_base_and_missing_invalid_base"}]},
+        {"id": "CI-OPT-001-AC-11", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_gate_requires_plan_and_matrix_aggregate_success_without_reuse"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_official_requires_nonzero_no_skip_eligible_summary"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_v2_rejects_empty_skipped_expected_and_unexpected_success"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_remote_process_streams_output_and_rejects_exit_zero_skip"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_v2_test_body_and_atexit_skip_words_are_not_result_counts"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_v2_rejects_multiple_summaries_in_either_order"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_v2_rejects_summary_shaped_atexit_output_after_skip"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_v2_rejects_fake_summary_after_real_summary_evicted_from_tail"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_real_v2_uses_stream_boundaries_when_tail_starts_midline"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteResultTests.test_output_tail_preserves_final_official_summary_after_large_output"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_remote_main_logs_ac12_identity_for_every_event_without_raw_event_data"}, {"file": "tests/test_ci_plan.py", "symbol": "RemoteTests.test_partial_rerun_attempt_mismatch_fails_closed_and_regenerated_plan_passes"}]},
+        {"id": "CI-OPT-001-AC-12", "tests": [{"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_exact_complete_v3_only_and_never_remote"}, {"file": "tests/test_ci_plan.py", "symbol": "ReuseTests.test_every_identity_field_changed_unknown_partial_missing"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_zero_exit_with_cancel_or_timeout_never_records_full_success"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_cancel_on_final_official_process_is_partial_despite_success_summary"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_plan_identity_changed_before_execution_runs_no_checks"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_unread_doc_candidate_and_outside_section_change_reuse"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_inputs_that_must_invalidate"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_ignored_read_listing_outside_env_manifest_git_invalidate"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_unsuccessful_or_untrusted_sources_reject"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_non_reusable_tests_always_and_expiry"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_reproduces_2026_11_13_five_run_case"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_grandchildren_are_tokenized_and_attributed"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_no_launch_without_its_hook_is_explained_away"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_lost_child_log_of_a_real_child_is_partial"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_log_lost_or_rewritten_after_a_partial_merge_is_incomplete"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_exit_proof_values_and_duplicate_hook_tokens"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_listing_change_never_hides_a_content_env_or_alias_change"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_listing_and_content_change_together_is_unstable"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_input_read_again_must_still_be_what_was_first_read"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_log_sequence_is_strict_with_one_exit_proof"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_numbers_match_file_order_under_threads"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_failed_listing_keeps_its_error_type"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_listing_changed_by_the_suite_uses_the_fallback_and_is_not_reused"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_native_allowlist_ctypes_repo_load_and_mmap"}, {"file": "tests/test_readset.py", "symbol": "ReadsetTests.test_child_alive_at_stop_and_nested_propagation"}, {"file": "tests/test_ci_plan.py", "symbol": "SuiteReuseTests.test_link_targets_resolver_and_missing_listing_are_inputs"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_execute_then_reuse_then_reexecute_after_input_change"}, {"file": "tests/test_verify_environment.py", "symbol": "EvidenceReuseTests.test_failed_run_is_recorded_but_never_reused_and_sdd_failure_runs_nothing"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_suite_execution_combinations"}, {"file": "tests/test_managed_harness.py", "symbol": "ValidationPlannerIntegrationTests.test_v3_reused_suite_is_recorded_without_counting_as_new_run"}]},
+        {"id": "CI-OPT-001-AC-13", "tests": [{"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_events_preserve_status_unknowns_and_existing_report"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_ci_validation_rejects_untrusted_fields_and_invalid_values"}, {"file": "tests/test_observability.py", "symbol": "LedgerTests.test_large_ci_selection_keeps_full_set_digest_under_existing_payload_cap"}, {"file": "tests/test_ci_workflow.py", "symbol": "VStageContractTests.test_measurements_preserve_unknowns_and_no_new_database"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_worker_uses_v1_and_checkpoint_cli_does_not_complete_task"}, {"file": "tests/test_managed_harness.py", "symbol": "ManagedHarnessTests.test_v1_worker_writes_a_bounded_metrics_event_without_finishing_task"}]}
       ]
     }
   ]
