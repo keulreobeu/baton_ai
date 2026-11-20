@@ -929,8 +929,32 @@ class DeclaredTreeBoundTests(unittest.TestCase):
 
 
 PASS_ID, FAIL_ID = "tests/test_demo.py::test_pass", "tests/test_demo.py::test_fail"
+# D29 condition 4: the approved pytest-xdist 3.8.0 wheel (requirements/ci.lock hash) and the
+# sha256 of every .py file it installs, read from CI-PAR-001's .venv-ci (installed from that
+# lock with --require-hashes; the same in .venv-ci-alt/.venv-ci-nogms, each matching RECORD).
+XDIST_WHEEL = "202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88"
+XDIST_FILES = {
+    "xdist/__init__.py": "164b4229983b8f3db54e8f27e799deb51aee5593b85d4c1b98bab1977f2daabd",
+    "xdist/_path.py": "2bd5a866dd8b2ad0c17159e95d6cca103871bb8653ce6963d16c9f1099758e2a",
+    "xdist/_version.py": "1cd94691c150b24dac11a969f5d0b0dcfe0ae16aa683b2ff1595249aa8d6fce2",
+    "xdist/dsession.py": "1b78c9e7efe0a1884048e075608fffac56c2c8c5a8e3f9e6a96d9f5137bb387e",
+    "xdist/looponfail.py": "84971024df50889ecfd562daaf5f13dd64941f901f138c91611b9fa95bc65da4",
+    "xdist/newhooks.py": "14b53ea2371c243a316924b7c0d1d772d8d62ed9818e0d2fdacadb9f1ac7930c",
+    "xdist/plugin.py": "62df71dfe342969ab667cb3a4f2280a93be9c11bc9a4c2d9ead271c979d2afd8",
+    "xdist/remote.py": "86d2f8132b3ef7e190f622c2b3cfd83cde464a4dd07ccd75486b27b161336b3d",
+    "xdist/report.py": "811e5bb28e4bbe6279b34bef5d6832359dd2ac09053467d11f998e08cb2b5c7c",
+    "xdist/scheduler/__init__.py": "858a4d13a95b64fc24ebddbefd7371a8eaa1392be37ef3afe43babcba72a56f3",
+    "xdist/scheduler/each.py": "7ef6f21911b65afca3a7916b27db671135f0aef8cc93ebce55c0b5bef7224fd1",
+    "xdist/scheduler/load.py": "51781738dbc5088b26ed0f1a26feb9293a35373935fed436811a51fbf49a4128",
+    "xdist/scheduler/loadfile.py": "e00d0cfa66ea39caf7af1a4b94dbc5ea635363584c804de3afba181fc24b61cb",
+    "xdist/scheduler/loadgroup.py": "9ac209b15c0dffffa74ddad508bd6f83393583d27cc4e234844f9f906f36bdef",
+    "xdist/scheduler/loadscope.py": "1eb3b1031d74b120e0537593a7cfcedc9ca8142d41eda0eb22c3df6dc8dc0951",
+    "xdist/scheduler/protocol.py": "1416e7389656b8e3e9f99642c03c14628905ed6e2f7b4062739b3b60fff35b74",
+    "xdist/scheduler/worksteal.py": "af8b131d8668a32aa1bf492e81a89fd49f9334c6dd0af42a4c895476fea5f847",
+    "xdist/workermanage.py": "efbca7d514fb94bd16ef566862a435dc7a541cb1ffd1d3826fc0cf2026fca3de",
+}
 LOCK = ("pytest==9.2.0 --hash=sha256:" + "a" * 64 + "\n"
-        "pytest-xdist==3.8.0 \\\n    --hash=sha256:" + "b" * 64 + "\n")
+        "pytest-xdist==3.8.0 \\\n    --hash=sha256:" + XDIST_WHEEL + "\n")
 
 
 class DeclaredPluginTrustTests(unittest.TestCase):
@@ -964,8 +988,13 @@ class DeclaredPluginTrustTests(unittest.TestCase):
                 "file": file, "trust": trust, "installed": installed}
 
     def xdist(self, **changes):
+        # D29 condition 4: the loaded file (``file``) is the installed file the distribution
+        # metadata names (``install_file``) and both hashes match the pinned values.
+        loaded = str(self.tree.parent / "venv" / "Lib" / "site-packages" / "xdist" / "plugin.py")
         row = self.plugin("xdist.plugin", "list_metadata", distribution="pytest-xdist", version="3.8.0",
-                          installed=True)
+                          installed=True, file=loaded)
+        row.update(install_rel="xdist/plugin.py", install_file=loaded, sha256=XDIST_FILES["xdist/plugin.py"],
+                   distribution_files=dict(XDIST_FILES))
         return {**row, **changes}
 
     def locked(self, text=None):
@@ -1079,10 +1108,34 @@ class DeclaredPluginTrustTests(unittest.TestCase):
         refused = {"other version": LOCK.replace("pytest-xdist==3.8.0", "pytest-xdist==3.7.0"),
                    "no hash": "pytest-xdist==3.8.0\n",
                    "not listed": LOCK.splitlines()[0] + "\n",
-                   "bad hash": "pytest-xdist==3.8.0 --hash=sha256:abc\n"}
+                   "bad hash": "pytest-xdist==3.8.0 --hash=sha256:abc\n",
+                   "other wheel": LOCK.replace(XDIST_WHEEL, "e" * 64)}
         for label, text in refused.items():
             with self.subTest(lock=label):
                 self.assertRefused(self.read(run=self.locked(text), plugins=plugins))
+
+    def test_xdist_trust_needs_pinned_files_on_the_installed_path(self):
+        # D29 condition 4 (synthetic, before the fix each was trusted): name==version is not
+        # enough. The approved wheel's files must be what is installed and what is loaded.
+        run = self.locked()
+        plugins = lambda **changed: [*self.clean_plugins(), self.xdist(**changed)]
+        record, reason = self.read(run=run, plugins=plugins())
+        self.assertIsNone(reason)
+        fake = dict(XDIST_FILES, **{"xdist/plugin.py": "f" * 64})
+        cases = {"loaded file hash": {"sha256": "f" * 64},
+                 "fake distribution (review: name, version and RECORD only)": {"sha256": "f" * 64,
+                                                                               "distribution_files": fake},
+                 "other file list": {"distribution_files": dict(XDIST_FILES, **{"xdist/extra.py": "0" * 64})},
+                 "shadowed (loaded elsewhere)": {"file": str(self.tree / "xdist" / "plugin.py")},
+                 "metadata unreadable": {"distribution_files": None, "install_file": None},
+                 "module and path differ": {"install_rel": "xdist/remote.py"}}
+        for label, changed in cases.items():
+            with self.subTest(case=label):
+                self.assertRefused(self.read(run=run, plugins=plugins(**changed)))
+
+    def test_pinned_xdist_values_are_the_ci_par_lock_install(self):
+        entry = run_record.TRUSTED_PLUGINS["pytest-xdist"]
+        self.assertEqual((entry["version"], entry["wheel_sha256"], entry["files"]), ("3.8.0", XDIST_WHEEL, XDIST_FILES))
 
     def test_list_trust_names_a_metadata_match_not_integrity(self):
         # EVID-D28-01 (I1): a trusted distribution is matched by metadata (name, version, the
@@ -1125,7 +1178,9 @@ class DeclaredTrustRuleTests(unittest.TestCase):
     def test_channel_module_needs_trusted_xdist_and_tree_code_needs_the_tree(self):
         channel = {"module": "__channelexec__", "trust": "channel"}
         xdist = {"module": "xdist.remote", "trust": "list_metadata", "distribution": "pytest-xdist",
-                 "version": "3.8.0", "installed": True}
+                 "version": "3.8.0", "installed": True, "file": "v/xdist/remote.py", "install_file": "v/xdist/remote.py",
+                 "install_rel": "xdist/remote.py", "sha256": XDIST_FILES["xdist/remote.py"],
+                 "distribution_files": dict(XDIST_FILES)}
         with tempfile.TemporaryDirectory() as tmp:
             tree, outside = Path(tmp) / "tree", Path(tmp) / "elsewhere.py"
             (tree / "requirements").mkdir(parents=True)
@@ -1149,16 +1204,17 @@ class DeclaredTrustRuleTests(unittest.TestCase):
         self.assertEqual(run_record.collection_violations(dict(record, successful=True, outcomes={"a": "pass"})),
                          ["no_result:b"])
 
-    def test_locked_versions_need_a_sha256_hash(self):
+    def test_locked_pins_need_a_sha256_hash(self):
         # EVID-D28-01 (I2): only hash-pinned name==version lines of the tree's lock count.
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(run_record.locked_versions(tmp), {})
+            self.assertEqual(run_record.locked_pins(tmp), {})
             (Path(tmp) / "requirements").mkdir()
             (Path(tmp) / "requirements" / "ci.lock").write_text(
                 "# comment\n" + LOCK + 'colorama==0.4.6 ; sys_platform == "win32" --hash=sha256:' + "c" * 64 + "\n"
                 "Pytest_Other==1.0\nexecnet==2.1.2 --hash=md5:" + "d" * 32 + "\n", encoding="utf-8")
-            self.assertEqual(run_record.locked_versions(tmp),
-                             {"pytest": "9.2.0", "pytest-xdist": "3.8.0", "colorama": "0.4.6"})
+            self.assertEqual(run_record.locked_pins(tmp),
+                             {"pytest": ("9.2.0", ("a" * 64,)), "pytest-xdist": ("3.8.0", (XDIST_WHEEL,)),
+                              "colorama": ("0.4.6", ("c" * 64,))})
 
 
 # --------------------------------------------------------------------------- EVID-D28-01 known residual risk
