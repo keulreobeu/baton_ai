@@ -3,6 +3,7 @@ from copy import deepcopy
 import io
 import itertools
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -1803,6 +1804,9 @@ class RemoteTests(unittest.TestCase):
 
 
 class RemoteResultTests(unittest.TestCase):
+    """CI-EVID-001 AC-04/05: remote V3 and -m unittest are judged by their run-record/1 and
+    the real rc only; the stream is diagnostics. The V2 check_sdd keeps its stream verdict (F-1)."""
+
     def summary(self, **changes):
         value = dict(status="PASS", scope="offline_tests_only", tests_run=2,
                      failures=0, errors=0, skipped=0, expected_failures=0,
@@ -1810,27 +1814,52 @@ class RemoteResultTests(unittest.TestCase):
         value.update(changes)
         return json.dumps(value)
 
+    def record(self, producer="verify_environment", exit_code=0, sdd="passed", summary=None, **outcomes):
+        from baton import run_record
+        rows = {}
+        for event, count in (("pass", outcomes.get("passed", 2)), ("skip", outcomes.get("skipped", 0)),
+                             ("fail", outcomes.get("failures", 0)), ("error", outcomes.get("errors", 0)),
+                             ("expected_failure", outcomes.get("expected", 0)),
+                             ("unexpected_success", outcomes.get("unexpected", 0))):
+            rows.update({f"t.T.{event}{i}": {"started": True, "events": [event]} for i in range(count)})
+        stages = None
+        if producer == "verify_environment":
+            stages = {"sdd_static": {"status": sdd, "exit_code": 0 if sdd == "passed" else 2},
+                      "offline_suite": {"status": "passed" if exit_code == 0 else "failed", "exit_code": exit_code}}
+            if summary is None:
+                summary = json.loads(self.summary(tests_run=len(rows), skipped=outcomes.get("skipped", 0),
+                                                  failures=outcomes.get("failures", 0),
+                                                  errors=outcomes.get("errors", 0),
+                                                  expected_failures=outcomes.get("expected", 0)))
+        return run_record.make_record(producer=producer, nonce="0" * 32, binding={}, rows=rows, scopes={},
+                                      exit_code=exit_code, summary=summary, stages=stages)
+
     def test_official_requires_nonzero_no_skip_eligible_summary(self):
+        # CI-EVID-001: the summary is the record's own (run-record/1), never a console line.
         command = ["scripts/verify_environment.py", "--ci"]
-        cp.validate_remote_result(command, 0, self.summary())
-        for output in ("", "Ran 2 tests\nOK\n", self.summary(tests_run=0),
-                       self.summary(tests_run=True), self.summary(skipped=1),
-                       self.summary(expected_failures=1), self.summary(errors=1),
-                       self.summary(failures=1), self.summary(status="FAIL"),
-                       self.summary(verified_evidence_eligible=False)):
-            with self.subTest(output=output), self.assertRaises(cp.PlanError):
-                cp.validate_remote_result(command, 0, output)
-        with self.assertRaises(cp.PlanError):
-            cp.validate_remote_result(command, 1, self.summary())
+        cp.validate_remote_result(command, 0, "", record=self.record())
+        for record in (self.record(passed=0), self.record(skipped=1), self.record(expected=1),
+                       self.record(errors=1), self.record(failures=1), self.record(unexpected=1),
+                       self.record(summary=json.loads(self.summary(status="FAIL"))),
+                       self.record(summary=json.loads(self.summary(verified_evidence_eligible=False))),
+                       self.record(summary=json.loads(self.summary(tests_run=True)))):
+            with self.subTest(counts=record["counts"], summary=record["summary"]), self.assertRaises(cp.PlanError):
+                cp.validate_remote_result(command, 0, "", record=record)
+        for output in ("", self.summary(), "Ran 2 tests\nOK\n"):
+            with self.subTest(output=output), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                cp.validate_remote_result(command, 0, output)           # console text is never evidence
+        with self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+            cp.validate_remote_result(command, 0, self.summary(), record=self.record(), reason="nonce_mismatch")
+        with self.assertRaisesRegex(cp.PlanError, "REMOTE_CHECK_FAILED"):
+            cp.validate_remote_result(command, 1, self.summary(), record=self.record())
 
     def test_v2_rejects_empty_skipped_expected_and_unexpected_success(self):
         command = ["-m", "unittest", "tests.test_value"]
-        cp.validate_remote_result(command, 0, "..\nRan 2 tests in 0.1s\n\nOK\n")
-        for output in ("", "Ran 0 tests\nOK\n", "Ran 2 tests\nOK (skipped=1)\n",
-                       "Ran 2 tests\nOK (expected failures=1)\n",
-                       "Ran 2 tests\nFAILED (unexpected successes=1)\n"):
-            with self.subTest(output=output), self.assertRaises(cp.PlanError):
-                cp.validate_remote_result(command, 0, output)
+        cp.validate_remote_result(command, 0, "", record=self.record("unittest"))
+        for record in (self.record("unittest", passed=0), self.record("unittest", skipped=1),
+                       self.record("unittest", expected=1), self.record("unittest", unexpected=1)):
+            with self.subTest(counts=record["counts"]), self.assertRaises(cp.PlanError):
+                cp.validate_remote_result(command, 0, "", record=record)
 
     def test_sdd_requires_success_summary(self):
         command = ["scripts/check_sdd.py", "--base", "a" * 40]
@@ -1839,33 +1868,29 @@ class RemoteResultTests(unittest.TestCase):
             with self.assertRaises(cp.PlanError):
                 cp.validate_remote_result(command, 0, output)
 
-    def test_v2_test_body_and_atexit_skip_words_are_not_result_counts(self):
+    def console_never_decides(self, outputs):
+        """CI-EVID-001 AC-04: console summaries neither reject a valid record nor pass a missing one."""
         command = ["-m", "unittest", "tests.test_value"]
-        cp.validate_remote_result(command, 0,
-            "cache skipped 3 entries\nexpected failures 2 examples\nunexpected successes 1 label\n"
-            "Ran 2 tests in 0.1s\n\nOK\ncache skipped 3 entries at exit\n")
-        for output in (
-            "OK\nRan 0 tests\nOK\n",
-            "Ran 2 tests\nOK (skipped=1)\ncache completed\n",
-            "Ran 2 tests\nOK (expected failures=1)\n",
-            "Ran 2 tests\nFAILED (unexpected successes=1)\n",
-            "Ran 2 tests\nOK\nRan 1 test\nFAILED (errors=1)\n",
-            "Ran 2 tests\ncache skipped 3 entries\nOK\n",
-        ):
-            with self.subTest(output=output), self.assertRaises(cp.PlanError):
-                cp.validate_remote_result(command, 0, output)
+        for output in outputs:
+            with self.subTest(output=output):
+                cp.validate_remote_result(command, 0, output, record=self.record("unittest"))
+                with self.assertRaises(cp.PlanError):
+                    cp.validate_remote_result(command, 0, output)
+
+    def test_v2_test_body_and_atexit_skip_words_are_not_result_counts(self):
+        self.console_never_decides([
+            "cache skipped 3 entries\nRan 2 tests in 0.1s\n\nOK\ncache skipped 3 entries at exit\n",
+            "Ran 2 tests\ncache skipped 3 entries\nOK\n", ""])
 
     def test_v2_rejects_multiple_summaries_in_either_order(self):
-        command = ["-m", "unittest", "tests.test_value"]
+        """Former stream rule (exactly one 'Ran N tests' summary) is gone: repeated summaries
+        in either order are diagnostics; only the record decides (C3-b)."""
         good = "Ran 7 tests in 0.010s\n\nOK\n"
-        for status in ("OK (skipped=1)", "OK (expected failures=1)",
-                       "FAILED (unexpected successes=1)", "OK"):
-            summary = "Ran 2 tests in 0.001s\n\n" + status + "\n"
-            for output in (summary + good, good + summary):
-                with self.subTest(status=status, output=output), self.assertRaises(cp.PlanError):
-                    cp.validate_remote_result(command, 0, output)
+        summary = "Ran 2 tests in 0.001s\n\nOK (skipped=1)\n"
+        self.console_never_decides([summary + good, good + summary, "Ran 0 tests\nOK\n" + good])
         with self.assertRaises(cp.PlanError):
-            cp.validate_remote_result(command, 0, "Ran 0 tests\nOK\n" + good)
+            cp.validate_remote_result(["-m", "unittest", "tests.test_value"], 0, good,
+                                      record=self.record("unittest", skipped=1))
 
     def test_real_v2_rejects_summary_shaped_atexit_output_after_skip(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1877,9 +1902,10 @@ class RemoteResultTests(unittest.TestCase):
                 " @unittest.skip('offline fixture')\n"
                 " def test_skip(self): pass\n", encoding="utf-8")
             output = io.StringIO()
-            with redirect_stdout(output), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+            with redirect_stdout(output), patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
+                    self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
                 cp.run_remote_check(root, ["-m", "unittest", "test_summary_noise"])
-            self.assertIn("OK (skipped=1)", output.getvalue())
+            self.assertIn("OK (skipped=1)", output.getvalue())               # streamed as progress
             self.assertIn("Ran 7 tests", output.getvalue())
 
     def test_real_v2_rejects_fake_summary_after_real_summary_evicted_from_tail(self):
@@ -1892,26 +1918,29 @@ class RemoteResultTests(unittest.TestCase):
                 "class T(unittest.TestCase):\n"
                 " @unittest.skip('offline fixture')\n"
                 " def test_skip(self): pass\n", encoding="utf-8")
-            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+            with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
+                    self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
                 cp.run_remote_check(root, ["-m", "unittest", "test_large_summary_noise"])
+            self.assertEqual([p.name for p in root.iterdir() if p.name.startswith("baton-record-")], [])
 
     def test_real_v2_uses_stream_boundaries_when_tail_starts_midline(self):
+        """The tail is diagnostics only: a cut fake summary cannot pass a skip, and a large
+        valid run passes whatever its output (the record decides)."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake = "Ran 7 tests in 0.010s\n\nOK\n"
-            suffix = "zzzz" + fake + "x" * (cp.LIMIT - len(fake))
             (root / "test_cut_summary.py").write_text(
                 "import unittest, atexit, sys\n"
-                "atexit.register(lambda: sys.stdout.write(" + repr(suffix) + "))\n"
+                "atexit.register(lambda: sys.stdout.write(" + repr("zzzz" + fake + "x" * (cp.LIMIT - len(fake))) + "))\n"
                 "class T(unittest.TestCase):\n"
                 " @unittest.skip('offline fixture')\n"
                 " def test_skip(self): pass\n", encoding="utf-8")
-            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
-                cp.run_remote_check(root, ["-m", "unittest", "test_cut_summary"])
             (root / "test_large_valid.py").write_text(
                 "import unittest\nclass T(unittest.TestCase):\n"
                 " def test_ok(self): print('x' * " + str(cp.LIMIT + 128) + ")\n", encoding="utf-8")
-            with redirect_stdout(io.StringIO()):
+            with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"RUNNER_TEMP": directory}):
+                with self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                    cp.run_remote_check(root, ["-m", "unittest", "test_cut_summary"])
                 cp.run_remote_check(root, ["-m", "unittest", "test_large_valid"])
 
     def test_output_tail_retains_exact_bounded_suffix_across_chunks(self):
@@ -1927,31 +1956,58 @@ class RemoteResultTests(unittest.TestCase):
             self.assertLessEqual(len(tail.getvalue()), 31)
 
     def test_output_tail_preserves_final_official_summary_after_large_output(self):
+        # CI-EVID-001: the kept tail is diagnostics; the official verdict comes from the record.
         summary = self.summary()
         tail = cp._OutputTail(512)
         tail.append("progress\n" * 10000)
         for line in ("Ran 2 tests in 0.1s\n", "OK\n", summary + "\n"):
             tail.append(line)
-        cp.validate_remote_result(["scripts/verify_environment.py", "--ci"], 0, tail.getvalue())
         self.assertTrue(tail.getvalue().endswith(summary + "\n"))
 
+    def official_script(self, skipped):
+        """A tiny synthetic official verifier writing a conforming record (never the real one)."""
+        src = str(Path(__file__).resolve().parents[1] / "src")
+        summary = json.loads(self.summary(skipped=skipped, verified_evidence_eligible=not skipped))
+        return (
+            "import json, os, sys\n"
+            f"sys.path.insert(0, {src!r})\n"
+            "from baton import run_record\n"
+            f"summary = {summary!r}\n"
+            "print('progress marker', flush=True)\n"
+            "print(json.dumps(summary), flush=True)\n"
+            "out = sys.argv[sys.argv.index('--record-out') + 1]\n"
+            "nonce = sys.argv[sys.argv.index('--record-nonce') + 1]\n"
+            "rows = {'t.T.p%d' % i: {'started': True, 'events': ['pass']} for i in range(2 - summary['skipped'])}\n"
+            "rows.update({'t.T.s%d' % i: {'started': True, 'events': ['skip']} for i in range(summary['skipped'])})\n"
+            "binding = run_record.observed_binding({**run_record.PLACEHOLDERS, 'base': None}, env=os.environ,\n"
+            "    argv=run_record.argv_for_digest(run_record.process_argv(), drop=(out, nonce)))\n"
+            "stages = {'sdd_static': {'status': 'passed', 'exit_code': 0},\n"
+            "          'offline_suite': {'status': 'passed', 'exit_code': 0}}\n"
+            "run_record.write_record(out, run_record.make_record(producer='verify_environment', nonce=nonce,\n"
+            "    binding=binding, rows=rows, scopes={}, exit_code=0, summary=summary, stages=stages))\n")
+
     def test_real_remote_process_streams_output_and_rejects_exit_zero_skip(self):
-        # A tiny synthetic official script exercises the actual subprocess and
-        # summary boundary; never runs the repository's official full verifier.
+        # A tiny synthetic official script exercises the actual subprocess and record
+        # boundary; never runs the repository's official full verifier.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); (root / "scripts").mkdir()
             script = root / "scripts/verify_environment.py"
             for skipped in (0, 1):
-                script.write_text("print('progress marker', flush=True)\nprint(" + repr(
-                    self.summary(skipped=skipped, verified_evidence_eligible=not skipped)) + ")\n", encoding="utf-8")
+                script.write_text(self.official_script(skipped), encoding="utf-8")
                 output = io.StringIO()
-                with redirect_stdout(output):
+                with redirect_stdout(output), patch.dict(os.environ, {"RUNNER_TEMP": directory}):
                     if skipped:
                         with self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
                             cp.run_remote_check(root, ["scripts/verify_environment.py", "--ci"])
                     else:
                         cp.run_remote_check(root, ["scripts/verify_environment.py", "--ci"])
                 self.assertIn("progress marker", output.getvalue())
+            # Without a record (an unchanged pre-CI-EVID verifier) a PASS line is no evidence.
+            script.write_text("import json\nprint(json.dumps(" + repr(json.loads(self.summary())) + "))\n",
+                              encoding="utf-8")
+            with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
+                    self.assertRaisesRegex(cp.PlanError, "REMOTE_TEST_EVIDENCE_FAILED"):
+                cp.run_remote_check(root, ["scripts/verify_environment.py", "--ci"])
 
     def test_real_v2_unittest_rejects_skip_and_zero_cases(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1964,7 +2020,8 @@ class RemoteResultTests(unittest.TestCase):
             )
             for index, source in enumerate(sources):
                 module.write_text(source, encoding="utf-8")
-                with self.subTest(index=index), redirect_stdout(io.StringIO()):
+                with self.subTest(index=index), redirect_stdout(io.StringIO()), \
+                        patch.dict(os.environ, {"RUNNER_TEMP": directory}):
                     if index:
                         with self.assertRaisesRegex(cp.PlanError, "REMOTE_(?:CHECK|TEST_EVIDENCE)_FAILED"):
                             cp.run_remote_check(root, ["-m", "unittest", "test_remote_boundary"])

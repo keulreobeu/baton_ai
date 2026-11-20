@@ -93,36 +93,54 @@ def _write(store, row, name, value, *, clear=False):
             result.pop("review_evidence", None); result.pop("integration_evidence", None)
         result[name] = value
         # 5th review R504: evidence recorded from a complete passing official V3 resolves
-        # an earlier V3 failure in the same transaction that checked the stored result.
-        from .orchestrator import official_v3_fields
-        if official_v3_fields(value.get("checks") or []) == {"official_v3_unresolved": False}:
+        # an earlier V3 failure (and an uncertain V3, CI-EVID-001 AC-07) in the same
+        # transaction that checked the stored result.
+        from .orchestrator import official_v3_verdict
+        if (official_v3_verdict(value.get("checks") or []) or (None,))[0] == "passed":
             result["official_v3_unresolved"] = False
+            result.pop("official_v3_uncertain", None)
         c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(result), row["id"]))
         store.event(c, row["id"], "evidence_recorded", {"kind": name, "evidence_hash": digest(value)})
     return store.export(row["id"])
 
 
 def _note_official_v3(store, row, checks):
-    """CI-VTIER-001 4th review R403: an official V3 failure found by the evidence gate
-    stays unresolved for later plans. True when it is unresolved (the gate then fails).
-    A pass does not clear the flag here (the stored result must stay what the gate read);
-    the next complete passing V3 of the Task clears it."""
-    from .orchestrator import official_v3_fields
-    if official_v3_fields(checks).get("official_v3_unresolved") is not True:
-        return False
+    """CI-VTIER-001 4th review R403 / CI-EVID-001 AC-07: the official V3 verdict the evidence
+    gate found, recorded for later plans; returns stopped/failed/uncertain/passed or None.
+
+    failed: the failure stays unresolved and earlier review/integration evidence is
+    removed (R504, here only). uncertain: official_v3_uncertain is recorded and the
+    evidence is kept, but nothing can be recorded or approved with it until a new V3.
+    A pass does not clear a flag here (the stored result must stay what the gate read);
+    the evidence written from it clears both (_write)."""
+    from .orchestrator import official_v3_verdict, uncertain_record
+    verdict = official_v3_verdict(checks)
+    state = verdict[0] if verdict else None
+    if state not in {"failed", "uncertain"}:
+        return state
     with store.tx() as c:
         current = store.row(c, row["id"])
         values = json.loads(current["result"])
-        # 5th review R504: earlier review/integration evidence no longer stands once an
-        # official V3 of the same Task failed; approval needs new evidence.
-        stale = [k for k in ("review_evidence", "integration_evidence") if values.get(k) is not None]
-        if values.get("official_v3_unresolved") is not True or stale:
-            values["official_v3_unresolved"] = True
-            for key in stale:
-                values.pop(key)
+        if state == "failed":
+            # 5th review R504: earlier review/integration evidence no longer stands once an
+            # official V3 of the same Task failed; approval needs new evidence.
+            stale = [k for k in ("review_evidence", "integration_evidence") if values.get(k) is not None]
+            if values.get("official_v3_unresolved") is not True or stale or values.get("official_v3_uncertain"):
+                values["official_v3_unresolved"] = True
+                values.pop("official_v3_uncertain", None)
+                for key in stale:
+                    values.pop(key)
+                c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), row["id"]))
+                store.event(c, row["id"], "official_v3_recorded", {"official_v3_unresolved": True, "invalidated": stale})
+        else:
+            candidate = values.get("candidate")
+            values["official_v3_uncertain"] = uncertain_record(
+                verdict[1], candidate_hash=digest(candidate) if isinstance(candidate, dict) else None,
+                validation_hash=digest(row["task"]["validation"]) if isinstance(row.get("task"), dict) else None)
             c.execute("UPDATE managed_tasks SET result=? WHERE id=?", (encode(values), row["id"]))
-            store.event(c, row["id"], "official_v3_recorded", {"official_v3_unresolved": True, "invalidated": stale})
-    return True
+            store.event(c, row["id"], "validation_uncertain:" + values["official_v3_uncertain"]["reason"],
+                        {"official_v3_uncertain": values["official_v3_uncertain"]})
+    return state
 
 
 def _checks(store, row, tree, note_row=None):
@@ -131,8 +149,13 @@ def _checks(store, row, tree, note_row=None):
     evidence is never removed by another Task's run)."""
     from .orchestrator import Orchestrator
     checks = Orchestrator(store).validate(row["task"], tree, lambda: None)
-    if _note_official_v3(store, note_row or row, checks):
+    state = _note_official_v3(store, note_row or row, checks)
+    if state == "failed":
         raise HarnessError("evidence_validation_failed")
+    if state == "uncertain" or (((note_row or row).get("result") or {}).get("official_v3_uncertain")
+                                and state != "passed"):
+        # CI-EVID-001 AC-07: no evidence from, or over, an uncertain official V3.
+        raise HarnessError("official_v3_uncertain")
     configured = row["task"]["validation"]
     if len(checks) != len(configured) or any(x.get("exit_code") != 0 for x in checks):
         raise HarnessError("evidence_validation_failed")
@@ -188,6 +211,8 @@ def _member_proofs(store, names, task_id):
             # 6th review R604: a member with an unresolved official V3 failure (also one
             # recorded before evidence was invalidated on failure) cannot be integrated.
             raise HarnessError("integration_member_official_v3_unresolved")
+        if row["result"].get("official_v3_uncertain"):
+            raise HarnessError("integration_member_official_v3_uncertain")  # CI-EVID-001 AC-07
         candidate, _ = _current_candidate(store, row, allow_completed=name != task_id)
         review = _review_proof(store, row, candidate)
         if base is not None and candidate["base_sha"] != base:
@@ -211,6 +236,8 @@ def validate_member_records(connection, members):
         result = json.loads(current["result"])
         if result.get("official_v3_unresolved") is True:
             raise HarnessError("integration_member_official_v3_unresolved")  # 6th review R604
+        if result.get("official_v3_uncertain"):
+            raise HarnessError("integration_member_official_v3_uncertain")  # CI-EVID-001 AC-07
         if (current["state"] not in {"REVIEW_REQUIRED", "COMPLETED"} or current["lease"]
                 or digest(json.loads(current["body"])) != proof.get("task_hash")
                 or digest(result.get("candidate")) != proof.get("candidate_hash")
@@ -376,6 +403,12 @@ def record(store, task_id, request):
 
 
 def approval_proof(store, row, approver):
+    # CI-EVID-001 AC-07: stored evidence approves nothing while the Task's official V3 is
+    # failed or uncertain (re-checked in the approval transaction).
+    if row["result"].get("official_v3_unresolved") is True:
+        raise HarnessError("official_v3_unresolved")
+    if row["result"].get("official_v3_uncertain"):
+        raise HarnessError("official_v3_uncertain")
     candidate, _ = _current_candidate(store, row)
     # Approver IDs cannot hold ":", so compare against the bare worker ID as well.
     if approver in {candidate["author_worker"], candidate["author_worker"].split(":", 1)[-1]}:

@@ -311,17 +311,26 @@ class ManagedStore:
                     self.event(c, task, "runtime_checkpoint", {"role": "author", "binding": actual})
                 result = {**result, "runtime": incoming}
             result = dict(result or {})
-            if overridden and ({"validation", "validation_passed", "validation_status", "official_v3_unresolved"} & set(result)):
+            if overridden and ({"validation", "validation_passed", "validation_status", "official_v3_unresolved",
+                                "official_v3_uncertain"} & set(result)):
                 # CI-VTIER-001 4th review R402: a settlement turned into PAUSED/CANCELLED by a
-                # control that arrived first is no validation result (atomically, here).
+                # control that arrived first is no validation result (atomically, here); the
+                # stored official V3 flags stay (CI-EVID-001 AC-07).
                 result.update(validation_passed=False, validation_status=None, wiki=None)
                 result.pop("official_v3_unresolved", None)
+                result.pop("official_v3_uncertain", None)
             if ("validation" in result and "official_v3_unresolved" not in result
                     and "official_v3_unresolved" not in values and legacy_official_v3_failed(values.get("validation"))):
                 # 4th review R403: a record from before the flag keeps its official V3
                 # failure when its validation list is replaced.
                 result["official_v3_unresolved"] = True
             values.update(result)
+            if values.get("official_v3_uncertain") is None:
+                values.pop("official_v3_uncertain", None)
+            elif isinstance(result.get("official_v3_uncertain"), dict):
+                # CI-EVID-001 AC-07: the reason of an uncertain official V3 as a Task event.
+                self.event(c, task, "validation_uncertain:" + str(result["official_v3_uncertain"].get("reason")),
+                           {"official_v3_uncertain": result["official_v3_uncertain"]})
             safe(values)
             if headroom and len(encode(values).encode()) + headroom > PAYLOAD_LIMIT:
                 # CI-VTIER-001 8th review R802: room a later write to this record must still have.
@@ -416,6 +425,8 @@ class ManagedStore:
             if result.get("official_v3_unresolved") is True:
                 # CI-VTIER-001 5th review R504: an unresolved official V3 failure blocks approval.
                 raise HarnessError("official_v3_unresolved")
+            if result.get("official_v3_uncertain"):
+                raise HarnessError("official_v3_uncertain")  # CI-EVID-001 AC-07
             from .evidence import validate_member_records
             validate_member_records(c, result["integration_evidence"]["members"])  # incl. members' V3 (R604)
             c.execute("UPDATE managed_tasks SET state='COMPLETED' WHERE id=?", (task,))

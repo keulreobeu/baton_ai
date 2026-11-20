@@ -18,7 +18,53 @@ from baton.execution import ExecutionResult, MockProvider
 from baton.isolation import git, pack_context, snapshot
 from baton.managed import ManagedStore
 from baton.managed_cli import main
+from baton import run_record
 from baton.orchestrator import Orchestrator
+
+
+# CI-EVID-001: fake processes write the run-record/1 a conforming producer would (the
+# shared run_record definitions); console text is diagnostics and never evidence.
+def child_env(kwargs):
+    overrides = kwargs.get("env_overrides") or {}
+    return {key: overrides.get(key) for key in run_record.ENV_KEYS}
+
+
+def unittest_names(argv):
+    argv = [str(a) for a in argv]
+    return argv[argv.index(run_record.UNITTEST_BOOTSTRAP) + 4:]
+
+
+def write_unittest_record(argv, cwd, kwargs, done, *, rows=None, exit_code=0):
+    """The record the shared recorder writes when ``done`` passed (or for ``rows``)."""
+    argv = [str(a) for a in argv]
+    out, spec = run_record.unittest_run_values(argv)
+    given = json.loads(spec)
+    binding = run_record.observed_binding(given["binding"], cwd=cwd, env=child_env(kwargs),
+                                          argv=run_record.argv_for_digest(argv, drop=(out, spec)))
+    rows = rows if rows is not None else {i: {"started": True, "events": ["pass"]} for i in done}
+    run_record.write_record(out, run_record.make_record(producer="unittest", nonce=given["nonce"], binding=binding,
+                                                        rows=rows, scopes={}, exit_code=exit_code))
+
+
+def write_verify_record(argv, cwd, kwargs, summary, exit_code=0):
+    """The record verify_environment --record-out writes for ``summary`` (a dict)."""
+    argv = [str(a) for a in argv]
+    out, nonce = argv[argv.index("--record-out") + 1], argv[argv.index("--record-nonce") + 1]
+    base = argv[argv.index("--base") + 1] if "--base" in argv else None
+    count = lambda key: summary.get(key) if type(summary.get(key)) is int else 0
+    passed = max(0, count("tests_run") - count("failures") - count("errors") - count("skipped")
+                 - count("expected_failures"))
+    rows = {f"tests.test_x.T.p{i}": {"started": True, "events": ["pass"]} for i in range(passed)}
+    for key, event in (("failures", "fail"), ("errors", "error"), ("skipped", "skip"),
+                       ("expected_failures", "expected_failure")):
+        rows.update({f"tests.test_x.{key}.t{i}": {"started": True, "events": [event]} for i in range(count(key))})
+    binding = run_record.observed_binding({**run_record.PLACEHOLDERS, "base": base}, cwd=cwd, env=child_env(kwargs),
+                                          argv=run_record.argv_for_digest(argv, drop=(out, nonce)))
+    stages = {"sdd_static": {"status": "passed", "exit_code": 0},
+              "offline_suite": {"status": "passed" if exit_code == 0 else "failed", "exit_code": exit_code}}
+    run_record.write_record(out, run_record.make_record(producer="verify_environment", nonce=nonce, binding=binding,
+                                                        rows=rows, scopes={}, exit_code=exit_code, summary=summary,
+                                                        stages=stages))
 
 
 class Provider:
@@ -71,23 +117,41 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         return result, process
 
     def vtier_runner(self, ids=None):
-        """Fake process: a planner unittest run (recorded runner, argv[3] == "-c") writes a
-        unittest-record/1 proving exactly these IDs (default: the planned selection)."""
-        def run(argv, *args, **kwargs):
-            if len(argv) > 5 and argv[3] == "-c":
-                done = list(self.plan.get("selected_ids", []) if ids is None else ids)
-                Path(argv[5]).write_text(json.dumps({
-                    "schema": "unittest-record/1", "started": done, "passed": done, "failed": [], "skipped": [],
-                    "tests_run": max(len(done), 1), "failures": 0, "errors": 0, "skipped_count": 0,
-                    "expected_failures": 0, "unexpected_successes": 0, "successful": True}), encoding="utf-8")
-            return (0, "", "Ran 2 tests in 0.1s\nOK", None)
+        """Fake process: a planner unittest run proves exactly these IDs (default: the
+        planned selection); a declared unittest check passes two tests."""
+        return self.recorder(ids)
+
+    def recorder(self, ids=None, *, official=None, official_rc=0, declared=2):
+        """Fake processes writing the run-record/1 a conforming producer would (CI-EVID-001):
+        the shared unittest recorder (a planner batch has the Task's remaining total time
+        as its timeout, a declared check its 300 s limit) and the official verifier."""
+        def run(argv, cwd, stdin, timeout, *rest, **kwargs):
+            argv = [str(a) for a in argv]
+            if run_record.UNITTEST_BOOTSTRAP in argv:
+                if timeout > 300:
+                    done = list(self.plan.get("selected_ids", []) if ids is None else ids)
+                else:
+                    done = [f"tests.test_value.T.t{i}" for i in range(declared)]
+                write_unittest_record(argv, cwd, kwargs, done)
+                return 0, "", "Ran 7 tests in 0.1s\nOK (console text is not evidence)", None
+            if "--record-out" in argv:
+                summary = self.official_output() if official is None else official
+                try:
+                    value = json.loads(summary)
+                except ValueError:
+                    value = None
+                if isinstance(value, dict):
+                    write_verify_record(argv, cwd, kwargs, value, official_rc)
+                return official_rc, summary, "", None
+            return 0, "", "", None
         return run
 
     def test_recorded_runner_proves_only_tests_that_really_ran(self):
         """CI-VTIER-001 re-review N01, real unittest subprocesses: load_tests narrowing,
         a test body printing a look-alike result line, a stderr prefix without newline,
-        subTest success/failure, setUpClass failure and skip are judged from TestResult."""
-        from baton.orchestrator import _RECORDED_UNITTEST, proven_tests, read_unittest_record
+        subTest success/failure, setUpClass failure and skip are judged from TestResult
+        (CI-EVID-001: through the shared recorder and the run-record/1 reader)."""
+        from baton.orchestrator import proven_tests, read_unittest_record
         tests = self.root / "tests"
         tests.mkdir(exist_ok=True)
         (tests / "__init__.py").write_text("", encoding="utf-8")
@@ -119,12 +183,15 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
             "    def setUpClass(cls): raise RuntimeError('boom')\n"
             "    def test_never(self): pass\n", encoding="utf-8")
         def run(*names):
-            out = self.root / "record.json"
-            child = subprocess.run([sys.executable, "-X", "utf8", "-c", _RECORDED_UNITTEST, str(out), *names],
-                                   cwd=self.root, capture_output=True, text=True,
-                                   env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
-            record = read_unittest_record(out)
-            out.unlink(missing_ok=True)
+            directory = Path(tempfile.mkdtemp(dir=self.tmp.name))
+            out, nonce = directory / "record.json", run_record.new_nonce()
+            argv = run_record.unittest_argv(sys.executable, out, nonce, run_record.PLACEHOLDERS, names)
+            env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            expected = run_record.observed_binding(
+                run_record.PLACEHOLDERS, cwd=self.root, env=env,
+                argv=run_record.argv_for_digest(argv, drop=run_record.unittest_run_values(argv)))
+            child = subprocess.run(argv, cwd=self.root, capture_output=True, text=True, env=env)
+            record = read_unittest_record(out, nonce=nonce, binding=expected, returncode=child.returncode)
             return child.returncode, record
         code, record = run("tests.test_guard")
         self.assertEqual(code, 0)
@@ -146,7 +213,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         code, record = run("tests.test_bad")
         self.assertNotEqual(code, 0)
         self.assertEqual(proven_tests(record), set())
-        self.assertIn("tests.test_bad.S.test_sub", record["failed"])
+        self.assertIn("tests.test_bad.S.test_sub (i=1)", record["failed"])
         self.assertEqual(record["skipped_count"], 1)
         self.assertFalse(record["successful"])
         # Through validate() with the real process runner: the planned IDs that
@@ -191,21 +258,24 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         started, success flag, failure/skip counts) is no record; an ID proven in two
         batches is a duplicate run and fails the coverage check."""
         from baton.orchestrator import read_unittest_record
-        good = {"schema": "unittest-record/1", "started": ["m.T.a", "m.T.b"], "passed": ["m.T.a", "m.T.b"],
-                "failed": [], "skipped": [], "tests_run": 2, "failures": 0, "errors": 0, "skipped_count": 0,
-                "expected_failures": 0, "unexpected_successes": 0, "successful": True}
+        nonce = run_record.new_nonce()
+        good = run_record.make_record(producer="unittest", nonce=nonce, binding={}, scopes={}, exit_code=0,
+                                      rows={i: {"started": True, "events": ["pass"]} for i in ("m.T.a", "m.T.b")})
+        counts = good["counts"]
         path = self.root / "record.json"
         def judged(**changes):
-            path.write_text(json.dumps({**good, **changes}), encoding="utf-8")
-            return read_unittest_record(path)
+            run_record.write_record(path, {**good, **changes})
+            return read_unittest_record(path, nonce=nonce, binding={}, returncode=0, exclusive=False)
         self.assertIsNotNone(judged())
-        for label, changes in {"count": {"tests_run": 1}, "count_up": {"tests_run": 3},
+        self.assertEqual(judged()["skipped_count"], 0)            # unittest-record/1 count names kept
+        for label, changes in {"count": {"counts": dict(counts, tests_run=1)},
+                               "count_up": {"counts": dict(counts, tests_run=3)},
                                "passed_not_started": {"passed": ["m.T.a", "m.T.b", "m.T.c"]},
                                "repeat_start": {"started": ["m.T.a", "m.T.a"]},
                                "repeat_pass": {"passed": ["m.T.a", "m.T.a"]},
-                               "flag": {"failures": 1, "failed": ["m.T.b"]},
+                               "flag": {"counts": dict(counts, failures=1), "failed": ["m.T.b"]},
                                "failed_count": {"failed": ["m.T.b"]},
-                               "skip_count": {"skipped_count": 1},
+                               "skip_count": {"counts": dict(counts, skipped=1)},
                                # 4th review R401: a clean batch proves every test it started.
                                "unended": {"passed": ["m.T.a"]}}.items():
             with self.subTest(case=label):
@@ -215,15 +285,14 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         ids = ["tests.test_value.T.t%03d_%s" % (i, "x" * 200) for i in range(130)]
         self.plan.update(selected_ids=ids, direct_checks=[])
         def batch_runner(shared):
-            def run(argv, *a, **k):
-                if len(argv) > 5 and argv[3] == "-c":
-                    done = list(argv[6:]) + shared
-                    Path(argv[5]).write_text(json.dumps({**good, "started": done, "passed": done,
-                                                         "tests_run": len(done)}), encoding="utf-8")
+            def run(argv, cwd, stdin, timeout, *a, **k):
+                planner = timeout > 300          # a declared check keeps its 300 s limit
+                done = unittest_names(argv) + shared if planner else ["tests.test_value.T.declared"]
+                write_unittest_record(argv, cwd, k, done)
                 return (0, "", "Ran 1 test\nOK", None)
             return run
         result, process = self.run_validation(batch_runner([]), stage="in_progress", target_base="b" * 40)
-        self.assertEqual(sum(1 for c in process.call_args_list if c.args[0][3:4] == ["-c"]), 2)
+        self.assertEqual(sum(1 for c in process.call_args_list if c.args[3] > 300), 2)
         self.assertEqual(result[0]["exit_code"], 0)
         result, _ = self.run_validation(batch_runner(["tests.test_value.T.shared"]), stage="in_progress",
                                         target_base="b" * 40)
@@ -269,8 +338,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         """CI-VTIER-001 review P2: a V1 that ran no test reports not_run (not passed), and a
         planner unittest run is bounded by the Task's remaining total time, not 300 s."""
         self.plan.update(selected_ids=[])
-        result, process = self.run_validation(lambda *a, **k: (0, "", "Ran 1 test in 0.1s\nOK", None),
-                                              stage="in_progress", target_base="b" * 40)
+        result, process = self.run_validation(self.recorder(), stage="in_progress", target_base="b" * 40)
         self.assertEqual(result[0]["planner"]["actual_status"], "not_run")
         self.plan.update(selected_ids=["tests.test_value.T.test_value"])
         _, process = self.run_validation(self.vtier_runner(["tests.test_value.T.test_value"]),
@@ -357,9 +425,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         reused = self.official_output(tests_run=5, suite_execution="reused", executed_tests=0, reused_test_count=5,
                                       source_evidence=refs, reuse_decision="accepted",
                                       equality_checks={"files": "equal"})
-        def runner(argv, *args, **kw):
-            if "--base" in argv: return 0, reused, "", None
-            return 0, "", "Ran 2 tests\nOK", None
+        runner = self.recorder(official=reused)
         result, _ = self.run_validation(runner)
         self.assertEqual(result[0]["exit_code"], 0)
         official = result[0]["planner"]["executed_checks"][-1]
@@ -376,13 +442,9 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         accepted only on the executed suite's own nonzero/no-skip success."""
         self.plan.update(effective_tier="V3", direct_checks=[])
         off = dict(suite_fingerprint=None, reuse_decision="not_configured")
-        def runner_for(summary):
-            def runner(argv, *args, **kw):
-                if "--base" in argv: return 0, summary, "", None
-                return 0, "", "Ran 2 tests\nOK", None
-            return runner
+        runner_for = lambda summary: self.recorder(official=summary)
         result, process = self.run_validation(runner_for(self.official_output(**off)))
-        self.assertEqual(process.call_args_list[-1].args[0], self.v3_argv())
+        self.assertEqual(process.call_args_list[-1].args[0][:6], self.v3_argv())
         for option in ("--evidence-dir", "--lock-home", "--readset-out", "--enable-suite-reuse"):
             self.assertNotIn(option, process.call_args_list[-1].args[0])
         self.assertEqual(result[0]["exit_code"], 0)
@@ -401,11 +463,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
 
     def test_v3_executed_suite_event_and_malformed_suite_fail_closed(self):
         self.plan.update(effective_tier="V3", direct_checks=[])
-        def runner_for(summary):
-            def runner(argv, *args, **kw):
-                if "--base" in argv: return 0, summary, "", None
-                return 0, "", "Ran 2 tests\nOK", None
-            return runner
+        runner_for = lambda summary: self.recorder(official=summary)
         self.run_validation(runner_for(self.official_output()))
         event = self.observations[-1][2]
         self.assertEqual((event["suite_execution"], event["suite_fingerprint"], event["executed_test_count"]),
@@ -424,13 +482,12 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
 
     def test_default_v3_actual_target_base_full_budget_and_accounting(self):
         self.plan.update(effective_tier="V3", direct_checks=[])
-        def runner(argv, *args, **kw):
-            if "--base" in argv: return 0, self.official_output(), "", None
-            return 0, "", "Ran 2 tests\nOK", None
+        runner = self.recorder(official=self.official_output())
         result, process = self.run_validation(runner)
         self.assertEqual(self.calls[0][1]["stage"], "task_complete")
         call = process.call_args_list[-1]
-        self.assertEqual(call.args[0], self.v3_argv())
+        self.assertEqual(call.args[0][:6], self.v3_argv())
+        self.assertEqual([call.args[0][6], call.args[0][8]], ["--record-out", "--record-nonce"])
         self.assertEqual(call.args[1], self.root)
         self.assertGreater(call.args[3], 1100)
         self.assertLessEqual(call.args[3], 1200)
@@ -514,9 +571,7 @@ class ValidationPlannerIntegrationTests(unittest.TestCase):
         from baton.evidence import _checks
         self.plan.update(effective_tier="V3", direct_checks=[])
         task = {**self.task, "acceptance_criteria": ["AC1"]}
-        def runner(argv, *a, **kw):
-            if "--base" in argv: return 0, self.official_output(), "", None
-            return 0, "", "Ran 2 tests\nOK", None
+        runner = self.recorder()
         with patch("baton.execution.run_process", side_effect=runner):
             checks = _checks(self.orchestrator.store, {"task": task}, self.root)
         self.assertEqual(len(checks), 1)
@@ -578,8 +633,11 @@ class PlannerUnavailableTests(unittest.TestCase):
         return root
 
     def validate(self, root, planner=None):
+        def run(argv, cwd, *args, **kwargs):
+            write_unittest_record(argv, cwd, kwargs, ["tests.test_value.T.test_value"])
+            return 0, "", "Ran 1 test in 0.1s\nOK", None
         with patch("baton.orchestrator.validation_planner", return_value=planner), \
-             patch("baton.execution.run_process", return_value=(0, "", "Ran 1 test in 0.1s\nOK", None)) as process:
+             patch("baton.execution.run_process", side_effect=run) as process:
             return self.orchestrator.validate(self.task, root, lambda: None), process
 
     def test_identity_detector_is_positive_bounded_and_marks_unknown(self):

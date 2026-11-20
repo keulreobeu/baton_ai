@@ -32,6 +32,9 @@ REASONS = ("missing", "corrupt", "schema", "incomplete", "nonce_mismatch", "bind
            # CI-EVID-001 rev2 AC-03 (added only; earlier reasons keep their meaning).
            "not_regular", "too_large", "extra_files", "producer_mismatch")
 STAGE_STATUSES = ("passed", "failed", "not_run")
+# Observed binding keys an official consumer names with None placeholders (rev3 E206): the
+# producer must observe them itself; the caller keeps its expected values to itself.
+PLACEHOLDERS = {"head": None, "tree": None, "worktree_digest": None, "env_digest": None, "argv_digest": None}
 MAX_BYTES = 64 * 1024 * 1024
 # Environment that changes what a test run means (rev2 AC-02 env_digest); a fixed list.
 ENV_KEYS = ("PYTHONPATH", "PYTHONHOME", "PYTHONSAFEPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED",
@@ -623,27 +626,29 @@ def unittest_child(args):
                         drop=(args[0], args[1]))
 
 
-# ``python -c UNITTEST_BOOTSTRAP <run_record.py> <record> <spec> <unittest argv...>``. Loads
+# ``python -c UNITTEST_BOOTSTRAP <record> <spec> <run_record.py> <unittest argv...>``. Loads
 # this file by path under a private name, so a project that cannot import ``baton`` still
 # records, and its own import path (sys.path[0] = cwd, as under ``-m unittest``) is unchanged.
 UNITTEST_BOOTSTRAP = (
     "import importlib.util, sys\n"
-    "spec = importlib.util.spec_from_file_location('_baton_run_record', sys.argv[1])\n"
+    "spec = importlib.util.spec_from_file_location('_baton_run_record', sys.argv[3])\n"
     "module = importlib.util.module_from_spec(spec)\n"
     "sys.modules[spec.name] = module\n"
     "spec.loader.exec_module(module)\n"
-    "sys.exit(module.unittest_child(sys.argv[2:]))\n")
+    "sys.exit(module.unittest_child([sys.argv[1], sys.argv[2], *sys.argv[4:]]))\n")
 
 
 def unittest_argv(python, out, nonce, binding, argv, *, options=("-X", "utf8")):
     """Process argv of the shared recorded unittest runner (callers and the remote run);
     ``argv_for_digest(result, drop=unittest_run_values(result))`` is its argv_digest input."""
     spec = json.dumps({"nonce": nonce, "binding": binding}, sort_keys=True)
-    return [str(python), *options, "-c", UNITTEST_BOOTSTRAP, str(Path(__file__).resolve()), str(out), spec,
+    # The record path comes first: a writer that assumes another layout damages a record
+    # (refused as schema/corrupt), never this module's file.
+    return [str(python), *options, "-c", UNITTEST_BOOTSTRAP, str(out), spec, str(Path(__file__).resolve()),
             *[str(a) for a in argv]]
 
 
 def unittest_run_values(argv):
     """The record path and spec of a ``unittest_argv`` command line (left out of argv_digest)."""
     index = [str(a) for a in argv].index(UNITTEST_BOOTSTRAP)
-    return (str(argv[index + 2]), str(argv[index + 3]))
+    return (str(argv[index + 1]), str(argv[index + 2]))

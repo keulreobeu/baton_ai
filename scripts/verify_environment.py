@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -62,11 +63,36 @@ def _summary(result, **suite):
     return value
 
 
-def _run_suite(names=None):
+def _run_suite(names=None, recording=None):
+    """``recording``: the run_record module when a record was requested (CI-EVID-001
+    AC-05); the suite's IDs are then observed beside ModuleProgressResult's own accounting."""
     loader = unittest.defaultTestLoader
     suite = (loader.loadTestsFromNames(names) if names is not None
              else loader.discover(str(ROOT / "tests"), top_level_dir=str(ROOT)))
-    return unittest.TextTestRunner(verbosity=1, resultclass=ModuleProgressResult).run(suite)
+    if recording is None:
+        return unittest.TextTestRunner(verbosity=1, resultclass=ModuleProgressResult).run(suite)
+    resultclass = type("RecordingProgressResult", (recording.RecordingMixin, ModuleProgressResult), {})
+    selected = [test for test in recording.iter_tests(suite) if test is not None]
+    result = unittest.TextTestRunner(verbosity=1, resultclass=resultclass).run(suite)
+    result.settle(selected)
+    return result
+
+
+def _write_record(args, environ, *, sdd_rc, result=None, summary=None, rc):
+    """One run-record/1 (producer verify_environment) for every normal end (rev2 B2)."""
+    from baton import run_record
+    sdd = {"status": "passed" if sdd_rc == 0 else "failed", "exit_code": sdd_rc}
+    suite = ({"status": "not_run", "exit_code": None} if result is None
+             else {"status": "passed" if rc == 0 else "failed", "exit_code": rc})
+    binding = run_record.observed_binding(
+        {**run_record.PLACEHOLDERS, "base": args.base}, cwd=ROOT, env=environ,
+        argv=run_record.argv_for_digest(run_record.process_argv(), drop=(args.record_out, args.record_nonce)))
+    record = run_record.make_record(
+        producer="verify_environment", nonce=args.record_nonce, binding=binding,
+        rows=result.rows if result is not None else {}, scopes=result.scopes if result is not None else {},
+        exit_code=rc, summary=summary, stages={"sdd_static": sdd, "offline_suite": suite},
+        extra={"unittest_counts": result.unittest_counts()} if result is not None else None)
+    run_record.write_record(args.record_out, record, once=True)
 
 
 def disabled_suite_fields(result):
@@ -92,7 +118,18 @@ def main(argv=None):
     parser.add_argument("--evidence-dir", metavar="DIR",
                         help="Requires --enable-suite-reuse: Task evidence directory for offline_suite reuse/evidence")
     parser.add_argument("--lock-home", metavar="DIR", help="Requires --evidence-dir: directory for the per-fingerprint lock")
+    parser.add_argument("--record-out", metavar="PATH",
+                        help="CI-EVID-001: write this run's run-record/1 here (requires --record-nonce)")
+    parser.add_argument("--record-nonce", metavar="HEX", help="32 lowercase hex chosen by the caller for this run")
     args = parser.parse_args(argv)
+    if (args.record_out is None) != (args.record_nonce is None):
+        parser.error("--record-out and --record-nonce go together")
+    if args.record_nonce is not None and not re.fullmatch(r"[0-9a-f]{32}", args.record_nonce):
+        parser.error("--record-nonce must be 32 lowercase hex")
+    if args.record_out is not None and args.enable_suite_reuse:
+        parser.error("--record-out is not supported with --enable-suite-reuse")
+    # The producer's environment as this run started (CI-EVID-001 rev3 E206 env_digest).
+    started_environ = dict(os.environ) if args.record_out is not None else None
     # 23rd review R2304: an option is given when it is not None; an empty value is an error.
     for flag, name in REUSE_ONLY_OPTIONS:
         value = getattr(args, name)
@@ -110,7 +147,11 @@ def main(argv=None):
     if args.base: command += ["--base", args.base]
     if args.ci: command += ["--ci"]
     checked = subprocess.run(command, cwd=ROOT, timeout=120)
-    if checked.returncode: return checked.returncode
+    if checked.returncode:
+        if args.record_out is not None:
+            sys.path[:0] = [str(ROOT / "src")]
+            _write_record(args, started_environ, sdd_rc=checked.returncode, rc=checked.returncode)
+        return checked.returncode
     # Environment inputs before any recorder additions; collected only for the opted-in
     # reuse feature (23rd review R2302: no input observation while it is off).
     environ = dict(os.environ) if args.enable_suite_reuse else None
@@ -121,9 +162,17 @@ def main(argv=None):
         from scripts import suite_reuse
         return suite_reuse.verify_main(args, environ, root=ROOT, run_suite=_run_suite, summarize=_summary,
                                        disabled_fields=disabled_suite_fields)
-    result = _run_suite()
-    print(json.dumps(_summary(result, **disabled_suite_fields(result)), sort_keys=True))
-    return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
+    if args.record_out is None:
+        result = _run_suite()
+        print(json.dumps(_summary(result, **disabled_suite_fields(result)), sort_keys=True))
+        return 0 if result.wasSuccessful() and result.testsRun > 0 else 1
+    from baton import run_record
+    result = _run_suite(recording=run_record)
+    summary = _summary(result, **disabled_suite_fields(result))
+    print(json.dumps(summary, sort_keys=True))
+    rc = 0 if result.wasSuccessful() and result.testsRun > 0 else 1
+    _write_record(args, started_environ, sdd_rc=0, result=result, summary=summary, rc=rc)
+    return rc
 
 
 if __name__ == "__main__":

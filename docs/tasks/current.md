@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-20 CI-EVID-001(D25 결과 소비자 구조화 기록 전환)
+
+- [TASK-CI-EVID-001](TASK-CI-EVID-001.md) in_progress L3, owner Claude, branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위): 계약 rev3. red on base `cae44c3`(13 tests F11/E2), 공용 모듈 보강 `3d88d8c`·`230be92`·`ad185a1`, 소비자 교체(공식 V3·선언 pytest/unittest·원격 run을 run-record/1과 rc로 판정, 확정 실패/불확실 구분). 독립 교차 검토·원격 CI not_run, D25 차단 유지. 결정 대기 D25-R·D26·D27·D28. CI-PAR G3/G4는 이 Task가 main에 반영될 때까지 보류.
+
 ## 현재 작업 — 2026-11-19 CI-VTIER verified 재승격
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(범위 조정 뒤 재승격): 공식 로컬 V3(`73ac42e`) 777 OK skip 0, 원격 Windows CI run `44537342217`(headSha `cad9203`) plan·3.11·3.12·gate success, Codex 18·19차 독립 검토 PASS_WITH_FINDINGS 지적 반영. 남은 위험 PR #17 comment 4624337778(TASK-SETTLE-RECOVERY-001 보류). 승격 커밋 CI·스레드 처리·병합은 보고와 사용자 결정으로 넘긴다.

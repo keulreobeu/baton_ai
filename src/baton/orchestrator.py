@@ -10,80 +10,98 @@ import sys
 import time
 import uuid
 
+from . import run_record
 from .contracts import HarnessError, safe, digest, encode
 from .isolation import check_scope, git, pack_context, prepare_worktree, repository_lock, snapshot
 from .managed import ACTIVE, ManagedStore
 
 
-# CI-VTIER-001 re-review N01: planner unittest checks record what actually ran through
-# unittest's own TestResult callbacks instead of parsing console text (test bodies can
-# print look-alike lines, and a prefix without a newline hides a real one).
-_RECORDED_UNITTEST = r'''
-import json, sys, unittest
-out, names = sys.argv[1], sys.argv[2:]
-record = {"schema": "unittest-record/1", "started": [], "passed": [], "failed": [], "skipped": []}
-class Result(unittest.TextTestResult):
-    def startTest(self, test):
-        record["started"].append(test.id()); super().startTest(test)
-    def addSuccess(self, test):
-        record["passed"].append(test.id()); super().addSuccess(test)
-    def addFailure(self, test, err):
-        record["failed"].append(test.id()); super().addFailure(test, err)
-    def addError(self, test, err):
-        record["failed"].append(test.id()); super().addError(test, err)
-    def addSkip(self, test, reason):
-        record["skipped"].append(test.id()); super().addSkip(test, reason)
-    def addSubTest(self, test, subtest, err):
-        if err is not None: record["failed"].append(test.id())
-        super().addSubTest(test, subtest, err)
-    def addExpectedFailure(self, test, err):
-        record["failed"].append(test.id()); super().addExpectedFailure(test, err)
-    def addUnexpectedSuccess(self, test):
-        record["failed"].append(test.id()); super().addUnexpectedSuccess(test)
-result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(
-    unittest.defaultTestLoader.loadTestsFromNames(names))
-record.update(tests_run=result.testsRun, failures=len(result.failures), errors=len(result.errors),
-              skipped_count=len(result.skipped), expected_failures=len(result.expectedFailures),
-              unexpected_successes=len(result.unexpectedSuccesses), successful=result.wasSuccessful())
-with open(out, "w", encoding="utf-8") as stream:
-    json.dump(record, stream)
-sys.exit(0 if result.wasSuccessful() else 1)
-'''
+# CI-EVID-001 AC-02/03/05/06: every record_required check runs a producer that writes one
+# run-record/1 into a fresh directory of its own; the record and the real rc are the only
+# evidence (console output is diagnostics, AC-04). Observed binding keys are named with
+# None placeholders, so a producer that copies its input instead of observing is refused.
+PLACEHOLDERS = run_record.PLACEHOLDERS
+PYTEST_DEFAULTS = {"PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_ADDOPTS": "",
+                   "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
 
 
-def read_unittest_record(path):
-    """The recorded run, or None when missing or malformed (never a pass)."""
-    try:
-        with open(path, encoding="utf-8") as stream:
-            record = json.load(stream)
-    except (OSError, ValueError):
+def child_environment(source_paths):
+    """The value of every run_record.ENV_KEYS a validation child gets (None = absent),
+    passed explicitly so the caller knows the environment its expected binding names."""
+    environment = {key: os.environ.get(key) for key in run_record.ENV_KEYS}
+    environment.update(PYTEST_DEFAULTS, PYTHONPATH=source_paths)
+    return environment
+
+
+class RecordedRun:
+    """One record_required execution: its argv with the record options, its fresh record
+    directory and the binding the caller expects (fixed before the run)."""
+
+    def __init__(self, producer, argv, tree, environment, *, base=None):
+        import tempfile
+        self.directory = tempfile.mkdtemp(prefix="baton-record-")
+        self.fresh = not os.listdir(self.directory)
+        self.path = os.path.join(self.directory, "record.json")
+        self.nonce = run_record.new_nonce()
+        self.producer, self.tree, self.environment = producer, tree, environment
+        self.given = dict(PLACEHOLDERS)
+        drop = ()
+        if producer == "verify_environment":
+            self.argv = [*argv, "--record-out", self.path, "--record-nonce", self.nonce]
+            self.given["base"] = base
+            drop = (self.path, self.nonce)
+        elif producer == "unittest":
+            # The shared recorder with the declared/planner unittest arguments unchanged.
+            self.argv = run_record.unittest_argv(argv[0], self.path, self.nonce, PLACEHOLDERS, argv[3:])
+            drop = run_record.unittest_run_values(self.argv)
+        else:
+            self.argv = [*argv[:3], "-p", "baton.pytest_record", f"--baton-record={self.path}",
+                         f"--baton-nonce={self.nonce}", "--baton-mode=declared",
+                         "--baton-binding=" + json.dumps(PLACEHOLDERS, sort_keys=True), *argv[3:]]
+        self.digest_argv = run_record.argv_for_digest(self.argv, drop)
+        self.expected = self.observe()
+        self.not_before = time.time() - 1
+
+    def observe(self):
+        return run_record.observed_binding(self.given, cwd=self.tree, env=self.environment, argv=self.digest_argv)
+
+    def read(self, returncode):
+        """(record, None) or (None, reason); the binding is observed again after the run."""
+        if not self.fresh:
+            return None, "stale"
+        declared_pytest = self.producer == "pytest"
+        record, reason = run_record.read_record(
+            self.path, self.nonce, self.expected, returncode, not_before=self.not_before,
+            producer=None if declared_pytest else self.producer, exclusive=True, binding_after=self.observe())
+        if declared_pytest:
+            if reason == "missing":
+                # The plugin could not load or refused this environment (AC-06).
+                return None, "record_unavailable"
+            if record is not None and record["producer"] not in ("pytest", "xdist"):
+                return None, "producer_mismatch"
+            if record is not None and (record.get("mode") != "declared" or record.get("violations")):
+                return None, "record_unavailable"
+            diag = (record or {}).get("diag") or {}
+            if record is not None and (diag.get("unclassified") or diag.get("unmapped_nodes")):
+                return None, "self_inconsistent"
+        return record, reason
+
+    def cleanup(self):
+        import shutil
+        shutil.rmtree(self.directory, ignore_errors=True)
+
+
+def read_unittest_record(path, *, nonce, binding, returncode, not_before=None, binding_after=None, exclusive=True):
+    """Compatibility view over run_record.read_record for a recorded unittest run: the
+    record with its unittest-record/1 count names, or None when it is no evidence."""
+    record, _ = run_record.read_record(path, nonce, binding, returncode, not_before=not_before, producer="unittest",
+                                       exclusive=exclusive, binding_after=binding_after)
+    if record is None:
         return None
-    lists = ("started", "passed", "failed", "skipped")
-    counts = ("tests_run", "failures", "errors", "skipped_count", "expected_failures", "unexpected_successes")
-    if not (isinstance(record, dict) and record.get("schema") == "unittest-record/1"
-            and all(isinstance(record.get(k), list) and all(isinstance(i, str) for i in record[k]) for k in lists)
-            and all(type(record.get(k)) is int and record[k] >= 0 for k in counts)
-            and type(record.get("successful")) is bool):
-        return None
-    # CI-VTIER-001 3rd review R01: the record must agree with itself. Deliberate forgery
-    # by the test code in the same process is accepted as CI-OPT-001 RA-4.
-    started, passed = record["started"], record["passed"]
-    if not (len(set(started)) == len(started) == record["tests_run"]
-            and len(set(passed)) == len(passed) and set(passed) <= set(started)
-            and len(record["skipped"]) == record["skipped_count"]
-            and len(record["failed"]) == (record["failures"] + record["errors"]
-                                          + record["expected_failures"] + record["unexpected_successes"])
-            and record["successful"] == (record["failures"] == 0 and record["errors"] == 0
-                                         and record["unexpected_successes"] == 0)):
-        return None
-    # 4th review R401: a batch with no failure, error, skip, expected failure or
-    # unexpected success must show a success for every test it started (a test whose
-    # result never arrived is not proven). Failed batches keep fixture errors as is.
-    clean = not (record["failures"] or record["errors"] or record["skipped_count"]
-                 or record["expected_failures"] or record["unexpected_successes"])
-    if clean and set(started) != set(passed):
-        return None
-    return record
+    counts = record["counts"]
+    return {**record, "tests_run": counts["tests_run"], "failures": counts["failures"], "errors": counts["errors"],
+            "skipped_count": counts["skipped"], "expected_failures": counts["expected_failures"],
+            "unexpected_successes": counts["unexpected_successes"]}
 
 
 def proven_tests(record):
@@ -137,21 +155,77 @@ def mark_state_changed(results):
     return results
 
 
-def official_v3_fields(checks, *, stopped=False):
-    """CI-VTIER-001 3rd review R02: an unresolved official V3 failure is kept in the Task
-    result apart from the latest validation. A V3 that failed sets it; only a complete,
-    passing V3 clears it; a stopped V3 leaves it as it was. {} when no V3 ran."""
+UNCERTAIN_REASONS = set(run_record.REASONS) | {"record_unavailable", "incomplete"}
+# rev3 E209: the fixed official_v3_uncertain form stays within this size; settlements keep
+# it free as headroom so a later uncertain verdict can still be stored.
+UNCERTAIN_LIMIT = 512
+
+
+def _item_verdict(item):
+    """A check's own verdict; a result stored before CI-EVID-001 is judged by its rc."""
+    verdict = item.get("verdict")
+    if verdict in {"passed", "failed", "uncertain", "stopped"}:
+        return verdict
+    return "passed" if item.get("exit_code") == 0 else "failed"
+
+
+def official_v3_verdict(checks, *, stopped=False):
+    """CI-EVID-001 AC-07 (rev3 E205): the one judgement of an official V3 aggregate, used by
+    every settlement and evidence path. None when no V3 ran; else (state, reason) with state
+    stopped / failed / uncertain / passed, the first matching row of the AC-07 table."""
+    planner = None
     for check in checks or []:
-        planner = check.get("planner") if isinstance(check, dict) else None
-        if isinstance(planner, dict) and planner.get("effective_tier") == "V3":
-            # 4th review R402: a V3 whose own process was stopped (pause, cancel or the
-            # Task time budget) is no result either.
-            if stopped or check.get("stop_reason") or validation_stop_reason(checks):
-                return {}
-            ok = (planner.get("actual_status") == "passed" and planner.get("execution_complete") is True
-                  and all(isinstance(c, dict) and c.get("exit_code") == 0 and not c.get("stop_reason") for c in checks))
-            return {"official_v3_unresolved": not ok}
-    return {}
+        candidate = check.get("planner") if isinstance(check, dict) else None
+        if isinstance(candidate, dict) and candidate.get("effective_tier") == "V3":
+            planner = candidate
+            break
+    if planner is None:
+        return None
+    items = [c for c in checks if isinstance(c, dict)]
+    items += [c for c in planner.get("executed_checks") or [] if isinstance(c, dict)]
+    # 1. A stop (pause, cancel, time budget) or a tree that changed while it ran (R503/R603).
+    if stopped or validation_stop_reason(checks) or any(i.get("stop_reason") or i.get("state_changed") for i in items):
+        return "stopped", None
+    verdicts = [(_item_verdict(i), i.get("record_reason")) for i in items]
+    # 2. A valid record (or an rc_only check) that says failure.
+    if any(v == "failed" for v, _ in verdicts):
+        return "failed", None
+    # 3. No valid record for a record_required check: never a pass, never a confirmed failure.
+    for v, why in verdicts:
+        if v == "uncertain":
+            return "uncertain", why if why in UNCERTAIN_REASONS else "missing"
+    # 4. Every record_required check valid and eligible, every rc_only check rc 0, complete.
+    if planner.get("actual_status") == "passed" and planner.get("execution_complete") is True:
+        return "passed", None
+    return "failed", None
+
+
+def uncertain_record(reason, *, candidate_hash=None, validation_hash=None):
+    """The fixed official_v3_uncertain form (rev3 E209): reason enum, two hashes, time."""
+    def hexdigest(value):
+        return value if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) else None
+    value = {"reason": reason if reason in UNCERTAIN_REASONS else "missing",
+             "candidate_hash": hexdigest(candidate_hash), "validation_hash": hexdigest(validation_hash),
+             "at": int(time.time())}
+    assert len(encode(value).encode()) <= UNCERTAIN_LIMIT
+    return value
+
+
+def official_v3_fields(checks, *, stopped=False, candidate_hash=None, validation_hash=None):
+    """CI-VTIER-001 3rd review R02 / CI-EVID-001 AC-07: the official V3 flags a result keeps
+    apart from the latest validation. A confirmed failure sets official_v3_unresolved (and
+    ends an uncertain state); an uncertain V3 records official_v3_uncertain and leaves the
+    failure flag and stored evidence as they are; only a complete passing V3 clears both;
+    a stopped V3 (or none) changes nothing ({})."""
+    verdict = official_v3_verdict(checks, stopped=stopped)
+    if verdict is None or verdict[0] == "stopped":
+        return {}
+    if verdict[0] == "failed":
+        return {"official_v3_unresolved": True, "official_v3_uncertain": None}
+    if verdict[0] == "uncertain":
+        return {"official_v3_uncertain": uncertain_record(verdict[1], candidate_hash=candidate_hash,
+                                                          validation_hash=validation_hash)}
+    return {"official_v3_unresolved": False, "official_v3_uncertain": None}
 
 
 def settled_validation(checks, *, stopped=False):
@@ -311,8 +385,9 @@ class Orchestrator:
         try:
             # CI-VTIER-001 9th review R901: as on the Orca path, a first step that keeps the
             # lease for the Wiki outcome reserves that outcome's space.
+            # CI-EVID-001 rev3 E209: room for a later official_v3_uncertain record as well.
             row = self.store.update(task, lease, state, result=result, release=not wiki_due, yield_to_control=True,
-                                    headroom=SETTLEMENT_HEADROOM if wiki_due else 0)
+                                    headroom=(SETTLEMENT_HEADROOM if wiki_due else 0) + UNCERTAIN_LIMIT)
         except HarnessError as exc:
             if str(exc) != "unsafe_payload": raise
             row, wiki_due = self._settle_unrecordable(task, lease, result, None, "result_unrecordable"), False
@@ -345,6 +420,8 @@ class Orchestrator:
         stored = self.store.get(task)["result"]
         compact = {"validation_passed": False, "validation_status": None, "reason": reason,
                    **({"official_v3_unresolved": True} if result.get("official_v3_unresolved") is True else {}),
+                   **({"official_v3_uncertain": result["official_v3_uncertain"]}
+                      if isinstance(result.get("official_v3_uncertain"), dict) else {}),
                    "validation": [], "changed_files": {}, "summary": None, "provider_events": [],
                    "resume_point": None, "wiki": wiki,
                    "candidate": None, "review_evidence": None, "integration_evidence": None,
@@ -571,7 +648,7 @@ class Orchestrator:
                         batch.append(target); size += len(target) + 1
                     if batch: batches.append(batch)
                     for batch in batches:
-                        # Runs through _RECORDED_UNITTEST; the recorded IDs are checked
+                        # Runs through the shared recorded unittest runner; the recorded IDs are checked
                         # against the plan below (re-review N01).
                         internal.append({"argv": ["python", "-m", "unittest", *batch], "acs": [], "recorded": True})
                 if tier == "V2":
@@ -596,7 +673,8 @@ class Orchestrator:
                                     "exit_code": code, "test_count": 0, "skipped": 0,
                                     "expected_failures": 0, "unexpected_successes": 0,
                                     "output": "direct_file_passed" if code == 0 else "direct_file_failed",
-                                    "stop_reason": bounded_stop(), "_planner_internal": True})
+                                    "stop_reason": bounded_stop(), "evidence_kind": "rc_only",
+                                    "verdict": "passed" if code == 0 else "failed", "_planner_internal": True})
             # Retain every declared Task/AC check, including generic commands.
             checks.extend(internal)
         internal_ids = {id(check) for check in internal}
@@ -604,14 +682,15 @@ class Orchestrator:
         for check in checks:
             argv = list(check["argv"])
             if argv[0] == "python": argv[0] = sys.executable
-            if argv[1:3] == ["-m", "pytest"]:
+            pytest_check, unittest_check = argv[1:3] == ["-m", "pytest"], argv[1:3] == ["-m", "unittest"]
+            if pytest_check:
                 argv[3:3] = ["-o", "addopts=", "-p", "no:cacheprovider"]
             from .runtime import project_paths
             source_paths = os.pathsep.join(str(tree / p) for p in project_paths(tree)["source_roots"] + ["."])
             if local_plan is not None and bounded_stop():
                 results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": -1,
                                 "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
-                                "output": "validation_stopped", "stop_reason": bounded_stop(),
+                                "output": "validation_stopped", "stop_reason": bounded_stop(), "verdict": "stopped",
                                 "_planner_internal": id(check) in internal_ids})
                 break
             timeout = min(300, task["execution"]["timeout_seconds"])
@@ -619,63 +698,63 @@ class Orchestrator:
                 # CI-VTIER-001 review P2: planner checks (a V2 module run can exceed 300 s)
                 # are bounded by the Task's remaining total time, like the official V3.
                 timeout = max(0.05, total - (time.monotonic() - started))
-            record = None
-            if check.get("recorded"):
-                import shutil
-                import tempfile
-                record_dir = tempfile.mkdtemp(prefix="baton-unittest-")
-                record_path = os.path.join(record_dir, "record.json")
-                argv = [sys.executable, "-X", "utf8", "-c", _RECORDED_UNITTEST, record_path, *argv[3:]]
+            # CI-EVID-001 AC-05/06 (rev3 E201): record_required checks are judged by their
+            # run-record/1 and rc only; every other check by its rc (rc_only).
+            producer = ("verify_environment" if check.get("official")
+                        else "unittest" if check.get("recorded") or unittest_check
+                        else "pytest" if pytest_check else None)
+            environment = child_environment(source_paths)
+            run = RecordedRun(producer, argv, tree, environment, base=target_base) if producer else None
+            record, record_reason = None, None
             try:
-                rc, out, err, reason = run_process(argv, tree, "", timeout, bounded_stop if local_plan else stop,
-                                                  env_overrides={"PYTHONPATH": source_paths, "PYTHONDONTWRITEBYTECODE": "1"})
-                if check.get("recorded"):
-                    record = read_unittest_record(record_path)
+                rc, out, err, reason = run_process(
+                    run.argv if run else argv, tree, "", timeout, bounded_stop if local_plan else stop,
+                    env_overrides={k: v for k, v in environment.items() if v is not None},
+                    env_remove=[k for k, v in environment.items() if v is None])
+                if run and not reason:
+                    record, record_reason = run.read(rc if rc is not None else -1)
             finally:
-                if check.get("recorded"):
-                    shutil.rmtree(record_dir, ignore_errors=True)
+                if run:
+                    run.cleanup()
+            # AC-04: console output is diagnostics only; it never decides a result or count.
             output = out + "\n" + err
-            counts = re.findall(r"Ran (\d+) tests?", output) if argv[1:3] == ["-m", "unittest"] else re.findall(r"(\d+) passed", output) if argv[1:3] == ["-m", "pytest"] else []
-            skipped = sum(int(n) for n in re.findall(r"(?:skipped[= ]|skip=)(\d+)", output))
-            skipped += sum(int(n) for n in re.findall(r"(\d+) skipped", output))
-            expected = sum(int(n) for n in re.findall(r"expected failures[= ](\d+)", output))
-            expected += sum(int(n) for n in re.findall(r"(\d+) xfailed", output))
-            unexpected = sum(int(count) for pair in re.findall(r"(\d+) xpassed|unexpected successes[= ](\d+)", output) for count in pair if count)
             code = rc if rc is not None else -1
-            if check.get("recorded"):
-                # Counts come from the record only; a missing/malformed record is a failure.
-                counts = [str(record["tests_run"])] if record else []
-                skipped = record["skipped_count"] if record else 0
-                expected = record["expected_failures"] if record else 0
-                unexpected = record["unexpected_successes"] if record else 0
-                if record is None or not record["successful"] or record["tests_run"] <= 0 or skipped or expected or unexpected:
-                    code = code or 2
-            if check.get("official"):
-                summary = None
-                for line in output.splitlines():
-                    try:
-                        value = json.loads(line)
-                        if isinstance(value, dict) and value.get("scope") == "offline_tests_only": summary = value
-                    except (ValueError, TypeError):
-                        continue
-                suite = official_suite(summary)
-                valid = (summary is not None and summary.get("status") == "PASS"
-                         and summary.get("verified_evidence_eligible") is True
-                         and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
-                         and all(type(summary.get(k)) is int and summary[k] == 0
-                                 for k in ("failures", "errors", "skipped", "expected_failures"))
-                         and suite is not None and suite["suite_execution"] in {"executed", "reused"})
-                if not valid: code = 2
-                counts = [str(summary["tests_run"])] if summary and type(summary.get("tests_run")) is int else []
-                skipped = summary.get("skipped", 0) if summary else 0
-                expected = summary.get("expected_failures", 0) if summary else 0
-            if argv[1:3] in (["-m", "unittest"], ["-m", "pytest"]) and (sum(int(n) for n in counts) <= 0 or skipped or expected or unexpected):
-                code = 2
+            fields = {"test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0}
+            suite = None
+            # As before CI-EVID-001: an official or declared test check without valid,
+            # eligible evidence reports 2; a planner batch keeps its own nonzero rc.
+            no_evidence_is_2 = bool(check.get("official")) or not check.get("recorded")
+            if run is None:
+                verdict = "passed" if code == 0 else "failed"
+            elif reason:
+                verdict = "stopped"
+            elif record is None:
+                verdict = "uncertain"
+                code = 2 if no_evidence_is_2 else code or 2
+            else:
+                counts = record["counts"]
+                fields = {"test_count": counts["tests_run"], "skipped": counts["skipped"],
+                          "expected_failures": counts["expected_failures"],
+                          "unexpected_successes": counts["unexpected_successes"]}
+                ok = code == 0 and run_record.eligible(record) and "not_run" not in record["outcomes"].values()
+                if check.get("official"):
+                    summary = record.get("summary")
+                    suite = official_suite(summary)
+                    ok = (ok and record["stages"]["sdd_static"]["status"] == "passed" and isinstance(summary, dict)
+                          and summary.get("status") == "PASS" and summary.get("verified_evidence_eligible") is True
+                          and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
+                          and all(type(summary.get(k)) is int and summary[k] == 0
+                                  for k in ("failures", "errors", "skipped", "expected_failures"))
+                          and suite is not None and suite["suite_execution"] in {"executed", "reused"})
+                verdict = "passed" if ok else "failed"
+                if not ok:
+                    code = 2 if no_evidence_is_2 else code or 2
             if reason and local_plan is not None:
                 code = code or 2
-            results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": code,
-                            "test_count": int(counts[-1]) if counts else 0, "skipped": skipped, "expected_failures": expected, "unexpected_successes": unexpected,
-                            "output": persisted_text(output)[-6000:], "stop_reason": reason})
+            results.append({"argv": check["argv"], "acs": check["acs"], "exit_code": code, **fields,
+                            "output": persisted_text(output)[-6000:], "stop_reason": reason,
+                            "evidence_kind": "record_required" if run else "rc_only", "verdict": verdict,
+                            **({"record_reason": record_reason} if run else {})})
             if check.get("official"):
                 results[-1]["suite"] = suite
             if local_plan is not None:
@@ -710,7 +789,8 @@ class Orchestrator:
                 coverage = {"argv": ["required_tests_executed"], "acs": [], "exit_code": 2 if missing else 0,
                             "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0,
                             "output": ("required_tests_not_executed: " + " ".join(missing[:20])) if missing
-                            else "required_tests_executed", "stop_reason": None, "_planner_internal": True}
+                            else "required_tests_executed", "stop_reason": None, "evidence_kind": "rc_only",
+                            "verdict": "failed" if missing else "passed", "_planner_internal": True}
                 results.append(coverage)
             # evidence.py intentionally requires one result per declared check.
             # Keep planner checks in separate metadata, propagate their failures

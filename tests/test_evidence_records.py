@@ -7,7 +7,7 @@ No model call: fake process runners, synthetic scripts and real unittest subproc
 only. Declared pytest cases use a fake runner because the official suite has no pytest
 (the real plugin run is separate auxiliary evidence).
 """
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from copy import deepcopy
 import io
 import json
@@ -49,19 +49,17 @@ def option(argv, flag):
     return argv[argv.index(flag) + 1] if flag in argv else None
 
 
-def git_or_none(root, *args):
-    try:
-        done = subprocess.run(["git", "--no-optional-locks", *args], cwd=root, capture_output=True, text=True, timeout=30)
-    except OSError:
-        return None
-    return done.stdout.strip() if done.returncode == 0 else None
+def child_env(kwargs):
+    """The environment a fake process was given: the caller passes every run_record.ENV_KEYS
+    (env_overrides for set values, env_remove for absent ones)."""
+    overrides = kwargs.get("env_overrides") or {}
+    return {key: overrides.get(key) for key in run_record.ENV_KEYS}
 
 
-def observed(root, **extra):
-    """What a real producer process would observe for its binding."""
-    return {"python": sys.version.split()[0], "platform": sys.platform + "-" + platform.machine(),
-            "head": git_or_none(root, "rev-parse", "HEAD"), "tree": git_or_none(root, "rev-parse", "HEAD^{tree}"),
-            **extra}
+def producer_binding(root, argv, kwargs, given, drop=()):
+    """What a conforming producer observes (the shared run_record definition, rev3 E206)."""
+    return run_record.observed_binding(given, cwd=root, env=child_env(kwargs),
+                                       argv=run_record.argv_for_digest(argv, drop))
 
 
 def summary(**changes):
@@ -81,30 +79,34 @@ def suite_rows(passed, skipped=0, expected=0):
     return rows
 
 
-def write_v3_record(argv, root, value, exit_code):
+def write_v3_record(argv, root, value, exit_code, kwargs):
     """The record a real verify_environment --record-out run would write for ``value``."""
     path, nonce = option(argv, "--record-out"), option(argv, "--record-nonce")
     if path is None:
         return
     rows = suite_rows(value["tests_run"] - value["skipped"] - value["expected_failures"],
                       value["skipped"], value["expected_failures"])
-    record = run_record.make_record(producer="verify_environment", nonce=nonce,
-                                    binding=observed(root, base=option(argv, "--base")),
-                                    rows=rows, scopes={}, exit_code=exit_code, summary=value)
+    binding = producer_binding(root, argv, kwargs, {**run_record.PLACEHOLDERS, "base": option(argv, "--base")},
+                               drop=(path, nonce))
+    stages = {"sdd_static": {"status": "passed", "exit_code": 0},
+              "offline_suite": {"status": "passed" if exit_code == 0 else "failed", "exit_code": exit_code}}
+    record = run_record.make_record(producer="verify_environment", nonce=nonce, binding=binding,
+                                    rows=rows, scopes={}, exit_code=exit_code, summary=value, stages=stages)
     run_record.write_record(path, record)
 
 
-def write_pytest_record(argv, root, rows, exit_code):
-    path, nonce = option(argv, "--baton-record"), option(argv, "--baton-nonce")
-    if path is None:
+def write_pytest_record(argv, root, rows, exit_code, kwargs):
+    argv = [str(a) for a in argv]
+    found = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in argv if a.startswith("--baton-") and "=" in a}
+    if "--baton-record" not in found:
         return
-    given = json.loads(option(argv, "--baton-binding") or "{}")
-    binding = {**given, **{k: v for k, v in observed(root).items() if k in given or k in ("python", "platform")}}
-    record = run_record.make_record(producer="pytest", nonce=nonce, binding=binding, rows=rows, scopes={},
-                                    exit_code=exit_code,
-                                    extra={"violations": [], "diag": {"crashes": [], "unclassified": [],
-                                                                      "collection_errors": [], "unmapped_nodes": []}})
-    run_record.write_record(path, record)
+    binding = producer_binding(root, argv, kwargs, json.loads(found.get("--baton-binding", "{}")))
+    record = run_record.make_record(producer="pytest", nonce=found["--baton-nonce"], binding=binding, rows=rows,
+                                    scopes={}, exit_code=exit_code,
+                                    extra={"mode": found.get("--baton-mode"), "violations": [], "plugins": [],
+                                           "diag": {"crashes": [], "unclassified": [], "collection_errors": [],
+                                                    "unmapped_nodes": []}})
+    run_record.write_record(found["--baton-record"], record)
 
 
 class FakeStore:
@@ -182,7 +184,7 @@ class C1OfficialV3InternalCheck(ValidationCase):
     def runner(self, official, stdout, stderr, exit_code=0):
         def run(argv, *args, **kwargs):
             if any(str(a).endswith("verify_environment.py") for a in argv):
-                write_v3_record(argv, self.root, official, exit_code)
+                write_v3_record(argv, self.root, official, exit_code, kwargs)
                 return exit_code, stdout, stderr, None
             return 0, "", "", None
         return run
@@ -224,7 +226,7 @@ class C2DeclaredPytest(ValidationCase):
 
     def runner(self, stdout, stderr, rows, exit_code=0):
         def run(argv, *args, **kwargs):
-            write_pytest_record(argv, self.root, rows, exit_code)
+            write_pytest_record(argv, self.root, rows, exit_code, kwargs)
             return exit_code, stdout, stderr, None
         return run
 
@@ -291,7 +293,7 @@ class C4RemoteRun(unittest.TestCase):
 
     def script(self, official, after):
         return textwrap.dedent(f"""\
-            import json, subprocess, sys
+            import json, os, subprocess, sys
             sys.path.insert(0, {str(ROOT / "src")!r})
             from baton import run_record
             official = {official!r}
@@ -303,10 +305,14 @@ class C4RemoteRun(unittest.TestCase):
                 passed = official["tests_run"] - official["skipped"]
                 rows = {{"t.T.p%d" % i: {{"started": True, "events": ["pass"]}} for i in range(passed)}}
                 rows.update({{"t.T.s%d" % i: {{"started": True, "events": ["skip"]}} for i in range(official["skipped"])}})
-                binding = run_record.observed_binding({{"head": None, "tree": None}})
+                binding = run_record.observed_binding(
+                    {{**run_record.PLACEHOLDERS, "base": None}}, env=os.environ,
+                    argv=run_record.argv_for_digest(run_record.process_argv(), drop=(out, nonce)))
+                stages = {{"sdd_static": {{"status": "passed", "exit_code": 0}},
+                          "offline_suite": {{"status": "passed", "exit_code": 0}}}}
                 run_record.write_record(out, run_record.make_record(
                     producer="verify_environment", nonce=nonce, binding=binding, rows=rows, scopes={{}},
-                    exit_code=0, summary=official))
+                    exit_code=0, summary=official, stages=stages))
             {after}
             raise SystemExit(0)
             """)
@@ -382,12 +388,17 @@ class C5EvidenceInvalidation(ValidationCase):
         path = option(argv, "--record-out")
         if path:
             Path(path).write_text('{"schema": "run-record/1", "comp', encoding="utf-8")
-        return 1, "", "", None
+        return (1 if path else 0), "", "", None
+
+    @staticmethod
+    def missing(argv, *args, **kwargs):
+        """The verifier dies before writing anything; the declared check passes."""
+        return (1, "", "Traceback: interrupted\n", None) if option(argv, "--record-out") else (0, "", "", None)
 
     def test_c5a_missing_or_corrupt_record_keeps_evidence_and_refuses_recording(self):
         """C5-a evidence_loss on base: review and integration evidence were removed."""
         from baton.orchestrator import official_v3_fields
-        for label, runner in (("missing", lambda argv, *a, **k: (1, "", "Traceback: interrupted\n", None)),
+        for label, runner in (("missing", self.missing),
                               ("corrupt", self.corrupt)):
             with self.subTest(record=label):
                 result = self.v3(runner)
@@ -404,6 +415,441 @@ class C5EvidenceInvalidation(ValidationCase):
                "worktree": str(self.root), "result": deepcopy(store.result)}
         with self.assertRaisesRegex(HarnessError, "official_v3_uncertain"):
             evidence.approval_proof(store, row, "operator:approver")
+
+
+# --------------------------------------------------------------------------- AC-05 verify_environment record
+
+def synthetic_case(behavior):
+    class Case(unittest.TestCase):
+        def runTest(self):
+            if behavior == "fail":
+                self.fail("synthetic")
+            if behavior == "skip":
+                self.skipTest("synthetic")
+    return Case()
+
+
+class VerifyEnvironmentRecordTests(unittest.TestCase):
+    """AC-05: --record-out/--record-nonce add a run-record/1 and change nothing else."""
+
+    def main(self, argv, suite_items, sdd_rc=0):
+        from scripts import verify_environment as verify
+        stdout = io.StringIO()
+        with patch.object(verify, "prepare_git_path"), \
+                patch.object(verify.subprocess, "run", return_value=subprocess.CompletedProcess([], sdd_rc)), \
+                patch.object(verify.unittest.defaultTestLoader, "discover",
+                             return_value=unittest.TestSuite(list(suite_items))), \
+                patch.dict(os.environ), patch.object(sys, "path", list(sys.path)), \
+                redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+            code = verify.main(argv)
+        return code, stdout.getvalue()
+
+    def test_record_mode_keeps_stdout_rc_and_writes_a_valid_record(self):
+        for behavior in ("pass", "fail", "skip"):
+            with self.subTest(behavior=behavior), tempfile.TemporaryDirectory() as directory:
+                plain = self.main(["--base", "a" * 40], [synthetic_case(behavior)])
+                path, nonce = os.path.join(directory, "record.json"), run_record.new_nonce()
+                recorded = self.main(["--base", "a" * 40, "--record-out", path, "--record-nonce", nonce],
+                                     [synthetic_case(behavior)])
+                self.assertEqual(recorded, plain)                    # golden: stdout and rc unchanged
+                record, reason = run_record.read_record(path, nonce, {"base": "a" * 40}, recorded[0],
+                                                        producer="verify_environment", exclusive=True)
+                self.assertIsNone(reason)
+                summary = json.loads(plain[1])
+                self.assertEqual(record["summary"], summary)
+                self.assertEqual(record["counts"], record["unittest_counts"])
+                self.assertEqual(record["stages"]["sdd_static"], {"status": "passed", "exit_code": 0})
+                self.assertEqual(record["stages"]["offline_suite"]["status"], "passed" if plain[0] == 0 else "failed")
+                self.assertEqual(run_record.eligible(record), behavior == "pass")
+                self.assertEqual(set(record["binding"]) >= {"head", "tree", "worktree_digest", "env_digest",
+                                                            "argv_digest", "python", "platform", "base"}, True)
+
+    def test_sdd_static_failure_is_a_recorded_confirmed_failure(self):
+        """rev2 B2: sdd_static failure writes stages.sdd_static=failed, offline_suite=not_run."""
+        with tempfile.TemporaryDirectory() as directory:
+            path, nonce = os.path.join(directory, "record.json"), run_record.new_nonce()
+            self.assertEqual(self.main([], [synthetic_case("pass")], sdd_rc=7), (7, ""))     # golden rc
+            code, stdout = self.main(["--record-out", path, "--record-nonce", nonce], [synthetic_case("pass")],
+                                     sdd_rc=7)
+            self.assertEqual((code, stdout), (7, ""))
+            record, reason = run_record.read_record(path, nonce, {}, 7, producer="verify_environment", exclusive=True)
+            self.assertIsNone(reason)
+            self.assertEqual(record["stages"], {"sdd_static": {"status": "failed", "exit_code": 7},
+                                                "offline_suite": {"status": "not_run", "exit_code": None}})
+            self.assertIsNone(record["summary"])
+
+    def test_record_options_are_checked(self):
+        for argv in (["--record-out", "x"], ["--record-nonce", "0" * 32], ["--record-out", "x", "--record-nonce", "XYZ"],
+                     ["--record-out", "x", "--record-nonce", "0" * 32, "--enable-suite-reuse", "--readset-out", "r"]):
+            with self.subTest(argv=argv), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                self.main(argv, [])
+            self.assertEqual(raised.exception.code, 2)
+
+
+# --------------------------------------------------------------------------- AC-07 verdict table (E201/E205)
+
+def item(verdict, *, kind="record_required", reason=None, exit_code=None, stop=None, changed=False, argv=None):
+    value = {"argv": argv or ["python", "-m", "unittest"], "acs": [], "evidence_kind": kind, "verdict": verdict,
+             "exit_code": (0 if verdict == "passed" else 2) if exit_code is None else exit_code,
+             "stop_reason": stop, "test_count": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0}
+    if kind == "record_required":
+        value["record_reason"] = reason
+    if changed:
+        value["state_changed"] = True
+    return value
+
+
+def v3(*nested, declared=None):
+    declared = declared or item("passed", kind="rc_only", argv=["python", "-c", "pass"])
+    failed = any(n["exit_code"] != 0 or n.get("stop_reason") for n in nested) or declared["exit_code"] != 0
+    declared = dict(declared, planner={"effective_tier": "V3", "executed_checks": list(nested),
+                                       "execution_complete": not any(n.get("stop_reason") for n in nested),
+                                       "actual_status": "failed" if failed else "passed"})
+    if failed and declared["exit_code"] == 0:
+        declared["exit_code"] = 2            # propagated, as validate does
+    return [declared]
+
+
+class VerdictTableTests(unittest.TestCase):
+    def verdict(self, checks):
+        from baton.orchestrator import official_v3_verdict
+        return official_v3_verdict(checks)
+
+    def test_each_row_and_precedence(self):
+        from baton.orchestrator import official_v3_fields
+        ok = item("passed")
+        cases = {
+            "1 stop": (v3(item("stopped", stop="timeout")), ("stopped", None)),
+            "1 state_changed": (v3(item("passed", stop="validation_state_changed", changed=True, exit_code=2)),
+                                ("stopped", None)),
+            "2 record failure": (v3(item("failed")), ("failed", None)),
+            "2 rc_only compileall": (v3(ok, item("failed", kind="rc_only", argv=["python", "-m", "compileall"])),
+                                     ("failed", None)),
+            "2 rc_only git diff --check": (v3(ok, item("failed", kind="rc_only", argv=["git", "diff", "--check"])),
+                                           ("failed", None)),
+            "3 uncertain": (v3(item("uncertain", reason="missing")), ("uncertain", "missing")),
+            "3 record_unavailable": (v3(item("uncertain", reason="record_unavailable")),
+                                     ("uncertain", "record_unavailable")),
+            "2 beats 3": (v3(item("uncertain", reason="corrupt"), item("failed")), ("failed", None)),
+            "3 beats 4": (v3(ok, item("uncertain", reason="nonce_mismatch")), ("uncertain", "nonce_mismatch")),
+            "4 pass": (v3(ok, item("passed", kind="rc_only", argv=["python", "-m", "compileall"])), ("passed", None)),
+            "legacy result without verdict": (v3({"argv": ["x"], "exit_code": 2, "stop_reason": None}), ("failed", None)),
+        }
+        for label, (checks, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self.verdict(checks), expected)
+        self.assertIsNone(self.verdict([item("failed")]))                     # no V3 planner
+        self.assertEqual(official_v3_fields(cases["1 stop"][0]), {})
+        self.assertEqual(official_v3_fields(cases["2 record failure"][0]),
+                         {"official_v3_unresolved": True, "official_v3_uncertain": None})
+        self.assertEqual(official_v3_fields(cases["4 pass"][0]),
+                         {"official_v3_unresolved": False, "official_v3_uncertain": None})
+        uncertain = official_v3_fields(cases["3 uncertain"][0])
+        self.assertEqual(set(uncertain), {"official_v3_uncertain"})           # failure flag left as it is
+        self.assertEqual(uncertain["official_v3_uncertain"]["reason"], "missing")
+
+    def test_uncertainty_cannot_hide_a_confirmed_failure_or_pass(self):
+        """AC-07 bypass: a failed check plus a damaged record is still failed; an uncertain
+        aggregate is never a pass of the validation either."""
+        checks = v3(item("failed"), item("uncertain", reason="corrupt"))
+        self.assertEqual(self.verdict(checks)[0], "failed")
+        checks = v3(item("uncertain", reason="corrupt"))
+        self.assertNotEqual(checks[0]["exit_code"], 0)
+
+    def test_uncertain_record_is_fixed_and_bounded(self):
+        """rev3 E209: reason enum, two hashes and a time; at most 512 bytes."""
+        from baton.contracts import encode
+        from baton.orchestrator import UNCERTAIN_LIMIT, uncertain_record
+        value = uncertain_record("summary_mismatch", candidate_hash="a" * 64, validation_hash="b" * 64)
+        self.assertEqual(set(value), {"reason", "candidate_hash", "validation_hash", "at"})
+        self.assertLessEqual(len(encode(value).encode()), UNCERTAIN_LIMIT)
+        self.assertEqual(uncertain_record("not a reason " * 100, candidate_hash="x" * 999)["reason"], "missing")
+        self.assertIsNone(uncertain_record("missing", candidate_hash="x" * 999)["candidate_hash"])
+
+    def test_settlement_reserves_room_for_a_later_uncertain_record(self):
+        """rev3 E209: a settlement keeps UNCERTAIN_LIMIT bytes free (BLOCKED when it cannot)."""
+        from types import SimpleNamespace
+        from baton.orchestrator import UNCERTAIN_LIMIT
+        seen = {}
+        def update(task, lease, state, **kwargs):
+            seen.update(kwargs)
+            return {"state": state}
+        store = SimpleNamespace(update=update, observe_idle_state=lambda task: None, export=lambda task: {})
+        Orchestrator(store, providers={}).finish("T", "lease", "FAILED", validation_passed=False)
+        self.assertEqual(seen["headroom"], UNCERTAIN_LIMIT)
+
+
+class DeclaredPytestWithoutRecordTests(ValidationCase):
+    def test_no_plugin_record_is_record_unavailable_and_the_declared_argv_is_kept(self):
+        """AC-06: rc 0 with no plugin record (plugin not importable or refused) is never a pass."""
+        result = self.declared(["python", "-m", "pytest", "t.py"], lambda *a, **k: (0, "5 passed", "", None))
+        self.assertEqual(result[0]["argv"], ["python", "-m", "pytest", "t.py"])
+        self.assertEqual((result[0]["verdict"], result[0]["record_reason"]), ("uncertain", "record_unavailable"))
+        self.assertNotEqual(result[0]["exit_code"], 0)
+        self.assertEqual(result[0]["test_count"], 0)
+
+
+class RcOnlyChecksTests(ValidationCase):
+    """rev3 E201: compileall and git diff --check are judged by rc only inside a V3."""
+
+    def test_rc_only_pass_and_confirmed_failure(self):
+        from baton.orchestrator import official_v3_fields
+        self.task["validation"] = [{"argv": ["python", "-m", "compileall", "-q", "src"], "acs": ["AC1"]},
+                                   {"argv": ["git", "diff", "--check"], "acs": ["AC1"]}]
+        official = summary(tests_run=3)
+        for rc, expected in ((0, {"official_v3_unresolved": False, "official_v3_uncertain": None}),
+                             (1, {"official_v3_unresolved": True, "official_v3_uncertain": None})):
+            def run(argv, *args, **kwargs):
+                if any(str(a).endswith("verify_environment.py") for a in argv):
+                    write_v3_record(argv, self.root, official, 0, kwargs)
+                    return 0, "", "", None
+                return (rc if argv[0] == "git" else 0), "", "", None
+            with self.subTest(rc=rc):
+                result = self.v3(run)
+                self.assertEqual([r["evidence_kind"] for r in result], ["rc_only", "rc_only"])
+                self.assertEqual(official_v3_fields(result), expected)
+
+
+# --------------------------------------------------------------------------- AC-07 entry points (E205)
+
+class EntryPointTests(unittest.TestCase):
+    """Every entry point applies official_v3_verdict the same way (real ManagedStore)."""
+    from tests.test_managed_harness import ManagedHarnessTests as _fixture
+    setUp, runner, set_result = _fixture.setUp, _fixture.runner, _fixture.set_result
+    del _fixture
+
+    def checks(self, state):
+        counted = dict(item("passed", kind="rc_only", argv=["python", "-c", "pass"]), test_count=1, acs=["AC1"])
+        return {"passed": v3(item("passed"), declared=counted), "failed": v3(item("failed")),
+                "uncertain": v3(item("uncertain", reason="corrupt")),
+                "stopped": v3(item("stopped", stop="timeout"))}[state]
+
+    def result(self, task="TASK-ONE"):
+        return self.store.get(task)["result"]
+
+    def events(self, prefix):
+        return [e for e in self.store.events("TASK-ONE") if e["kind"].startswith(prefix)]
+
+    def test_verify_records_each_state(self):
+        from baton.orchestrator import Orchestrator as Runner
+        runner = self.runner()
+        self.assertEqual(runner.run("TASK-ONE")["state"], "REVIEW_REQUIRED")
+        self.set_result(state="FAILED", official_v3_unresolved=True)
+        with patch.object(Runner, "validate", lambda *a, **k: self.checks("uncertain")):
+            runner._verify("TASK-ONE")
+        result = self.result()
+        self.assertIs(result["official_v3_unresolved"], True)                 # left as it was
+        self.assertEqual(result["official_v3_uncertain"]["reason"], "corrupt")
+        self.assertEqual([e["kind"] for e in self.events("validation_uncertain:")], ["validation_uncertain:corrupt"])
+        self.assertIs(result["validation_passed"], False)
+        self.set_result(state="FAILED")
+        with patch.object(Runner, "validate", lambda *a, **k: self.checks("stopped")):
+            runner._verify("TASK-ONE")
+        self.assertEqual(self.result()["official_v3_uncertain"]["reason"], "corrupt")   # a stop changes nothing
+        self.set_result(state="FAILED")
+        with patch.object(Runner, "validate", lambda *a, **k: self.checks("passed")):
+            runner._verify("TASK-ONE")
+        result = self.result()
+        self.assertIs(result["official_v3_unresolved"], False)
+        self.assertNotIn("official_v3_uncertain", result)                     # cleared by a pass
+        self.set_result(state="FAILED", official_v3_uncertain={"reason": "missing"})
+        with patch.object(Runner, "validate", lambda *a, **k: self.checks("failed")):
+            runner._verify("TASK-ONE")
+        result = self.result()
+        self.assertIs(result["official_v3_unresolved"], True)
+        self.assertNotIn("official_v3_uncertain", result)                     # a failure ends uncertainty
+
+    def test_control_override_keeps_the_stored_uncertain_value(self):
+        """R402 migration: a settlement turned PAUSED/CANCELLED by a control drops new flags."""
+        stored = {"reason": "missing", "candidate_hash": None, "validation_hash": None, "at": 1}
+        self.set_result(state="READY", official_v3_uncertain=stored)
+        lease = self.store.claim("TASK-ONE")["lease"]
+        self.store.control("TASK-ONE", "cancel")
+        new = {"reason": "corrupt", "candidate_hash": None, "validation_hash": None, "at": 2}
+        row = self.store.update("TASK-ONE", lease, "FAILED", result={"official_v3_uncertain": new,
+                                                                    "validation_passed": False},
+                                release=True, yield_to_control=True)
+        self.assertEqual(row["state"], "CANCELLED")
+        self.assertEqual(self.result()["official_v3_uncertain"], stored)
+
+    def gate(self, state, row=None, note_row=None):
+        from baton import evidence
+        row = row or self.store.get("TASK-ONE")
+        with patch.object(Orchestrator, "validate", lambda *a, **k: self.checks(state)):
+            return evidence._checks(self.store, row, self.root, note_row=note_row)
+
+    def test_evidence_gate_each_state_and_approval(self):
+        from baton import evidence
+        from baton.contracts import HarnessError
+        kept = {"review_evidence": {"kept": "review"}, "integration_evidence": {"kept": "integration"}}
+        self.set_result(official_v3_unresolved=False, validation_passed=True, **kept)
+        with self.assertRaisesRegex(HarnessError, "official_v3_uncertain"):
+            self.gate("uncertain")
+        result = self.result()
+        self.assertEqual({k: result[k] for k in kept}, kept)                   # evidence kept (C5-a)
+        self.assertIs(result["official_v3_unresolved"], False)
+        self.assertEqual(result["official_v3_uncertain"]["reason"], "corrupt")
+        self.assertTrue(self.events("validation_uncertain:corrupt"))
+        # Kept evidence approves nothing: pre-check and the approval transaction (C5-b).
+        with self.assertRaisesRegex(HarnessError, "official_v3_uncertain"):
+            evidence.approval_proof(self.store, self.store.get("TASK-ONE"), "reviewer")
+        with self.assertRaisesRegex(HarnessError, "official_v3_uncertain"):
+            self.store._approve("TASK-ONE", "reviewer", self.store.get("TASK-ONE"), "proof")
+        # Stopped: refused while still uncertain; nothing changes.
+        with self.assertRaisesRegex(HarnessError, "official_v3_uncertain"):
+            self.gate("stopped")
+        self.assertEqual(self.result()["official_v3_uncertain"]["reason"], "corrupt")
+        # A new valid passing V3 is the only way out (here it reaches the AC coverage check).
+        checks = self.gate("passed")
+        row = self.store.get("TASK-ONE")
+        evidence._write(self.store, row, "review_evidence", {"checks": checks})
+        self.assertNotIn("official_v3_uncertain", self.result())
+        self.assertIs(self.result()["official_v3_unresolved"], False)
+        # A confirmed failure removes the evidence (R504) and ends uncertainty.
+        self.set_result(official_v3_uncertain={"reason": "missing"}, **kept)
+        with self.assertRaisesRegex(HarnessError, "evidence_validation_failed"):
+            self.gate("failed")
+        result = self.result()
+        self.assertIs(result["official_v3_unresolved"], True)
+        self.assertNotIn("official_v3_uncertain", result)
+        self.assertFalse(set(kept) & set(result))
+        with self.assertRaisesRegex(HarnessError, "official_v3_unresolved"):
+            evidence.approval_proof(self.store, self.store.get("TASK-ONE"), "reviewer")
+
+    def test_integration_request_and_member_refusals(self):
+        """R605: an integration tree's uncertain V3 belongs to the integration Task; R604: a
+        member with an uncertain V3 is refused before binding and in the approval transaction."""
+        from baton import evidence
+        from baton.contracts import HarnessError
+        member = deepcopy(self.body)
+        member["task_id"] = "TASK-TWO"
+        self.store.create(member)
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-TWO'").fetchone()[0])
+            values.update(review_evidence={"kept": True})
+            c.execute("UPDATE managed_tasks SET state='COMPLETED',result=? WHERE id='TASK-TWO'", (json.dumps(values),))
+        self.set_result()
+        owner, completed = self.store.get("TASK-ONE"), self.store.get("TASK-TWO")
+        with self.assertRaisesRegex(HarnessError, "official_v3_uncertain"):
+            self.gate("uncertain", row=completed, note_row=owner)
+        self.assertEqual(self.result("TASK-TWO")["review_evidence"], {"kept": True})
+        self.assertNotIn("official_v3_uncertain", self.result("TASK-TWO"))
+        self.assertEqual(self.result("TASK-ONE")["official_v3_uncertain"]["reason"], "corrupt")
+        with self.store.tx() as c:
+            values = json.loads(c.execute("SELECT result FROM managed_tasks WHERE id='TASK-TWO'").fetchone()[0])
+            values["official_v3_uncertain"] = {"reason": "missing"}
+            c.execute("UPDATE managed_tasks SET result=? WHERE id='TASK-TWO'", (json.dumps(values),))
+        with self.assertRaisesRegex(HarnessError, "integration_member_official_v3_uncertain"):
+            evidence._member_proofs(self.store, ["TASK-TWO"], "TASK-ONE")
+        with self.assertRaisesRegex(HarnessError, "integration_member_official_v3_uncertain"), self.store.tx() as c:
+            evidence.validate_member_records(c, {"TASK-TWO": {}})
+
+
+# --------------------------------------------------------------------------- AC-03/E206 recorded runs
+
+class RecordedRunTests(unittest.TestCase):
+    """The caller's side of a record_required check: fresh directory, expected binding fixed
+    before the run and observed again after it (rev3 E206)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        def git(*args):
+            subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
+        git("init", "-q")
+        (self.root / ".gitignore").write_text("ignored_*.py\n__pycache__/\n", encoding="utf-8")
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        (self.root / "tests" / "test_ok.py").write_text(
+            "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self): pass\n", encoding="utf-8")
+        git("add", ".")
+        git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "fixture")
+
+    def run_recorded(self, change=None, environment_change=None):
+        from baton.orchestrator import RecordedRun, child_environment
+        environment = child_environment(os.pathsep.join([str(self.root / "src"), str(self.root)]))
+        run = RecordedRun("unittest", [sys.executable, "-m", "unittest", "tests.test_ok"], self.root, environment)
+        self.addCleanup(run.cleanup)
+        env = {**os.environ, **{k: v for k, v in environment.items() if v is not None}}
+        for key, value in environment.items():
+            if value is None:
+                env.pop(key, None)
+        env.update(environment_change or {})
+        done = subprocess.run(run.argv, cwd=self.root, env=env, capture_output=True, text=True)
+        if change:
+            change()
+        return run, run.read(done.returncode)
+
+    def test_unchanged_run_is_evidence(self):
+        _, (record, reason) = self.run_recorded()
+        self.assertIsNone(reason)
+        self.assertEqual(record["counts"]["tests_run"], 1)
+
+    def test_work_copy_changes_during_the_run_are_binding_mismatch(self):
+        changes = {
+            "tracked": lambda: (self.root / "tests" / "test_ok.py").write_text("# changed\n", encoding="utf-8"),
+            "untracked": lambda: (self.root / "new.txt").write_text("1", encoding="utf-8"),
+            "ignored *.py": lambda: (self.root / "tests" / "ignored_mod.py").write_text("x = 1\n", encoding="utf-8"),
+        }
+        for label, change in changes.items():
+            with self.subTest(change=label):
+                _, (record, reason) = self.run_recorded(change)
+                self.assertEqual((record, reason), (None, "binding_mismatch"))
+                subprocess.run(["git", "checkout", "--", "."], cwd=self.root, check=True, capture_output=True)
+                for path in (self.root / "new.txt", self.root / "tests" / "ignored_mod.py"):
+                    path.unlink(missing_ok=True)
+
+    def test_environment_differing_from_the_callers_is_binding_mismatch(self):
+        _, (record, reason) = self.run_recorded(environment_change={"PYTHONHASHSEED": "123"})
+        self.assertEqual(reason, "binding_mismatch")
+
+    def test_stale_directory_leftovers_and_other_producer(self):
+        from baton.orchestrator import RecordedRun, child_environment
+        environment = child_environment(str(self.root))
+        run = RecordedRun("unittest", [sys.executable, "-m", "unittest", "tests.test_ok"], self.root, environment)
+        self.addCleanup(run.cleanup)
+        run.fresh = False                                  # the directory was not empty before the run
+        self.assertEqual(run.read(0), (None, "stale"))
+        run.fresh = True
+        self.assertEqual(run.read(0), (None, "missing"))   # rc 0 without a record is no pass
+        record = run_record.make_record(producer="verify_environment", nonce=run.nonce, binding=run.expected,
+                                        rows={}, scopes={}, exit_code=0,
+                                        stages={"sdd_static": {"status": "failed", "exit_code": 2},
+                                                "offline_suite": {"status": "not_run", "exit_code": None}})
+        run_record.write_record(run.path, record)
+        self.assertEqual(run.read(0)[1], "producer_mismatch")
+        Path(run.path + ".collect-gw0.json").write_text("{}", encoding="utf-8")
+        self.assertEqual(run.read(0)[1], "extra_files")
+
+    def test_declared_and_actual_argv(self):
+        """E206: argv_digest covers the actual argv (injected options, no path/nonce);
+        the result keeps the declared argv."""
+        from baton.orchestrator import RecordedRun, child_environment
+        declared = [sys.executable, "-m", "pytest", "-o", "addopts=", "-p", "no:cacheprovider", "tests"]
+        run = RecordedRun("pytest", declared, self.root, child_environment(str(self.root)))
+        self.addCleanup(run.cleanup)
+        self.assertIn("baton.pytest_record", run.digest_argv)
+        self.assertIn("--baton-mode=declared", run.digest_argv)
+        self.assertFalse(any(run.nonce in a or run.path in a for a in run.digest_argv))
+        self.assertEqual(run.digest_argv[0], "python")
+
+    def test_ra3_same_privilege_writer_is_an_accepted_limit(self):
+        """RA-3 (D28) documentation: a process with the producer's privileges that reads the
+        record path and nonce from the producer's argv can write a conforming record before
+        the producer does; the producer's single write then fails. The reader cannot tell a
+        deliberate same-privilege writer apart (out of scope, like CI-OPT-001 RA-4)."""
+        from baton.orchestrator import RecordedRun, child_environment
+        run = RecordedRun("unittest", [sys.executable, "-m", "unittest", "tests.test_ok"], self.root,
+                          child_environment(str(self.root)))
+        self.addCleanup(run.cleanup)
+        out, spec = run_record.unittest_run_values(run.argv)
+        forged = run_record.make_record(producer="unittest", nonce=json.loads(spec)["nonce"], binding=run.expected,
+                                        rows={"x.T.t": {"started": True, "events": ["pass"]}}, scopes={}, exit_code=0)
+        run_record.write_record(out, forged)
+        self.assertIsNone(run.read(0)[1])                    # accepted: deliberate forgery is RA-3
+        with self.assertRaises(FileExistsError):
+            run_record.write_record(out, forged, once=True)  # the real producer's single write fails
 
 
 if __name__ == "__main__":

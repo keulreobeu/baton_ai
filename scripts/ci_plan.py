@@ -1087,42 +1087,41 @@ def remote_log(root, step, facts, payload, digest):
             "partial_rerun": "unsupported_plan_attempt_bound", "reasons": payload.get("reasons")}
 
 
-UNITTEST_SUMMARY = re.compile(r"(?m)^Ran (\d+) tests?(?: in [^\r\n]+)?\r?$")
+def recorded_remote(command):
+    """V3 and remote ``-m unittest`` are record_required (CI-EVID-001 AC-05/06)."""
+    return command[:2] == ["-m", "unittest"] or command[0] == "scripts/verify_environment.py"
 
 
-def validate_remote_result(command, returncode, output):
-    """A successful process alone is not nonzero/no-skip test evidence."""
+def validate_remote_result(command, returncode, output, record=None, reason=None):
+    """A successful process alone is not nonzero/no-skip test evidence.
+
+    CI-EVID-001 AC-04/05: V3 and ``-m unittest`` are judged by their run-record/1 (read
+    by run_remote_check) and the real rc; ``output`` is diagnostics only for them. The V2
+    check_sdd keeps its stream verdict (F-1, out of scope)."""
     need(returncode == 0, "REMOTE_CHECK_FAILED")
-    if command[:2] == ["-m", "unittest"]:
-        summaries = list(UNITTEST_SUMMARY.finditer(output))
-        # Multiple summary blocks are ambiguous: buffered test output can follow
-        # the real runner summary and otherwise hide a skipped/empty run.
-        # Ordinary test-body/atexit skip words remain unrelated to result counts.
-        need(len(summaries) == 1, "REMOTE_TEST_EVIDENCE_FAILED")
-        tail = output[summaries[0].end():].strip().splitlines()
-        need(int(summaries[0].group(1)) > 0
-             and bool(tail) and tail[0].strip() == "OK",
-             "REMOTE_TEST_EVIDENCE_FAILED")
-    else:
-        summaries = []
-        for line in output.splitlines():
-            try:
-                value = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(value, dict):
-                summaries.append(value)
+    if recorded_remote(command):
+        from baton import run_record
+        need(reason is None and isinstance(record, dict) and run_record.eligible(record)
+             and "not_run" not in record["outcomes"].values(), "REMOTE_TEST_EVIDENCE_FAILED")
         if command[0] == "scripts/verify_environment.py":
-            summaries = [s for s in summaries if s.get("scope") == "offline_tests_only"]
-            summary = summaries[-1] if summaries else {}
-            need(summary.get("status") == "PASS" and summary.get("verified_evidence_eligible") is True
+            summary = record.get("summary") or {}
+            need(record["stages"]["sdd_static"]["status"] == "passed"
+                 and summary.get("status") == "PASS" and summary.get("verified_evidence_eligible") is True
                  and type(summary.get("tests_run")) is int and summary["tests_run"] > 0
                  and all(type(summary.get(k)) is int and summary[k] == 0
                          for k in ("failures", "errors", "skipped", "expected_failures")),
                  "REMOTE_TEST_EVIDENCE_FAILED")
-        else:
-            need(command[0] == "scripts/check_sdd.py" and bool(summaries)
-                 and summaries[-1].get("status") == "PASS", "REMOTE_SDD_EVIDENCE_FAILED")
+        return
+    summaries = []
+    for line in output.splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            summaries.append(value)
+    need(command[0] == "scripts/check_sdd.py" and bool(summaries)
+         and summaries[-1].get("status") == "PASS", "REMOTE_SDD_EVIDENCE_FAILED")
 
 
 class _OutputTail:
@@ -1156,32 +1155,49 @@ class _OutputTail:
 
 
 def run_remote_check(root, command):
-    # Keep progress visible while retaining only a bounded tail for the final
-    # unittest/official JSON summary. Never write raw check output to the repo.
-    with subprocess.Popen([sys.executable, "-u", "-X", "utf8", *command], cwd=root,
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True, encoding="utf-8", errors="replace") as process:
-        output = _OutputTail(LIMIT)
-        summary_count = 0
-        streamed_summary, streamed_status = "", None
-        for line in process.stdout:
-            print(line, end="", flush=True)
-            output.append(line)
-            if command[:2] == ["-m", "unittest"]:
-                # Evidence comes from actual line boundaries in the whole
-                # stream, never from a suffix cut through a test-output line.
-                found = list(UNITTEST_SUMMARY.finditer(line))
-                if found:
-                    summary_count = min(2, summary_count + len(found))
-                    streamed_summary = line if len(line) <= 512 else ""
-                elif summary_count == 1 and streamed_status is None and line.strip():
-                    streamed_status = line if len(line) <= 512 else ""
-        returncode = process.wait()
-    if command[:2] == ["-m", "unittest"]:
-        need(summary_count == 1, "REMOTE_TEST_EVIDENCE_FAILED")
-        validate_remote_result(command, returncode, streamed_summary + (streamed_status or ""))
+    # Keep progress visible while retaining only a bounded tail as diagnostics. V3 and
+    # -m unittest write a run-record/1 into a fresh directory under $RUNNER_TEMP, which is
+    # their only evidence besides the rc (CI-EVID-001 AC-05). Never write raw check output
+    # to the repo.
+    record, reason, directory = None, None, None
+    if recorded_remote(command):
+        from baton import run_record
+        directory = tempfile.mkdtemp(prefix="baton-record-", dir=os.environ.get("RUNNER_TEMP") or None)
+        fresh = not os.listdir(directory)
+        path, nonce = os.path.join(directory, "record.json"), run_record.new_nonce()
+        given = dict(run_record.PLACEHOLDERS)
+        if command[0] == "scripts/verify_environment.py":
+            argv = [sys.executable, "-u", "-X", "utf8", *command, "--record-out", path, "--record-nonce", nonce]
+            drop, producer = (path, nonce), "verify_environment"
+            given["base"] = command[command.index("--base") + 1] if "--base" in command else None
+        else:
+            argv = run_record.unittest_argv(sys.executable, path, nonce, run_record.PLACEHOLDERS, command[2:],
+                                            options=("-u", "-X", "utf8"))
+            drop, producer = run_record.unittest_run_values(argv), "unittest"
+        digest_argv = run_record.argv_for_digest(argv, drop)
+        expected = run_record.observed_binding(given, cwd=root, env=os.environ, argv=digest_argv)
+        not_before = time.time() - 1
     else:
-        validate_remote_result(command, returncode, output.getvalue())
+        argv = [sys.executable, "-u", "-X", "utf8", *command]
+    try:
+        with subprocess.Popen(argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, encoding="utf-8", errors="replace") as process:
+            output = _OutputTail(LIMIT)
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                output.append(line)
+            returncode = process.wait()
+        if directory is not None:
+            if fresh:
+                record, reason = run_record.read_record(
+                    path, nonce, expected, returncode, not_before=not_before, producer=producer, exclusive=True,
+                    binding_after=run_record.observed_binding(given, cwd=root, env=os.environ, argv=digest_argv))
+            else:
+                reason = "stale"
+    finally:
+        if directory is not None:
+            shutil.rmtree(directory, ignore_errors=True)
+    validate_remote_result(command, returncode, output.getvalue(), record=record, reason=reason)
 
 
 def remote_main(argv):

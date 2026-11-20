@@ -46,7 +46,11 @@
     "docs/specs/CI-VTIER-001.md",
     "docs/plans/ci-vtier.md",
     "docs/adr/ADR-CI-VTIER-001.md",
-    "docs/tasks/TASK-CI-VTIER-001.md"
+    "docs/tasks/TASK-CI-VTIER-001.md",
+    "docs/specs/CI-EVID-001.md",
+    "docs/plans/ci-evid.md",
+    "docs/adr/ADR-CI-EVID-001.md",
+    "docs/tasks/TASK-CI-EVID-001.md"
   ],
   "features": [
     {
@@ -1790,6 +1794,377 @@
             {
               "file": "tests/test_ci_plan.py",
               "symbol": "PolicyTests.test_risk_paths_raise_final_and_remote_but_not_local_v1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CI-EVID-001",
+      "spec": "docs/specs/CI-EVID-001.md",
+      "requirements": [
+        {
+          "id": "CI-EVID-001-REQ-01",
+          "acs": [
+            "CI-EVID-001-AC-01"
+          ]
+        },
+        {
+          "id": "CI-EVID-001-REQ-02",
+          "acs": [
+            "CI-EVID-001-AC-02",
+            "CI-EVID-001-AC-03",
+            "CI-EVID-001-AC-04"
+          ]
+        },
+        {
+          "id": "CI-EVID-001-REQ-03",
+          "acs": [
+            "CI-EVID-001-AC-05",
+            "CI-EVID-001-AC-06"
+          ]
+        },
+        {
+          "id": "CI-EVID-001-REQ-04",
+          "acs": [
+            "CI-EVID-001-AC-07"
+          ]
+        },
+        {
+          "id": "CI-EVID-001-REQ-05",
+          "acs": [
+            "CI-EVID-001-AC-08",
+            "CI-EVID-001-AC-09"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "CI-EVID-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C1OfficialV3InternalCheck.test_c1a_trailing_fake_eligible_summary_on_stderr_is_not_a_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C1OfficialV3InternalCheck.test_c1b_trailing_ineligible_summary_does_not_reject_a_real_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C1OfficialV3InternalCheck.test_c1c_verdict_follows_record_and_rc_not_summary_order"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C2DeclaredPytest.test_c2a_truncated_skip_phrase_is_still_a_skip"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C2DeclaredPytest.test_c2b_body_printing_5_passed_does_not_count"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C2DeclaredPytest.test_c2c_body_printing_1_skipped_does_not_reject"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C3DeclaredAndRemoteUnittest.test_c3a_local_zero_tests_with_printed_ran_5_tests_is_a_failure"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C3DeclaredAndRemoteUnittest.test_c3b_remote_second_printed_summary_does_not_reject_a_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C4RemoteRun.test_c4a_child_fake_summary_after_official_line_is_not_a_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C4RemoteRun.test_c4b_official_line_pushed_out_of_the_tail_is_still_a_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C4RemoteRun.test_c4c_v2_check_sdd_keeps_its_stream_verdict"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C5EvidenceInvalidation.test_c5a_missing_or_corrupt_record_keeps_evidence_and_refuses_recording"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C5EvidenceInvalidation.test_c5b_approval_after_uncertain_v3_is_refused"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "FormatTests.test_valid_record_round_trips_and_complete_is_last"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "FormatTests.test_assemble_matches_unittest_accounting"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_verify_environment_stages"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_producer_writes_once"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_leftover_worker_collection_file_is_extra_files"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoBindingTests.test_named_keys_only_and_digests"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoBindingTests.test_worktree_digest_sees_untracked_and_tracked_changes"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RejectionTests.test_every_reason_is_declared"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RejectionTests.test_stale"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RejectionTests.test_self_inconsistent"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_producer_mismatch"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_not_regular"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_too_large"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_extra_files_only_in_an_exclusive_directory"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_binding_changed_during_the_run"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_rc_zero_without_a_record_is_missing"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_failed_may_repeat_a_parent_but_passed_may_not"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_pytest_rc_follows_pytest_semantics"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoReasonTests.test_pytest_successful_is_the_run_status_and_eligibility_is_separate"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RecordedRunTests.test_stale_directory_leftovers_and_other_producer"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C1OfficialV3InternalCheck.test_c1a_trailing_fake_eligible_summary_on_stderr_is_not_a_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "C2DeclaredPytest.test_c2b_body_printing_5_passed_does_not_count"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "RemoteResultTests.test_v2_rejects_multiple_summaries_in_either_order"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "RemoteResultTests.test_official_requires_nonzero_no_skip_eligible_summary"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerifyEnvironmentRecordTests.test_record_mode_keeps_stdout_rc_and_writes_a_valid_record"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerifyEnvironmentRecordTests.test_sdd_static_failure_is_a_recorded_confirmed_failure"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerifyEnvironmentRecordTests.test_record_options_are_checked"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_main_preserves_json_exit_and_unittest_accounting"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_sdd_failure_stops_before_discovery"
+            },
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_readset_flag_writes_json_without_changing_final_stdout_line"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "RemoteResultTests.test_real_remote_process_streams_output_and_rejects_exit_zero_skip"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_default_v3_actual_target_base_full_budget_and_accounting"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-06",
+          "tests": [
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RecordedUnittestRunnerTests.test_argv_meaning_rc_and_counts_match_plain_unittest"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RecordedUnittestRunnerTests.test_unittest_options_and_bad_arguments"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RecordedUnittestRunnerTests.test_record_details"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoEventTests.test_collection_error_counts_as_an_error"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RevTwoEventTests.test_plain_pytest_setup_skip_is_a_skip"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPytestWithoutRecordTests.test_no_plugin_record_is_record_unavailable_and_the_declared_argv_is_kept"
+            },
+            {
+              "file": "tests/test_ci_plan.py",
+              "symbol": "RemoteResultTests.test_real_v2_unittest_rejects_skip_and_zero_cases"
+            },
+            {
+              "file": "tests/test_managed_harness.py",
+              "symbol": "ValidationPlannerIntegrationTests.test_recorded_runner_proves_only_tests_that_really_ran"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerdictTableTests.test_each_row_and_precedence"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerdictTableTests.test_uncertainty_cannot_hide_a_confirmed_failure_or_pass"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerdictTableTests.test_uncertain_record_is_fixed_and_bounded"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerdictTableTests.test_settlement_reserves_room_for_a_later_uncertain_record"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "EntryPointTests.test_verify_records_each_state"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "EntryPointTests.test_control_override_keeps_the_stored_uncertain_value"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "EntryPointTests.test_evidence_gate_each_state_and_approval"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "EntryPointTests.test_integration_request_and_member_refusals"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RcOnlyChecksTests.test_rc_only_pass_and_confirmed_failure"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-08",
+          "tests": [
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RecordedRunTests.test_unchanged_run_is_evidence"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RecordedRunTests.test_work_copy_changes_during_the_run_are_binding_mismatch"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RecordedRunTests.test_environment_differing_from_the_callers_is_binding_mismatch"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RecordedRunTests.test_declared_and_actual_argv"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "RecordedRunTests.test_ra3_same_privilege_writer_is_an_accepted_limit"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RecordedUnittestRunnerTests.test_producer_copying_the_caller_binding_is_refused"
+            },
+            {
+              "file": "tests/test_run_record.py",
+              "symbol": "RecordedUnittestRunnerTests.test_lost_result_and_no_tests"
+            }
+          ]
+        },
+        {
+          "id": "CI-EVID-001-AC-09",
+          "tests": [
+            {
+              "file": "tests/test_verify_environment.py",
+              "symbol": "OfficialRunnerTests.test_main_preserves_json_exit_and_unittest_accounting"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "VerifyEnvironmentRecordTests.test_record_mode_keeps_stdout_rc_and_writes_a_valid_record"
             }
           ]
         }
