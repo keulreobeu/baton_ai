@@ -771,10 +771,11 @@ class Leases:
                 granted = int(min(requested, budget - used, slots))
                 if granted >= 1:
                     lease_id = f"{owner['pid']}-{secrets.token_hex(6)}"
+                    # No termination proof yet: run_tree supplies it through mark() once it exists.
                     record = {"pid": owner["pid"], "created": owner.get("created"), "granted": granted,
                               "started": time.time(), "job_assigned": owner.get("job_assigned", False),
                               "pgid": owner.get("pgid")}
-                    (self.namespace / "leases" / f"{lease_id}.json").write_text(json.dumps(record), encoding="utf-8")
+                    self._write(lease_id, record)
                     return lease_id, granted, {"budget": budget, "used": used, "ram_slots": int(slots)}
             reason = should_stop()
             if reason:
@@ -782,6 +783,28 @@ class Leases:
             if deadline is not None and self.clock() >= deadline:
                 raise Stopped("timeout")
             self.sleep(self.poll)
+
+    def _write(self, lease_id, record):
+        """Atomic replace; callers hold the namespace lock."""
+        path = self.namespace / "leases" / f"{lease_id}.json"
+        temp = path.with_suffix(".tmp")
+        temp.write_text(json.dumps(record), encoding="utf-8")
+        os.replace(temp, path)
+
+    def mark(self, lease_id, *, job_assigned=None, pgid=None):
+        """Record the termination proof of the running tree under the namespace lock (R03):
+        job_assigned only after AssignProcessToJobObject succeeded, pgid of the child's own session."""
+        with _FileLock(self.namespace / "lock", self.lock_timeout, self.sleep):
+            path = self.namespace / "leases" / f"{lease_id}.json"
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                raise BackendError("namespace_corrupt", path.name) from None
+            if job_assigned is not None:
+                record["job_assigned"] = bool(job_assigned)
+            if pgid is not None:
+                record["pgid"] = int(pgid)
+            self._write(lease_id, record)
 
     def release(self, lease_id, *, terminated):
         """Only after termination is verified; otherwise the lease stays and keeps its share."""
@@ -848,9 +871,10 @@ class WindowsJob:
                         ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
         return Extended()
 
-    def assign_and_resume(self, process):
-        if not self.kernel.AssignProcessToJobObject(self.handle, int(process._handle)):
-            return False
+    def assign(self, process):
+        return bool(self.kernel.AssignProcessToJobObject(self.handle, int(process._handle)))
+
+    def resume(self, process):
         ntdll = self.ctypes.WinDLL("ntdll")
         ntdll.NtResumeProcess.argtypes = [self.wintypes.HANDLE]
         return ntdll.NtResumeProcess(int(process._handle)) == 0
@@ -893,22 +917,64 @@ def verify_terminated(job, process, *, wait=10.0, sleep=time.sleep, clock=time.m
     return False
 
 
-def run_tree(argv, *, env, cwd, log_path, timeout, should_stop, job_factory=None, sleep=time.sleep):
-    """Run one process tree to completion or stop; returns (rc, stop_reason, terminated, accounting)."""
+def tree_proof(process, *, platform_name=None, getpgid=None):
+    """Termination proof of a started tree (R03). Windows: called only after the Job assignment
+    succeeded. POSIX: the child runs in its own session, so its group is the child's, not ours."""
+    if (platform_name or os.name) == "nt":
+        return {"job_assigned": True}
+    return {"pgid": (getpgid or os.getpgid)(process.pid)}
+
+
+def _abandon(process, job):
+    process.kill()
+    try:
+        process.wait(10)
+    except subprocess.TimeoutExpired:
+        pass
+    if job is not None:
+        job.close()
+
+
+def run_tree(argv, *, env, cwd, log_path, timeout, should_stop, job_factory=None, sleep=time.sleep,
+             on_started=None):
+    """Run one process tree to completion or stop; returns (rc, stop_reason, terminated, accounting).
+
+    on_started(**tree_proof) runs before the tree does any work (Windows: after the Job assignment,
+    before resume). If it fails, the tree is killed and the error propagates."""
     job = None
     with open(log_path, "wb") as log:
         if os.name == "nt":
             job = (job_factory or WindowsJob)()
             process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                        stdin=subprocess.DEVNULL, creationflags=0x00000004 | 0x00000200)
-            if not job.assign_and_resume(process):
-                process.kill()
-                process.wait(10)
-                job.close()
+            if not job.assign(process):
+                _abandon(process, job)
                 raise BackendError("job_unavailable", "AssignProcessToJobObject")
+            try:
+                if on_started:
+                    on_started(**tree_proof(process))
+                resumed = job.resume(process)
+            except BaseException:
+                job.terminate()
+                _abandon(process, job)
+                raise
+            if not resumed:
+                job.terminate()
+                _abandon(process, job)
+                raise BackendError("job_unavailable", "NtResumeProcess")
         else:
             process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                        stdin=subprocess.DEVNULL, start_new_session=True)
+            try:
+                if on_started:
+                    on_started(**tree_proof(process))
+            except BaseException:
+                try:
+                    os.killpg(process.pid, 9)
+                except ProcessLookupError:
+                    pass
+                _abandon(process, None)
+                raise
         started, reason = time.monotonic(), None
         try:
             while process.poll() is None:
@@ -1071,8 +1137,7 @@ def run(args, *, leases=None, stop=lambda: None):
             should_stop=should_stop, ids_file=ids_file, binding=record_binding)
     else:
         leases_obj = leases or Leases(default_namespace())
-        owner = {"pid": os.getpid(), "created": process_identity(os.getpid())[1], "job_assigned": os.name == "nt",
-                 "pgid": None if os.name == "nt" else os.getpgid(0)}
+        owner = {"pid": os.getpid(), "created": process_identity(os.getpid())[1]}
         lease_id, granted, lease_info = leases_obj.acquire(workers, deadline=deadline, should_stop=should_stop,
                                                            owner=owner)
         diagnostics.update(lease=lease_info, lease_wait_seconds=round(time.monotonic() - t1, 3))
@@ -1085,9 +1150,10 @@ def run(args, *, leases=None, stop=lambda: None):
             rc, reason, terminated, accounting = run_tree(argv, env=child_env(root), cwd=root,
                                                           log_path=run_dir / "pytest.log",
                                                           timeout=max(1, deadline - time.monotonic()),
-                                                          should_stop=should_stop)
+                                                          should_stop=should_stop,
+                                                          on_started=lambda **proof: leases_obj.mark(lease_id, **proof))
         except BackendError:
-            leases_obj.release(lease_id, terminated=True)   # nothing was resumed: no descendants
+            leases_obj.release(lease_id, terminated=True)   # killed before resume: no descendants
             raise
     diagnostics.update(run_seconds=round(time.monotonic() - t1, 3), accounting=accounting)
     if not terminated:

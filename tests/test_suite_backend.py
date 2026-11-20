@@ -737,6 +737,127 @@ class LeaseTests(unittest.TestCase):
         self.assertEqual(leases.usage()[0], 0)
 
 
+PROOF_PARENT = r"""
+import json, os, sys
+sys.path[:0] = [sys.argv[1], sys.argv[1] + "/src"]
+from pathlib import Path
+from scripts import suite_backend as sb
+ns, report = Path(sys.argv[2]), Path(sys.argv[3])
+leases = sb.Leases(ns, environ={"BATON_TEST_WORKER_BUDGET": "4"}, ram=lambda: 64 * sb.GIB)
+lease, _, _ = leases.acquire(2)
+child = "import os, sys, time; open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(float(sys.argv[2]))"
+def started(**proof):
+    leases.mark(lease, **proof)
+    report.write_text(json.dumps({"lease": lease, "proof": proof}), encoding="utf-8")
+rc, reason, terminated, _ = sb.run_tree([sys.executable, "-c", child, sys.argv[4], sys.argv[5]], env=dict(os.environ),
+                                        cwd=str(ns.parent), log_path=ns.parent / "child.log", timeout=120,
+                                        should_stop=lambda: None, on_started=started)
+print(json.dumps({"rc": rc, "terminated": terminated, "released": leases.release(lease, terminated=terminated)}))
+"""
+
+
+class LeaseProofTests(unittest.TestCase):
+    """T16d (R03): the lease's termination proof names the real tree and is set only once it exists.
+    Cases a platform cannot run for real are replaced by unit-level checks, never skipped."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ns = Path(self.tmp.name) / "ns"
+        self.ns.mkdir()
+
+    def parent(self, seconds):
+        report, child_pid = Path(self.tmp.name) / "report.json", Path(self.tmp.name) / "child.pid"
+        proc = subprocess.Popen([sys.executable, "-c", PROOF_PARENT, str(ROOT), str(self.ns), str(report),
+                                 str(child_pid), str(seconds)], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        deadline = time.monotonic() + 60
+        while not (report.exists() and child_pid.exists() and child_pid.read_text()):
+            self.assertLess(time.monotonic(), deadline, "child did not start")
+            time.sleep(0.05)
+        return proc, json.loads(report.read_text(encoding="utf-8")), int(child_pid.read_text())
+
+    def lease_file(self, lease):
+        return json.loads((self.ns / "leases" / f"{lease}.json").read_text(encoding="utf-8"))
+
+    def test_child_normal_exit_records_proof_then_releases(self):
+        proc, report, child = self.parent(1)
+        data = self.lease_file(report["lease"])
+        if os.name == "nt":
+            self.assertEqual((data["job_assigned"], data["pgid"]), (True, None))
+        else:
+            self.assertEqual(data["pgid"], child)                   # the child's own session, not ours
+            self.assertNotEqual(data["pgid"], os.getpgid(proc.pid))
+        out = json.loads(proc.communicate(timeout=60)[0])
+        self.assertEqual(out, {"rc": 0, "terminated": True, "released": True})
+        self.assertEqual(list((self.ns / "leases").glob("*")), [])
+
+    def test_parent_killed_lease_reclaimed_only_when_tree_gone(self):
+        proc, report, child = self.parent(120)
+        self.addCleanup(lambda: sb.process_identity(child)[0] and os.kill(child, 9))
+        proc.kill()
+        proc.wait(30)
+        leases = sb.Leases(self.ns, environ={"BATON_TEST_WORKER_BUDGET": "4"}, ram=lambda: 64 * sb.GIB)
+        deadline = time.monotonic() + 30
+        if os.name == "nt":
+            while sb.process_identity(child)[0]:                    # KILL_ON_JOB_CLOSE ends the tree
+                self.assertLess(time.monotonic(), deadline, "job did not end the child")
+                time.sleep(0.1)
+        else:
+            self.assertEqual(leases.usage()[0], 2)                  # own session survives: lease kept
+            os.killpg(child, 9)
+            while not sb.group_empty(child):
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.1)
+        self.assertEqual(leases.usage(), (0, []))
+
+    def unit_leases(self, alive, **kw):
+        return sb.Leases(self.ns, environ={"BATON_TEST_WORKER_BUDGET": "4"}, ram=lambda: 64 * sb.GIB,
+                         identity=lambda pid: alive.get(pid, (False, None)), sleep=lambda s: None, poll=0, **kw)
+
+    def test_pid_reuse_reclaims_only_with_proof(self):
+        alive = {5: (True, 100), 6: (True, 100), 7: (True, 100)}
+        leases = self.unit_leases(alive, group_empty=lambda pgid: pgid == 70)
+        job, _, _ = leases.acquire(1, owner={"pid": 5, "created": 100})
+        leases.mark(job, job_assigned=True)
+        group, _, _ = leases.acquire(1, owner={"pid": 6, "created": 100})
+        leases.mark(group, pgid=70)
+        bare, _, _ = leases.acquire(1, owner={"pid": 7, "created": 100})
+        self.assertEqual(leases.usage()[0], 3)
+        alive.update({5: (True, 200), 6: (True, 200), 7: (True, 200)})   # same pids, other processes
+        used, rows = leases.usage()
+        self.assertEqual((used, [r["id"] for r in rows]), (1, [bare]))
+
+    def test_exit_before_job_assignment_keeps_lease(self):
+        alive = {8: (True, 1)}
+        leases = self.unit_leases(alive)
+        lease, _, _ = leases.acquire(2, owner={"pid": 8, "created": 1})
+        data = self.lease_file(lease)
+        self.assertEqual((data["job_assigned"], data["pgid"]), (False, None))  # no proof before the tree exists
+        alive[8] = (False, None)                                  # owner died before assignment / mark
+        self.assertEqual(leases.usage()[0], 2)
+        calls = []
+
+        class NoAssign:
+            def assign(self, process):
+                return False
+
+            def close(self):
+                calls.append("close")
+        if os.name == "nt":
+            with self.assertRaises(sb.BackendError) as raised:
+                sb.run_tree([sys.executable, "-c", "import time; time.sleep(30)"], env=dict(os.environ),
+                            cwd=self.tmp.name, log_path=Path(self.tmp.name) / "log", timeout=30,
+                            should_stop=lambda: None, job_factory=NoAssign,
+                            on_started=lambda **proof: calls.append(proof))
+            self.assertEqual(raised.exception.code, "job_unavailable")
+            self.assertEqual(calls, ["close"])                    # on_started never ran
+        self.assertEqual(sb.tree_proof(None, platform_name="nt"), {"job_assigned": True})
+        fake = type("P", (), {"pid": 4321})()
+        self.assertEqual(sb.tree_proof(fake, platform_name="posix", getpgid=lambda pid: pid), {"pgid": 4321})
+        self.assertEqual(self.lease_file(lease)["job_assigned"], False)
+
+
 class TerminationTests(unittest.TestCase):
     """AC-09: process tree ownership and unverifiable termination."""
 
