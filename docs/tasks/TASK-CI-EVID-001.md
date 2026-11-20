@@ -96,9 +96,9 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 - CI-PAR 문서·코드(공용 모듈은 이 branch만 수정)
 
 ## 결정 대기
-- **D25-R:** 병합으로 운영 원격 CI 판정(`ci_plan.py --remote run`)이 바뀌는 것의 승인
-- **D26:** Task branch push와 원격 CI 실행
-- **D27:** F-1~F-3 후속 Task 여부
+- **D25-R:** 병합으로 운영 원격 CI 판정(`ci_plan.py --remote run`)이 바뀌는 것의 승인 → **2026-11-20 조건부 승인**(아래 "D25-R·D26·D27" 절)
+- **D26:** Task branch push와 원격 CI 실행 → **2026-11-20 조건부 승인**, push 시점은 coordinator가 별도 지시(아직 push하지 않음)
+- **D27:** F-1~F-3 후속 Task 여부 → **2026-11-20 범위 제한**(후속 Task)
 - **D28:** RA-3(같은 권한 자식 프로세스의 기록 작성, declared 모드 외부 plugin) 수용 → **2026-11-20 불승인**(아래 "사용자 결정" 절, 신뢰 목록 방식)
 
 ## red on base — 2026-11-20
@@ -138,7 +138,11 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `eaa2bd4` | EVID-R01 증거와 교차 실행 조건부 예외 기준(결정 대기) |
 | `c004e02` | EVID-R01 재검증 기록(문서만) |
 | `d9c04ae` | EVID-R02(P3): docstring·Spec AC-06의 경계 표현을 "호출자가 지정한 검사 Git 작업 트리"로 통일, tree 밖 rootdir·inifile·conftest 거부 명시(동작 변화 없음) |
-| (이 커밋) | 사용자 결정 1·2 기록, EVID-R01 resolved(문서만) |
+| `0b39c35` | 사용자 결정 1·2 기록, EVID-R01 resolved(문서만) |
+| `1c41fb0` | D28 재현 테스트만(red on base): `DeclaredPluginTrustTests` 9개 중 8 실패 |
+| `7816a56` | 사용자 D28 구체화(매핑·출처, 정확한 제외 ID 집합)에 맞춘 재현 테스트(red on base, `1c41fb0` 코드): 9개, failures 11(subTest 포함) |
+| `91619ef` | D28 수정: 신뢰 목록(배포==버전·`-p` 이름·모듈·site-packages 출처), 명시·간접 로딩 통제, 수집 무결성(정확한 제외 집합), 소비자 재확인; Spec rev4; traceability |
+| (이 커밋) | D28 증거, D25-R·D26·D27 기록(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -225,6 +229,89 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 - 범용 plugin 샌드박스나 별도 보안 프레임워크는 만들지 않는다. 비공식 개발용 pytest 실행의 외부 plugin 사용은 허용하되, 공식 완료 증거와 분리한다(기록되면 ineligible).
 - 진행 순서(D25 방식): 결정 기록 → 재현 테스트(red) → 구현·Spec rev4 → 재검증(국소 회귀, 실제 pytest 9.2.0 보조, CI-PAR 최신 임시 병합, 최종 HEAD 공식 V3, 교차 실행과 4건 제외 보조 실행).
 - 이 결정 전에 계획했던 `d9c04ae` 기준 4건 제외 보조 실행은 시작 전에 보류했다(임시 worktree 제거·prune).
+
+## D28 신뢰 목록 방식 — 2026-11-20
+
+**red → green(공식 suite 안, 합성 기록을 소비자 `RecordedRun.read`로 읽음):**
+
+| 테스트 | 수정 전 | 수정 후 |
+|---|---|---|
+| `test_clean_declared_run_is_still_evidence` | 통과 | 통과 |
+| `test_external_p_plugin_dropping_a_failing_test_is_refused`(검토 재현) | FAIL(rc 0 유효 기록) | 통과(`record_unavailable`) |
+| `test_entry_point_plugin_is_refused` | FAIL | 통과 |
+| `test_pytest_plugins_environment_is_cleared_and_refused` | FAIL | 통과 |
+| `test_ini_addopts_and_required_plugins_are_controlled` | FAIL | 통과 |
+| `test_any_deselect_outside_the_allowed_set_is_refused` | FAIL | 통과 |
+| `test_a_collected_item_without_result_or_deselect_is_refused` | FAIL | 통과 |
+| `test_trusted_plugin_matches_distribution_version_module_and_source`(4 subTest) | FAIL ×4 | 통과 |
+| `test_record_without_plugin_control_facts_is_refused` | FAIL | 통과 |
+| `DeclaredTrustRuleTests` 4개(수정과 함께 추가한 규칙 단위 테스트) | — | 통과 |
+
+**실제 pytest 9.2.0 / pytest-xdist 3.8.0 보조(CI-PAR `requirements/ci.lock` 해시 설치 임시 venv, 소비자 `RecordedRun` 경로, `tests/test_demo.py`에 통과 1·실패 1):**
+
+| 사례 | 수정 전 | 수정 후 |
+|---|---|---|
+| 기준(plugin 없음) | rc 1, 2 실행·실패 1 | 같음 |
+| `-p evilplug`(tree 밖)가 실패 테스트 제거(검토 재현) | rc 0, 1 실행, 유효 | rc 4, `record_unavailable`(`explicit_plugin_not_trusted`, `plugin_not_trusted`) |
+| entry point plugin, 호출자가 autoload를 켠 채 실행 | rc 0, 1 실행, 유효 | rc 4(`env:PYTEST_DISABLE_PLUGIN_AUTOLOAD`, `plugin_not_trusted`) |
+| entry point plugin, 호출자 기본값(autoload 끔) | 로드 안 됨, rc 1 | 같음 |
+| `PYTEST_PLUGINS=evilplug` | rc 0, 1 실행, 유효 | rc 4(`env:PYTEST_PLUGINS`); 호출자도 이제 값을 지운다 |
+| ini `addopts = -p evilplug`, 호출자 `-o addopts=` 있음 | 무력화, rc 1 | 같음 |
+| ini `addopts = -p evilplug`, `-o addopts=` 없음 | — | rc 4(`ini:addopts`, `plugin_not_trusted`) |
+| conftest `pytest_plugins = ["evilplug"]`(tree 밖 모듈) | — | rc 4(`plugin_not_trusted`) |
+| conftest가 외부 plugin을 다시 등록 | — | rc 4(`plugin_not_trusted`) |
+| `-p evilplug`가 deselect | rc 0, 1 실행, 유효 | rc 4 |
+| `-p evilplug`가 `pytest_runtest_protocol`로 결과 생략 | rc 0, 1 실행, 유효 | rc 4 |
+| tree 안 conftest가 deselect | rc 0, 1 실행, 유효 | rc 0, `record_unavailable`(`deselect_not_allowed`) |
+| tree 안 conftest가 `items[:]`로 조용히 제거 | rc 0, 1 실행, 유효 | rc 0, `record_unavailable`(`collected_without_result`) |
+| 선언 `-k pass` | rc 0, 1 실행, 유효 | rc 0, `record_unavailable`(허용 집합 없음) |
+| 선언 `--deselect` | — | rc 0, `record_unavailable` |
+| `-p xdist.plugin -n 2` / `-p xdist -n 2` | rc 1, 2 실행·실패 1(신뢰 표시 없음) | 같음, xdist 모듈 `trust=list`, 위반 없음 |
+| `-p no:doctest` | — | rc 1, 정상(disabled에 기록) |
+| conftest `pytest_plugins = ["helpers.fixtures"]`(tree 안 모듈) | — | rc 1, 정상(`trust=tree`) |
+
+**wrong_reject 확인(수정 후, 실제 pytest):**
+- 통과(rc 0, 유효 기록): 루트 `pytest.ini`, `pyproject.toml` `[tool.pytest.ini_options]`, `tox.ini` + 루트 conftest, 설정 없음, tree 안 `--rootdir`, xdist 신뢰 실행, `-p no:`, tree 안 `pytest_plugins` 모듈.
+- 새로 거부(의도): 외부·미신뢰 plugin 일체, 명시 `-k`·`-m`·`--deselect`(허용 제외 집합이 선언되지 않음), tree 안 conftest의 deselect·조용한 제거. 마지막 것 때문에 EVID-R01 절의 보조 사례 a(tree 안 conftest가 실패 테스트를 뺌, 당시 "유효 기록")는 이제 `record_unavailable`이다.
+
+**허용 제외 집합의 출처:** 현재 없음. managed Task validation(`managed.py`)은 pytest의 `-k`·`-m`·`--deselect`·`-p`를 받지 않고, Task·Spec·AC에 제외 ID를 선언하는 필드도 없다. 그래서 허용 집합은 비어 있고 제외는 0이어야 한다(Spec AC-06 rev4). 받는 자리(`RecordedRun(allowed_deselect=...)`, `--baton-allowed-deselect`)만 두었다. 필드 도입은 새 계약 결정이다.
+
+**국소 회귀:** 7모듈(`test_run_record`·`test_evidence_records`·`test_managed_harness`·`test_ci_plan`·`test_verify_environment`·`test_flow_runtime`, 그리고 존재하지 않는 모듈명 `test_orchestrator` 1개를 잘못 넣음) 801 s. 결과는 실패 3(C2 가짜 생산자가 rev4 사실을 남기지 않음)과 loader 오류 1(잘못된 모듈명)이었다. 가짜 생산자를 rev4 정상 실행 사실로 고친 뒤 `test_evidence_records` 51 OK. 나머지 모듈은 첫 실행에서 모두 통과했다.
+
+**CI-PAR 호환:** ci-par-001 최신 `7946c85`에 `91619ef`를 `merge --no-commit`(시스템 임시 detached worktree, 끝난 뒤 abort·remove·prune).
+- 코드 충돌은 없다. 문서 충돌 3개(HANDOFF·traceability·current)는 이전과 같다.
+- `tests.test_run_record tests.test_suite_backend`: 이 venv 118 OK(skip 0, 51 s), pytest 임시 venv 118 OK(skip 0, 50 s).
+- strict 모드와 `read_record` 호출 형태는 바뀌지 않았다. 이전 병합 시험의 `IsolationTests` 실패는 CI-PAR 쪽 갱신으로 해소됐다.
+
+## 사용자 결정 D25-R·D26·D27 — 2026-11-20
+
+**D25-R 조건부 승인.**
+- 고칠 것: 기존 순차 V3의 로컬·원격 증거 채택 결함과 declared pytest 결과 집계 결함이다. 실행별 구조화 증거는 기존 공용 모듈(`run_record`·`pytest_record`)을 최대한 재사용한다.
+- 원격 변경은 증거 소비자 정확성에 필요한 최소 범위다. 현재 바뀐 것은 `scripts/ci_plan.py` 소비자뿐이고 `.github/workflows/verify.yml`은 그대로다(유지, 바꿔야 하면 ask).
+- Wiki·정착 복구·별도 정책 고도화는 포함하지 않는다.
+- 회귀가 세 갈래를 모두 덮는지 대조(공식 suite 안 테스트, 모두 `tests/test_evidence_records.py`이며 다른 파일은 표시):
+
+| 갈래 | 회귀 테스트 |
+|---|---|
+| 정상 증거의 잘못된 거부 | C1-b `test_c1b_trailing_ineligible_summary_does_not_reject_a_real_pass`, C1-c, C2-c `test_c2c_body_printing_1_skipped_does_not_reject`, C3-b `test_c3b_remote_second_printed_summary_does_not_reject_a_pass`, C4-b `test_c4b_official_line_pushed_out_of_the_tail_is_still_a_pass`, C4-c(V2 현행 유지), `VerifyEnvironmentRecordTests.test_record_mode_keeps_stdout_rc_and_writes_a_valid_record`, `RecordedRunTests.test_unchanged_run_is_evidence`, `VerdictTableTests.test_uncertainty_cannot_hide_a_confirmed_failure_or_pass`, `DeclaredTreeBoundTests.test_a_conftest_and_ini_inside_the_tree_are_allowed`, `DeclaredPluginTrustTests.test_clean_declared_run_is_still_evidence`, `test_trusted_plugin_matches_distribution_version_module_and_source`(신뢰 xdist 통과), `test_any_deselect_outside_the_allowed_set_is_refused`(선언된 허용 집합은 통과), `DeclaredTrustRuleTests`(내장·신뢰 `-p`, 신뢰 required_plugins, xdist worker 모듈, 실패 실행의 미실행 항목), `tests/test_ci_plan.py` `RemoteResultTests`, `tests/test_run_record.py` |
+| 잘못된 무효화(증거 손실) | C5-a `test_c5a_missing_or_corrupt_record_keeps_evidence_and_refuses_recording`, C5-b, `VerdictTableTests.test_each_row_and_precedence`·`test_uncertain_record_is_fixed_and_bounded`·`test_settlement_reserves_room_for_a_later_uncertain_record`, `EntryPointTests.test_verify_records_each_state`·`test_control_override_keeps_the_stored_uncertain_value`·`test_evidence_gate_each_state_and_approval`·`test_integration_request_and_member_refusals`, `tests/test_managed_harness.py` R402/R403/R504 사례 |
+| 잘못된 PASS | C1-a, C2-a, C2-b, C3-a, C4-a, C5-b(불확실 뒤 승인), `VerifyEnvironmentRecordTests.test_sdd_static_failure_is_a_recorded_confirmed_failure`·`test_record_options_are_checked`, `DeclaredPytestWithoutRecordTests`, `RcOnlyChecksTests`, `RecordedRunTests`(작업 사본 변경·환경·잔여 파일·producer·argv), `DeclaredTreeBoundTests` b~d·tree 사례, `DeclaredPluginTrustTests` 거부 사례 전부(D28), `DeclaredTrustRuleTests.test_explicit_p_names` 거부 사례 |
+
+- 대조 결과 세 갈래 모두 공식 suite 안 회귀가 있다. 빠진 갈래가 없어 추가하지 않았다. 실제 pytest 동작(정상 설정 통과·재현 사례 차단)은 공식 suite 밖 보조 증거(아래 D28 절)다.
+
+**D26 검증용 원격 게시 조건부 승인.**
+- 국소 검증과 계약 검토(ChatGPT 재검토)를 통과한 후보만 전용 branch `keulreobeu/ci-evid-001`에 push한다.
+- 게시 전 확인: 커밋 SHA, 원격 refs로 닿지 않는 모든 커밋의 변경 범위·비밀정보, worktree clean.
+- 정확한 게시 SHA로 원격 CI를 실행한다. `verify.yml`은 push(main)·PR에서만 자동 실행되므로 `workflow_dispatch`(ref=branch)로 실행하고 run head SHA가 게시 SHA와 같은지 확인한다.
+- main 변경, PR 생성·병합, 공식 검증 정책 활성화는 승인하지 않았다. push는 coordinator가 ChatGPT 재검토 결과를 확인한 뒤 따로 지시한다. **지금은 push하지 않았다.**
+
+**D27 범위 제한.** 현재 공식 검증의 잘못된 승인이나 증거 손상으로 이어지는 차단 결함만 이번 범위에서 고친다. 분류(coordinator가 코드를 확인함):
+
+| 항목 | 위치 | 분류 | 근거 |
+|---|---|---|---|
+| F-1 원격 V2 check_sdd 마지막 PASS JSON | ci_plan.py validate_remote_result | 후속 Task, 그 전까지 위험 수용 후보 | V2는 draft PR용이고 ready/main은 V3를 요구한다. 공식 최종 증거의 오승인 경로가 아니다. |
+| F-2 git publish 검증 `Ran N tests` 계수 | git_lifecycle.py 584~606 | 후속 Task | 판정은 rc 기반이고 계수는 0개 거부에만 쓴다. finish receipt는 원격 required_checks_passed·merge read-back을 요구하므로 공식 완료 증거 오승인으로 직결되지 않는다. 다만 C3-a형(import 중 출력 후 os._exit(0))이면 로컬 publish 준비가 VERIFIED가 될 수 있다. |
+| F-3 input_check 출력 정규식 계수 | input_check.py 295~315 | 후속 Task | managed input-check와 metrics 입력 동일성 digest 경로다. 공식 V3·증거 gate 소비자가 아니다. |
 
 ## EVID-R01 재검증 — 2026-11-20
 
