@@ -246,9 +246,9 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
   - **plugin 모드(rev2 보충, 2026-11-20 구현 질문 A):**
     - **strict 모드:** CI-PAR suite_backend용이다. 허용 목록 `BASE_ALLOWED`와 `--noconftest`를 쓰며, 현행 그대로 둔다.
     - **declared 모드:** Task 선언 pytest용이다.
-      - 검사 대상 tree(rootdir) 안의 `conftest.py`는 테스트 코드와 같은 신뢰(RA-1)로 허용한다.
+      - 호출자가 지정한 검사 Git 작업 트리 안의 `conftest.py`는 테스트 코드와 같은 신뢰(RA-1)로 허용한다.
       - 자동 로드된 외부 plugin도 현행 선언 검사처럼 허용한다. 대신 로드된 plugin 이름·배포 버전과 conftest 경로를 기록 필드 `plugins`에 남긴다.
-      - tree 밖 conftest는 `record_unavailable`로 거부한다.
+      - 호출자가 지정한 검사 Git 작업 트리 밖의 rootdir·사용된 inifile·conftest는 `record_unavailable`로 거부한다.
       - **EVID-R01 반영(구현 검토 P1):** 경계는 pytest rootdir가 아니라 호출자가 고정한 검사 Git 작업 트리(`--baton-tree`, producer가 Git toplevel로 다시 관측해 `tree_root` binding으로 남김, canonical path 비교)이며, tree 밖의 conftest·rootdir·사용된 inifile(`config.inipath`)은 모두 위반(`record_unavailable`)이다.
     - 모드는 호출자가 고정하고 기록에 `mode`를 남긴다.
     - **rev3(E207) binding 연결과 신뢰 경계:**

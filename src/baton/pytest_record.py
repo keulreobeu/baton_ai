@@ -7,10 +7,11 @@ fixture events and xdist crash items (CI-EVID-001 AC-06, CI-PAR-001 AC-06/09).
 Modes (``--baton-mode``, fixed by the caller and recorded as ``mode``):
 ``strict`` (default; CI-PAR suite_backend with ``--noconftest``) allows only the
 BASE_ALLOWED plugin modules and a clean plugin environment. ``declared`` (a Task's own
-``python -m pytest`` check, CI-EVID-001 rev2 AC-06) allows the checked tree's conftest.py
-files (trusted like its test code, RA-1) and other loaded plugins, records each plugin's
-module, distribution/version and conftest path in ``plugins``, and refuses a conftest
-outside the rootdir.
+``python -m pytest`` check, CI-EVID-001 rev2 AC-06) is bounded by the caller-given checked
+Git work tree (``--baton-tree``), not by pytest's rootdir. It allows conftest.py files
+inside that tree (trusted like its test code, RA-1) and other loaded plugins, records each
+plugin's module, distribution/version and conftest path in ``plugins``, and refuses a
+rootdir, used inifile or conftest outside that tree (EVID-R01).
 
 Supported: pytest >= 8.4 and < 10 (unittest subTest results need pytest 9, or pytest 8.4
 with pytest-subtests; ``subtest_support`` says which). Outside that range the session
