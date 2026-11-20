@@ -920,5 +920,118 @@ class DeclaredTreeBoundTests(unittest.TestCase):
         self.assertIsNone(run_record.git_toplevel(self.outer))
 
 
+PASS_ID, FAIL_ID = "tests/test_demo.py::test_pass", "tests/test_demo.py::test_fail"
+
+
+class DeclaredPluginTrustTests(unittest.TestCase):
+    """D28 not accepted (user decision 2026-11-20): an official declared pytest run loads
+    only trusted plugins and every collected item has a result or a declared deselect.
+
+    Synthetic records as baton.pytest_record writes them, read by the consumer
+    (RecordedRun.read), because the official suite has no pytest; the real plugin run is
+    auxiliary evidence. Each case is the reproduction the ChatGPT review (2nd implementation
+    review) or the user decision named: before the fix each was a valid rc 0 record."""
+
+    def setUp(self):
+        from baton.orchestrator import RecordedRun, child_environment
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.tree = Path(self.tmp.name).resolve() / "checked_tree"
+        (self.tree / "tests").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(self.tree)], check=True, capture_output=True)
+        self.run = RecordedRun("pytest", [sys.executable, "-m", "pytest", "tests"], self.tree,
+                               child_environment(str(self.tree)))
+        self.addCleanup(self.run.cleanup)
+
+    def plugin(self, module, trust, *, distribution=None, version=None, file=None):
+        return {"module": module, "distribution": distribution, "version": version, "path": None,
+                "file": file, "trust": trust}
+
+    def clean_plugins(self):
+        return [self.plugin("_pytest.python", "core", distribution="pytest", version="9.2.0"),
+                self.plugin("baton.pytest_record", "baton")]
+
+    def read(self, *, plugins=None, control=None, collected=(PASS_ID,), selected=None, deselected=(),
+             passed=(PASS_ID,), rc=0, extra=None):
+        selected = list(collected if selected is None else selected)
+        rows = {test_id: {"started": True, "events": ["pass"]} if test_id in passed else {"started": False}
+                for test_id in selected}
+        fields = {"mode": "declared", "violations": [],
+                  "plugins": self.clean_plugins() if plugins is None else plugins,
+                  "plugin_control": {"autoload_disabled": True, "env_plugins": None, "env_addopts": "",
+                                     "addopts": [], "required_plugins": []} if control is None else control,
+                  "items_collected": list(collected), "selected": selected,
+                  "deselected": [{"id": i, "by": by} for i, by in deselected]}
+        fields.update(extra or {})
+        record = run_record.make_record(producer="pytest", nonce=self.run.nonce, binding=self.run.expected,
+                                        rows=rows, scopes={}, exit_code=rc, extra=fields)
+        run_record.write_record(self.run.path, record)
+        return self.run.read(rc)
+
+    def assertRefused(self, outcome):
+        self.assertEqual(outcome, (None, "record_unavailable"))
+
+    def test_clean_declared_run_is_still_evidence(self):
+        record, reason = self.read()
+        self.assertIsNone(reason)
+        self.assertTrue(run_record.eligible(record))
+
+    def test_external_p_plugin_dropping_a_failing_test_is_refused(self):
+        # Review reproduction: `-p evilplug` (outside the tree, no trusted distribution)
+        # removes test_fail in pytest_collection_modifyitems; rc 0, 1 passed.
+        self.assertRefused(self.read(plugins=[*self.clean_plugins(), self.plugin("evilplug", None)],
+                                     collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,)))
+
+    def test_entry_point_plugin_is_refused(self):
+        evilep = self.plugin("evilep", None, distribution="evilep", version="1.0")
+        self.assertRefused(self.read(plugins=[*self.clean_plugins(), evilep]))
+        # The caller fixes autoload off; a producer that saw it on is refused.
+        self.assertRefused(self.read(control={"autoload_disabled": False, "env_plugins": None, "env_addopts": "",
+                                              "addopts": [], "required_plugins": []}))
+        from baton.orchestrator import child_environment
+        self.assertEqual(child_environment("src")["PYTEST_DISABLE_PLUGIN_AUTOLOAD"], "1")
+
+    def test_pytest_plugins_environment_is_cleared_and_refused(self):
+        from baton.orchestrator import child_environment
+        with patch.dict(os.environ, {"PYTEST_PLUGINS": "evilplug"}):
+            self.assertIsNone(child_environment("src")["PYTEST_PLUGINS"])
+        self.assertRefused(self.read(control={"autoload_disabled": True, "env_plugins": "evilplug",
+                                              "env_addopts": "", "addopts": [], "required_plugins": []}))
+
+    def test_ini_addopts_and_required_plugins_are_controlled(self):
+        # The caller's `-o addopts=` empties ini/pyproject/tox addopts; a producer that still
+        # saw `-p evilplug` there, or an untrusted required plugin, is refused.
+        self.assertRefused(self.read(control={"autoload_disabled": True, "env_plugins": None, "env_addopts": "",
+                                              "addopts": ["-p", "evilplug"], "required_plugins": []}))
+        self.assertRefused(self.read(control={"autoload_disabled": True, "env_plugins": None, "env_addopts": "",
+                                              "addopts": [], "required_plugins": ["evilplug"]}))
+
+    def test_plugin_deselect_is_refused_but_declared_k_is_not(self):
+        self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,),
+                                     deselected=[(FAIL_ID, "conftest")]))
+        record, reason = self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,),
+                                   deselected=[(FAIL_ID, "_pytest.mark")])
+        self.assertIsNone(reason)
+        self.assertEqual(record["deselected"], [{"id": FAIL_ID, "by": "_pytest.mark"}])
+
+    def test_a_collected_item_without_result_or_deselect_is_refused(self):
+        # A silent drop (items[:] = ...) and a result that never came both leave an item
+        # collected and not accounted for.
+        self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,)))
+        self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), passed=(PASS_ID,)))
+
+    def test_trusted_list_is_name_and_version(self):
+        xdist = self.plugin("xdist.plugin", "list", distribution="pytest-xdist", version="3.8.0")
+        record, reason = self.read(plugins=[*self.clean_plugins(), xdist])
+        self.assertIsNone(reason)
+        other = dict(xdist, version="3.7.0")
+        self.assertRefused(self.read(plugins=[*self.clean_plugins(), other]))
+
+    def test_record_without_plugin_control_facts_is_refused(self):
+        # A record from a producer that does not report these facts is no evidence.
+        self.assertRefused(self.read(extra={"plugin_control": None}))
+        self.assertRefused(self.read(extra={"items_collected": None}))
+
+
 if __name__ == "__main__":
     unittest.main()
