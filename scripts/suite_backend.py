@@ -111,8 +111,6 @@ def parse_lock(text):
             raise BackendError("lock_malformed", "duplicate " + name)
         entries[name] = {"version": match.group(2), "marker": (match.group(3) or "").strip() or None,
                          "hashes": re.findall(r"sha256:([0-9a-f]{64})", match.group(4))}
-    if not {"pytest", "pytest-xdist"} <= entries.keys():
-        raise BackendError("lock_malformed", "pytest and pytest-xdist must be locked")
     return entries
 
 
@@ -497,6 +495,18 @@ def validate_result(doc):
 BINDING_KEYS = ("candidate_sha", "tree", "installed_digest", "gms_extra", "selection_digest", "python", "platform")
 
 
+def subtests_differ(left, right):
+    """(mismatch, renamed). Every subTest outcome must match as a multiset, and every non-pass
+    subTest must match by description too. Passing subTests whose descriptions carry
+    per-process values (temporary paths, generated SHAs, set order under hash
+    randomization) may differ in text only; that is reported, not failed."""
+    def key(rows, failing):
+        return sorted((desc if failing else "", outcome) for desc, outcome in rows if (outcome != "pass") == failing)
+    mismatch = (len(left) != len(right) or key(left, True) != key(right, True)
+                or key(left, False) != key(right, False))
+    return mismatch, not mismatch and sorted(map(tuple, left)) != sorted(map(tuple, right))
+
+
 def compare_runs(left, right):
     """Per-ID verdict and subTest equivalence of two result documents with one binding (AC-14/15).
 
@@ -513,14 +523,17 @@ def compare_runs(left, right):
     in_scope = {r["id"] for r in left["results"] + right["results"] if r.get("blocked_by")}
     diagnostics = [d["summary"]["suite_backend"]["diagnostics"] for d in (left, right)]
     report = {"ids_only_left": sorted(a.keys() - b.keys()), "ids_only_right": sorted(b.keys() - a.keys()),
-              "verdict_mismatch": {}, "subtest_mismatch": {}, "scope_mismatch": None,
+              "verdict_mismatch": {}, "subtest_mismatch": {}, "subtest_desc_differs": [], "scope_mismatch": None,
               "partition_violations": [], "status": [left["summary"]["status"], right["summary"]["status"]],
               "would_be_eligible": [d["would_be_eligible"] for d in diagnostics]}
     for key in sorted(a.keys() & b.keys()):
         if key not in in_scope and a[key]["outcome"] != b[key]["outcome"]:
             report["verdict_mismatch"][key] = [a[key]["outcome"], b[key]["outcome"]]
-        if a[key]["subtests"] != b[key]["subtests"]:
+        mismatch, renamed = subtests_differ(a[key]["subtests"], b[key]["subtests"])
+        if mismatch:
             report["subtest_mismatch"][key] = [a[key]["subtests"], b[key]["subtests"]]
+        elif renamed:
+            report["subtest_desc_differs"].append(key)
     if left["scopes"] != right["scopes"]:
         report["scope_mismatch"] = [left["scopes"], right["scopes"]]
     for doc in (left, right):
@@ -1001,10 +1014,17 @@ def run(args, *, leases=None, stop=lambda: None):
     if args.suite_backend == "xdist":
         if "pytest" not in probe["installed"] or "pytest-xdist" not in probe["installed"]:
             raise BackendError("ci_extra_missing", "pytest/pytest-xdist not installed; no sequential fallback")
+        locked = {}
         for path in lock_paths:
-            problems = check_lock(parse_lock(path.read_text(encoding="utf-8")), probe["installed"])
-            if problems:
-                raise BackendError("lock_mismatch", "; ".join(problems))
+            entries = parse_lock(path.read_text(encoding="utf-8"))
+            if locked.keys() & entries.keys():
+                raise BackendError("lock_malformed", "package locked twice")
+            locked.update(entries)
+        if not {"pytest", "pytest-xdist"} <= locked.keys():
+            raise BackendError("lock_malformed", "pytest and pytest-xdist must be locked")
+        problems = check_lock(locked, probe["installed"])
+        if problems:
+            raise BackendError("lock_mismatch", "; ".join(problems))
     nonce = run_record.new_nonce()
     work = Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir())
     run_dir = work / f"baton-suite-{nonce[:16]}"

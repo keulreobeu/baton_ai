@@ -181,7 +181,9 @@ class InventoryTests(Workspace):
         self.assertEqual(inventory["errors"], [])
         self.assertEqual(inventory["duplicates"], [])
         self.assertEqual(inventory["count"], len(ids))
-        self.assertTrue(any(i.startswith("tests.test_gms_switch.") for i in ids))
+        # Without the gms extra the module is unittest's synthetic skip; with it, its inherited tests.
+        self.assertTrue(any(i.startswith("tests.test_gms_switch.") for i in ids)
+                        or "unittest.loader.ModuleSkipped.tests.test_gms_switch" in ids)
         self.assertTrue(any(i.startswith("tests.test_memory.") for i in ids))
         self.assertIn("tests.test_suite_backend.InventoryTests.test_current_suite_with_inherited_bases_is_accepted", ids)
 
@@ -558,11 +560,17 @@ class LockTests(unittest.TestCase):
         self.assertTrue(sb.check_lock(entries, dict(ok, pytest="8.4.2"), "win32"))
         self.assertTrue(sb.check_lock(entries, {"pytest": "9.2.0", "pytest-xdist": "3.8.0"}, "win32"))
 
+    def test_subtest_text_may_differ_only_for_passing_subtests(self):
+        same = [["(path='C:/t/a')", "pass"], ["(i=1)", "fail"]]
+        self.assertEqual(sb.subtests_differ(same, [["(path='C:/t/b')", "pass"], ["(i=1)", "fail"]]), (False, True))
+        self.assertEqual(sb.subtests_differ(same, [["(path='C:/t/a')", "pass"], ["(i=2)", "fail"]])[0], True)
+        self.assertEqual(sb.subtests_differ(same, [["(path='C:/t/a')", "pass"]])[0], True)
+        self.assertEqual(sb.subtests_differ(same, list(reversed(same))), (False, False))
+
     def test_malformed_or_missing_hash_fails(self):
         for text in ("pytest==9.2.0\npytest-xdist==3.8.0 --hash=sha256:" + "1" * 64,
                      "pytest==9.2.0 --hash=md5:abc\npytest-xdist==3.8.0 --hash=sha256:" + "1" * 64,
-                     "pytest>=9 --hash=sha256:" + "0" * 64,
-                     "pytest-xdist==3.8.0 --hash=sha256:" + "1" * 64):
+                     "pytest>=9 --hash=sha256:" + "0" * 64):
             with self.subTest(text=text[:30]):
                 with self.assertRaises(sb.BackendError):
                     sb.parse_lock(text)

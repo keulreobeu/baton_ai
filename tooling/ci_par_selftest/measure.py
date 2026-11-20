@@ -112,7 +112,8 @@ def compare(out, left, right, env):
     except ValueError:
         return {"rc": rc, "error": (stdout + stderr)[-500:]}
     return {"rc": rc, "equivalent": report["equivalent"], "verdict_mismatch": report["verdict_mismatch"],
-            "subtest_mismatch": len(report["subtest_mismatch"]), "scope_mismatch": report["scope_mismatch"],
+            "subtest_mismatch": len(report["subtest_mismatch"]), "subtest_desc_differs": report["subtest_desc_differs"],
+            "scope_mismatch": report["scope_mismatch"],
             "ids_only_left": len(report["ids_only_left"]), "ids_only_right": len(report["ids_only_right"])}
 
 
@@ -132,10 +133,12 @@ def plan_selection(out, env, stage):
 
 def pair(out, env):
     """(d): two temporary detached worktrees of HEAD run xdist at once under one lease budget."""
-    trees = [Path(out) / f"wt{i}" for i in (1, 2)]
+    # Short paths: some tracked skill references exceed MAX_PATH under a deep scratch folder.
+    base = Path(os.environ.get("TEMP", out)) / f"cipar-{os.getpid()}"
+    trees = [base / f"wt{i}" for i in (1, 2)]
     for tree in trees:
-        subprocess.run(["git", "worktree", "add", "--detach", str(tree), "HEAD"], cwd=ROOT, check=True,
-                       capture_output=True)
+        subprocess.run(["git", "-c", "core.longpaths=true", "worktree", "add", "--detach", str(tree), "HEAD"],
+                       cwd=ROOT, check=True, capture_output=True)
     results, threads = {}, []
     try:
         def go(i, tree):
@@ -151,6 +154,7 @@ def pair(out, env):
         for tree in trees:
             subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=ROOT, capture_output=True)
         subprocess.run(["git", "worktree", "prune"], cwd=ROOT, capture_output=True)
+        shutil.rmtree(base, ignore_errors=True)
         listed = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
         results["worktrees_removed"] = all(not t.exists() for t in trees) and not any(
             str(t).replace("\\", "/").lower() in listed.replace("\\", "/").lower() for t in trees)
