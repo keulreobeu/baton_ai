@@ -52,6 +52,23 @@ evidence = "docs/tasks/TASK-CI-EVID-001.md#교차-실행--2026-11-20"
 acs = ["CI-EVID-001-AC-09"]
 
 [[verification]]
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 after EVID-R01, final candidate eaa2bd4, suite reuse off, empty LOCALAPPDATA, codebase-memory-mcp filtered from PATH, no other V3 running, free memory 7.49 GB)"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-r01-재검증--2026-11-20"
+acs = ["CI-EVID-001-AC-09"]
+tests_run = 865
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "cross-run after EVID-R01: origin/main 8e44620 scripts/verify_environment.py on the eaa2bd4 tree --base 8e44620: rc 1, 865 run, errors=4 = the same VerifyEnvironmentRecordTests (SystemExit 2), failures 0, skip 0, the other 861 OK; exception criteria pending decision"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-r01-재검증--2026-11-20"
+acs = ["CI-EVID-001-AC-09"]
+
+[[verification]]
 command = "independent cross review (ChatGPT via Drive BATON 교차검토 package, user-relayed) and remote CI verify.yml (requires D26 push approval; operational CI change requires D25-R)"
 result = "not_run"
 evidence = "docs/tasks/TASK-CI-EVID-001.md#검증-표"
@@ -118,6 +135,8 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `abbcb7e` | G1 검토 R01: 실제 rc≠0인데 successful=true인 기록은 모든 producer에서 rc_mismatch; unittest·verify_environment successful은 rc 0 필요; verify_environment rc≠0은 실패 stage 필요 |
 | `755c9ec` | 검증 기록(문서만) |
 | `df3594c` | EVID-R01: declared pytest 경계를 검사 Git tree로(tree 밖 conftest·rootdir·inifile 위반), Spec AC-06 한 줄, RA-3 D28 대기 조건 |
+| `eaa2bd4` | EVID-R01 증거와 교차 실행 조건부 예외 기준(결정 대기) |
+| (이 커밋) | EVID-R01 재검증 기록(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -178,6 +197,14 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 
 - **wrong_reject 확인:** tree 안 설정(루트 `pytest.ini`, `pyproject.toml` `[tool.pytest.ini_options]`, `tox.ini` + 루트 conftest, 설정 없음, tree 안 `--rootdir`)은 모두 그대로 통과했다(rc 0, 유효 기록).
 - 새로 거부되는 것은 Git tree 밖에 있는 pytest 설정을 쓰는 실행뿐이다(예: 상위 폴더에 떠 있는 `pytest.ini`). 의도된 거부이지만, 그런 환경의 연결 프로젝트는 설정을 tree 안으로 옮겨야 한다.
+
+## EVID-R01 재검증 — 2026-11-20
+
+| 항목 | 결과 |
+|---|---|
+| 국소 회귀(7모듈, `df3594c` 작업 트리) | 342 OK, skip 0, 879 s |
+| 공식 순차 V3 `--base 8e44620`(`eaa2bd4`) | PASS, 865 OK, skip 0, rc 0, 1545 s; 실행 전후 HEAD·clean 동일, 빈 `LOCALAPPDATA` 그대로, 다른 V3 미실행·여유 메모리 7.49 GB 확인 뒤 실행 |
+| 교차 실행(origin/main verifier, `eaa2bd4` tree) | rc 1, 865 실행, errors 4(앞 절과 같은 `VerifyEnvironmentRecordTests` 4건, 모두 `SystemExit: 2`), failures 0, skip 0, 나머지 861 OK, 1802 s; 원본 결과 failed 유지, 조건부 예외 기준은 결정 대기 |
 
 ## 보조 증거 (공식 suite 밖)
 
