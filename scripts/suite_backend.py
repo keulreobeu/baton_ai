@@ -397,7 +397,7 @@ def summarize(*, backend, record, compare, binding, inventory, workers_requested
               and not any(diagnostics.get(k) for k in ("crashes", "plugin_violations", "unclassified",
                                                         "record_rejected", "rc_inconsistent")))
     would_be_eligible = (passed and counts["skipped"] == 0 and counts["expected_failures"] == 0
-                         and counts["tests_run"] == selected)
+                         and counts["unexpected_successes"] == 0 and counts["tests_run"] == selected)
     reasons = [] if OFFICIAL_EVIDENCE_ENABLED else [INELIGIBLE_REASON]
     if not passed:
         reasons.append("not_passed")
@@ -405,6 +405,8 @@ def summarize(*, backend, record, compare, binding, inventory, workers_requested
         reasons.append("child_rc_nonzero")
     if counts["skipped"] or counts["expected_failures"]:
         reasons.append("skipped_or_expected_failure")
+    if counts["unexpected_successes"]:      # a non-strict XPASS keeps rc 0 but is never evidence (PAR-R202)
+        reasons.append("unexpected_success")
     if compare["status"] != "matched":
         reasons.append("compare_" + compare["status"])
     if stopped:
@@ -504,8 +506,14 @@ BINDING_KEYS = ("candidate_sha", "tree", "base", "installed_digest", "gms_extra"
 # Differ by design between backends: each side must equal the value its own backend produces.
 BACKEND_KEYS = ("config_digest", "lock_digest")
 
-# Explicit subTest description normalization (R04, Spec AC-15). Only per-process dynamic values are
-# rewritten; anything else that differs is a mismatch, and an order-only difference is uncertain.
+# subTest description normalization (R04, PAR-R201, Spec AC-15), fail-closed in two levels.
+# Proven: a value the result document itself shows to be run-varying is rewritten, and an equality
+# reached this way is equivalent: the run's own temporary folder (the child runs with TEMP/TMP/TMPDIR
+# set to <run_dir>/tmp, recorded as run_temp), tempfile names directly inside it, and hex values the
+# run recorded (its nonce and binding). PROVEN_NORMALIZATION lists them.
+# Pattern only: SUBTEST_NORMALIZATION below has no proof of where the value came from (two stable SHAs
+# or fixed tmp-like names would also match), so an equality reached only through it is uncertain.
+PROVEN_NORMALIZATION = ("run_temp", "run_tempfile_name", "run_recorded_hex")
 SUBTEST_NORMALIZATION = (
     ("tempfile_name", re.compile(r"\btmp[a-z0-9_]{8}\b"), "tmp<RAND>"),
     ("hex_digest", re.compile(r"\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b"), "<SHA>"),
@@ -519,16 +527,44 @@ def normalize_subtest(desc):
     return desc
 
 
-def subtests_differ(left, right):
-    """'same', 'normalized' (equal only after SUBTEST_NORMALIZATION), 'uncertain' (the remaining
-    differences pair up as same outcome with the same characters in another order, e.g. a set repr
-    under hash randomization) or 'different'. Descriptions of passing subTests count too."""
+RUN_TEMPFILE = re.compile(r"<RUN_TMP>([\\/]+)tmp[a-z0-9_]{8}\b")
+HEX_VALUE = re.compile(r"[0-9a-f]{32,64}")
+
+
+def run_proof(doc):
+    """The run-varying values a result document proves about its own run (PAR-R201)."""
+    hexes = {doc.get("nonce")} | set((doc.get("binding") or {}).values())
+    return {"run_temp": doc.get("run_temp"),
+            "hexes": sorted(v for v in hexes if isinstance(v, str) and HEX_VALUE.fullmatch(v))}
+
+
+def normalize_proven(desc, proof):
+    temp = (proof or {}).get("run_temp")
+    if temp:
+        # Spelled with escaped backslashes (str repr), natively, or with forward slashes (Path repr).
+        for spelling in dict.fromkeys((temp.replace("\\", "\\\\"), temp, temp.replace("\\", "/"))):
+            desc = re.sub(re.escape(spelling), "<RUN_TMP>", desc, flags=re.IGNORECASE)
+        desc = RUN_TEMPFILE.sub(r"<RUN_TMP>\1tmp<RAND>", desc)
+    for value in (proof or {}).get("hexes", ()):
+        desc = desc.replace(value, "<RUN_HEX>")
+    return desc
+
+
+def subtests_differ(left, right, left_proof=None, right_proof=None):
+    """'same'; 'normalized' (equal after the proven, run-recorded normalization only); 'uncertain'
+    (equal only after the pattern-only SUBTEST_NORMALIZATION, or the remaining differences pair up as
+    same outcome with the same characters in another order, e.g. a set repr under hash randomization)
+    or 'different'. Descriptions of passing subTests count too."""
     if Counter(map(tuple, left)) == Counter(map(tuple, right)):
         return "same"
-    norm_l = Counter((normalize_subtest(d), o) for d, o in left)
-    norm_r = Counter((normalize_subtest(d), o) for d, o in right)
-    if norm_l == norm_r:
+    proven_l = [(normalize_proven(d, left_proof), o) for d, o in left]
+    proven_r = [(normalize_proven(d, right_proof), o) for d, o in right]
+    if Counter(proven_l) == Counter(proven_r):
         return "normalized"
+    norm_l = Counter((normalize_subtest(d), o) for d, o in proven_l)
+    norm_r = Counter((normalize_subtest(d), o) for d, o in proven_r)
+    if norm_l == norm_r:
+        return "uncertain"
     only_l = list((norm_l - norm_r).elements())
     only_r = list((norm_r - norm_l).elements())
     if len(only_l) != len(only_r):
@@ -580,6 +616,7 @@ def compare_runs(left, right):
     b = {row["id"]: row for row in right["results"]}
     in_scope = {r["id"] for r in left["results"] + right["results"] if r.get("blocked_by")}
     diagnostics = [d["summary"]["suite_backend"]["diagnostics"] for d in (left, right)]
+    proofs = [run_proof(d) for d in (left, right)]
     report = {"ids_only_left": sorted(a.keys() - b.keys()), "ids_only_right": sorted(b.keys() - a.keys()),
               "verdict_mismatch": {}, "subtest_mismatch": {}, "subtest_uncertain": {}, "subtest_normalized": [],
               "backend_specific_differences": backend_specific, "scope_mismatch": None,
@@ -588,7 +625,7 @@ def compare_runs(left, right):
     for key in sorted(a.keys() & b.keys()):
         if key not in in_scope and a[key]["outcome"] != b[key]["outcome"]:
             report["verdict_mismatch"][key] = [a[key]["outcome"], b[key]["outcome"]]
-        state = subtests_differ(a[key]["subtests"], b[key]["subtests"])
+        state = subtests_differ(a[key]["subtests"], b[key]["subtests"], *proofs)
         if state == "different":
             report["subtest_mismatch"][key] = [a[key]["subtests"], b[key]["subtests"]]
         elif state == "uncertain":
@@ -1066,8 +1103,10 @@ def run_tree(argv, *, env, cwd, log_path, timeout, should_stop, job_factory=None
 
 # --------------------------------------------------------------------------- orchestration
 
-def child_env(root):
+def child_env(root, temp=None):
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("PYTEST_")}
+    if temp is not None:        # the run's own temporary folder: proves tempfile names run-varying (PAR-R201)
+        env.update(TEMP=str(temp), TMP=str(temp), TMPDIR=str(temp))
     # src/ of the tool's checkout first: baton.run_record / baton.pytest_record come from there.
     paths = [str(ROOT / "src"), str(Path(root) / "src"), str(root)]
     env.update(PYTHONPATH=os.pathsep.join(dict.fromkeys(paths)), PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1",
@@ -1120,7 +1159,7 @@ def _child(python, root, mode, run_dir, nonce, *, timeout, should_stop, ids_file
         argv += ["--ids-file", str(ids_file)]
     if binding is not None:
         argv += ["--binding", json.dumps(binding, sort_keys=True)]
-    rc, reason, terminated, accounting = run_tree(argv, env=child_env(root), cwd=root,
+    rc, reason, terminated, accounting = run_tree(argv, env=child_env(root, run_dir / "tmp"), cwd=root,
                                                   log_path=run_dir / f"{mode}.log", timeout=timeout,
                                                   should_stop=should_stop)
     return rc, reason, terminated, accounting, out
@@ -1158,6 +1197,7 @@ def run(args, *, leases=None, stop=lambda: None):
     work = Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir())
     run_dir = work / f"baton-suite-{nonce[:16]}"
     run_dir.mkdir(parents=True)
+    (run_dir / "tmp").mkdir()
     not_before = time.time() - 1
     deadline = time.monotonic() + args.timeout
     should_stop = lambda: stop() or ("cancel" if args.stop_file and Path(args.stop_file).exists() else None)
@@ -1204,7 +1244,7 @@ def run(args, *, leases=None, stop=lambda: None):
         out = run_dir / "record.json"
         t1 = time.monotonic()
         try:
-            rc, reason, terminated, accounting = run_tree(argv, env=child_env(root), cwd=root,
+            rc, reason, terminated, accounting = run_tree(argv, env=child_env(root, run_dir / "tmp"), cwd=root,
                                                           log_path=run_dir / "pytest.log",
                                                           timeout=max(1, deadline - time.monotonic()),
                                                           should_stop=should_stop,
@@ -1245,6 +1285,7 @@ def run(args, *, leases=None, stop=lambda: None):
                         diagnostics=diagnostics, stopped=reason, child_rc=rc)
     code = exit_code(summary)
     doc = {"schema": RESULT_SCHEMA, "nonce": nonce, "binding": binding, "worktree_dirty": dirty,
+           "run_temp": str((run_dir / "tmp").resolve()),
            "backend_config": {"extra_plugins": extra, "locks": [str(path.resolve()) for path in lock_paths]},
            "summary": summary, "rc": code, "scopes": record["scopes"] if record else {},
            "results": result_rows(record) if record else []}

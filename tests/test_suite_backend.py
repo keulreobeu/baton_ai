@@ -578,6 +578,29 @@ class SummaryTests(Workspace):
         self.assertFalse(summary["verified_evidence_eligible"])
         self.assertEqual(summary["suite_backend"]["eligibility_reasons"], ["contract_not_revised"])
 
+    def test_rc0_non_strict_xpass_is_never_would_be_eligible(self):
+        """PAR-R202 (T13/T14): pytest ends a non-strict XPASS with rc 0. Even when the record calls the
+        run successful and the inventory matched, would_be_eligible stays False with its own reason."""
+        ids = ["tests.test_m.C.test_ok", "tests.test_m.C.test_xpass"]
+        record = record_for({ids[0]: PASS_ROW, ids[1]: dict(PASS_ROW, events=["unexpected_success"])},
+                            collection=collection(ids))
+        record["successful"] = True          # what a non-strict XPASS producer reports with rc 0
+        inventory = inventory_for(ids)
+        compare = sb.compare_inventory(inventory, record, {"tests/test_m.py"})
+        self.assertEqual(compare["status"], "matched")
+        summary = sb.summarize(backend="xdist", record=record, compare=compare, binding={}, inventory=inventory,
+                               workers_requested=2, workers_granted=2, diagnostics={}, child_rc=0)
+        self.assertEqual(summary["status"], "PASS")
+        self.assertEqual(summary["suite_backend"]["diagnostics"]["unexpected_successes"], 1)
+        self.assertFalse(summary["suite_backend"]["diagnostics"]["would_be_eligible"])
+        self.assertFalse(summary["verified_evidence_eligible"])
+        self.assertIn("unexpected_success", summary["suite_backend"]["eligibility_reasons"])
+        record["counts"]["unexpected_successes"] = 0          # the same run without the XPASS is eligible
+        clean = sb.summarize(backend="xdist", record=record, compare=compare, binding={}, inventory=inventory,
+                             workers_requested=2, workers_granted=2, diagnostics={}, child_rc=0)
+        self.assertTrue(clean["suite_backend"]["diagnostics"]["would_be_eligible"])
+        self.assertNotIn("unexpected_success", clean["suite_backend"]["eligibility_reasons"])
+
     def test_existing_fields_types_and_single_object(self):
         sys.path.insert(0, str(ROOT))
         from scripts import verify_environment
@@ -626,9 +649,10 @@ class LockTests(unittest.TestCase):
         base = [[r"(root='C:\\T\\tmp8hg0uoxp\\x')", "pass"], ["(sha='" + "a" * 40 + "')", "pass"], ["(i=1)", "fail"]]
         renamed = [[r"(root='C:\\T\\tmppn74f6md\\x')", "pass"], ["(sha='" + "b" * 40 + "')", "pass"], ["(i=1)", "fail"]]
         self.assertEqual(sb.subtests_differ(base, list(reversed(base))), "same")
-        self.assertEqual(sb.subtests_differ(base, renamed), "normalized")
+        # Pattern-only equality has no proof that the values vary per run: uncertain (PAR-R201).
+        self.assertEqual(sb.subtests_differ(base, renamed), "uncertain")
         self.assertEqual(sb.subtests_differ([["(obj=<X at 0x1f2e3d4c>)", "pass"]], [["(obj=<X at 0x7a6b5c4d>)", "pass"]]),
-                         "normalized")
+                         "uncertain")
         stable = [["(path='C:/t/a')", "pass"]]
         self.assertEqual(sb.subtests_differ(stable, [["(path='C:/t/b')", "pass"]]), "different")   # passing too
         self.assertEqual(sb.subtests_differ(base, base[:2] + [["(i=2)", "fail"]]), "different")
@@ -637,6 +661,58 @@ class LockTests(unittest.TestCase):
         self.assertEqual(sb.subtests_differ([["(s={'a', 'b'})", "pass"]], [["(s={'b', 'a'})", "pass"]]), "uncertain")
         self.assertEqual([name for name, _, _ in sb.SUBTEST_NORMALIZATION],
                          ["tempfile_name", "hex_digest", "memory_address"])           # Spec AC-15 list
+        self.assertEqual(sb.PROVEN_NORMALIZATION, ("run_temp", "run_tempfile_name", "run_recorded_hex"))
+
+    def test_only_run_proven_values_normalize_to_equal(self):
+        """PAR-R201: the run's own temp folder, tempfile names directly in it and hex values the run
+        recorded are proven run-varying; stable SHAs and fixed tmp-like names are not."""
+        left = {"run_temp": r"C:\W\baton-suite-1111111111111111\tmp", "hexes": ["1" * 32]}
+        right = {"run_temp": r"C:\W\baton-suite-2222222222222222\tmp", "hexes": ["2" * 32]}
+        cases = (
+            (r"(root='C:\\W\\baton-suite-1111111111111111\\tmp\\tmp8hg0uoxp')",
+             r"(root='C:\\W\\baton-suite-2222222222222222\\tmp\\tmppn74f6md')", "normalized"),     # str repr
+            ("(p=WindowsPath('C:/W/baton-suite-1111111111111111/tmp/tmpab_cd123/x'))",
+             "(p=WindowsPath('C:/W/baton-suite-2222222222222222/tmp/tmpzz99yy88/x'))", "normalized"),   # Path repr
+            ("(nonce='" + "1" * 32 + "')", "(nonce='" + "2" * 32 + "')", "normalized"),          # recorded values
+            # Negative: two different stable 40- and 64-digit hex identifiers.
+            ("(source_sha='" + "a" * 40 + "')", "(source_sha='" + "b" * 40 + "')", "uncertain"),
+            ("(digest='" + "a" * 64 + "')", "(digest='" + "b" * 64 + "')", "uncertain"),
+            # Negative: different fixed tmp-shaped names, outside the run folder or nested deeper in it.
+            ("(name='tmpfixed001')", "(name='tmpfixed002')", "uncertain"),
+            (r"(p='C:\\W\\baton-suite-1111111111111111\\tmp\\a\\tmpfixed001')",
+             r"(p='C:\\W\\baton-suite-2222222222222222\\tmp\\a\\tmpfixed002')", "uncertain"),
+            # The other run's folder proves nothing for this run.
+            (r"(p='C:\\W\\baton-suite-2222222222222222\\tmp')",
+             r"(p='C:\\W\\baton-suite-1111111111111111\\tmp')", "different"),
+        )
+        for desc_l, desc_r, expected in cases:
+            with self.subTest(left=desc_l):
+                self.assertEqual(sb.subtests_differ([[desc_l, "pass"]], [[desc_r, "pass"]], left, right), expected)
+        self.assertEqual(sb.subtests_differ([["(p='/x/tmpaaaaaaaa')", "pass"]], [["(p='/y/tmpaaaaaaaa')", "pass"]],
+                                            left, right), "different")
+        doc = {"nonce": "3" * 32, "run_temp": "T", "binding": {"tree": "4" * 40, "python": "3.12", "base": None}}
+        self.assertEqual(sb.run_proof(doc), {"run_temp": "T", "hexes": ["3" * 32, "4" * 40]})
+        self.assertEqual(sb.run_proof({}), {"run_temp": None, "hexes": []})
+
+    def test_stable_sha_difference_is_not_equivalent_in_compare_runs(self):
+        """PAR-R201 reproduction: source_sha 'aaa…' vs 'bbb…', both passing, gave equivalent=True."""
+        docs = []
+        for sha in ("a" * 40, "b" * 40):
+            meta = {"backend_config": {"extra_plugins": [], "locks": []}, "summary": {"suite_backend": {"name": "sequential"}}}
+            binding = sb.expected_backend_values(meta)
+            row = dict(PASS_ROW, subtests=[["(source_sha='" + sha + "')", "pass"]])
+            record = record_for({"tests.test_m.C.test_t": row}, producer="unittest",
+                                collection=collection(["tests.test_m.C.test_t"]))
+            inventory = inventory_for(["tests.test_m.C.test_t"])
+            summary = sb.summarize(backend="sequential", record=record,
+                                   compare=sb.compare_inventory(inventory, record, {"tests/test_m.py"}), binding=binding,
+                                   inventory=inventory, workers_requested=None, workers_granted=1, diagnostics={})
+            docs.append({"schema": sb.RESULT_SCHEMA, "nonce": NONCE, "binding": binding, "summary": summary,
+                         "run_temp": "C:\\W\\run-" + sha[0], "backend_config": meta["backend_config"],
+                         "rc": sb.exit_code(summary), "scopes": {}, "results": sb.result_rows(record)})
+        report = sb.compare_runs(*docs)
+        self.assertEqual((report["verdict"], report["equivalent"]), ("uncertain", False))
+        self.assertEqual((list(report["subtest_uncertain"]), report["subtest_normalized"]), (["tests.test_m.C.test_t"], []))
 
     def test_uncertain_subtests_are_not_equivalent(self):
         row = dict(PASS_ROW, subtests=[["(s={'a', 'b'})", "pass"]])
