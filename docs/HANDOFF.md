@@ -17,7 +17,7 @@ usage: unknown
 rules: AGENTS.md; 실모델·GMS·스케줄러·전원 금지; force·amend·reset 금지; push·병합은 사용자 승인 범위만
 ```
 
-- **현재 branch 복원(먼저 실행):** `git fetch origin` → `git switch keulreobeu/ci-par-001` → `git status`·`git log -3`로 HEAD 확인. 이 branch는 push 미승인이라 원격에 없을 수 있다. 그때는 이 PC의 worktree(`C:/Users/lwwde/orca/workspaces/baton_ai/ci-par-001`)에서만 재개하고, 다른 PC에서 `-c`로 새로 만들지 않는다(같은 이름의 빈 branch가 생긴다). 그 뒤 `scripts/setup-environment.ps1`, `. ./scripts/enter-environment.ps1`.
+- **현재 branch 복원(먼저 실행):** `git fetch origin` → `git switch keulreobeu/ci-par-001` → `git status`·`git log -3`로 HEAD 확인. 이 branch는 push 미승인이라 원격에 없을 수 있다. 그때는 이 PC의 worktree(`C:/Users/lwwde/orca/workspaces/baton_ai/ci-par-001`)에서만 재개하고, 다른 PC에서 `git switch -c`로 새로 만들지 않는다(같은 이름이지만 이 작업 커밋이 없는 다른 branch가 생긴다). 그 뒤 `scripts/setup-environment.ps1`, `. ./scripts/enter-environment.ps1`.
 - **과거 기록(현재 재개에 쓰지 않음):** 2026-11-19 카드의 `git switch codex/ci-vtier-001` 복원 명령은 PR #17 병합(`8e44620`) 전 CI-VTIER-001 작업용이다.
 - 환경: `.venv`(공식, ci extra 없음)·`.venv-ci`(ci.lock+gms.lock)·`.venv-ci-alt`(alt.lock+gms.lock)·`.venv-ci-nogms`(ci.lock만)는 gitignore이며 `pip install --require-hashes -r <lock>`로 다시 만든다.
 - 보조 실행: `.venv-ci/Scripts/python.exe -X utf8 scripts/suite_backend.py run --suite-backend xdist --workers 6 --lock requirements/ci.lock --lock tooling/ci_par_selftest/gms.lock ...`. 실측은 `tooling/ci_par_selftest/measure.py`(CBM 차단 환경)로 한다.

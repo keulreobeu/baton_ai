@@ -119,8 +119,8 @@ TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈
 | T04 | a | 독립 loader inventory: 현행 suite(상속 Base 포함) 허용, `load_tests` 모듈 보고, import 실패 거부, 테스트 미실행 | 허용/실패 | 04, 05 | `InventoryTests` |
 | T05 | a | 누락·추가·중복·0건·not_run·worker 수집 불일치, 모듈 수준 `def test_*`는 추가 ID | 실패 | 05 | `CompareTests` |
 | T06 | a | 같은 클래스·메서드의 다른 모듈, 동명 basename, 공백·한글 경로, 300개 UTF-8 ID 파일, 알 수 없는 ID | 일치/실패 | 04 | `MappingTests` |
-| T07 | a | unittest 기준선 판정: fail/error/사용자 정의 failureException, call+tearDown, xfail/xpass, subTest 보존 | 표대로 | 06, 15 | `NormalizeTests` |
-| T08 | a | 결과 문서/기록: 없음·잘림·이전 nonce·중복·binding 불일치(의존성 digest·GMS·선택 ID)·rc와 결과 모순·가짜 stdout 요약 무시 | 실패 | 06, 08, 16 | `ResultFileTests`, `test_run_record.RejectionTests` |
+| T07 | a | unittest 기준선 판정: fail/error/사용자 정의 failureException, call+tearDown, xfail/xpass, subTest 보존. subTest 설명 비교(R04): 명시 정규화 3종, 통과 subTest도 비교, 순서만 다른 차이는 uncertain(equivalent 아님) | 표대로 | 06, 15 | `NormalizeTests`, `LockTests.test_subtest_descriptions_compared_after_explicit_normalization`, `LockTests.test_uncertain_subtests_are_not_equivalent` |
+| T08 | a | 결과 문서/기록: 없음·잘림·이전 nonce·중복·binding 불일치(공통 8개, base 포함)·backend별 config/lock 기대값 위반·rc와 결과 모순·자식 rc 1/2/3 + successful=true + 전부 pass는 FAIL(R01)·가짜 stdout 요약 무시 | 실패 | 06, 08, 16 | `ResultFileTests`, `test_run_record.RejectionTests` |
 | T09 | a | fixture 부분 실패(2 worker 이벤트): scope 단위 비교, blocked ∪ started 분할, blocked는 tests_run 제외, fixture SkipTest는 scope skip | 실패/비적격 | 06 | `FixtureTests` |
 | T10 | a | import 시 SkipTest 모듈 → `unittest.loader.ModuleSkipped.<m>` skip, 다른 수집 오류는 실패 | 비적격/실패 | 06, 10 | `ModuleSkipTests` |
 | T11 | a | crash item error, 큐 미실행 not_run, 수집 중 사망, rc 0 + crash | 실패 | 09 | `CrashTests` |
@@ -129,16 +129,18 @@ TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈
 | T14 | a | 기존 summary 필드·타입 보존(`verify_environment._summary`와 대조), `suite_backend` 객체 하나, MetricsStore 투영 제외 | — | 07 | `SummaryTests` |
 | T15 | a | lock 버전 불일치·hash 누락·형식 오류 | 실패 | 11 | `LockTests` |
 | T16 | a | 임대: 2 프로세스 동시 acquire ≤ S, pid 재사용, 죽은 소유자 회수(입증 시만), 명시 정리, budget 충돌, BATON_HOME 무관, 손상·접근 불가, 포화 대기 후 stopped, RAM 부족 대기, 종료 확인 전 반납 안 함 | 표대로 | 12 | `LeaseTests` |
+| T16d | a | 종료 입증(R03): 자식 정상 종료(입증 기록 뒤 반납), 부모 강제 종료(Windows Job이 트리 종료 → 회수, POSIX 자식 session 생존 중 보존), PID 재사용(입증 있을 때만 회수), Job 할당 전 종료(입증 없음 → 보존). 실행할 수 없는 플랫폼 사례는 단위 수준 대체 | 표대로 | 09, 12 | `LeaseProofTests` |
 | T16b | a | 종료: 자손 0 입증 불가 → `termination_unverified`(rc 4), 실제 timeout에서 손자 프로세스까지 종료 | 실패/stopped | 09 | `TerminationTests` |
 | T16c | a | run-record/1 사유별 음성 11종, unittest 집계 규칙, pytest 이벤트 → 행 변환 | 표대로 | 06, 16 | `tests/test_run_record.py` |
 | T17 | b | subTest 복수·중첩·메시지만·실패/skip/error 뒤 후속 보존(상위 ID와 개별 subTest 분리 비교) | AC-15 | 06, 15 | `T17_T18_semantics` |
 | T18 | b | 사용자 정의 failureException, xfail/xpass, call+tearDown, setUpClass/Module 실패·skip, 클래스 skip 장식, tearDownClass 실패, 상속(Base/Mixin), import SkipTest | AC-15 | 06, 15 | `T17_T18_semantics` |
 | T19 | b | 실제 2 worker fixture 부분 실패(첫 setUpClass만 실패) | AC-15 | 06, 15 | `T19_partial_fixture_2_workers` |
-| T20 | b | cryptography 미설치 venv의 실제 GMS 모듈 6개 import SkipTest 매핑 | AC-15 | 10, 15 | `T20_gms_less_real_modules` |
+| T20 | b | cryptography 미설치 venv의 실제 GMS 모듈 6개: (a) 일반 테스트 1개를 더한 선택의 import SkipTest 매핑 동등, (b) skip만 있는 선택은 pytest exit 5로 xdist 실패(fail-closed, unittest는 PASS) | AC-15/실패 | 10, 15 | `T20_gms_less_real_modules` |
 | T21 | b | 실제 worker crash(`os._exit`)·수집 중 worker 사망 | 실패 | 09 | `T21_*` |
 | T22 | b | timeout·stop 파일 cancel → worker·손자까지 종료, rc 3, 임대 반납 | stopped | 09, 12 | `T22_*` |
 | T23 | b | 테스트 모듈 `pytest_plugins` → 허용 목록 위반 실패. conftest·root pytest.ini addopts·`PYTEST_ADDOPTS=--lf`·`PYTEST_PLUGINS` 무영향. `.pytest_cache` 미생성 | 실패/무영향 | 04, 11 | `T23_*` |
 | T24 | b | import 부작용 모듈이 worker마다 반복되는지 기록 | 기록 | 04 | `T24_import_side_effect` |
+| T25 | b | `load_tests`가 테스트를 거르거나 비-test_ 메서드를 더하는 모듈: unittest 기준선 PASS, xdist는 수집 불일치(missing·extra)로 실패 | 실패 | 04, 05 | `T25_load_tests_collection_differs` |
 
 ## 범위 밖
 - 계약 문서(AGENTS.md·docs/sdd.md·README.md·CI-OPT-001·CI-VTIER-001)와 고정 문구 테스트(002)
