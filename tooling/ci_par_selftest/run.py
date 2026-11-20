@@ -230,6 +230,7 @@ def summarize_doc(path):
             "missing": s["suite_backend"]["compare"]["missing"], "extra": s["suite_backend"]["compare"]["extra"],
             "plugin_violations": d.get("plugin_violations"), "record_rejected": d.get("record_rejected"),
             "unclassified": d.get("unclassified"),
+            "child_rc": d.get("child_rc"),
             "collection_errors": d.get("collection_errors"), "scopes": doc["scopes"],
             "outcomes": {r["id"]: r["outcome"] for r in doc["results"]},
             "subtests": {r["id"]: r["subtests"] for r in doc["results"] if r["subtests"]}}
@@ -290,20 +291,22 @@ def run_case(name, case, candidate, work, lease_home):
     return out
 
 
-def gms_less(work, lease_home):
-    """T20: the real GMS modules under a cryptography-less interpreter map to the synthetic IDs."""
+GMS_SKIP_IDS = ["unittest.loader.ModuleSkipped.tests." + m for m in (
+    "test_credentials", "test_credential_server", "test_credential_regressions", "test_gms",
+    "test_gms_budget", "test_gms_switch")]
+# One ordinary stdlib test keeps pytest from ending with "no tests collected" (exit 5).
+PLAIN_ID = "tests.test_run_record.FormatTests.test_valid_record_round_trips_and_complete_is_last"
+
+
+def gms_pair(work, lease_home, name, ids):
     python = ROOT / ".venv-ci-nogms" / VENV
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("PYTEST_", "BATON_SUITE_"))}
     env.update(LOCALAPPDATA=str(lease_home), PYTHONPATH=str(ROOT / "src"))
-    probe = subprocess.run([str(python), "-c", "import cryptography"], capture_output=True)
-    ids = ["unittest.loader.ModuleSkipped.tests." + m for m in (
-        "test_credentials", "test_credential_server", "test_credential_regressions", "test_gms",
-        "test_gms_budget", "test_gms_switch")]
-    ids_file = Path(work) / "gms_ids.txt"
+    ids_file = Path(work) / f"{name}_ids.txt"
     ids_file.write_text("\n".join(ids) + "\n", encoding="utf-8")
-    out = {"cryptography_importable": probe.returncode == 0}
+    out = {}
     for backend in ("sequential", "xdist"):
-        result = Path(work) / f"T20-{backend}.json"
+        result = Path(work) / f"{name}-{backend}.json"
         args = ["run", "--suite-backend", backend, "--python", str(python), "--ids-file", str(ids_file),
                 "--work-dir", str(work), "--result-out", str(result), "--timeout", "600"]
         if backend == "xdist":
@@ -311,12 +314,36 @@ def gms_less(work, lease_home):
         rc, stdout, stderr, seconds = call(python, args, env)
         out[backend] = {"rc": rc, "seconds": seconds, "doc": summarize_doc(result), "stderr": stderr[-300:]}
     if out["sequential"]["doc"] and out["xdist"]["doc"]:
-        rc, stdout, _, _ = call(python, ["compare", str(Path(work) / "T20-sequential.json"),
-                                         str(Path(work) / "T20-xdist.json")], env)
+        rc, stdout, _, _ = call(python, ["compare", str(Path(work) / f"{name}-sequential.json"),
+                                         str(Path(work) / f"{name}-xdist.json")], env)
         out["compare"] = json.loads(stdout) if stdout.startswith("{") else {"error": stdout}
-    seq = (out["sequential"]["doc"] or {}).get("outcomes", {})
-    out["ok"] = (not out["cryptography_importable"] and sorted(seq) == sorted(ids)
-                 and set(seq.values()) == {"skip"} and bool(out.get("compare", {}).get("equivalent")))
+    return out
+
+
+def gms_less(work, lease_home):
+    """T20: the real GMS modules under a cryptography-less interpreter.
+
+    (a) mapping: the six import-SkipTest modules plus one plain test map to the synthetic
+        unittest.loader.ModuleSkipped IDs and are equivalent between backends.
+    (b) skip-only selection: pytest collects no item and exits 5, so xdist must fail closed
+        (child rc != 0, or the record refused) while the unittest baseline PASSes. A known,
+        safe difference: never a false PASS.
+    """
+    probe = subprocess.run([str(ROOT / ".venv-ci-nogms" / VENV), "-c", "import cryptography"], capture_output=True)
+    out = {"cryptography_importable": probe.returncode == 0}
+    mapped = out["mapping"] = gms_pair(work, lease_home, "T20a", GMS_SKIP_IDS + [PLAIN_ID])
+    seq = (mapped["sequential"]["doc"] or {}).get("outcomes", {})
+    mapping_ok = (sorted(seq) == sorted(GMS_SKIP_IDS + [PLAIN_ID])
+                  and all(seq[i] == "skip" for i in GMS_SKIP_IDS) and seq.get(PLAIN_ID) == "pass"
+                  and bool(mapped.get("compare", {}).get("equivalent")))
+    only = out["skip_only"] = gms_pair(work, lease_home, "T20b", GMS_SKIP_IDS)
+    seq_doc, xd_doc = only["sequential"]["doc"] or {}, only["xdist"]["doc"] or {}
+    skip_only_ok = (seq_doc.get("status") == "PASS" and only["xdist"]["rc"] != 0 and xd_doc.get("status") == "FAIL")
+    out["observed"] = {"mapping_equivalent": (mapped.get("compare") or {}).get("equivalent"),
+                       "skip_only_xdist_rc": only["xdist"]["rc"], "skip_only_xdist_status": xd_doc.get("status"),
+                       "skip_only_child_rc": xd_doc.get("child_rc"),
+                       "skip_only_record_rejected": xd_doc.get("record_rejected")}
+    out["ok"] = not out["cryptography_importable"] and mapping_ok and skip_only_ok
     return out
 
 
