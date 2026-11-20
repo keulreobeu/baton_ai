@@ -104,9 +104,11 @@ def make_record(*, producer, nonce, binding, rows, scopes, exit_code, summary=No
     record = {"schema": SCHEMA, "producer": producer, "nonce": nonce, "binding": dict(binding),
               **assemble(rows, scopes), "exit_code": int(exit_code), "summary": summary}
     if producer in ("pytest", "xdist"):
-        # rev3 E203: pytest's own success is its exit status (a non-strict XPASS keeps rc 0
-        # and successful=true; it is still ineligible as evidence, see ``eligible``).
-        record["successful"] = int(exit_code) == 0
+        # rev3 E203: pytest's own success is rc 0 with no failure or error (a non-strict
+        # XPASS keeps rc 0 and successful=true; it is still ineligible, see ``eligible``).
+        # Counts that contradict the rc stay unsuccessful and are refused as rc_mismatch.
+        counts = record["counts"]
+        record["successful"] = int(exit_code) == 0 and counts["failures"] + counts["errors"] == 0
     if stages is not None:
         record["stages"] = {k: dict(v) for k, v in stages.items()}
     record.update(extra or {})
