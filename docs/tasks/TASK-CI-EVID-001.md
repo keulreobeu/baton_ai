@@ -24,15 +24,31 @@ evidence = "docs/tasks/TASK-CI-EVID-001.md#red-on-base--2026-11-20"
 acs = ["CI-EVID-001-AC-01"]
 
 [[verification]]
-command = "green: python -X utf8 -m unittest tests.test_evidence_records tests.test_run_record tests.test_verify_environment tests.test_managed_harness tests.test_ci_plan tests.test_ci_workflow (candidate working tree)"
-result = "not_run"
+command = "green: python -X utf8 -m unittest tests.test_evidence_records tests.test_run_record tests.test_verify_environment tests.test_managed_harness tests.test_ci_plan tests.test_ci_workflow tests.test_flow_runtime (8dddfb5; then test_run_record + test_evidence_records on abbcb7e)"
+result = "passed"
 evidence = "docs/tasks/TASK-CI-EVID-001.md#검증-표"
 acs = ["CI-EVID-001-AC-01", "CI-EVID-001-AC-02", "CI-EVID-001-AC-03", "CI-EVID-001-AC-04", "CI-EVID-001-AC-05", "CI-EVID-001-AC-06", "CI-EVID-001-AC-07", "CI-EVID-001-AC-08"]
+tests_run = 333
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
 
 [[verification]]
-command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3, final candidate) + origin/main verify_environment.py cross-run on the same candidate tree"
-result = "not_run"
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3, final candidate abbcb7e, suite reuse off, LOCALAPPDATA empty temp, no codebase-memory-mcp on PATH)"
+result = "passed"
 evidence = "docs/tasks/TASK-CI-EVID-001.md#검증-표"
+acs = ["CI-EVID-001-AC-09"]
+tests_run = 859
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "cross-run: origin/main 8e44620 scripts/verify_environment.py on the abbcb7e tree (detached temp worktree, only that file replaced) --base 8e44620: rc 1, 859 run, errors=4 = VerifyEnvironmentRecordTests (the old verifier has no --record-out, SystemExit 2); the other 855 OK, skip 0"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#교차-실행--2026-11-20"
 acs = ["CI-EVID-001-AC-09"]
 
 [[verification]]
@@ -98,7 +114,9 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `3d88d8c` | 공용 모듈 rev2 보강: `observed_binding(cwd, argv, env)`, `read_record` keyword(producer·exclusive·binding_after)·사유 4종, stages, producer별 rc 규칙, collection 오류 errors, plain pytest setup skip=skip, 공용 unittest 기록 실행기, `write_record(once)`, pytest `--baton-mode strict|declared` |
 | `230be92` | rev3 E202/E203/E204/E206: successful/eligible 분리·엄격 XPASS 실패, xdist 보조 파일 정리 후 확정, 생산자 argv(sys.orig_argv)·env·plugins_digest 관측, ignored `*.py` 포함 worktree_digest, `RecordingRunner` |
 | `ad185a1` | pytest successful = rc 0 이고 failures+errors 0(CI-PAR 병합 시험에서 발견) |
-| (이 커밋) | 소비자 교체 AC-04~07, SDD 문서, 테스트 기대값 갱신 |
+| `8dddfb5` | 소비자 교체 AC-04~07, SDD 문서, 테스트 기대값 갱신 |
+| `abbcb7e` | G1 검토 R01: 실제 rc≠0인데 successful=true인 기록은 모든 producer에서 rc_mismatch; unittest·verify_environment successful은 rc 0 필요; verify_environment rc≠0은 실패 stage 필요 |
+| (이 커밋) | 검증 기록(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -119,6 +137,22 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 - `tests/test_ci_plan.py` `RemoteResultTests`: 원격 V3·`-m unittest`는 기록으로 판정하므로, 출력만으로 통과·거부를 기대하던 사례를 기록 기반 사례로 다시 썼다. 출력만으로는 통과하지 않는다는 기대를 추가했다. 2 MiB tail·atexit·가짜 요약 사례는 이제 진단일 뿐이며 판정에 영향이 없음을 확인한다.
 - `tests/test_evidence_records.py`(red 커밋 뒤): 가짜 생산자가 rev3 binding 정의와 stages를 따르도록 바꿨고, C5 runner는 선언 검사(rc_only)에 rc 0을 준다(rev3 E201: rc_only rc≠0은 확정 실패). oracle은 바꾸지 않았다.
 
+## 교차 실행 — 2026-11-20
+
+origin/main의 `verify_environment.py`(변경 전 검증기)로 후보 `abbcb7e` tree 전체 suite를 실행했다. 실패 4건은 모두
+`tests/test_evidence_records.py` `VerifyEnvironmentRecordTests`(record-mode 3 subTest, sdd_static 실패 기록 1)다. 이
+테스트는 후보 verifier의 `--record-out/--record-nonce`를 직접 검사하는데, 교체한 origin/main 판에는 그 옵션이 없어
+argparse `SystemExit 2`가 난다(예상된 실패). 나머지 855개는 변경 전 검증기로도 통과했다(skip 0). 결과는 failed로
+기록하며, 교차 실행을 통과로 볼지는 독립 검토·사용자 판단에 맡긴다.
+
+## CI-PAR 병합 시험 — 최종 후보
+
+ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detached worktree, 끝난 뒤 abort·remove·prune):
+- 문서 충돌 3개(`docs/HANDOFF.md`, `docs/sdd/traceability.json`, `docs/tasks/current.md`): 양쪽 항목 추가라 병합 때 합쳐야 한다.
+- `tests.test_run_record tests.test_suite_backend` 107 중 103 OK(skip 0). 실패는 CI-PAR T01 `IsolationTests.test_official_modules_do_not_import_backend`
+  (4 subTest): "공식 경로는 `run_record`·`pytest_record`를 import하지 않는다"는 G1 단계 불변식인데, 이 Task가 설계상 그 import를 넣는다(AC-05/06).
+  CI-PAR 쪽에서 `NEW`를 `suite_backend`로 좁히는 갱신이 필요하다(CI-PAR scope, 이 Task는 고치지 않음).
+
 ## 보조 증거 (공식 suite 밖)
 
 실제 pytest 9.2.0 / pytest-xdist 3.8.0(CI-PAR `requirements/ci.lock` 해시 설치, 시스템 임시 venv, 끝난 뒤 삭제). 결과:
@@ -133,8 +167,10 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | 항목 | 명령 | 결과 |
 |---|---|---|
 | red | 위 절 | 13 tests, F11/E2(예상대로) |
-| 국소 회귀 | 6모듈 | 기록 예정 |
-| 공식 순차 V3 | `python -X utf8 scripts/verify_environment.py --base 8e44620` | 기록 예정 |
-| 교차 실행 | origin/main `verify_environment.py`로 같은 후보 tree | 기록 예정 |
+| 국소 회귀 | 6모듈 + `test_flow_runtime`(`8dddfb5`) | 333 OK, skip 0, 773 s |
+| R01 뒤 국소 | `test_run_record`·`test_evidence_records`(`abbcb7e`) | 82 OK, skip 0 |
+| 공식 순차 V3 | `python -X utf8 scripts/verify_environment.py --base 8e44620`(`abbcb7e`) | PASS, 859 OK, skip 0, rc 0, 2000 s, eligible, reuse not_configured; 실행 전후 HEAD·clean 동일, 빈 `LOCALAPPDATA` 그대로(CBM 실행 없음) |
+| 교차 실행 | origin/main `verify_environment.py`로 `abbcb7e` tree | rc 1, 859 실행, errors 4(아래 절), 나머지 855 OK, skip 0, 1416 s |
+| CI-PAR 병합 시험(최종) | ci-par-001 `8224921` × `abbcb7e`(커밋 없음) | 문서 3개 충돌(HANDOFF·traceability·current, 양쪽 항목 추가), `test_run_record`+`test_suite_backend` 107 중 103 OK; `IsolationTests.test_official_modules_do_not_import_backend` 4 subTest 실패(아래 절) |
 | 독립 교차 검토 | ChatGPT(coordinator 패키지) | not_run |
 | 원격 CI | verify.yml(D26 뒤) | not_run |
