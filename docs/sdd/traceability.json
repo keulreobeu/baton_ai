@@ -2048,6 +2048,26 @@
           "id": "CI-EVID-001-AC-06",
           "tests": [
             {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_external_p_plugin_dropping_a_failing_test_is_refused"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_trusted_plugin_matches_distribution_version_module_and_source"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_any_deselect_outside_the_allowed_set_is_refused"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_a_collected_item_without_result_or_deselect_is_refused"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredTrustRuleTests.test_explicit_p_names"
+            },
+            {
               "file": "tests/test_run_record.py",
               "symbol": "RecordedUnittestRunnerTests.test_argv_meaning_rc_and_counts_match_plain_unittest"
             },

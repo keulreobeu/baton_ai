@@ -21,8 +21,9 @@ from .managed import ACTIVE, ManagedStore
 # evidence (console output is diagnostics, AC-04). Observed binding keys are named with
 # None placeholders, so a producer that copies its input instead of observing is refused.
 PLACEHOLDERS = run_record.PLACEHOLDERS
+# rev4 (D28): plugin autoload off and no PYTEST_PLUGINS; the producer checks both again.
 PYTEST_DEFAULTS = {"PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_ADDOPTS": "",
-                   "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+                   "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_PLUGINS": None}
 
 
 def child_environment(source_paths):
@@ -37,13 +38,16 @@ class RecordedRun:
     """One record_required execution: its argv with the record options, its fresh record
     directory and the binding the caller expects (fixed before the run)."""
 
-    def __init__(self, producer, argv, tree, environment, *, base=None):
+    def __init__(self, producer, argv, tree, environment, *, base=None, allowed_deselect=()):
         import tempfile
         self.directory = tempfile.mkdtemp(prefix="baton-record-")
         self.fresh = not os.listdir(self.directory)
         self.path = os.path.join(self.directory, "record.json")
         self.nonce = run_record.new_nonce()
         self.producer, self.tree, self.environment = producer, tree, environment
+        # rev4 (D28): the test IDs a Task/Spec/AC allows to be deselected (none is declared
+        # today, so this is empty and a declared pytest run deselects nothing).
+        self.allowed_deselect = sorted(set(allowed_deselect))
         self.given = dict(PLACEHOLDERS)
         drop = ()
         if producer == "verify_environment":
@@ -58,6 +62,10 @@ class RecordedRun:
             self.argv = [*argv[:3], "-p", "baton.pytest_record", f"--baton-record={self.path}",
                          f"--baton-nonce={self.nonce}", "--baton-mode=declared", f"--baton-tree={tree}",
                          "--baton-binding=" + json.dumps(PLACEHOLDERS, sort_keys=True), *argv[3:]]
+            if self.allowed_deselect:
+                allowed = self.directory + ".allowed-deselect"     # beside it: the record directory stays exclusive
+                Path(allowed).write_text("".join(i + "\n" for i in self.allowed_deselect), encoding="utf-8")
+                self.argv[3:3] = [f"--baton-allowed-deselect={allowed}"]
         self.digest_argv = run_record.argv_for_digest(self.argv, drop)
         self.expected = self.observe()
         self.not_before = time.time() - 1
@@ -79,7 +87,10 @@ class RecordedRun:
                 return None, "record_unavailable"
             if record is not None and record["producer"] not in ("pytest", "xdist"):
                 return None, "producer_mismatch"
-            if record is not None and (record.get("mode") != "declared" or record.get("violations")):
+            if record is not None and (record.get("mode") != "declared" or record.get("violations")
+                                       or run_record.declared_record_violations(record, self.tree,
+                                                                                self.allowed_deselect)):
+                # rev4 (D28): the plugin, control and collection facts are checked again here.
                 return None, "record_unavailable"
             diag = (record or {}).get("diag") or {}
             if record is not None and (diag.get("unclassified") or diag.get("unmapped_nodes")):
@@ -89,6 +100,8 @@ class RecordedRun:
     def cleanup(self):
         import shutil
         shutil.rmtree(self.directory, ignore_errors=True)
+        if os.path.exists(self.directory + ".allowed-deselect"):
+            os.remove(self.directory + ".allowed-deselect")
 
 
 def read_unittest_record(path, *, nonce, binding, returncode, not_before=None, binding_after=None, exclusive=True):

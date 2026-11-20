@@ -1,15 +1,17 @@
-# CI-EVID-001 — 공식 검증 결과를 실행별 구조화 기록으로 판정 (D25 수정 계약 rev3)
+# CI-EVID-001 — 공식 검증 결과를 실행별 구조화 기록으로 판정 (D25 수정 계약 rev4)
 
 ```toml
 kind = "spec"
 id = "CI-EVID-001"
 status = "approved"
 owner = "Claude"
-revision = 3
+revision = 4
 approved_by = "user"
 approved_at = "2026-11-20"
-approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separate Task CI-EVID-001, fix order 1-7, instruction 'D25의 변경 계약과 CI-PAR 연동 지점을 먼저 확정하고 진행하자. 완료 전에는 차단을 해제하지 않는다.' Contract finalized by the coordinator as rev3 after independent reviews (Codex rev1: modify-then-use; ChatGPT rev2: modify-then-use, no P1). rev3 text not separately reviewed by the user. Pending user decisions: D25-R (operational remote CI judgement change at merge), D26 (push/remote CI), D27 (F-1..F-3 follow-up), D28 (RA-3 acceptance)."
+approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separate Task CI-EVID-001, fix order 1-7, instruction 'D25의 변경 계약과 CI-PAR 연동 지점을 먼저 확정하고 진행하자. 완료 전에는 차단을 해제하지 않는다.' Contract finalized by the coordinator as rev3 after independent reviews (Codex rev1: modify-then-use; ChatGPT rev2: modify-then-use, no P1). rev3 text not separately reviewed by the user. Pending user decisions: D25-R (operational remote CI judgement change at merge), D26 (push/remote CI), D27 (F-1..F-3 follow-up). rev4: 사용자 D28 결정(2026-11-20) — RA-3 external-plugin risk not accepted, replaced by the trusted-list method (AC-06 rev4), with the user's refinement of the same day (trust-list mapping and provenance, exact exclusion ID set); cross-run errors-4 conditional exception approved by the user (2026-11-20)."
 ```
+
+**rev4 반영(사용자 D28 결정, 2026-11-20):** ChatGPT 2차 구현 검토가 외부 일반 plugin(`-p`)이 실패 테스트를 빼고도 rc 0 유효 기록을 만드는 사례를 재현했다. 사용자는 이 위험(RA-3의 외부 plugin 부분)의 수용을 승인하지 않고 신뢰 목록 방식으로 정했다. 같은 날 매핑·출처 조건과 정확한 제외 ID 집합 조건을 더했다. 반영 위치: AC-06 "rev4 plugin 신뢰 목록과 수집 무결성", RA-3, 승인 구분.
 
 **rev3 반영:** ChatGPT 독립 교차검토(rev2 대상, 판정 "수정 후 사용"). 결과는 resolved 2, partial 4, P2 8, P3 1이며, 신규 P1은 없고 D25 차단은 유지한다. 반영 위치는 다음과 같다.
 
@@ -73,9 +75,11 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
 | 변경 | 승인 상태 |
 |---|---|
 | 로컬 소비자(C1~C3, C5)·`verify_environment.py`·`ci_plan.py` 원격 판정 코드의 branch 내 수정 | D25 사용자 지시 2("로컬·원격 순차 V3 소비자")로 승인됨 |
-| 운영 원격 CI의 판정 방식 변경(병합으로 main의 `ci_plan.py --remote run` 동작이 바뀜) | **D25-R: 별도 승인 필요.** 병합 전 확인을 받는다. `verify.yml` YAML이 그대로여도 운영 CI 변경이다 |
-| Task branch push와 원격 CI 실행 | **D26: 미승인** |
-| RA-3(자식 프로세스 기록 쓰기 신뢰 한계) 수용 | **D28: 사용자 승인 필요** |
+| 운영 원격 CI의 판정 방식 변경(병합으로 main의 `ci_plan.py --remote run` 동작이 바뀜) | **D25-R: 조건부 승인(2026-11-20).** 원격 변경은 증거 소비자 정확성에 필요한 최소 범위(`ci_plan` 소비자)로 제한하고 `verify.yml`은 바꾸지 않는다(바꿔야 하면 별도 질문). 정상 증거의 잘못된 거부·잘못된 무효화·잘못된 PASS를 모두 회귀로 검증한다(TASK 대조표). 공용 모듈 최대 재사용. Wiki·정착 복구·정책 고도화 제외 |
+| Task branch push와 원격 CI 실행 | **D26: 조건부 승인(2026-11-20).** 국소 검증과 계약 검토(ChatGPT 재검토)를 통과한 후보만 `keulreobeu/ci-evid-001`에 push한다. 게시 전 SHA·원격 refs로 닿지 않는 모든 커밋의 범위·비밀정보·clean을 확인한다. 정확한 게시 SHA로 `workflow_dispatch`(ref=branch)를 실행해 run head SHA를 대조한다. main 변경·PR 생성·병합·공식 정책 활성화는 미승인이다. push 시점은 coordinator가 따로 지시한다 |
+| F-1~F-3 후속 처리 | **D27: 범위 제한(2026-11-20).** 공식 검증의 잘못된 승인·증거 손상으로 이어지는 차단 결함만 이번 범위다. F-1~F-3은 후속 Task다(TASK 분류표) |
+| RA-3(자식 프로세스 기록 쓰기 신뢰 한계) 수용 | **D28: 불승인(2026-11-20).** 외부 plugin 부분은 신뢰 목록 방식(AC-06 rev4)으로 대체 |
+| 교차 실행 errors 4 조건부 예외 | **승인(2026-11-20).** 원본 failed 보존, 조건은 TASK 기록 |
 
 ## CI-EVID-001-REQ-01 재현 테스트 우선 (사용자 순서 1)
 
@@ -253,9 +257,32 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
     - 모드는 호출자가 고정하고 기록에 `mode`를 남긴다.
     - **rev3(E207) binding 연결과 신뢰 경계:**
       - declared 모드의 `plugins` 목록(이름·배포 버전·경로, conftest 경로)은 `plugins_digest`로 binding에 들어간다. 같은 Task의 같은 검사에서 plugin 집합이 바뀌면 이전 기록과 구별된다.
-      - 외부 plugin은 pytest 결과 hook을 바꿀 수 있다. 기록은 plugin 변화를 추적할 뿐, plugin의 고의 조작을 막지 않는다. 이 한계는 RA-3에 포함하며 D28 승인 대상이다.
+      - 외부 plugin은 pytest 결과 hook을 바꿀 수 있다. rev3는 이 한계를 RA-3에 넣어 D28 승인 대상으로 두었다. rev4에서 D28 불승인에 따라 아래 신뢰 목록 방식으로 대체했다.
       - strict 모드의 허용 목록 정책은 그대로다.
     - 이유: 현행 선언 pytest가 통과시키는 conftest 프로젝트를 모두 실패로 바꾸면 새 wrong_reject가 된다.
+    - **rev4 plugin 신뢰 목록과 수집 무결성(사용자 D28 결정, 2026-11-20):** declared 모드의 아래 조건은 생산자가 기록의 `violations`에 쓰고, 소비자(`RecordedRun.read`)가 같은 규칙(`run_record.declared_record_violations`)으로 다시 확인한다. 하나라도 어기면 `record_unavailable`이다. 생산자가 이 사실(`plugins`의 `trust`, `plugin_control`, `items_collected`, `deselected`)을 남기지 않은 기록도 증거가 아니다.
+      - **로드된 plugin:** 등록된 모든 plugin 객체(자동·명시·간접 로딩, plugin이 다시 등록한 plugin 포함)는 다음 중 하나다.
+        - pytest 자체 모듈(`_pytest`·`pytest`, pytest 패키지 안 파일)
+        - BATON 모듈(`baton`, 이 `run_record`와 같은 패키지 안 파일)
+        - 검사 Git 작업 트리의 코드: tree 안 conftest와 그 `pytest_plugins`가 가리키는 tree 안 모듈(설치 경로 밖, RA-1과 같은 신뢰)
+        - xdist worker의 execnet 모듈 `__channelexec__`(신뢰된 pytest-xdist가 있을 때만)
+        - 신뢰 목록 항목
+      - **신뢰 목록(`run_record.TRUSTED_PLUGINS`):** 배포 이름==버전을 `-p` 이름과 로딩 모듈에 매핑한 표다. 현재 항목은 `pytest-xdist==3.8.0` 하나다. `-p` 이름은 `xdist`·`xdist.plugin`·`xdist.looponfail`, 모듈은 `xdist.plugin`·`xdist.looponfail`·`xdist.dsession`·`xdist.workermanage`·`xdist.remote`다. 의존성은 기존 해시 잠금(CI-PAR-001 `requirements/ci.lock`)으로 고정한다.
+        - 로드된 plugin은 배포·버전·모듈이 모두 맞아야 한다.
+        - 출처: 로딩 모듈 파일이 실행 중인 venv의 site-packages(`sysconfig` purelib/platlib) 아래에 있고, 같은 이름 배포 메타데이터의 파일 목록에 들어 있어야 한다(`installed`).
+        - 버전이 다르면 `plugin_version_mismatch`, 그 밖은 `plugin_not_trusted`다.
+      - **명시 로딩:** 실행 인자의 `-p NAME`은 모두 `plugin_control.explicit`에 남긴다. 허용 이름은 pytest 내장 plugin 이름, `baton.pytest_record`, 신뢰 목록의 `-p` 이름뿐이다. `-p no:NAME`은 `plugin_control.disabled`에 기록만 한다.
+      - **간접 로딩 통제:**
+        - 호출자가 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 고정하고 `PYTEST_PLUGINS`를 지운다. 생산자는 세션 시작 환경에서 autoload가 꺼졌고 `PYTEST_PLUGINS`·`PYTEST_ADDOPTS`가 비었는지 다시 확인한다.
+        - ini·pyproject·tox의 `addopts`는 호출자 주입 `-o addopts=`로 비어 있어야 한다. `required_plugins`는 신뢰 목록 배포만 허용한다.
+        - conftest의 `pytest_plugins`와 plugin이 다시 등록하는 plugin은 위 "로드된 plugin" 검사(설정 시점과 세션 끝)로 통제한다.
+      - **수집 무결성(실제 테스트 ID 기준):**
+        - 생산자는 `pytest_itemcollected`로 수집된 모든 ID(`items_collected`)를 남긴다. `pytest_deselected`로 제외된 ID와 호출한 모듈(`deselected`)도 남긴다.
+        - 수집된 ID는 모두 선택되었거나 제외 집합에 있어야 한다. 아니면 `collected_without_result`다. 조용한 `items[:]` 제거도 여기에 걸린다.
+        - 성공한 실행에서는 선택된 ID마다 결과가 있어야 한다. 아니면 `no_result`다. 이미 실패한 실행(예: `-x`)의 미실행 항목은 실패로 남는다.
+        - 제외된 ID 집합은 허용 제외 집합과 정확히 같아야 한다. `-k`·`-m`·`--deselect`가 있다는 이유만으로는 제외를 허용하지 않는다(`deselect_not_allowed`, `allowed_deselect_not_seen`).
+        - **허용 제외 집합의 출처:** Task validation 검사 항목의 허용 제외 ID 목록이다. 현재 Task·Spec·필수 AC 중 그 목록을 선언하는 필드가 없다. managed Task validation(`managed.py`)도 pytest의 `-k`·`-m`·`--deselect`·`-p`를 받지 않는다. 따라서 허용 집합은 비어 있고 제외는 0이어야 한다. 소비자 `RecordedRun(..., allowed_deselect=())`와 생산자 `--baton-allowed-deselect`가 그 집합을 받는 자리다. 필드를 새로 두는 것은 별도 결정이다. 그 전까지 필수 검사가 제외되면 그 검사는 실패다(`record_unavailable`).
+      - 범용 plugin 샌드박스나 별도 보안 프레임워크는 두지 않는다. 기록 없이 실행하는 개발용 pytest(`--baton-record` 없음)의 외부 plugin 사용은 그대로 허용한다. 그런 실행은 공식 증거가 아니다. 기록하면 위 위반으로 증거에서 빠진다.
 - **`python -m unittest`(I2):**
   - 기존 `_RECORDED_UNITTEST`는 테스트 이름만 받는다. 그래서 선언 argv의 기본 discovery, `discover -s/-t/-p`, `-k`, `-f`, `-b`, `-v` 같은 허용 옵션의 의미를 보존하지 못한다.
   - 공용 기록 실행기를 `run_record` 옆에 두고, V1/V2 planner와 선언 검사가 함께 쓴다.
@@ -425,14 +452,19 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
 ## 위험 수용
 - **RA-1:** 같은 프로세스 안 테스트 코드의 고의 기록 위조는 현행 CI-OPT-001 RA-4와 같이 남는다. 기록은 비고의 오염(출력 혼입·잘림·후행 출력·이전 실행 파일)을 막는 장치다.
 - **RA-2:** pytest plugin은 지원 버전 범위를 명시하고, 범위 밖이면 fail-closed다. 연결 프로젝트가 자체 pytest 버전을 쓸 때 실패할 수 있으며, 이는 의도된 거부다.
-- **RA-3(제안, D28 승인 필요):** 생산자와 같은 권한으로 실행되는 자식 프로세스는 기록 경로와 nonce를 알아낼 수 있어 고의로 기록을 쓸 수 있다.
+- **RA-3(D28 불승인 → 신뢰 목록 방식, 사용자 결정 2026-11-20):** 아래 rev3 문안의 외부 plugin 수용은 승인되지 않았다. 외부 plugin은 AC-06 rev4 신뢰 목록·간접 로딩 통제·수집 무결성으로 차단하며, 수용 위험이 아니다. 남는 것은 다음과 같다.
+  - 신뢰 목록 배포(pytest-xdist==3.8.0, 해시 잠금)와 pytest 자체는 테스트 도구로 신뢰한다.
+  - 검사 tree 안 코드(테스트·conftest·그 `pytest_plugins`)의 고의 결과 조작은 RA-1이다.
+  - 같은 권한 자식 프로세스의 고의 기록 쓰기는 RA-1과 같은 고의 위조로 분류한다.
+  - 이것은 기존 RA-1 범위이며, 새 위험 수용이 아니다.
+- **RA-3 rev3 원문(이력, D28 불승인):** 생산자와 같은 권한으로 실행되는 자식 프로세스는 기록 경로와 nonce를 알아낼 수 있어 고의로 기록을 쓸 수 있다.
   - 원자 교체·단일 기록·`extra_files`·mtime 검사는 비고의 덮어쓰기와 잔여 파일만 막는다.
   - 기록 경로와 nonce는 환경 변수가 아니라 생산자 argv로만 전달한다. 자식이 환경 변수로 물려받는 경로를 없애는 것까지가 대책이다. pytest plugin처럼 argv를 쓸 수 없으면 생산자가 시작 직후 환경 변수에서 값을 읽고 지운다.
   - 남는 신뢰 한계는 RA-4와 같은 고의 위조로 분류한다.
   - **rev3(E207):** declared 모드에서 자동 로드된 외부 plugin이 pytest 결과 hook으로 원시 결과를 바꾸는 경우도 이 한계에 포함한다.
     - 기록은 plugin 집합(`plugins_digest`)의 변화만 추적한다.
     - 고의 조작을 막는다고 주장하지 않는다.
-  - **D28 결정 대기 조건(구현 검토 권고, 수용 완료 아님):** 수용한다면 다음 네 경계를 함께 승인한다.
+  - **D28 결정 대기 조건(구현 검토 권고, 이력 — 2026-11-20 불승인으로 대체됨):** 수용한다면 다음 네 경계를 함께 승인한다.
     1. 신뢰된 환경에서 로드되는 외부 plugin의 동작은 수용 위험이다.
     2. 기록은 관측만 하며 조작 방지는 보장하지 않는다.
     3. tree 밖 conftest 자동 로드(그리고 EVID-R01의 tree 밖 rootdir·inifile)는 여전히 금지한다.

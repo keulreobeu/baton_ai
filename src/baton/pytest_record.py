@@ -11,7 +11,14 @@ BASE_ALLOWED plugin modules and a clean plugin environment. ``declared`` (a Task
 Git work tree (``--baton-tree``), not by pytest's rootdir. It allows conftest.py files
 inside that tree (trusted like its test code, RA-1) and other loaded plugins, records each
 plugin's module, distribution/version and conftest path in ``plugins``, and refuses a
-rootdir, used inifile or conftest outside that tree (EVID-R01).
+rootdir, used inifile or conftest outside that tree (EVID-R01). rev4 (D28 not accepted):
+it also loads only trusted plugins (pytest's own, BATON's, the tree's code and
+``run_record.TRUSTED_PLUGINS`` entries: distribution==version, ``-p`` name and module, from
+this venv's site-packages; each row's ``trust`` recorded), with autoload, PYTEST_PLUGINS,
+PYTEST_ADDOPTS and ini addopts off and every explicit ``-p`` recorded (``plugin_control``),
+and accounts for every collected test ID (``items_collected``; ``deselected`` must be
+exactly the ``--baton-allowed-deselect`` set, empty by default);
+``run_record.declared_record_violations`` decides.
 
 Supported: pytest >= 8.4 and < 10 (unittest subTest results need pytest 9, or pytest 8.4
 with pytest-subtests; ``subtest_support`` says which). Outside that range the session
@@ -19,9 +26,12 @@ stops with a usage error and no record is written, which consumers treat as a fa
 """
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 from pathlib import Path
+import sys
+import sysconfig
 import unittest
 
 import pytest
@@ -47,6 +57,8 @@ def pytest_addoption(parser):
                     help="strict: allowlisted plugins only; declared: a Task's own pytest check")
     group.addoption("--baton-tree", default=None,
                     help="declared mode: the checked Git work tree fixed by the caller (EVID-R01)")
+    group.addoption("--baton-allowed-deselect", default=None,
+                    help="declared mode: UTF-8 test IDs the caller allows to be deselected, one per line")
 
 
 def _version():
@@ -80,22 +92,109 @@ def _conftest_path(plugin):
     return Path(file).resolve() if type(plugin).__name__ == "module" and file and Path(file).name == "conftest.py" else None
 
 
+def _plugin_file(plugin):
+    module = plugin if type(plugin).__name__ == "module" else sys.modules.get(_plugin_module(plugin))
+    file = getattr(module, "__file__", None)
+    return run_record.canonical_path(file) if file else None
+
+
+def _module_distribution(module):
+    """The installed distribution (name, version) owning a module's top-level package."""
+    if not hasattr(_module_distribution, "names"):
+        _module_distribution.names = importlib.metadata.packages_distributions()
+    names = _module_distribution.names.get(module.split(".", 1)[0]) or []
+    if len(names) != 1:
+        return None, None
+    try:
+        return names[0], importlib.metadata.version(names[0])
+    except importlib.metadata.PackageNotFoundError:
+        return names[0], None
+
+
+def _installed(distribution, file):
+    """D28 provenance: ``file`` is one of ``distribution``'s own files in this venv's site-packages."""
+    homes = {sysconfig.get_paths()[k] for k in ("purelib", "platlib")}
+    if not file or not any(run_record.inside_tree(file, home) for home in homes):
+        return False
+    try:
+        dist = importlib.metadata.distribution(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return any(run_record.canonical_path(dist.locate_file(f)) == file for f in dist.files or ())
+
+
+def _trust(module, distribution, file, tree):
+    """D28: how a loaded plugin is trusted (None = not trusted), from where its code is."""
+    top = module.split(".", 1)[0]
+    core = (Path(pytest.__file__).parent, Path(sys.modules["_pytest"].__file__).parent)
+    if top in ("_pytest", "pytest") and file and any(run_record.inside_tree(file, home) for home in core):
+        return "core"
+    if top == "baton" and file and run_record.inside_tree(file, Path(run_record.__file__).parent):
+        return "baton"
+    if module == "__channelexec__":
+        return "channel"            # execnet's module for the xdist worker loop
+    if distribution in run_record.TRUSTED_PLUGINS:
+        return "list"               # plugin_violations checks version, module and ``installed``
+    installed = {sys.prefix, sys.base_prefix, sys.exec_prefix}
+    if file and tree and run_record.inside_tree(file, tree) \
+            and not any(run_record.inside_tree(file, prefix) for prefix in installed):
+        return "tree"
+    return None
+
+
 def _plugin_details(config):
-    """declared mode: every loaded plugin with its distribution and conftest path."""
+    """declared mode: every loaded plugin with its distribution, code file, trust and conftest path."""
     dists = {}
     for plugin, dist in config.pluginmanager.list_plugin_distinfo():
         meta = getattr(dist, "metadata", None)
         name = meta["name"] if meta is not None and "name" in meta else getattr(dist, "project_name", None)
         dists[id(plugin)] = (name, getattr(dist, "version", None))
+    tree = config.getoption("baton_tree")
     rows = []
     for plugin in config.pluginmanager.get_plugins():
         if plugin is None:
             continue
-        name, version = dists.get(id(plugin), (None, None))
-        conftest = _conftest_path(plugin)
-        rows.append({"module": _plugin_module(plugin), "distribution": name, "version": version,
-                     "path": str(conftest) if conftest else None})
+        module = _plugin_module(plugin)
+        name, version = dists.get(id(plugin)) or _module_distribution(module)
+        conftest, file = _conftest_path(plugin), _plugin_file(plugin)
+        trust = _trust(module, name, file, tree)
+        rows.append({"module": module, "distribution": name, "version": version,
+                     "path": str(conftest) if conftest else None, "file": file, "trust": trust,
+                     "installed": _installed(name, file) if trust == "list" else None})
     return sorted(rows, key=lambda r: (r["module"], r["path"] or ""))
+
+
+def _explicit(config):
+    """Every ``-p NAME`` of this invocation: (loaded [{"name", "trust"}], disabled names)."""
+    from _pytest.config import builtin_plugins
+    args, names = list(config.invocation_params.args), []
+    for i, arg in enumerate(args):
+        if arg == "-p" and i + 1 < len(args):
+            names.append(args[i + 1])
+        elif arg.startswith("-p") and len(arg) > 2 and not arg.startswith("-p="):
+            names.append(arg[2:])
+    listed = {n for entry in run_record.TRUSTED_PLUGINS.values() for n in entry["p_names"]}
+    loaded = []
+    for name in (n for n in names if not n.startswith("no:")):
+        trust = ("baton" if name == run_record.BATON_PLUGIN else "core" if name in builtin_plugins
+                 else "list" if name in listed else None)
+        loaded.append({"name": name, "trust": trust})
+    return loaded, [n[3:] for n in names if n.startswith("no:")]
+
+
+def _plugin_control(config):
+    """D28: how plugins could load besides pytest's own, as this session saw it."""
+    environ = getattr(config, "_baton_environ", None) or os.environ
+    explicit, disabled = _explicit(config)
+    return {"autoload_disabled": environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1",
+            "env_plugins": environ.get("PYTEST_PLUGINS") or None, "env_addopts": environ.get("PYTEST_ADDOPTS", ""),
+            "addopts": list(config.getini("addopts")), "required_plugins": list(config.getini("required_plugins")),
+            "explicit": explicit, "disabled": disabled}
+
+
+def _allowed_deselect(config):
+    path = config.getoption("baton_allowed_deselect")
+    return sorted(set(Path(path).read_text(encoding="utf-8").splitlines()) - {""}) if path else []
 
 
 def _observed_tree(config):
@@ -111,9 +210,13 @@ def _violations(config):
         conftests = [c for c in (_conftest_path(p) for p in config.pluginmanager.get_plugins() if p is not None)
                      if c is not None]
         inifile = getattr(config, "inipath", None)
-        return run_record.declared_violations(
+        found = run_record.declared_violations(
             config.getoption("baton_tree"), observed_tree=_observed_tree(config), rootdir=config.rootpath,
             inifile=inifile, conftests=conftests)
+        # rev4 (D28): only trusted plugins, with no loading path outside argv.
+        found += run_record.plugin_violations(_plugin_details(config), config.getoption("baton_tree"))
+        found += run_record.control_violations(_plugin_control(config))
+        return sorted(set(found))
     extra = {x for x in config.getoption("baton_extra_plugins").split(",") if x}
     found = [m for m in _plugins(config) if m.split(".", 1)[0] not in BASE_ALLOWED and m not in extra]
     for name in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
@@ -136,6 +239,7 @@ def _aux(config, worker):
 class _State:
     def __init__(self):
         self.events, self.collected, self.selected, self.collect_reports = [], [], [], []
+        self.items_collected, self.deselected = [], []      # rev4 (D28)
 
 
 def _active(config):
@@ -164,6 +268,27 @@ def _canonical(item):
         except Exception:
             return None, cls.__module__, cls.__qualname__
     return item.nodeid, getattr(getattr(item, "module", None), "__name__", None), None
+
+
+def pytest_itemcollected(item):
+    state = _active(item.config)
+    if state is not None:
+        state.items_collected.append(_canonical(item)[0] or item.nodeid)
+
+
+def _caller():
+    """The module whose code called the hook that called this function (pluggy frames skipped)."""
+    frame = sys._getframe(2)
+    while frame is not None and frame.f_globals.get("__name__", "").split(".", 1)[0] == "pluggy":
+        frame = frame.f_back
+    return frame.f_globals.get("__name__") if frame is not None else None
+
+
+def pytest_deselected(items):
+    state = _active(_CONFIG[0]) if _CONFIG else None
+    if state is not None:
+        by = _caller()
+        state.deselected.extend({"id": _canonical(item)[0] or item.nodeid, "by": by} for item in items)
 
 
 def pytest_collectreport(report):
@@ -206,6 +331,7 @@ def pytest_collection_finish(session):
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps({"nonce": config.getoption("baton_nonce"), "collected": state.collected,
                                      "selected": state.selected, "collect_reports": state.collect_reports,
+                                     "items_collected": state.items_collected, "deselected": state.deselected,
                                      "violations": _violations(config)}, ensure_ascii=False), encoding="utf-8")
     os.replace(temporary, path)
 
@@ -328,6 +454,7 @@ def pytest_sessionfinish(session, exitstatus):
     mode = config.getoption("baton_mode")
     declared = mode == "declared"
     collection, selected, collect_reports, auxiliary = {}, state.selected, list(state.collect_reports), []
+    items_collected, deselected = state.items_collected, state.deselected
     violations = set(_violations(config))
     if distributed:
         record_path = Path(config.getoption("baton_record"))
@@ -340,6 +467,7 @@ def pytest_sessionfinish(session, exitstatus):
             worker = path.name.rsplit(".collect-", 1)[1][:-5]
             collection[worker] = data["collected"]
             selected = data["selected"]
+            items_collected, deselected = data.get("items_collected"), data.get("deselected")
             violations.update(data.get("violations", []))
             collect_reports.extend(r for r in data["collect_reports"] if r not in collect_reports)
     else:
@@ -349,6 +477,10 @@ def pytest_sessionfinish(session, exitstatus):
     diag["worker_collection_mismatch"] = len({json.dumps(v, sort_keys=True) for v in collection.values()}) > 1
     diag["no_collection"] = not collection
     plugins = _plugin_details(config) if declared else _plugins(config)
+    extra = {}
+    if declared:
+        extra = {"plugin_control": _plugin_control(config), "items_collected": items_collected,
+                 "deselected": deselected}
     record = run_record.make_record(
         producer="xdist" if distributed else "pytest", nonce=config.getoption("baton_nonce"),
         binding=run_record.observed_binding(
@@ -360,7 +492,12 @@ def pytest_sessionfinish(session, exitstatus):
                "collect_reports": collect_reports, "events": state.events, "diag": diag,
                "plugins": plugins, "mode": mode,
                "violations": sorted(violations), "pytest": pytest.__version__,
-               "subtest_support": subtest_support()})
+               "subtest_support": subtest_support(), **extra})
+    if declared:
+        # rev4 (D28): the same rule the consumer applies, written into the record.
+        record["allowed_deselect"] = _allowed_deselect(config)
+        record["violations"] = sorted(violations | set(run_record.declared_record_violations(
+            record, config.getoption("baton_tree"), record["allowed_deselect"])))
     # rev3 E204: every worker file was read and compared above; remove them, then commit
     # the final record, so a completed run leaves exactly one file (a crash leaves the
     # worker files, which the reader refuses as extra_files).

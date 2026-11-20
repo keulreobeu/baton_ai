@@ -253,6 +253,110 @@ def declared_violations(tree, *, observed_tree, rootdir, inifile, conftests):
     return sorted(found)
 
 
+# rev4 (D28 not accepted; user decisions 2026-11-20): the pytest plugins an official declared
+# run may load besides pytest's own, BATON's and the checked tree's code. Each entry maps a
+# distribution (name==version; its dependencies are pinned by the hash lock, CI-PAR-001
+# requirements/ci.lock) to the ``-p`` names that load it and the modules it registers. A
+# loaded plugin matches all three and its module file is that distribution's file in the
+# running venv's site-packages (``installed``, checked by the producer).
+TRUSTED_PLUGINS = {
+    "pytest-xdist": {"version": "3.8.0", "p_names": ("xdist", "xdist.plugin", "xdist.looponfail"),
+                     "modules": ("xdist.plugin", "xdist.looponfail", "xdist.dsession", "xdist.workermanage",
+                                 "xdist.remote")},
+}
+BATON_PLUGIN = "baton.pytest_record"
+
+
+def trusted_plugin(distribution, version, module):
+    entry = TRUSTED_PLUGINS.get(distribution)
+    return entry is not None and entry["version"] == version and module in entry["modules"]
+
+
+def plugin_violations(plugins, tree):
+    """D28: every loaded plugin row (``trust`` as the producer classified it) is pytest's
+    own, BATON's, the checked tree's code (a conftest or a module its ``pytest_plugins``
+    names, RA-1), execnet's xdist worker module or a trusted distribution entry."""
+    found = set()
+    xdist = any(row.get("trust") == "list" and row.get("distribution") == "pytest-xdist" for row in plugins)
+    for row in plugins:
+        module, trust = str(row.get("module")), row.get("trust")
+        top, distribution = module.split(".", 1)[0], row.get("distribution")
+        if trust == "core" and top in ("_pytest", "pytest"):
+            continue
+        if trust == "baton" and top == "baton":
+            continue
+        if trust == "channel" and module == "__channelexec__" and xdist:
+            continue
+        if trust == "tree" and row.get("file") and tree and inside_tree(row["file"], tree):
+            continue
+        if trust == "list" and row.get("installed") is True and trusted_plugin(distribution, row.get("version"),
+                                                                               module):
+            continue
+        if distribution in TRUSTED_PLUGINS and TRUSTED_PLUGINS[distribution]["version"] != row.get("version"):
+            found.add(f"plugin_version_mismatch:{distribution}=={row.get('version')}")
+            continue
+        found.add("plugin_not_trusted:" + module)
+    return sorted(found)
+
+
+def control_violations(control):
+    """D28: plugins load only by a trusted explicit ``-p`` (``-p no:`` is recorded): autoload
+    off (the caller fixes "1"), no PYTEST_PLUGINS / PYTEST_ADDOPTS, no ini/pyproject/tox
+    addopts (the caller's ``-o addopts=``) and only trusted required_plugins."""
+    if not isinstance(control, dict) or not isinstance(control.get("explicit"), list):
+        return ["plugin_control_missing"]
+    found = []
+    if control.get("autoload_disabled") is not True:
+        found.append("env:PYTEST_DISABLE_PLUGIN_AUTOLOAD")
+    if control.get("env_plugins"):
+        found.append("env:PYTEST_PLUGINS")
+    if control.get("env_addopts"):
+        found.append("env:PYTEST_ADDOPTS")
+    if control.get("addopts"):
+        found.append("ini:addopts")
+    for requirement in control.get("required_plugins") or []:
+        name = re.split(r"[<>=!~;\s\[]", str(requirement), maxsplit=1)[0]
+        if name not in TRUSTED_PLUGINS:
+            found.append("ini:required_plugins:" + name)
+    names = {n for entry in TRUSTED_PLUGINS.values() for n in entry["p_names"]}
+    for explicit in control["explicit"]:
+        name, trust = (explicit.get("name"), explicit.get("trust")) if isinstance(explicit, dict) else (explicit, None)
+        if not ((trust == "core" and "." not in str(name)) or (trust == "baton" and name == BATON_PLUGIN)
+                or (trust == "list" and name in names)):
+            found.append("explicit_plugin_not_trusted:" + str(name))
+    return found
+
+
+def collection_violations(record, allowed=()):
+    """D28 fail-closed collection by test ID: every collected item was selected or is in the
+    deselected set, the deselected set is exactly ``allowed`` (the exclusions a Task/Spec/AC
+    declares; none is declared today, so it is empty and any deselect is refused, whatever
+    -k/-m/--deselect did), and a successful run has a result for every selected item."""
+    collected, deselected, selected = record.get("items_collected"), record.get("deselected"), record.get("selected")
+    if not isinstance(collected, list) or not isinstance(deselected, list) or not isinstance(selected, list) \
+            or not all(isinstance(e, dict) for e in deselected):
+        return ["collection_missing"]
+    found = set()
+    gone, allowed = {e.get("id") for e in deselected}, set(allowed)
+    found.update("deselect_not_allowed:" + str(i) for i in gone - allowed)
+    found.update("allowed_deselect_not_seen:" + str(i) for i in allowed - gone)
+    found.update("collected_without_result:" + str(i) for i in collected if i not in set(selected) | gone)
+    if record.get("successful"):
+        outcomes = record.get("outcomes") or {}
+        found.update("no_result:" + str(i) for i in selected if outcomes.get(i, "not_run") == "not_run")
+    return sorted(found)
+
+
+def declared_record_violations(record, tree, allowed=()):
+    """What a declared pytest record must show before it is evidence (rev4, D28); the
+    producer writes these into ``violations`` and the consumer checks them again."""
+    plugins = record.get("plugins")
+    if not isinstance(plugins, list) or not all(isinstance(row, dict) for row in plugins):
+        return ["plugins_missing"]
+    return sorted(set(plugin_violations(plugins, tree)) | set(control_violations(record.get("plugin_control")))
+                  | set(collection_violations(record, allowed)))
+
+
 def observed_binding(given, *, cwd=None, argv=None, env=None, plugins=None):
     """The caller's binding with what this process observes written over it, so a tree, work
     copy or interpreter that changed before the record was written shows as binding_mismatch.

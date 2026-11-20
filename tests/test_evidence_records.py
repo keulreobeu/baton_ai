@@ -103,7 +103,15 @@ def write_pytest_record(argv, root, rows, exit_code, kwargs):
     binding = producer_binding(root, argv, kwargs, json.loads(found.get("--baton-binding", "{}")))
     record = run_record.make_record(producer="pytest", nonce=found["--baton-nonce"], binding=binding, rows=rows,
                                     scopes={}, exit_code=exit_code,
-                                    extra={"mode": found.get("--baton-mode"), "violations": [], "plugins": [],
+                                    extra={"mode": found.get("--baton-mode"), "violations": [],
+                                           # rev4 (D28) facts of a clean declared run.
+                                           "plugins": [{"module": "_pytest.python", "trust": "core"},
+                                                       {"module": "baton.pytest_record", "trust": "baton"}],
+                                           "plugin_control": {"autoload_disabled": True, "env_plugins": None,
+                                                              "env_addopts": "", "addopts": [],
+                                                              "required_plugins": [], "explicit": [], "disabled": []},
+                                           "items_collected": sorted(rows), "selected": sorted(rows),
+                                           "deselected": [],
                                            "diag": {"crashes": [], "unclassified": [], "collection_errors": [],
                                                     "unmapped_nodes": []}})
     run_record.write_record(found["--baton-record"], record)
@@ -1056,6 +1064,50 @@ class DeclaredPluginTrustTests(unittest.TestCase):
         self.assertRefused(self.read(control={key: value for key, value in self.control().items()
                                               if key != "explicit"}))
         self.assertRefused(self.read(extra={"items_collected": None}))
+
+
+class DeclaredTrustRuleTests(unittest.TestCase):
+    """D28 rules in run_record that both the producer and the consumer apply."""
+
+    def control(self, **changes):
+        return {"autoload_disabled": True, "env_plugins": None, "env_addopts": "", "addopts": [],
+                "required_plugins": [], "explicit": [], "disabled": [], **changes}
+
+    def test_explicit_p_names(self):
+        allowed = [{"name": "baton.pytest_record", "trust": "baton"}, {"name": "pytester", "trust": "core"},
+                   {"name": "xdist", "trust": "list"}, {"name": "xdist.plugin", "trust": "list"}]
+        self.assertEqual(run_record.control_violations(self.control(explicit=allowed, disabled=["doctest"])), [])
+        for name, trust in (("evilplug", None), ("evil.plugin", "core"), ("baton.other", "baton"),
+                            ("xdist_fork", "list")):
+            with self.subTest(name=name):
+                self.assertEqual(run_record.control_violations(self.control(explicit=[{"name": name, "trust": trust}])),
+                                 ["explicit_plugin_not_trusted:" + name])
+
+    def test_required_plugins_must_be_trusted(self):
+        self.assertEqual(run_record.control_violations(self.control(required_plugins=["pytest-xdist>=3.8"])), [])
+        self.assertEqual(run_record.control_violations(self.control(required_plugins=["pytest-cov"])),
+                         ["ini:required_plugins:pytest-cov"])
+
+    def test_channel_module_needs_trusted_xdist_and_tree_code_needs_the_tree(self):
+        channel = {"module": "__channelexec__", "trust": "channel"}
+        xdist = {"module": "xdist.remote", "trust": "list", "distribution": "pytest-xdist", "version": "3.8.0",
+                 "installed": True}
+        self.assertEqual(run_record.plugin_violations([channel, xdist], "t"), [])
+        self.assertEqual(run_record.plugin_violations([channel], "t"), ["plugin_not_trusted:__channelexec__"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tree, outside = Path(tmp) / "tree", Path(tmp) / "elsewhere.py"
+            inside = {"module": "helpers.fixtures", "trust": "tree", "file": str(tree / "helpers" / "fixtures.py")}
+            self.assertEqual(run_record.plugin_violations([inside], str(tree)), [])
+            self.assertEqual(run_record.plugin_violations([dict(inside, file=str(outside))], str(tree)),
+                             ["plugin_not_trusted:helpers.fixtures"])
+
+    def test_a_failed_run_without_some_results_is_not_a_collection_violation(self):
+        # An -x stop leaves later items without a result; the run is already a failure.
+        record = {"items_collected": ["a", "b"], "selected": ["a", "b"], "deselected": [],
+                  "successful": False, "outcomes": {"a": "fail"}}
+        self.assertEqual(run_record.collection_violations(record), [])
+        self.assertEqual(run_record.collection_violations(dict(record, successful=True, outcomes={"a": "pass"})),
+                         ["no_result:b"])
 
 if __name__ == "__main__":
     unittest.main()
