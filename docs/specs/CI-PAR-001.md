@@ -216,33 +216,34 @@ BATON 테스트에는 subTest가 140회(19개 파일) 쓰인다. P1에서 자가
   - (ii) unittest subTest 보고를 내장한 상위 pytest 버전
 - 어느 후보도 충족하지 못하면 의미 검증 **실패**로 기록하고 P1에서 멈춘다. 이 경우 사용자에게 보고한다(A 단독 유지 또는 대안 결정).
 - 실행 전체가 실패한 경우의 진단 문구 차이만 기록 대상으로 허용한다(RA-1).
-- **subTest 식별(2026-11-20 교차검토 R04, 2차 검토 PAR-R201):** 통과 subTest를 포함한 모든 subTest를 (설명, 결과) 다중집합으로 비교한다. 정규화는 fail-closed이며 두 단계다.
+- **subTest 식별(2026-11-20 교차검토 R04, 2차 검토 PAR-R201, 3차 검토 PAR-R301·R302):** 통과 subTest를 포함한 모든 subTest를 (설명, 결과) 다중집합으로 비교한다. 정규화는 fail-closed이며 세 가지다.
   - **입증된 정규화(코드 `PROVEN_NORMALIZATION`)**
-    - 결과 문서 자체가 그 실행에서만 나온 값이라고 입증하는 값만 바꾼다.
+    - 결과 문서 자체가 그 실행에서 새로 생성됐다고 입증하는 값만 바꾼다. 그 실행의 `run_temp` 경로와 `nonce` 두 가지다.
     - 이 단계로 같아지면 `normalized`로 기록하고 동등으로 본다.
     - 자식 실행은 `TEMP`·`TMP`·`TMPDIR`를 run 전용 폴더로 받는다. 이 폴더는 시스템 임시 폴더 바로 아래에 새로 만든 `bs<임의 8자>`다. 결과 문서는 그 경로를 `run_temp`로 기록한다.
     - 폴더 이름을 짧게 둔 이유: 깊은 테스트 경로가 Windows 경로 길이 한도에 닿는다. `<run_dir>/tmp`로 두었을 때 전체 suite에서 390건이 WinError 206으로 실패했다.
     - 오류로 끝난 실행을 포함해 모든 종료 시 이 폴더를 지운다. 종료를 확인하지 못한 경우만 남긴다.
-    - `run_temp`: 그 실행의 `run_temp` 경로 → `<RUN_TMP>`. 표기 세 가지를 모두 다룬다: 그대로, `/` 표기(Path repr), `\\` 이중 표기(str repr). 대소문자는 구분하지 않는다.
-    - `run_tempfile_name`: `<RUN_TMP>` 바로 아래의 `tmp` + 소문자·숫자·`_` 8자(`tempfile` 임의 이름) → `tmp<RAND>`. 더 깊은 위치나 run 폴더 밖의 같은 형식 이름은 입증되지 않은 것으로 본다.
-    - `run_recorded_hex`: 그 실행이 기록한 `nonce`와 binding 값 중 16진수 32~64자인 값 → `<RUN_HEX>`.
+    - `run_temp`: 그 실행의 `run_temp` **접두**만 → `<RUN_TMP>`. 표기 세 가지를 다룬다: 그대로, `/` 표기(Path repr), `\\` 이중 표기(str repr). 대소문자는 구분하지 않는다.
+    - 그 아래 이름(`tmp` + 8자 등)은 그대로 둔다. 난수성이 입증되지 않았기 때문이다(PAR-R301). 그런 이름의 차이는 형식 정규화나 self_variance로만 다룬다.
+    - `run_nonce`: 그 실행의 `nonce`(16진수 32자)와 정확히 같은 독립 16진수 토큰 → `<RUN_NONCE>`. 더 긴 16진수 값의 일부는 바꾸지 않는다.
+    - binding의 안정 값(`candidate_sha`·`tree`·`base`·`installed_digest` 등)은 run 값이 아니므로 바꾸지 않는다. 양쪽에서 같은 값은 그대로 같고, 서로 다른 안정 값이 같은 치환으로 합쳐지지 않는다(PAR-R301).
   - **형식만 맞는 정규화(코드 `SUBTEST_NORMALIZATION`)**
     - 출처를 입증하지 못한다. 서로 다른 안정 SHA나 고정된 tmp 형식 이름도 같은 패턴에 걸린다.
     - 그래서 이 단계에서야 같아지면 `uncertain`이다.
     - `tempfile_name`: `tmp` + 소문자·숫자·`_` 8자 → `tmp<RAND>`
     - `hex_digest`: 40자 또는 64자 소문자 16진수(Git SHA·sha256) → `<SHA>`
     - `memory_address`: `0x` + 16진수 6~16자 → `<ADDR>`
-  - **self_variance 입증(관측, 2026-11-20 사용자 결정)**
-    - 형식 정규화로만 같아진 `uncertain` 차이도 관측으로 입증하면 `normalized`(동등)로 둔다.
-    - 방법: 그 테스트 ID만 순차 backend로 2회 더 따로 실행한다(코드 `SELF_VARIANCE_RERUNS`). 각 재실행은 새 `run_temp`를 쓴다.
-    - 아래 네 조건을 모두 만족해야 입증으로 본다.
-      - a. 비교한 두 실행이 다른 모든 토큰 위치에서, 순차 실행끼리도 값이 서로 다르다(원래 순차 실행과 두 재실행).
-      - b. 모든 실행에서 ID와 각 subTest의 결과가 같다.
+  - **self_variance 입증(관측, 2026-11-20 사용자 결정, 3차 검토 PAR-R302)**
+    - 형식 정규화로만 같아진 `uncertain` 차이도 두 backend 모두에서 관측으로 입증하면 `normalized`(동등)로 둔다.
+    - 방법: 그 테스트 ID만 순차 backend로 2회, xdist backend로 2회 더 따로 실행한다(코드 `SELF_VARIANCE_RERUNS`·`SELF_VARIANCE_BACKENDS`). 각 재실행은 새 `run_temp`를 쓴다.
+    - 아래 조건을 모두 만족해야 입증으로 본다. 토큰은 형식 정규화 패턴에 걸리는 값이다.
+      - a. 순차 재실행끼리 값이 서로 다르고, xdist 재실행끼리도 값이 서로 다르다.
+      - b. 모든 실행(비교 쌍 2 + 순차 2 + xdist 2)에서 ID와 각 subTest의 결과가 같다.
       - c. 형식 정규화 뒤 설명이 모든 실행에서 같다.
-      - d. 차이는 그 토큰 위치에만 있다.
-    - 하나라도 어기거나, 재실행이 실패·중단·누락되면 `uncertain`을 유지한다(fail-closed).
-    - 재실행은 같은 후보(공통 binding, 선택 digest 제외)의 서로 다른 순차 실행이어야 한다.
-    - 입증 기록(재실행 nonce·`run_temp`·rc, 관측 토큰 값, 결과, 거부 사유)을 compare 결과 `self_variance`에 남긴다.
+      - d. 어느 두 실행 사이에서든 달라지는 토큰 위치가 비교 쌍에서 달라진 위치와 같은 집합이다. 비교 쌍에서 같던 위치가 재실행에서 달라져도 입증이 아니다.
+    - 하나라도 어기거나, 재실행이 실패·중단·누락되면 `uncertain`을 유지한다(fail-closed). 한 backend만 고정값이면(예: xdist 항상 b, 순차 a/c/d) 입증이 아니다.
+    - 재실행은 같은 후보(공통 binding, 선택 digest 제외)의 서로 다른 실행이어야 한다. xdist 재실행의 backend 설정(`config_digest`·`lock_digest`)은 비교한 xdist 실행과 같아야 한다.
+    - 입증 기록(재실행 backend·nonce·`run_temp`·rc, 관측 토큰 값을 비교 쌍·순차·xdist별로, 결과, 거부 사유)을 compare 결과 `self_variance`에 남긴다.
     - 다른 정규화 규칙은 넓히지 않는다. 기존 테스트 수정이나 자식 env 고정은 하지 않는다.
   - 두 정규화 뒤에도 다르면 불일치다(`different`, `equivalent=false`).
   - 남은 차이가 같은 결과·같은 문자의 순서 차이로만 짝지어지면 `uncertain`으로 기록한다(예: hash randomization 아래 set repr).

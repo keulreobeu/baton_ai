@@ -1,0 +1,453 @@
+{
+ "schema": "ci-par-diagnostic/1",
+ "purpose": "PAR-R302 real Windows check (auxiliary): the 4 IDs normalized in the merged pairs, run sequential + xdist (2 workers), then 2 sequential and 2 xdist reruns; compare without and with --rerun",
+ "candidate_sha": "32a3cf7b2c11b5dd89d4997674a3d309dcb72a90",
+ "worktree_dirty": true,
+ "runs": {
+  "seq": {
+   "backend": "sequential",
+   "status": "PASS",
+   "rc": 0,
+   "tests_run": 4,
+   "nonce": "9766c4998ac1be35262af628faefe6a4",
+   "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs68q_ii00"
+  },
+  "xd": {
+   "backend": "xdist",
+   "status": "PASS",
+   "rc": 0,
+   "tests_run": 4,
+   "nonce": "68d77e057a945d60444c340e1c06999a",
+   "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsdnsr3uoz"
+  },
+  "s1": {
+   "backend": "sequential",
+   "status": "PASS",
+   "rc": 0,
+   "tests_run": 4,
+   "nonce": "81eac514c4aa3d6d9db897a1b0f3d5f1",
+   "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsu2d_svxd"
+  },
+  "s2": {
+   "backend": "sequential",
+   "status": "PASS",
+   "rc": 0,
+   "tests_run": 4,
+   "nonce": "f807b733af025ba9ee8811e46b585975",
+   "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs6sqm2nau"
+  },
+  "x1": {
+   "backend": "xdist",
+   "status": "PASS",
+   "rc": 0,
+   "tests_run": 4,
+   "nonce": "8e4ceadd24ce67c175de72a7201f6bd0",
+   "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bstkfgl_vk"
+  },
+  "x2": {
+   "backend": "xdist",
+   "status": "PASS",
+   "rc": 0,
+   "tests_run": 4,
+   "nonce": "0461e1d2cde29ec9d397585b37508663",
+   "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bswpq7ugml"
+  }
+ },
+ "without_reruns": {
+  "verdict": "uncertain",
+  "subtest_uncertain": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_normalized": []
+ },
+ "with_reruns": {
+  "verdict": "equivalent",
+  "subtest_uncertain": [],
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "self_variance": {
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "81eac514c4aa3d6d9db897a1b0f3d5f1",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsu2d_svxd"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "f807b733af025ba9ee8811e46b585975",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs6sqm2nau"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "8e4ceadd24ce67c175de72a7201f6bd0",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bstkfgl_vk"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "0461e1d2cde29ec9d397585b37508663",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bswpq7ugml"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "tmp1u3fkmum",
+       "tmplyzwr41g"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmp1u3fkmum",
+       "tmpchgwd4he",
+       "tmpdb3et83l"
+      ],
+      "subtest": "(status={'git': {'worktree_root': '<RUN_TMP>\\\\<T>'}})",
+      "xdist": [
+       "tmplyzwr41g",
+       "tmp9sgmt7m3",
+       "tmpbx1kwxfu"
+      ]
+     },
+     {
+      "compared": [
+       "tmp1u3fkmum",
+       "tmplyzwr41g"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmp1u3fkmum",
+       "tmpchgwd4he",
+       "tmpdb3et83l"
+      ],
+      "subtest": "(status={'root_path': '<RUN_TMP>\\\\<T>', 'git': None})",
+      "xdist": [
+       "tmplyzwr41g",
+       "tmp9sgmt7m3",
+       "tmpbx1kwxfu"
+      ]
+     },
+     {
+      "compared": [
+       "tmp1u3fkmum",
+       "tmplyzwr41g"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmp1u3fkmum",
+       "tmpchgwd4he",
+       "tmpdb3et83l"
+      ],
+      "subtest": "(status={'root_path': '<RUN_TMP>\\\\<T>'})",
+      "xdist": [
+       "tmplyzwr41g",
+       "tmp9sgmt7m3",
+       "tmpbx1kwxfu"
+      ]
+     }
+    ]
+   },
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "81eac514c4aa3d6d9db897a1b0f3d5f1",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsu2d_svxd"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "f807b733af025ba9ee8811e46b585975",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs6sqm2nau"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "8e4ceadd24ce67c175de72a7201f6bd0",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bstkfgl_vk"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "0461e1d2cde29ec9d397585b37508663",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bswpq7ugml"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "353cb7afe3624b8a0f6777f576d06a6fd05831eb",
+       "e311fc6d48c21cf85fe0dd9fcf446b7ea1c72fd2"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "353cb7afe3624b8a0f6777f576d06a6fd05831eb",
+       "6f20300bf22eed85a99df5c1f43f4d3782aecff4",
+       "29f2ca9c73c7fec397f801ccec922a44522a8288"
+      ],
+      "subtest": "(change={'candidate_sha': '<T>'})",
+      "xdist": [
+       "e311fc6d48c21cf85fe0dd9fcf446b7ea1c72fd2",
+       "5e7f1c08e0a218b83a1ed981c4380d8fa445c62a",
+       "4be589ca87386f8e1205c5d0d27b937b5b3b69c4"
+      ]
+     }
+    ]
+   },
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "81eac514c4aa3d6d9db897a1b0f3d5f1",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsu2d_svxd"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "f807b733af025ba9ee8811e46b585975",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs6sqm2nau"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "8e4ceadd24ce67c175de72a7201f6bd0",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bstkfgl_vk"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "0461e1d2cde29ec9d397585b37508663",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bswpq7ugml"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "tmpjfwr0his",
+       "tmpv8j08x3n"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpjfwr0his",
+       "tmpdg1kkjtp",
+       "tmpgjepr1y_"
+      ],
+      "subtest": "(argv=['--enable-suite-reuse', '--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence', '--lock-home', ''])",
+      "xdist": [
+       "tmpv8j08x3n",
+       "tmpxipyamuo",
+       "tmp3_ez_4kc"
+      ]
+     },
+     {
+      "compared": [
+       "tmpjfwr0his",
+       "tmpv8j08x3n"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpjfwr0his",
+       "tmpdg1kkjtp",
+       "tmpgjepr1y_"
+      ],
+      "subtest": "(argv=['--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence', '--lock-home', '<RUN_TMP>\\\\<T>\\\\home'])",
+      "xdist": [
+       "tmpv8j08x3n",
+       "tmpxipyamuo",
+       "tmp3_ez_4kc"
+      ]
+     },
+     {
+      "compared": [
+       "tmpjfwr0his",
+       "tmpv8j08x3n"
+      ],
+      "outcome": "pass",
+      "position": 1,
+      "sequential": [
+       "tmpjfwr0his",
+       "tmpdg1kkjtp",
+       "tmpgjepr1y_"
+      ],
+      "subtest": "(argv=['--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence', '--lock-home', '<RUN_TMP>\\\\<T>\\\\home'])",
+      "xdist": [
+       "tmpv8j08x3n",
+       "tmpxipyamuo",
+       "tmp3_ez_4kc"
+      ]
+     },
+     {
+      "compared": [
+       "tmpjfwr0his",
+       "tmpv8j08x3n"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpjfwr0his",
+       "tmpdg1kkjtp",
+       "tmpgjepr1y_"
+      ],
+      "subtest": "(argv=['--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence'])",
+      "xdist": [
+       "tmpv8j08x3n",
+       "tmpxipyamuo",
+       "tmp3_ez_4kc"
+      ]
+     },
+     {
+      "compared": [
+       "tmpjfwr0his",
+       "tmpv8j08x3n"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpjfwr0his",
+       "tmpdg1kkjtp",
+       "tmpgjepr1y_"
+      ],
+      "subtest": "(argv=['--lock-home', '<RUN_TMP>\\\\<T>\\\\home'])",
+      "xdist": [
+       "tmpv8j08x3n",
+       "tmpxipyamuo",
+       "tmp3_ez_4kc"
+      ]
+     }
+    ]
+   },
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "81eac514c4aa3d6d9db897a1b0f3d5f1",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsu2d_svxd"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "f807b733af025ba9ee8811e46b585975",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs6sqm2nau"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "8e4ceadd24ce67c175de72a7201f6bd0",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bstkfgl_vk"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "0461e1d2cde29ec9d397585b37508663",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bswpq7ugml"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "tmpckj6s5re",
+       "tmpp5vesowe"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpckj6s5re",
+       "tmp732v5ky3",
+       "tmp4_4o7cer"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/bin/custom.exe'))",
+      "xdist": [
+       "tmpp5vesowe",
+       "tmpfveo09x0",
+       "tmpnlzgfqtn"
+      ]
+     },
+     {
+      "compared": [
+       "tmpckj6s5re",
+       "tmpp5vesowe"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpckj6s5re",
+       "tmp732v5ky3",
+       "tmp4_4o7cer"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/custom/git.exe'))",
+      "xdist": [
+       "tmpp5vesowe",
+       "tmpfveo09x0",
+       "tmpnlzgfqtn"
+      ]
+     },
+     {
+      "compared": [
+       "tmpckj6s5re",
+       "tmpp5vesowe"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpckj6s5re",
+       "tmp732v5ky3",
+       "tmp4_4o7cer"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/mingw64/bin/git.exe'))",
+      "xdist": [
+       "tmpp5vesowe",
+       "tmpfveo09x0",
+       "tmpnlzgfqtn"
+      ]
+     },
+     {
+      "compared": [
+       "tmpckj6s5re",
+       "tmpp5vesowe"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpckj6s5re",
+       "tmp732v5ky3",
+       "tmp4_4o7cer"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/missing-install/cmd/git.exe'))",
+      "xdist": [
+       "tmpp5vesowe",
+       "tmpfveo09x0",
+       "tmpnlzgfqtn"
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

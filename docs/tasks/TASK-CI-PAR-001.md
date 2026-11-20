@@ -31,20 +31,20 @@ acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-02", "CI-PAR-001-AC-03", "CI-PAR-001-A
        "CI-PAR-001-AC-16"]
 
 [[verification]]
-command = ".venv (no ci extra, pytest not importable): python -X utf8 -m unittest tests.test_suite_backend tests.test_run_record (layer a, stdlib only; 7946c85 after the 2nd review fixes PAR-R201/R202 and the self_variance proof)"
+command = ".venv (no ci extra, pytest not importable): python -X utf8 -m unittest tests.test_suite_backend tests.test_run_record (layer a, stdlib only; 32a3cf7 after the 3rd review fixes PAR-R301/R302)"
 result = "passed"
 evidence = "docs/tasks/TASK-CI-PAR-001.md#2차-검토-보완--2026-11-20-chatgpt-g1-2차-검토-fail-대상-c03c3b0"
 acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-02", "CI-PAR-001-AC-03", "CI-PAR-001-AC-04", "CI-PAR-001-AC-05", "CI-PAR-001-AC-06", "CI-PAR-001-AC-07", "CI-PAR-001-AC-08", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-11", "CI-PAR-001-AC-12", "CI-PAR-001-AC-13"]
-tests_run = 91
+tests_run = 93
 failures = 0
 errors = 0
 skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "python -X utf8 tooling/ci_par_selftest/run.py (layer b at 7946c85 after the 2nd review fixes and the self_variance proof, real pytest-xdist 3.8.0 with pytest 9.2.0 and 8.4.2+pytest-subtests 0.15.0: 31/31 cases match expectations incl. T25 and T20a/b, rc 0; 8.4.2 alone is an expected refusal; auxiliary, not official evidence)"
+command = "python -X utf8 tooling/ci_par_selftest/run.py (layer b at 32a3cf7 after the 3rd review fixes PAR-R301/R302, real pytest-xdist 3.8.0 with pytest 9.2.0 and 8.4.2+pytest-subtests 0.15.0: 31/31 cases match expectations incl. T25 and T20a/b, rc 0; 8.4.2 alone is an expected refusal; auxiliary, not official evidence)"
 result = "passed"
-evidence = "tooling/ci_par_selftest/results/selftest-2026-11-20-7946c85.json"
+evidence = "tooling/ci_par_selftest/results/selftest-2026-11-21-32a3cf7.json"
 acs = ["CI-PAR-001-AC-04", "CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-15"]
 
 [[verification]]
@@ -54,8 +54,14 @@ evidence = "tooling/ci_par_selftest/results/merged-755c9ec-check.json"
 acs = ["CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
 
 [[verification]]
-command = "auxiliary merge check, G1 equivalence evidence: temporary detached worktree of 7946c85 + merge --no-commit CI-EVID-001 HEAD 7816a56 (doc conflicts taken from this branch, temporary only), CBM blocked: layer a 118 OK, layer b 31/31, full sequential vs xdist 942 each, verdict equivalent (uncertain 0, normalized 4: run_temp 3, self_variance 1); both sides fail the same 11 CI-EVID intended red tests (DeclaredPluginTrustTests, also failures=11 on 7816a56 alone), so this is equivalence evidence only, not FAIL-0 evidence"
-result = "passed"
+command = "auxiliary merge check, interim: temporary detached worktree of 0b710be (code 7946c85) + merge --no-commit CI-EVID-001 672efed (doc conflicts taken from this branch, temporary only), CBM blocked: layer a 118 OK, layer b 31/31, full sequential 946 PASS vs xdist 946 PASS, FAIL 0, verdict equivalent under the pre-3rd-review rules (normalized 4, uncertain 0); interim only, the final merged pair runs once against the CI-EVID final commit on the coordinator's instruction"
+result = "blocked"
+evidence = "tooling/ci_par_selftest/results/merged-672efed-check.json"
+acs = ["CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
+
+[[verification]]
+command = "auxiliary merge check, G1 equivalence evidence: temporary detached worktree of 7946c85 + merge --no-commit CI-EVID-001 HEAD 7816a56 (doc conflicts taken from this branch, temporary only), CBM blocked: layer a 118 OK, layer b 31/31, full sequential vs xdist 942 each, verdict equivalent (uncertain 0, normalized 4: run_temp 3, self_variance 1); both sides fail the same 11 CI-EVID intended red tests (DeclaredPluginTrustTests, also failures=11 on 7816a56 alone), so this is equivalence evidence only, not FAIL-0 evidence; superseded: its equivalent verdict relied on the run_proof and self_variance rules that the 3rd review found too wide (PAR-R301/R302, fixed in 32a3cf7)"
+result = "blocked"
 evidence = "tooling/ci_par_selftest/results/merged-7816a56-check.json"
 acs = ["CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
 
@@ -137,7 +143,7 @@ TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈
 | T04 | a | 독립 loader inventory: 현행 suite(상속 Base 포함) 허용, `load_tests` 모듈 보고, import 실패 거부, 테스트 미실행 | 허용/실패 | 04, 05 | `InventoryTests` |
 | T05 | a | 누락·추가·중복·0건·not_run·worker 수집 불일치, 모듈 수준 `def test_*`는 추가 ID | 실패 | 05 | `CompareTests` |
 | T06 | a | 같은 클래스·메서드의 다른 모듈, 동명 basename, 공백·한글 경로, 300개 UTF-8 ID 파일, 알 수 없는 ID | 일치/실패 | 04 | `MappingTests` |
-| T07 | a | unittest 기준선 판정: fail/error/사용자 정의 failureException, call+tearDown, xfail/xpass, subTest 보존. subTest 설명 비교(R04·PAR-R201): 통과 subTest도 비교. 입증된 정규화(run_temp·그 바로 아래 tempfile 이름·기록된 hex)만 동등, 형식만 맞는 정규화(tmp+8·40/64 hex·0x 주소)나 순서만 다른 차이는 uncertain(equivalent 아님). 음성: 서로 다른 안정 40·64자리 hex, 서로 다른 고정 tmp 형식 이름 | 표대로 | 06, 15 | `NormalizeTests`, `LockTests.test_subtest_descriptions_compared_after_explicit_normalization`, `LockTests.test_only_run_proven_values_normalize_to_equal`, `LockTests.test_stable_sha_difference_is_not_equivalent_in_compare_runs`, `LockTests.test_uncertain_subtests_are_not_equivalent`, `SelfVarianceTests`(self_variance 입증: 순차끼리 바뀌는 값만 normalized) |
+| T07 | a | unittest 기준선 판정: fail/error/사용자 정의 failureException, call+tearDown, xfail/xpass, subTest 보존. subTest 설명 비교(R04·PAR-R201·R301·R302): 통과 subTest도 비교. 입증된 정규화(그 실행의 run_temp 접두·nonce)만 동등, 형식만 맞는 정규화(tmp+8·40/64 hex·0x 주소)나 순서만 다른 차이는 uncertain(equivalent 아님). 음성: 서로 다른 안정 40·64자리 hex, 서로 다른 고정 tmp 형식 이름 | 표대로 | 06, 15 | `NormalizeTests`, `LockTests.test_subtest_descriptions_compared_after_explicit_normalization`, `LockTests.test_only_run_proven_values_normalize_to_equal`, `LockTests.test_stable_sha_difference_is_not_equivalent_in_compare_runs`, `LockTests.test_uncertain_subtests_are_not_equivalent`, `SelfVarianceTests`(self_variance 입증: 순차·xdist 재실행 모두에서 같은 위치만 바뀌는 값만 normalized), `LockTests.test_binding_values_are_not_run_values`, `RunTempTests` |
 | T08 | a | 결과 문서/기록: 없음·잘림·이전 nonce·중복·binding 불일치(공통 8개, base 포함)·backend별 config/lock 기대값 위반·rc와 결과 모순·자식 rc 1/2/3 + successful=true + 전부 pass는 FAIL(R01)·가짜 stdout 요약 무시 | 실패 | 06, 08, 16 | `ResultFileTests`, `test_run_record.RejectionTests` |
 | T09 | a | fixture 부분 실패(2 worker 이벤트): scope 단위 비교, blocked ∪ started 분할, blocked는 tests_run 제외, fixture SkipTest는 scope skip | 실패/비적격 | 06 | `FixtureTests` |
 | T10 | a | import 시 SkipTest 모듈 → `unittest.loader.ModuleSkipped.<m>` skip, 다른 수집 오류는 실패 | 비적격/실패 | 06, 10 | `ModuleSkipTests` |
@@ -380,3 +386,40 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
 ### 측정 한계 (2차 추가)
 - 2.63배는 CI-EVID `755c9ec` 임시 병합본(`worktree_dirty=true`)에서 1회 잰 값이다. `c03c3b0` 자체 수치가 아니며 3.31배와 직접 비교할 수 없다.
 - `c004e02`·`7816a56` 병합 쌍의 시간(1794.1 s 대 683.9 s, 1963.0 s 대 713.2 s)도 같은 성격이다: 임시 병합, 1회, 반복 분산 없음. 일반화하지 않는다.
+
+## 3차 검토 보완 — 2026-11-21 (ChatGPT G1 3차 검토 FAIL, 대상 `0b710be`, 코드 `7946c85`)
+
+근거: `E:\docs\BATON\research\2026-11-20-ci-par\review-chatgpt-g1-r3.md`. PAR-R202는 해소, PAR-R201은 부분 해소로 판정됐다. 새 지적은 P2 두 건이며 수정 범위는 이 둘로 제한했다. 공용 모듈·공식 경로·기존 테스트(`tests/test_flow_evidence.py` 등)는 수정하지 않았다.
+
+| 지적 | 수정 | 커밋 | 테스트 |
+|---|---|---|---|
+| PAR-R301 입증 정규화가 서로 다른 안정 값을 동일시 | `run_proof`는 그 실행에서 새로 생성된 값만 남긴다. 그 실행의 `nonce`(정확히 같은 독립 16진수 토큰만)와 `run_temp` 접두 두 가지다. binding 안정 값(`candidate_sha`·`tree` 등)은 바꾸지 않는다. `run_temp` 아래 이름(tmp+8 등)도 난수성이 입증되지 않아 보존한다. `PROVEN_NORMALIZATION = ("run_temp", "run_nonce")` | `32a3cf7` | `LockTests.test_binding_values_are_not_run_values`(source_sha=candidate_sha 대 tree 값 → equivalent 아님), `LockTests.test_only_run_proven_values_normalize_to_equal`(run_temp 아래 `tmpfixed001` 대 `tmpfixed002`, 임의 tmp 이름 → uncertain), `RunTempTests.test_only_the_run_temp_prefix_is_proven`(실제 순차 2회: run_temp 자체는 normalized, 그 아래 TemporaryDirectory 이름은 uncertain) |
+| PAR-R302 self_variance가 xdist 전용 차이를 배제하지 못함 | 그 ID만 순차 2회와 xdist 2회 더 실행한다. 각 재실행은 새 `run_temp`를 쓴다. 입증 조건: 순차 재실행끼리 다름, xdist 재실행끼리 다름, 모든 실행(비교 쌍 2 + 순차 2 + xdist 2)의 결과·정규화 뒤 설명이 같음, 어느 두 실행 사이에서든 달라지는 토큰 위치가 비교 쌍의 위치와 같은 집합(조건 d를 모든 재실행에 강제). 하나라도 어기면 uncertain이다. xdist 재실행의 backend 설정은 비교한 xdist와 같아야 한다. `measure.py`는 uncertain ID를 두 backend에서 2회씩 재실행한다 | `32a3cf7` | `SelfVarianceTests` 7종: 두 backend 모두 바뀜 → normalized / xdist 고정 b, 순차 a/c/d → uncertain(`not_self_varying`) / 순차 고정·xdist 재실행끼리 같음 → uncertain / 쌍에서 같던 위치가 재실행에서 달라짐 → uncertain(`varying_positions_differ`) / 결과·설명 다름 → uncertain / 재실행 실패·중단·누락(backend별 2회 미만) → uncertain / 재실행 nonce·tree·xdist lock 검증 / R201 음성 유지 |
+| 문서 | Spec AC-15 정규화 규칙(입증·형식·self_variance) 갱신 | 이 문서 커밋 | — |
+
+### 재검증 결과 (3차, 모두 실측)
+- **층 (a):** `32a3cf7`, `.venv`(pytest 없음)에서 `tests.test_suite_backend`·`tests.test_run_record` **93 OK, skip 0**.
+- **층 (b):** `32a3cf7`에서 31/31 기대값 일치, rc 0, 남은 임대 0, 남은 `bs*` 폴더 0. 증거: `tooling/ci_par_selftest/results/selftest-2026-11-21-32a3cf7.json`.
+- **실제 Windows self_variance 확인(보조):** 병합 쌍에서 normalized였던 4 ID만 골라 실행했다. 대상 `32a3cf7`, 문서 편집 중이라 `worktree_dirty=true`.
+  - 실행: 순차 1회, xdist 2 worker 1회, 그리고 순차 2회·xdist 2회 재실행. 모두 PASS, rc 0.
+  - 재실행 없이 비교: verdict `uncertain`, uncertain 4. run_temp 아래 tmp 이름 3건과 임시 git SHA 1건이다.
+  - 재실행을 넣어 비교: verdict `equivalent`, normalized 4. 4건 모두 순차 3값과 xdist 3값이 각각 서로 달랐다. 예: `test_author_cannot_self_review…`의 candidate_sha.
+  - 증거: `tooling/ci_par_selftest/results/sv-real-32a3cf7.json`.
+- **CI-EVID `672efed` 병합 상태(중간 증거, 3차 규칙 이전 코드):** HEAD `0b710be`(코드 `7946c85`) + `672efed`. 3차 지시 전에 시작해 진행 중이던 단계까지 마쳤다.
+  - 층 (a) 118 OK, 층 (b) 31/31.
+  - 순차 946 PASS(1287.7 s), xdist 6 worker 946 PASS(409.1 s), FAIL 0.
+  - verdict equivalent(normalized 4, uncertain 0). 단 이전 규칙에 따른 판정이므로 G1 동등성 증거로 쓰지 않는다.
+  - CBM 목격 0, worktree 제거 확인.
+  - 증거: `tooling/ci_par_selftest/results/merged-672efed-{check,selftest,measure}.json`.
+- **`7816a56` 병합 쌍:** 그 equivalent 판정도 3차 검토가 지적한 넓은 규칙에 의존했다. 그래서 검증 기록을 `blocked`(대체됨)로 바꿨다.
+- **공식 순차 V3:** 이 문서 커밋 뒤 최종 HEAD에서 1회 실행한다(마지막 코드 변경 `32a3cf7`). 결과는 다음 커밋에 기록한다.
+
+### 남은 일과 위험 (3차)
+- **최종 병합 쌍(나중, coordinator 지시 뒤):** CI-EVID 최종 커밋과 임시 병합한다. 층 a·b와 전체 순차·xdist 한 쌍을 1회 실행한다.
+  - 기대: equivalent, uncertain 0, FAIL 0.
+  - CI-EVID가 EVID-D28-01 수정으로 공용 모듈을 다시 바꾸므로 지금은 돌리지 않는다.
+  - `test_flow_evidence`가 uncertain으로 남으면 고치지 않고 그대로 보고한다.
+- **AC-15 판정:** 규칙 수정과 층 a·b, 실제 4 ID 확인은 끝났다. 새 규칙에 따른 전체 병합 쌍 equivalent는 아직 없다. 그 전까지 AC-14·AC-15는 부분 충족이다.
+- **self_variance 비용:** uncertain ID마다 순차 2회와 xdist 2회 재실행이 든다. 이번 4 ID 확인은 6회 실행으로 약 2분이었다. 값이 우연히 반복되면 uncertain으로 남는다(fail-closed).
+- **미검증:** `rmtree` 실패 상황(3차 검토 지적). Windows 실제 xdist 음성 사례(고정값 xdist)는 단위 수준에서만 확인했다. 원격 CI는 `not_run`.
+- **G1 수용 판단: 사용자 결정 대기.** G2는 착수하지 않는다.

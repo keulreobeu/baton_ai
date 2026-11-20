@@ -1,0 +1,269 @@
+{
+ "a-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "0b710be3040fe133baa486a47e396e388f74467c",
+   "config_digest": "28d5484c74569436969d680c86650cc93aba97bb96b5e4ce26d2af9930f87d25",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "b15ba755ca2a9433123dc312b97fdb1e028db5584d38049f61afd8b8a86c2deb",
+   "tree": "1c3293cd5ebe90e919df450c52d01ebbd997e570"
+  },
+  "compare": "matched",
+  "cpu_seconds": 1224.46875,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 137506816,
+  "peak_process_bytes": 54022144,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 1286.531,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 946,
+  "total_processes": 27200,
+  "total_seconds": 1287.437,
+  "wall_seconds": 1287.7,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "0b710be3040fe133baa486a47e396e388f74467c",
+   "config_digest": "6b3af77af5967616da6aecdfc40751f33844e43953bd8cb7af111cc80b474939",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a",
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "b15ba755ca2a9433123dc312b97fdb1e028db5584d38049f61afd8b8a86c2deb",
+   "tree": "1c3293cd5ebe90e919df450c52d01ebbd997e570"
+  },
+  "compare": "matched",
+  "cpu_seconds": 1777.859375,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": {
+   "budget": 10,
+   "ram_slots": 46,
+   "used": 0
+  },
+  "lease_wait_seconds": 0.0,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 469995520,
+  "peak_process_bytes": 61624320,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 407.875,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 946,
+  "total_processes": 27164,
+  "total_seconds": 408.812,
+  "wall_seconds": 409.1,
+  "workers_granted": 6,
+  "workers_requested": 6,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv1": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "0b710be3040fe133baa486a47e396e388f74467c",
+   "config_digest": "28d5484c74569436969d680c86650cc93aba97bb96b5e4ce26d2af9930f87d25",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "5b7ac811ebaaa406ebb35fb07323530fae51e1550b788e9377be964c47aca291",
+   "tree": "1c3293cd5ebe90e919df450c52d01ebbd997e570"
+  },
+  "compare": "matched",
+  "cpu_seconds": 11.25,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 54890496,
+  "peak_process_bytes": 37244928,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 11.656,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 1,
+  "total_processes": 241,
+  "total_seconds": 12.578,
+  "wall_seconds": 12.9,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv2": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "0b710be3040fe133baa486a47e396e388f74467c",
+   "config_digest": "28d5484c74569436969d680c86650cc93aba97bb96b5e4ce26d2af9930f87d25",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "5b7ac811ebaaa406ebb35fb07323530fae51e1550b788e9377be964c47aca291",
+   "tree": "1c3293cd5ebe90e919df450c52d01ebbd997e570"
+  },
+  "compare": "matched",
+  "cpu_seconds": 11.796875,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 54939648,
+  "peak_process_bytes": 37220352,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 11.938,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 1,
+  "total_processes": 241,
+  "total_seconds": 12.828,
+  "wall_seconds": 13.1,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-vs-a": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "28d5484c74569436969d680c86650cc93aba97bb96b5e4ce26d2af9930f87d25",
+    "6b3af77af5967616da6aecdfc40751f33844e43953bd8cb7af111cc80b474939"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": true,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 0,
+  "scope_mismatch": null,
+  "self_variance": {
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence": {
+    "reason": null,
+    "reruns": [
+     {
+      "nonce": "944123920536b725f1864b5f0da1abe4",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs926du99k"
+     },
+     {
+      "nonce": "9f499b1e9e79d24d4c04fcc98de62bb2",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsy0fm555h"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "77cf763e72da10b970082381914bba05264b71e2",
+       "67eed4b3c0f73a9eb409a120bd2d738ced8a882e"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "77cf763e72da10b970082381914bba05264b71e2",
+       "97ff8b30ee2f4cbad2e18a4bd6b0447b2d4c0ec6",
+       "b58797dddfe891ebd92f1c6c3d789f54f6f9d48f"
+      ],
+      "subtest": "(change={'candidate_sha': '<T>'})"
+     }
+    ]
+   }
+  },
+  "subtest_mismatch": 0,
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_uncertain": [],
+  "verdict": "equivalent",
+  "verdict_mismatch": {}
+ },
+ "b-gms-vs-a-uncertain": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "28d5484c74569436969d680c86650cc93aba97bb96b5e4ce26d2af9930f87d25",
+    "6b3af77af5967616da6aecdfc40751f33844e43953bd8cb7af111cc80b474939"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": false,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 1,
+  "scope_mismatch": null,
+  "self_variance": null,
+  "subtest_mismatch": 0,
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_uncertain": [
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence"
+  ],
+  "verdict": "uncertain",
+  "verdict_mismatch": {}
+ },
+ "cbm_sampler": {
+  "samples": 796,
+  "sightings": []
+ },
+ "leases_left": []
+}
