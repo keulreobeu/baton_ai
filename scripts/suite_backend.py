@@ -509,7 +509,8 @@ BACKEND_KEYS = ("config_digest", "lock_digest")
 # subTest description normalization (R04, PAR-R201, Spec AC-15), fail-closed in two levels.
 # Proven: a value the result document itself shows to be run-varying is rewritten, and an equality
 # reached this way is equivalent: the run's own temporary folder (the child runs with TEMP/TMP/TMPDIR
-# set to <run_dir>/tmp, recorded as run_temp), tempfile names directly inside it, and hex values the
+# set to a fresh bs<random> folder directly in the system temp folder, recorded as run_temp; kept short
+# because deep test paths reach the Windows path limit), tempfile names directly inside it, and hex values the
 # run recorded (its nonce and binding). PROVEN_NORMALIZATION lists them.
 # Pattern only: SUBTEST_NORMALIZATION below has no proof of where the value came from (two stable SHAs
 # or fixed tmp-like names would also match), so an equality reached only through it is uncertain.
@@ -1151,7 +1152,7 @@ def resolve_selection(inventory, ids_file):
     return sorted(selection)
 
 
-def _child(python, root, mode, run_dir, nonce, *, timeout, should_stop, ids_file=None, binding=None):
+def _child(python, root, mode, run_dir, nonce, *, timeout, should_stop, ids_file=None, binding=None, temp=None):
     out = run_dir / f"{mode}.json"
     argv = [python, "-X", "utf8", str(HERE / "suite_backend.py"), "_" + mode, "--root", str(root),
             "--nonce", nonce, "--out", str(out)]
@@ -1159,13 +1160,25 @@ def _child(python, root, mode, run_dir, nonce, *, timeout, should_stop, ids_file
         argv += ["--ids-file", str(ids_file)]
     if binding is not None:
         argv += ["--binding", json.dumps(binding, sort_keys=True)]
-    rc, reason, terminated, accounting = run_tree(argv, env=child_env(root, run_dir / "tmp"), cwd=root,
+    rc, reason, terminated, accounting = run_tree(argv, env=child_env(root, temp), cwd=root,
                                                   log_path=run_dir / f"{mode}.log", timeout=timeout,
                                                   should_stop=should_stop)
     return rc, reason, terminated, accounting, out
 
 
 def run(args, *, leases=None, stop=lambda: None):
+    # The run's own temp folder (PAR-R201) lives in the system temp folder, so it is removed on every
+    # exit, errors included, unless a descendant may still use it (termination unverified).
+    run_temp = Path(tempfile.mkdtemp(prefix="bs", dir=tempfile.gettempdir())).resolve()
+    keep = []
+    try:
+        return _run(args, run_temp, keep, leases=leases, stop=stop)
+    finally:
+        if not keep:
+            shutil.rmtree(run_temp, ignore_errors=True)
+
+
+def _run(args, run_temp, keep, *, leases, stop):
     check_environment(os.environ)
     root = Path(args.root).resolve()
     python = str(Path(args.python).resolve()) if args.python else sys.executable
@@ -1197,14 +1210,15 @@ def run(args, *, leases=None, stop=lambda: None):
     work = Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir())
     run_dir = work / f"baton-suite-{nonce[:16]}"
     run_dir.mkdir(parents=True)
-    (run_dir / "tmp").mkdir()
     not_before = time.time() - 1
     deadline = time.monotonic() + args.timeout
     should_stop = lambda: stop() or ("cancel" if args.stop_file and Path(args.stop_file).exists() else None)
     t0 = time.monotonic()
-    rc, reason, terminated, _, out = _child(python, root, "inventory", run_dir, nonce, timeout=args.timeout,
+    rc, reason, terminated, _, out = _child(python, root, "inventory", run_dir, nonce, timeout=args.timeout, temp=run_temp,
                                             should_stop=should_stop)
     inventory_seconds = round(time.monotonic() - t0, 3)
+    if not terminated:
+        keep.append("termination_unverified")
     if reason or not terminated:
         raise Stopped(reason or "termination_unverified")
     inventory = load_json(out)
@@ -1231,7 +1245,7 @@ def run(args, *, leases=None, stop=lambda: None):
     if args.suite_backend == "sequential":
         rc, reason, terminated, accounting, out = _child(
             python, root, "sequential", run_dir, nonce, timeout=max(1, deadline - time.monotonic()),
-            should_stop=should_stop, ids_file=ids_file, binding=record_binding)
+            should_stop=should_stop, ids_file=ids_file, binding=record_binding, temp=run_temp)
     else:
         leases_obj = leases or Leases(default_namespace())
         owner = {"pid": os.getpid(), "created": process_identity(os.getpid())[1]}
@@ -1244,7 +1258,7 @@ def run(args, *, leases=None, stop=lambda: None):
         out = run_dir / "record.json"
         t1 = time.monotonic()
         try:
-            rc, reason, terminated, accounting = run_tree(argv, env=child_env(root, run_dir / "tmp"), cwd=root,
+            rc, reason, terminated, accounting = run_tree(argv, env=child_env(root, run_temp), cwd=root,
                                                           log_path=run_dir / "pytest.log",
                                                           timeout=max(1, deadline - time.monotonic()),
                                                           should_stop=should_stop,
@@ -1255,6 +1269,7 @@ def run(args, *, leases=None, stop=lambda: None):
     diagnostics.update(run_seconds=round(time.monotonic() - t1, 3), accounting=accounting)
     if not terminated:
         diagnostics["termination"] = "unverified"
+        keep.append("termination_unverified")
     record = None
     if not reason and terminated:
         record, why = run_record.read_record(out, nonce, record_binding, rc, not_before=not_before)
@@ -1285,7 +1300,7 @@ def run(args, *, leases=None, stop=lambda: None):
                         diagnostics=diagnostics, stopped=reason, child_rc=rc)
     code = exit_code(summary)
     doc = {"schema": RESULT_SCHEMA, "nonce": nonce, "binding": binding, "worktree_dirty": dirty,
-           "run_temp": str((run_dir / "tmp").resolve()),
+           "run_temp": str(run_temp),
            "backend_config": {"extra_plugins": extra, "locks": [str(path.resolve()) for path in lock_paths]},
            "summary": summary, "rc": code, "scopes": record["scopes"] if record else {},
            "results": result_rows(record) if record else []}

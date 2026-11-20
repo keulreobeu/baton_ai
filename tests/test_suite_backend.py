@@ -625,6 +625,43 @@ class SummaryTests(Workspace):
         self.assertEqual(set(projected), set(sb.METRICS_FIELDS))
 
 
+class RunTempTests(Workspace):
+    """PAR-R201 end to end: the child's temp folder is the run's own short bs<random> folder,
+    recorded as run_temp and removed after a verified run; tempfile names made in it are proven."""
+
+    def test_child_tempfile_names_are_proven_run_varying(self):
+        files = {"test_t.py": """
+            import tempfile, unittest
+            class T(unittest.TestCase):
+                def test_tmp(self):
+                    with tempfile.TemporaryDirectory() as folder, self.subTest(folder=folder):
+                        pass
+            """}
+        _, code, first = self.sequential(files)
+        _, code2, second = sb.run(run_args(self.base / "root", "--suite-backend", "sequential"))
+        self.assertEqual((code, code2), (0, 0))
+        for doc in (first, second):
+            temp = Path(doc["run_temp"])
+            self.assertEqual(temp.parent, Path(tempfile.gettempdir()).resolve())
+            self.assertTrue(temp.name.startswith("bs"))
+            self.assertFalse(temp.exists())
+            self.assertTrue(doc["results"][0]["subtests"][0][0].startswith("(folder="))
+        self.assertNotEqual(first["results"][0]["subtests"], second["results"][0]["subtests"])
+        report = sb.compare_runs(first, second)
+        self.assertEqual((report["verdict"], report["subtest_normalized"]), ("equivalent", ["tests.test_t.T.test_tmp"]))
+
+    def test_run_temp_removed_when_the_run_fails_early(self):
+        def mine():
+            return {p.name for p in Path(tempfile.gettempdir()).glob("bs*")}
+        before = mine()
+        root = make_root(self.base / "root", {"test_a.py": "import unittest\nclass A(unittest.TestCase):\n    def test_x(self): pass\n"})
+        ids = self.base / "ids.txt"
+        ids.write_text("tests.test_a.A.test_missing\n", encoding="utf-8")
+        with self.assertRaises(sb.BackendError):
+            sb.run(run_args(root, "--suite-backend", "sequential", "--ids-file", str(ids)))
+        self.assertEqual(mine() - before, set())
+
+
 class LockTests(unittest.TestCase):
     """T15: the installed set must equal the hash lock (AC-11)."""
 
