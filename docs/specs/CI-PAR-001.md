@@ -114,6 +114,7 @@ ID별 정규 결과는 pass, fail, error, skip, expected_failure, unexpected_suc
   `{name, workers_requested, workers_granted, inventory{count, digest}, compare{…}, eligibility_reasons[], binding{candidate_sha, tree, base, lock_digest, installed_digest, gms_extra, selection_digest, config_digest, python, platform}, diagnostics{…}}`
 - `status` 규칙은 현행과 같다(wasSuccessful이고 tests_run>0이면 PASS).
 - eligible 조건: PASS + skip 0 + expected_failure 0 + `failures`·`errors`·`unexpected_successes` 0 + `tests_run == inventory.count` + `compare.status == "matched"`. 여기에 AC-08 조건을 더한다.
+  - 2026-11-20 2차 검토 PAR-R202: 코드의 `would_be_eligible`에 `unexpected_successes == 0`이 빠져 있었다. 이제 반영한다. pytest의 비엄격 XPASS는 rc 0이어서 `status`가 PASS일 수 있다. 그래도 `would_be_eligible=false`이고 `eligibility_reasons`에 `unexpected_success`를 남긴다.
 - MetricsStore로 갈 때는 생산자가 기존 허용 필드만 투영한다. `suite_backend` 객체는 넘기지 않으며 `observability.py`는 바꾸지 않는다.
 
 ### CI-PAR-001-AC-08 공식 증거 자격
@@ -145,6 +146,11 @@ ID별 정규 결과는 pass, fail, error, skip, expected_failure, unexpected_suc
 skip 판정은 순차와 같다. 정상 실행의 skip·expected_failure는 rc 0, status PASS, eligible=false다(현행 순차 계약과 동일). 따라서 "음성 = nonzero"가 아닌 경우를 테스트에서 구분한다.
 - **GMS 미설치:** import 단계 SkipTest 6개 모듈이 AC-06 합성 ID로 순차 기준선과 같아야 한다. 대상은 `tests/test_credentials.py` 등이다. 비적격 판정도 보존해야 한다.
 - **GMS 설치:** 전체 inventory·no-skip이 순차와 같아야 한다.
+- **미해결 예외(공식 연결 전 정책 필요, 2026-11-20 2차 검토):** import 단계 skip만 있는 선택에서 두 backend의 판정이 다르다(T20(b)). 예: GMS 미설치에서 GMS 모듈만 고른 경우다.
+  - 순차는 PASS다(skip, rc 0, eligible=false).
+  - xdist는 FAIL이다. pytest가 수집 항목 없이 exit 5로 끝나기 때문이다.
+  - 거짓 PASS가 아닌 fail-closed 차이이므로 동작은 바꾸지 않는다. 순차 PASS로 억지 변환하지 않는다.
+  - P3 공식 연결(AC-16) 전에 처리 정책을 정해야 한다.
 
 ## CI-PAR-001-REQ-04 의존성·환경
 
@@ -210,11 +216,38 @@ BATON 테스트에는 subTest가 140회(19개 파일) 쓰인다. P1에서 자가
   - (ii) unittest subTest 보고를 내장한 상위 pytest 버전
 - 어느 후보도 충족하지 못하면 의미 검증 **실패**로 기록하고 P1에서 멈춘다. 이 경우 사용자에게 보고한다(A 단독 유지 또는 대안 결정).
 - 실행 전체가 실패한 경우의 진단 문구 차이만 기록 대상으로 허용한다(RA-1).
-- **subTest 식별(2026-11-20 교차검토 R04):** 통과 subTest를 포함한 모든 subTest를 (설명, 결과) 다중집합으로 비교한다. 설명은 아래 명시 정규화 규칙(코드 `SUBTEST_NORMALIZATION`과 같은 목록)만 적용한 뒤 비교한다.
-  - `tempfile_name`: `tmp` + 소문자·숫자·`_` 8자(`tempfile` 임의 이름) → `tmp<RAND>`
-  - `hex_digest`: 40자 또는 64자 소문자 16진수(Git SHA·sha256) → `<SHA>`
-  - `memory_address`: `0x` + 16진수 6~16자 → `<ADDR>`
-  - 정규화 뒤에도 다르면 불일치다(`different`, `equivalent=false`). 남은 차이가 같은 결과·같은 문자의 순서 차이로만 짝지어지면(예: hash randomization 아래 set repr) 정규화할 수 없는 차이로 보고 `uncertain`으로 기록한다. `uncertain`도 `equivalent=true`가 아니다.
+- **subTest 식별(2026-11-20 교차검토 R04, 2차 검토 PAR-R201):** 통과 subTest를 포함한 모든 subTest를 (설명, 결과) 다중집합으로 비교한다. 정규화는 fail-closed이며 두 단계다.
+  - **입증된 정규화(코드 `PROVEN_NORMALIZATION`)**
+    - 결과 문서 자체가 그 실행에서만 나온 값이라고 입증하는 값만 바꾼다.
+    - 이 단계로 같아지면 `normalized`로 기록하고 동등으로 본다.
+    - 자식 실행은 `TEMP`·`TMP`·`TMPDIR`를 run 전용 폴더로 받는다. 이 폴더는 시스템 임시 폴더 바로 아래에 새로 만든 `bs<임의 8자>`다. 결과 문서는 그 경로를 `run_temp`로 기록한다.
+    - 폴더 이름을 짧게 둔 이유: 깊은 테스트 경로가 Windows 경로 길이 한도에 닿는다. `<run_dir>/tmp`로 두었을 때 전체 suite에서 390건이 WinError 206으로 실패했다.
+    - 오류로 끝난 실행을 포함해 모든 종료 시 이 폴더를 지운다. 종료를 확인하지 못한 경우만 남긴다.
+    - `run_temp`: 그 실행의 `run_temp` 경로 → `<RUN_TMP>`. 표기 세 가지를 모두 다룬다: 그대로, `/` 표기(Path repr), `\\` 이중 표기(str repr). 대소문자는 구분하지 않는다.
+    - `run_tempfile_name`: `<RUN_TMP>` 바로 아래의 `tmp` + 소문자·숫자·`_` 8자(`tempfile` 임의 이름) → `tmp<RAND>`. 더 깊은 위치나 run 폴더 밖의 같은 형식 이름은 입증되지 않은 것으로 본다.
+    - `run_recorded_hex`: 그 실행이 기록한 `nonce`와 binding 값 중 16진수 32~64자인 값 → `<RUN_HEX>`.
+  - **형식만 맞는 정규화(코드 `SUBTEST_NORMALIZATION`)**
+    - 출처를 입증하지 못한다. 서로 다른 안정 SHA나 고정된 tmp 형식 이름도 같은 패턴에 걸린다.
+    - 그래서 이 단계에서야 같아지면 `uncertain`이다.
+    - `tempfile_name`: `tmp` + 소문자·숫자·`_` 8자 → `tmp<RAND>`
+    - `hex_digest`: 40자 또는 64자 소문자 16진수(Git SHA·sha256) → `<SHA>`
+    - `memory_address`: `0x` + 16진수 6~16자 → `<ADDR>`
+  - **self_variance 입증(관측, 2026-11-20 사용자 결정)**
+    - 형식 정규화로만 같아진 `uncertain` 차이도 관측으로 입증하면 `normalized`(동등)로 둔다.
+    - 방법: 그 테스트 ID만 순차 backend로 2회 더 따로 실행한다(코드 `SELF_VARIANCE_RERUNS`). 각 재실행은 새 `run_temp`를 쓴다.
+    - 아래 네 조건을 모두 만족해야 입증으로 본다.
+      - a. 비교한 두 실행이 다른 모든 토큰 위치에서, 순차 실행끼리도 값이 서로 다르다(원래 순차 실행과 두 재실행).
+      - b. 모든 실행에서 ID와 각 subTest의 결과가 같다.
+      - c. 형식 정규화 뒤 설명이 모든 실행에서 같다.
+      - d. 차이는 그 토큰 위치에만 있다.
+    - 하나라도 어기거나, 재실행이 실패·중단·누락되면 `uncertain`을 유지한다(fail-closed).
+    - 재실행은 같은 후보(공통 binding, 선택 digest 제외)의 서로 다른 순차 실행이어야 한다.
+    - 입증 기록(재실행 nonce·`run_temp`·rc, 관측 토큰 값, 결과, 거부 사유)을 compare 결과 `self_variance`에 남긴다.
+    - 다른 정규화 규칙은 넓히지 않는다. 기존 테스트 수정이나 자식 env 고정은 하지 않는다.
+  - 두 정규화 뒤에도 다르면 불일치다(`different`, `equivalent=false`).
+  - 남은 차이가 같은 결과·같은 문자의 순서 차이로만 짝지어지면 `uncertain`으로 기록한다(예: hash randomization 아래 set repr).
+  - `uncertain`은 `equivalent=true`가 아니다. 규칙을 넓히려면 해당 테스트 ID와 함께 별도 결정이 필요하다.
+- **미해결 예외(공식 연결 전 정책 필요):** import 단계 skip만 있는 선택은 순차 PASS, xdist exit 5 FAIL이다. 자세한 내용은 AC-10과 T20(b)를 따른다. 실행 전체 판정이 다르므로 이 선택은 동등이 아니다.
 
 ### CI-PAR-001-AC-14 동등성과 최소 실측 (D22)
 P1 보조 도구로 로컬 Windows에서 다음을 측정한다. 각 실행에는 AC-07 `binding`(후보 SHA·tree·base·lock·설정·Python·플랫폼)을 남긴다. 여기에 실제 설치 의존성 목록 digest(`pip freeze` 기준, GMS extra 설치 여부 포함)와 선택 ID 집합 digest를 더한다. 비교는 binding이 일치하는 실행끼리만 한다.

@@ -1,0 +1,291 @@
+{
+ "a-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "7946c853aadde7701a8778a45d75a9d9bc21f7ed",
+   "config_digest": "e097bc5295992f6ba40bc5da546d55fffd09f9df291995889a64cf4d34937708",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "80fb7a6d86238d39965c7cdfaf827463447ba052dd276d276a87e1ab671223a2",
+   "tree": "6abe5af888d55f0c9f140bfc133073e6434edbb9"
+  },
+  "compare": "matched",
+  "cpu_seconds": 1763.1875,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised",
+   "not_passed",
+   "child_rc_nonzero"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 11,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_a_collected_item_without_result_or_deselect_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_any_deselect_outside_the_allowed_set_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_entry_point_plugin_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_external_p_plugin_dropping_a_failing_test_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_ini_addopts_and_required_plugins_are_controlled": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_pytest_plugins_environment_is_cleared_and_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_record_without_plugin_control_facts_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_trusted_plugin_matches_distribution_version_module_and_source": "fail"
+  },
+  "not_run": 0,
+  "peak_job_bytes": 141959168,
+  "peak_process_bytes": 54419456,
+  "rc": 1,
+  "record_rejected": null,
+  "run_seconds": 1961.344,
+  "skipped": 0,
+  "status": "FAIL",
+  "tests_run": 942,
+  "total_processes": 27081,
+  "total_seconds": 1962.625,
+  "wall_seconds": 1963.0,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": false
+ },
+ "b-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "7946c853aadde7701a8778a45d75a9d9bc21f7ed",
+   "config_digest": "2401b78dd061247899434f37265c44e0ebce0ea6f146869e68b478b64403cbc8",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a",
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "80fb7a6d86238d39965c7cdfaf827463447ba052dd276d276a87e1ab671223a2",
+   "tree": "6abe5af888d55f0c9f140bfc133073e6434edbb9"
+  },
+  "compare": "matched",
+  "cpu_seconds": 2140.453125,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised",
+   "not_passed",
+   "child_rc_nonzero"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 11,
+  "lease": {
+   "budget": 10,
+   "ram_slots": 23,
+   "used": 0
+  },
+  "lease_wait_seconds": 0.0,
+  "non_pass": {
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_a_collected_item_without_result_or_deselect_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_any_deselect_outside_the_allowed_set_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_entry_point_plugin_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_external_p_plugin_dropping_a_failing_test_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_ini_addopts_and_required_plugins_are_controlled": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_pytest_plugins_environment_is_cleared_and_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_record_without_plugin_control_facts_is_refused": "fail",
+   "tests.test_evidence_records.DeclaredPluginTrustTests.test_trusted_plugin_matches_distribution_version_module_and_source": "fail"
+  },
+  "not_run": 0,
+  "peak_job_bytes": 443990016,
+  "peak_process_bytes": 59232256,
+  "rc": 1,
+  "record_rejected": null,
+  "run_seconds": 711.328,
+  "skipped": 0,
+  "status": "FAIL",
+  "tests_run": 942,
+  "total_processes": 27039,
+  "total_seconds": 712.75,
+  "wall_seconds": 713.2,
+  "workers_granted": 6,
+  "workers_requested": 6,
+  "worktree_dirty": true,
+  "would_be_eligible": false
+ },
+ "b-gms-sv1": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "7946c853aadde7701a8778a45d75a9d9bc21f7ed",
+   "config_digest": "e097bc5295992f6ba40bc5da546d55fffd09f9df291995889a64cf4d34937708",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "5b7ac811ebaaa406ebb35fb07323530fae51e1550b788e9377be964c47aca291",
+   "tree": "6abe5af888d55f0c9f140bfc133073e6434edbb9"
+  },
+  "compare": "matched",
+  "cpu_seconds": 15.953125,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 55091200,
+  "peak_process_bytes": 37105664,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 17.813,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 1,
+  "total_processes": 241,
+  "total_seconds": 19.36,
+  "wall_seconds": 19.8,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv2": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "7946c853aadde7701a8778a45d75a9d9bc21f7ed",
+   "config_digest": "e097bc5295992f6ba40bc5da546d55fffd09f9df291995889a64cf4d34937708",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "5b7ac811ebaaa406ebb35fb07323530fae51e1550b788e9377be964c47aca291",
+   "tree": "6abe5af888d55f0c9f140bfc133073e6434edbb9"
+  },
+  "compare": "matched",
+  "cpu_seconds": 16.25,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 54956032,
+  "peak_process_bytes": 36925440,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 18.031,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 1,
+  "total_processes": 241,
+  "total_seconds": 19.547,
+  "wall_seconds": 20.0,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-vs-a": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "e097bc5295992f6ba40bc5da546d55fffd09f9df291995889a64cf4d34937708",
+    "2401b78dd061247899434f37265c44e0ebce0ea6f146869e68b478b64403cbc8"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": true,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 0,
+  "scope_mismatch": null,
+  "self_variance": {
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence": {
+    "reason": null,
+    "reruns": [
+     {
+      "nonce": "5e1109681e6cf0a7d0aa165370924f59",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs2y5x5gcr"
+     },
+     {
+      "nonce": "dfc50bdb3c2680ee76bc2bfdaf5ba0fc",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bse2dzla7d"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "7475aad5f0d743278be30828ba27141a1990952d",
+       "6abf112f96a587ffe0deec25b384104ac950b36c"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "7475aad5f0d743278be30828ba27141a1990952d",
+       "712fec55e09aed37223cab245b74d940ddae1032",
+       "9158911185e9fe5ef9b855067c30dd3b46755460"
+      ],
+      "subtest": "(change={'candidate_sha': '<T>'})"
+     }
+    ]
+   }
+  },
+  "subtest_mismatch": 0,
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_uncertain": [],
+  "verdict": "equivalent",
+  "verdict_mismatch": {}
+ },
+ "b-gms-vs-a-uncertain": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "e097bc5295992f6ba40bc5da546d55fffd09f9df291995889a64cf4d34937708",
+    "2401b78dd061247899434f37265c44e0ebce0ea6f146869e68b478b64403cbc8"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": false,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 1,
+  "scope_mismatch": null,
+  "self_variance": null,
+  "subtest_mismatch": 0,
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_uncertain": [
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence"
+  ],
+  "verdict": "uncertain",
+  "verdict_mismatch": {}
+ },
+ "cbm_sampler": {
+  "samples": 1184,
+  "sightings": []
+ },
+ "leases_left": []
+}

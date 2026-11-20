@@ -1,0 +1,33 @@
+{
+ "schema": "ci-par-diagnostic/1",
+ "purpose": "PAR-R201 diagnostic only: does the candidate_sha subTest description differ between two sequential runs? The cross-backend verdict stays uncertain.",
+ "test_id": "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+ "backend": "sequential",
+ "binding_candidate_sha": "ebb24243d9189eb48237d124fbb72932d9a16ee4",
+ "runs": [
+  {
+   "status": "PASS",
+   "rc": 0,
+   "outcome": "pass",
+   "candidate_sha_subtest": [
+    "(change={'candidate_sha': '06d716b25034da3d57d535f0174ad1bca5930e33'})"
+   ]
+  },
+  {
+   "status": "PASS",
+   "rc": 0,
+   "outcome": "pass",
+   "candidate_sha_subtest": [
+    "(change={'candidate_sha': '1f34de6682707ff9ff64b9487959aee6d66550f8'})"
+   ]
+  }
+ ],
+ "sequential_vs_sequential": {
+  "verdict": "uncertain",
+  "subtest_uncertain": [
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence"
+  ],
+  "subtest_normalized": []
+ },
+ "differs_between_sequential_runs": true
+}

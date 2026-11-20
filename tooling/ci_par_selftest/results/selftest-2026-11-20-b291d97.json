@@ -1,0 +1,3637 @@
+{
+ "cases": {
+  "T17_T18_semantics/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {
+     "tests.test_sem.Sub.test_all_pass": [
+      [
+       [
+        "(i=0, s='t')",
+        "pass"
+       ],
+       [
+        "(i=1, s='t')",
+        "pass"
+       ]
+      ],
+      []
+     ],
+     "tests.test_sem.Sub.test_error_then_pass": [
+      [
+       [
+        "(k='x')",
+        "error"
+       ],
+       [
+        "(k='y')",
+        "pass"
+       ]
+      ],
+      []
+     ],
+     "tests.test_sem.Sub.test_msg_only": [
+      [
+       [
+        "[only message]",
+        "fail"
+       ],
+       [
+        "(<subtest>)",
+        "pass"
+       ]
+      ],
+      []
+     ],
+     "tests.test_sem.Sub.test_multi": [
+      [
+       [
+        "(i=0)",
+        "pass"
+       ],
+       [
+        "(i=1)",
+        "fail"
+       ],
+       [
+        "(i=2)",
+        "skip"
+       ],
+       [
+        "(i=3)",
+        "pass"
+       ]
+      ],
+      []
+     ],
+     "tests.test_sem.Sub.test_nested": [
+      [
+       [
+        "(b=2, a=1)",
+        "fail"
+       ],
+       [
+        "(b=3, a=1)",
+        "pass"
+       ]
+      ],
+      []
+     ]
+    },
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "refused_no_subtest",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 7,
+     "expected_failures": 1,
+     "extra": [],
+     "failures": 5,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inherit.Child.test_c": "pass",
+      "tests.test_inherit.Child.test_m": "pass",
+      "tests.test_inherit.Mixin.test_m": "pass",
+      "tests.test_inherit.One.test_shared": "pass",
+      "tests.test_inherit.Two.test_shared": "pass",
+      "tests.test_modfail.M.test_a": "error",
+      "tests.test_modfail.M.test_b": "error",
+      "tests.test_modskip.M.test_a": "skip",
+      "tests.test_sem.ClassSkipped.test_a": "skip",
+      "tests.test_sem.Custom.test_assert_error": "error",
+      "tests.test_sem.Custom.test_custom": "fail",
+      "tests.test_sem.SetupClassFail.test_a": "error",
+      "tests.test_sem.SetupClassFail.test_b": "error",
+      "tests.test_sem.SetupClassSkip.test_a": "skip",
+      "tests.test_sem.Sub.test_all_pass": "pass",
+      "tests.test_sem.Sub.test_error_then_pass": "error",
+      "tests.test_sem.Sub.test_msg_only": "fail",
+      "tests.test_sem.Sub.test_multi": "fail",
+      "tests.test_sem.Sub.test_nested": "fail",
+      "tests.test_sem.TD.test_call_and_td": "error",
+      "tests.test_sem.TD.test_td_only": "error",
+      "tests.test_sem.TeardownClassFail.test_a": "pass",
+      "tests.test_sem.XF.test_skip": "skip",
+      "tests.test_sem.XF.test_skip_decorated": "skip",
+      "tests.test_sem.XF.test_xf": "expected_failure",
+      "tests.test_sem.XF.test_xpass": "unexpected_success",
+      "unittest.loader.ModuleSkipped.tests.test_importskip": "skip"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_sem.SetupClassFail)": "error",
+      "setUpClass (tests.test_sem.SetupClassSkip)": "skip",
+      "setUpModule (tests.test_modfail)": "error",
+      "setUpModule (tests.test_modskip)": "skip",
+      "tearDownClass (tests.test_sem.TeardownClassFail)": "error"
+     },
+     "skipped": 7,
+     "status": "FAIL",
+     "subtests": {
+      "tests.test_sem.Sub.test_all_pass": [
+       [
+        "(i=0, s='t')",
+        "pass"
+       ],
+       [
+        "(i=1, s='t')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_error_then_pass": [
+       [
+        "(k='x')",
+        "error"
+       ],
+       [
+        "(k='y')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_msg_only": [
+       [
+        "[only message]",
+        "fail"
+       ],
+       [
+        "(<subtest>)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_multi": [
+       [
+        "(i=0)",
+        "pass"
+       ],
+       [
+        "(i=1)",
+        "fail"
+       ],
+       [
+        "(i=2)",
+        "skip"
+       ],
+       [
+        "(i=3)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_nested": [
+       [
+        "(b=2, a=1)",
+        "fail"
+       ],
+       [
+        "(b=3, a=1)",
+        "pass"
+       ]
+      ]
+     },
+     "tests_run": 21,
+     "unclassified": null,
+     "unexpected_successes": 1
+    },
+    "rc": 1,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 7,
+     "expected_failures": 1,
+     "extra": [],
+     "failures": 5,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inherit.Child.test_c": "pass",
+      "tests.test_inherit.Child.test_m": "pass",
+      "tests.test_inherit.Mixin.test_m": "pass",
+      "tests.test_inherit.One.test_shared": "pass",
+      "tests.test_inherit.Two.test_shared": "pass",
+      "tests.test_modfail.M.test_a": "error",
+      "tests.test_modfail.M.test_b": "error",
+      "tests.test_modskip.M.test_a": "skip",
+      "tests.test_sem.ClassSkipped.test_a": "skip",
+      "tests.test_sem.Custom.test_assert_error": "error",
+      "tests.test_sem.Custom.test_custom": "fail",
+      "tests.test_sem.SetupClassFail.test_a": "error",
+      "tests.test_sem.SetupClassFail.test_b": "error",
+      "tests.test_sem.SetupClassSkip.test_a": "skip",
+      "tests.test_sem.Sub.test_all_pass": "pass",
+      "tests.test_sem.Sub.test_error_then_pass": "error",
+      "tests.test_sem.Sub.test_msg_only": "fail",
+      "tests.test_sem.Sub.test_multi": "fail",
+      "tests.test_sem.Sub.test_nested": "fail",
+      "tests.test_sem.TD.test_call_and_td": "error",
+      "tests.test_sem.TD.test_td_only": "error",
+      "tests.test_sem.TeardownClassFail.test_a": "pass",
+      "tests.test_sem.XF.test_skip": "skip",
+      "tests.test_sem.XF.test_skip_decorated": "skip",
+      "tests.test_sem.XF.test_xf": "expected_failure",
+      "tests.test_sem.XF.test_xpass": "unexpected_success",
+      "unittest.loader.ModuleSkipped.tests.test_importskip": "skip"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_sem.SetupClassFail)": "error",
+      "setUpClass (tests.test_sem.SetupClassSkip)": "skip",
+      "setUpModule (tests.test_modfail)": "error",
+      "setUpModule (tests.test_modskip)": "skip",
+      "tearDownClass (tests.test_sem.TeardownClassFail)": "error"
+     },
+     "skipped": 6,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 21,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 1
+    },
+    "rc": 1,
+    "seconds": 1.56
+   }
+  },
+  "T17_T18_semantics/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 7,
+     "expected_failures": 1,
+     "extra": [],
+     "failures": 5,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inherit.Child.test_c": "pass",
+      "tests.test_inherit.Child.test_m": "pass",
+      "tests.test_inherit.Mixin.test_m": "pass",
+      "tests.test_inherit.One.test_shared": "pass",
+      "tests.test_inherit.Two.test_shared": "pass",
+      "tests.test_modfail.M.test_a": "error",
+      "tests.test_modfail.M.test_b": "error",
+      "tests.test_modskip.M.test_a": "skip",
+      "tests.test_sem.ClassSkipped.test_a": "skip",
+      "tests.test_sem.Custom.test_assert_error": "error",
+      "tests.test_sem.Custom.test_custom": "fail",
+      "tests.test_sem.SetupClassFail.test_a": "error",
+      "tests.test_sem.SetupClassFail.test_b": "error",
+      "tests.test_sem.SetupClassSkip.test_a": "skip",
+      "tests.test_sem.Sub.test_all_pass": "pass",
+      "tests.test_sem.Sub.test_error_then_pass": "error",
+      "tests.test_sem.Sub.test_msg_only": "fail",
+      "tests.test_sem.Sub.test_multi": "fail",
+      "tests.test_sem.Sub.test_nested": "fail",
+      "tests.test_sem.TD.test_call_and_td": "error",
+      "tests.test_sem.TD.test_td_only": "error",
+      "tests.test_sem.TeardownClassFail.test_a": "pass",
+      "tests.test_sem.XF.test_skip": "skip",
+      "tests.test_sem.XF.test_skip_decorated": "skip",
+      "tests.test_sem.XF.test_xf": "expected_failure",
+      "tests.test_sem.XF.test_xpass": "unexpected_success",
+      "unittest.loader.ModuleSkipped.tests.test_importskip": "skip"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_sem.SetupClassFail)": "error",
+      "setUpClass (tests.test_sem.SetupClassSkip)": "skip",
+      "setUpModule (tests.test_modfail)": "error",
+      "setUpModule (tests.test_modskip)": "skip",
+      "tearDownClass (tests.test_sem.TeardownClassFail)": "error"
+     },
+     "skipped": 7,
+     "status": "FAIL",
+     "subtests": {
+      "tests.test_sem.Sub.test_all_pass": [
+       [
+        "(i=0, s='t')",
+        "pass"
+       ],
+       [
+        "(i=1, s='t')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_error_then_pass": [
+       [
+        "(k='x')",
+        "error"
+       ],
+       [
+        "(k='y')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_msg_only": [
+       [
+        "[only message]",
+        "fail"
+       ],
+       [
+        "(<subtest>)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_multi": [
+       [
+        "(i=0)",
+        "pass"
+       ],
+       [
+        "(i=1)",
+        "fail"
+       ],
+       [
+        "(i=2)",
+        "skip"
+       ],
+       [
+        "(i=3)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_nested": [
+       [
+        "(b=2, a=1)",
+        "fail"
+       ],
+       [
+        "(b=3, a=1)",
+        "pass"
+       ]
+      ]
+     },
+     "tests_run": 21,
+     "unclassified": null,
+     "unexpected_successes": 1
+    },
+    "rc": 1,
+    "seconds": 0.97
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 7,
+     "expected_failures": 1,
+     "extra": [],
+     "failures": 5,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inherit.Child.test_c": "pass",
+      "tests.test_inherit.Child.test_m": "pass",
+      "tests.test_inherit.Mixin.test_m": "pass",
+      "tests.test_inherit.One.test_shared": "pass",
+      "tests.test_inherit.Two.test_shared": "pass",
+      "tests.test_modfail.M.test_a": "error",
+      "tests.test_modfail.M.test_b": "error",
+      "tests.test_modskip.M.test_a": "skip",
+      "tests.test_sem.ClassSkipped.test_a": "skip",
+      "tests.test_sem.Custom.test_assert_error": "error",
+      "tests.test_sem.Custom.test_custom": "fail",
+      "tests.test_sem.SetupClassFail.test_a": "error",
+      "tests.test_sem.SetupClassFail.test_b": "error",
+      "tests.test_sem.SetupClassSkip.test_a": "skip",
+      "tests.test_sem.Sub.test_all_pass": "pass",
+      "tests.test_sem.Sub.test_error_then_pass": "error",
+      "tests.test_sem.Sub.test_msg_only": "fail",
+      "tests.test_sem.Sub.test_multi": "fail",
+      "tests.test_sem.Sub.test_nested": "fail",
+      "tests.test_sem.TD.test_call_and_td": "error",
+      "tests.test_sem.TD.test_td_only": "error",
+      "tests.test_sem.TeardownClassFail.test_a": "pass",
+      "tests.test_sem.XF.test_skip": "skip",
+      "tests.test_sem.XF.test_skip_decorated": "skip",
+      "tests.test_sem.XF.test_xf": "expected_failure",
+      "tests.test_sem.XF.test_xpass": "unexpected_success",
+      "unittest.loader.ModuleSkipped.tests.test_importskip": "skip"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_sem.SetupClassFail)": "error",
+      "setUpClass (tests.test_sem.SetupClassSkip)": "skip",
+      "setUpModule (tests.test_modfail)": "error",
+      "setUpModule (tests.test_modskip)": "skip",
+      "tearDownClass (tests.test_sem.TeardownClassFail)": "error"
+     },
+     "skipped": 7,
+     "status": "FAIL",
+     "subtests": {
+      "tests.test_sem.Sub.test_all_pass": [
+       [
+        "(i=0, s='t')",
+        "pass"
+       ],
+       [
+        "(i=1, s='t')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_error_then_pass": [
+       [
+        "(k='x')",
+        "error"
+       ],
+       [
+        "(k='y')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_msg_only": [
+       [
+        "[only message]",
+        "fail"
+       ],
+       [
+        "(<subtest>)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_multi": [
+       [
+        "(i=0)",
+        "pass"
+       ],
+       [
+        "(i=1)",
+        "fail"
+       ],
+       [
+        "(i=2)",
+        "skip"
+       ],
+       [
+        "(i=3)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_nested": [
+       [
+        "(b=2, a=1)",
+        "fail"
+       ],
+       [
+        "(b=3, a=1)",
+        "pass"
+       ]
+      ]
+     },
+     "tests_run": 21,
+     "unclassified": null,
+     "unexpected_successes": 1
+    },
+    "rc": 1,
+    "seconds": 1.61
+   }
+  },
+  "T17_T18_semantics/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 7,
+     "expected_failures": 1,
+     "extra": [],
+     "failures": 5,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inherit.Child.test_c": "pass",
+      "tests.test_inherit.Child.test_m": "pass",
+      "tests.test_inherit.Mixin.test_m": "pass",
+      "tests.test_inherit.One.test_shared": "pass",
+      "tests.test_inherit.Two.test_shared": "pass",
+      "tests.test_modfail.M.test_a": "error",
+      "tests.test_modfail.M.test_b": "error",
+      "tests.test_modskip.M.test_a": "skip",
+      "tests.test_sem.ClassSkipped.test_a": "skip",
+      "tests.test_sem.Custom.test_assert_error": "error",
+      "tests.test_sem.Custom.test_custom": "fail",
+      "tests.test_sem.SetupClassFail.test_a": "error",
+      "tests.test_sem.SetupClassFail.test_b": "error",
+      "tests.test_sem.SetupClassSkip.test_a": "skip",
+      "tests.test_sem.Sub.test_all_pass": "pass",
+      "tests.test_sem.Sub.test_error_then_pass": "error",
+      "tests.test_sem.Sub.test_msg_only": "fail",
+      "tests.test_sem.Sub.test_multi": "fail",
+      "tests.test_sem.Sub.test_nested": "fail",
+      "tests.test_sem.TD.test_call_and_td": "error",
+      "tests.test_sem.TD.test_td_only": "error",
+      "tests.test_sem.TeardownClassFail.test_a": "pass",
+      "tests.test_sem.XF.test_skip": "skip",
+      "tests.test_sem.XF.test_skip_decorated": "skip",
+      "tests.test_sem.XF.test_xf": "expected_failure",
+      "tests.test_sem.XF.test_xpass": "unexpected_success",
+      "unittest.loader.ModuleSkipped.tests.test_importskip": "skip"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_sem.SetupClassFail)": "error",
+      "setUpClass (tests.test_sem.SetupClassSkip)": "skip",
+      "setUpModule (tests.test_modfail)": "error",
+      "setUpModule (tests.test_modskip)": "skip",
+      "tearDownClass (tests.test_sem.TeardownClassFail)": "error"
+     },
+     "skipped": 7,
+     "status": "FAIL",
+     "subtests": {
+      "tests.test_sem.Sub.test_all_pass": [
+       [
+        "(i=0, s='t')",
+        "pass"
+       ],
+       [
+        "(i=1, s='t')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_error_then_pass": [
+       [
+        "(k='x')",
+        "error"
+       ],
+       [
+        "(k='y')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_msg_only": [
+       [
+        "[only message]",
+        "fail"
+       ],
+       [
+        "(<subtest>)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_multi": [
+       [
+        "(i=0)",
+        "pass"
+       ],
+       [
+        "(i=1)",
+        "fail"
+       ],
+       [
+        "(i=2)",
+        "skip"
+       ],
+       [
+        "(i=3)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_nested": [
+       [
+        "(b=2, a=1)",
+        "fail"
+       ],
+       [
+        "(b=3, a=1)",
+        "pass"
+       ]
+      ]
+     },
+     "tests_run": 21,
+     "unclassified": null,
+     "unexpected_successes": 1
+    },
+    "rc": 1,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 7,
+     "expected_failures": 1,
+     "extra": [],
+     "failures": 5,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inherit.Child.test_c": "pass",
+      "tests.test_inherit.Child.test_m": "pass",
+      "tests.test_inherit.Mixin.test_m": "pass",
+      "tests.test_inherit.One.test_shared": "pass",
+      "tests.test_inherit.Two.test_shared": "pass",
+      "tests.test_modfail.M.test_a": "error",
+      "tests.test_modfail.M.test_b": "error",
+      "tests.test_modskip.M.test_a": "skip",
+      "tests.test_sem.ClassSkipped.test_a": "skip",
+      "tests.test_sem.Custom.test_assert_error": "error",
+      "tests.test_sem.Custom.test_custom": "fail",
+      "tests.test_sem.SetupClassFail.test_a": "error",
+      "tests.test_sem.SetupClassFail.test_b": "error",
+      "tests.test_sem.SetupClassSkip.test_a": "skip",
+      "tests.test_sem.Sub.test_all_pass": "pass",
+      "tests.test_sem.Sub.test_error_then_pass": "error",
+      "tests.test_sem.Sub.test_msg_only": "fail",
+      "tests.test_sem.Sub.test_multi": "fail",
+      "tests.test_sem.Sub.test_nested": "fail",
+      "tests.test_sem.TD.test_call_and_td": "error",
+      "tests.test_sem.TD.test_td_only": "error",
+      "tests.test_sem.TeardownClassFail.test_a": "pass",
+      "tests.test_sem.XF.test_skip": "skip",
+      "tests.test_sem.XF.test_skip_decorated": "skip",
+      "tests.test_sem.XF.test_xf": "expected_failure",
+      "tests.test_sem.XF.test_xpass": "unexpected_success",
+      "unittest.loader.ModuleSkipped.tests.test_importskip": "skip"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_sem.SetupClassFail)": "error",
+      "setUpClass (tests.test_sem.SetupClassSkip)": "skip",
+      "setUpModule (tests.test_modfail)": "error",
+      "setUpModule (tests.test_modskip)": "skip",
+      "tearDownClass (tests.test_sem.TeardownClassFail)": "error"
+     },
+     "skipped": 7,
+     "status": "FAIL",
+     "subtests": {
+      "tests.test_sem.Sub.test_all_pass": [
+       [
+        "(i=0, s='t')",
+        "pass"
+       ],
+       [
+        "(i=1, s='t')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_error_then_pass": [
+       [
+        "(k='x')",
+        "error"
+       ],
+       [
+        "(k='y')",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_msg_only": [
+       [
+        "[only message]",
+        "fail"
+       ],
+       [
+        "(<subtest>)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_multi": [
+       [
+        "(i=0)",
+        "pass"
+       ],
+       [
+        "(i=1)",
+        "fail"
+       ],
+       [
+        "(i=2)",
+        "skip"
+       ],
+       [
+        "(i=3)",
+        "pass"
+       ]
+      ],
+      "tests.test_sem.Sub.test_nested": [
+       [
+        "(b=2, a=1)",
+        "fail"
+       ],
+       [
+        "(b=3, a=1)",
+        "pass"
+       ]
+      ]
+     },
+     "tests_run": 21,
+     "unclassified": null,
+     "unexpected_successes": 1
+    },
+    "rc": 1,
+    "seconds": 1.52
+   }
+  },
+  "T19_partial_fixture_2_workers/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "refused_no_subtest",
+   "observed": {
+    "equivalent": true,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_partial.Flaky.test_0": "error",
+      "tests.test_partial.Flaky.test_1": "error",
+      "tests.test_partial.Flaky.test_2": "error",
+      "tests.test_partial.Flaky.test_3": "error",
+      "tests.test_partial.Flaky.test_4": "error",
+      "tests.test_partial.Flaky.test_5": "error",
+      "tests.test_partial.Flaky.test_6": "error",
+      "tests.test_partial.Flaky.test_7": "error"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_partial.Flaky)": "error"
+     },
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 0.94
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_partial.Flaky.test_0": "error",
+      "tests.test_partial.Flaky.test_1": "error",
+      "tests.test_partial.Flaky.test_2": "pass",
+      "tests.test_partial.Flaky.test_3": "pass",
+      "tests.test_partial.Flaky.test_4": "pass",
+      "tests.test_partial.Flaky.test_5": "pass",
+      "tests.test_partial.Flaky.test_6": "pass",
+      "tests.test_partial.Flaky.test_7": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_partial.Flaky)": "error"
+     },
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.53
+   }
+  },
+  "T19_partial_fixture_2_workers/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_partial.Flaky.test_0": "error",
+      "tests.test_partial.Flaky.test_1": "error",
+      "tests.test_partial.Flaky.test_2": "error",
+      "tests.test_partial.Flaky.test_3": "error",
+      "tests.test_partial.Flaky.test_4": "error",
+      "tests.test_partial.Flaky.test_5": "error",
+      "tests.test_partial.Flaky.test_6": "error",
+      "tests.test_partial.Flaky.test_7": "error"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_partial.Flaky)": "error"
+     },
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 0.92
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_partial.Flaky.test_0": "error",
+      "tests.test_partial.Flaky.test_1": "error",
+      "tests.test_partial.Flaky.test_2": "pass",
+      "tests.test_partial.Flaky.test_3": "pass",
+      "tests.test_partial.Flaky.test_4": "pass",
+      "tests.test_partial.Flaky.test_5": "pass",
+      "tests.test_partial.Flaky.test_6": "pass",
+      "tests.test_partial.Flaky.test_7": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_partial.Flaky)": "error"
+     },
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.51
+   }
+  },
+  "T19_partial_fixture_2_workers/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_partial.Flaky.test_0": "error",
+      "tests.test_partial.Flaky.test_1": "error",
+      "tests.test_partial.Flaky.test_2": "error",
+      "tests.test_partial.Flaky.test_3": "error",
+      "tests.test_partial.Flaky.test_4": "error",
+      "tests.test_partial.Flaky.test_5": "error",
+      "tests.test_partial.Flaky.test_6": "error",
+      "tests.test_partial.Flaky.test_7": "error"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_partial.Flaky)": "error"
+     },
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 0.92
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_partial.Flaky.test_0": "error",
+      "tests.test_partial.Flaky.test_1": "error",
+      "tests.test_partial.Flaky.test_2": "pass",
+      "tests.test_partial.Flaky.test_3": "pass",
+      "tests.test_partial.Flaky.test_4": "pass",
+      "tests.test_partial.Flaky.test_5": "pass",
+      "tests.test_partial.Flaky.test_6": "pass",
+      "tests.test_partial.Flaky.test_7": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {
+      "setUpClass (tests.test_partial.Flaky)": "error"
+     },
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.5
+   }
+  },
+  "T20_gms_less_real_modules/pytest9": {
+   "cryptography_importable": false,
+   "mapping": {
+    "compare": {
+     "backend_specific_differences": {
+      "config_digest": [
+       "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+       "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+      ],
+      "lock_digest": [
+       null,
+       "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+      ]
+     },
+     "equivalent": true,
+     "ids_only_left": [],
+     "ids_only_right": [],
+     "partition_violations": [],
+     "scope_mismatch": null,
+     "status": [
+      "PASS",
+      "PASS"
+     ],
+     "subtest_mismatch": {},
+     "subtest_normalized": [],
+     "subtest_uncertain": {},
+     "verdict": "equivalent",
+     "verdict_mismatch": {},
+     "would_be_eligible": [
+      false,
+      false
+     ]
+    },
+    "sequential": {
+     "doc": {
+      "child_rc": 0,
+      "collection_errors": null,
+      "compare": "matched",
+      "crashes": null,
+      "errors": 0,
+      "expected_failures": 0,
+      "extra": [],
+      "failures": 0,
+      "missing": [],
+      "not_run": [],
+      "outcomes": {
+       "tests.test_run_record.FormatTests.test_valid_record_round_trips_and_complete_is_last": "pass",
+       "unittest.loader.ModuleSkipped.tests.test_credential_regressions": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credential_server": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credentials": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_budget": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_switch": "skip"
+      },
+      "plugin_violations": null,
+      "rc": 0,
+      "record_rejected": null,
+      "scopes": {},
+      "skipped": 6,
+      "status": "PASS",
+      "subtests": {},
+      "tests_run": 7,
+      "unclassified": null,
+      "unexpected_successes": 0
+     },
+     "rc": 0,
+     "seconds": 1.3,
+     "stderr": ""
+    },
+    "xdist": {
+     "doc": {
+      "child_rc": 0,
+      "collection_errors": null,
+      "compare": "matched",
+      "crashes": null,
+      "errors": 0,
+      "expected_failures": 0,
+      "extra": [],
+      "failures": 0,
+      "missing": [],
+      "not_run": [],
+      "outcomes": {
+       "tests.test_run_record.FormatTests.test_valid_record_round_trips_and_complete_is_last": "pass",
+       "unittest.loader.ModuleSkipped.tests.test_credential_regressions": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credential_server": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credentials": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_budget": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_switch": "skip"
+      },
+      "plugin_violations": null,
+      "rc": 0,
+      "record_rejected": null,
+      "scopes": {},
+      "skipped": 6,
+      "status": "PASS",
+      "subtests": {},
+      "tests_run": 7,
+      "unclassified": null,
+      "unexpected_successes": 0
+     },
+     "rc": 0,
+     "seconds": 2.03,
+     "stderr": ""
+    }
+   },
+   "observed": {
+    "mapping_equivalent": true,
+    "skip_only_child_rc": 5,
+    "skip_only_record_rejected": null,
+    "skip_only_xdist_rc": 1,
+    "skip_only_xdist_status": "FAIL"
+   },
+   "ok": true,
+   "skip_only": {
+    "compare": {
+     "backend_specific_differences": {
+      "config_digest": [
+       "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+       "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+      ],
+      "lock_digest": [
+       null,
+       "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+      ]
+     },
+     "equivalent": false,
+     "ids_only_left": [],
+     "ids_only_right": [],
+     "partition_violations": [],
+     "scope_mismatch": null,
+     "status": [
+      "PASS",
+      "FAIL"
+     ],
+     "subtest_mismatch": {},
+     "subtest_normalized": [],
+     "subtest_uncertain": {},
+     "verdict": "different",
+     "verdict_mismatch": {},
+     "would_be_eligible": [
+      false,
+      false
+     ]
+    },
+    "sequential": {
+     "doc": {
+      "child_rc": 0,
+      "collection_errors": null,
+      "compare": "matched",
+      "crashes": null,
+      "errors": 0,
+      "expected_failures": 0,
+      "extra": [],
+      "failures": 0,
+      "missing": [],
+      "not_run": [],
+      "outcomes": {
+       "unittest.loader.ModuleSkipped.tests.test_credential_regressions": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credential_server": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credentials": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_budget": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_switch": "skip"
+      },
+      "plugin_violations": null,
+      "rc": 0,
+      "record_rejected": null,
+      "scopes": {},
+      "skipped": 6,
+      "status": "PASS",
+      "subtests": {},
+      "tests_run": 6,
+      "unclassified": null,
+      "unexpected_successes": 0
+     },
+     "rc": 0,
+     "seconds": 1.41,
+     "stderr": ""
+    },
+    "xdist": {
+     "doc": {
+      "child_rc": 5,
+      "collection_errors": null,
+      "compare": "matched",
+      "crashes": null,
+      "errors": 0,
+      "expected_failures": 0,
+      "extra": [],
+      "failures": 0,
+      "missing": [],
+      "not_run": [],
+      "outcomes": {
+       "unittest.loader.ModuleSkipped.tests.test_credential_regressions": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credential_server": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_credentials": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_budget": "skip",
+       "unittest.loader.ModuleSkipped.tests.test_gms_switch": "skip"
+      },
+      "plugin_violations": null,
+      "rc": 1,
+      "record_rejected": null,
+      "scopes": {},
+      "skipped": 6,
+      "status": "FAIL",
+      "subtests": {},
+      "tests_run": 6,
+      "unclassified": null,
+      "unexpected_successes": 0
+     },
+     "rc": 1,
+     "seconds": 1.83,
+     "stderr": ""
+    }
+   }
+  },
+  "T21_collection_crash/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [
+     "tests.test_dies.B.test_y",
+     "tests.test_ok.A.test_x"
+    ],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_dies.B.test_y": "pass",
+      "tests.test_ok.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 5,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [
+      "tests.test_dies.B.test_y",
+      "tests.test_ok.A.test_x"
+     ],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.41
+   }
+  },
+  "T21_collection_crash/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [
+     "tests.test_dies.B.test_y",
+     "tests.test_ok.A.test_x"
+    ],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_dies.B.test_y": "pass",
+      "tests.test_ok.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.92
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 5,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [
+      "tests.test_dies.B.test_y",
+      "tests.test_ok.A.test_x"
+     ],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.41
+   }
+  },
+  "T21_collection_crash/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [
+     "tests.test_dies.B.test_y",
+     "tests.test_ok.A.test_x"
+    ],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_dies.B.test_y": "pass",
+      "tests.test_ok.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.92
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 5,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [
+      "tests.test_dies.B.test_y",
+      "tests.test_ok.A.test_x"
+     ],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.41
+   }
+  },
+  "T21_worker_crash/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [
+     "tests.test_crash.C.test_0",
+     "tests.test_crash.C.test_1_crash",
+     "tests.test_crash.C.test_2_after",
+     "tests.test_crash.C.test_3_after",
+     "tests.test_crash.C.test_4_after",
+     "tests.test_crash.C.test_5_after",
+     "tests.test_crash.C.test_6_after",
+     "tests.test_crash.C.test_7_after"
+    ],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 3,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": "missing",
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 0.81
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": [
+      {
+       "id": "tests.test_crash.C.test_1_crash",
+       "worker": "gw0"
+      }
+     ],
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [
+      "tests.test_crash.C.test_2_after",
+      "tests.test_crash.C.test_3_after",
+      "tests.test_crash.C.test_4_after",
+      "tests.test_crash.C.test_5_after",
+      "tests.test_crash.C.test_6_after",
+      "tests.test_crash.C.test_7_after"
+     ],
+     "outcomes": {
+      "tests.test_crash.C.test_0": "pass",
+      "tests.test_crash.C.test_1_crash": "error",
+      "tests.test_crash.C.test_2_after": "not_run",
+      "tests.test_crash.C.test_3_after": "not_run",
+      "tests.test_crash.C.test_4_after": "not_run",
+      "tests.test_crash.C.test_5_after": "not_run",
+      "tests.test_crash.C.test_6_after": "not_run",
+      "tests.test_crash.C.test_7_after": "not_run"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.31
+   }
+  },
+  "T21_worker_crash/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [
+     "tests.test_crash.C.test_0",
+     "tests.test_crash.C.test_1_crash",
+     "tests.test_crash.C.test_2_after",
+     "tests.test_crash.C.test_3_after",
+     "tests.test_crash.C.test_4_after",
+     "tests.test_crash.C.test_5_after",
+     "tests.test_crash.C.test_6_after",
+     "tests.test_crash.C.test_7_after"
+    ],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 3,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": "missing",
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 0.78
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": [
+      {
+       "id": "tests.test_crash.C.test_1_crash",
+       "worker": "gw0"
+      }
+     ],
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [
+      "tests.test_crash.C.test_2_after",
+      "tests.test_crash.C.test_3_after",
+      "tests.test_crash.C.test_4_after",
+      "tests.test_crash.C.test_5_after",
+      "tests.test_crash.C.test_6_after",
+      "tests.test_crash.C.test_7_after"
+     ],
+     "outcomes": {
+      "tests.test_crash.C.test_0": "pass",
+      "tests.test_crash.C.test_1_crash": "error",
+      "tests.test_crash.C.test_2_after": "not_run",
+      "tests.test_crash.C.test_3_after": "not_run",
+      "tests.test_crash.C.test_4_after": "not_run",
+      "tests.test_crash.C.test_5_after": "not_run",
+      "tests.test_crash.C.test_6_after": "not_run",
+      "tests.test_crash.C.test_7_after": "not_run"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.31
+   }
+  },
+  "T21_worker_crash/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [
+     "tests.test_crash.C.test_0",
+     "tests.test_crash.C.test_1_crash",
+     "tests.test_crash.C.test_2_after",
+     "tests.test_crash.C.test_3_after",
+     "tests.test_crash.C.test_4_after",
+     "tests.test_crash.C.test_5_after",
+     "tests.test_crash.C.test_6_after",
+     "tests.test_crash.C.test_7_after"
+    ],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "FAIL",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     false,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 3,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": "missing",
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 0.8
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": [
+      {
+       "id": "tests.test_crash.C.test_1_crash",
+       "worker": "gw0"
+      }
+     ],
+     "errors": 1,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [
+      "tests.test_crash.C.test_2_after",
+      "tests.test_crash.C.test_3_after",
+      "tests.test_crash.C.test_4_after",
+      "tests.test_crash.C.test_5_after",
+      "tests.test_crash.C.test_6_after",
+      "tests.test_crash.C.test_7_after"
+     ],
+     "outcomes": {
+      "tests.test_crash.C.test_0": "pass",
+      "tests.test_crash.C.test_1_crash": "error",
+      "tests.test_crash.C.test_2_after": "not_run",
+      "tests.test_crash.C.test_3_after": "not_run",
+      "tests.test_crash.C.test_4_after": "not_run",
+      "tests.test_crash.C.test_5_after": "not_run",
+      "tests.test_crash.C.test_6_after": "not_run",
+      "tests.test_crash.C.test_7_after": "not_run"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.3
+   }
+  },
+  "T22_stop_file_cancels/pytest8-solo": {
+   "expect": "stopped",
+   "observed": {
+    "equivalent": null,
+    "unclassified": null,
+    "xdist_rc": 3,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 3,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 3,
+    "seconds": 1.25
+   }
+  },
+  "T22_stop_file_cancels/pytest8-sub": {
+   "expect": "stopped",
+   "observed": {
+    "equivalent": null,
+    "unclassified": null,
+    "xdist_rc": 3,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 3,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 3,
+    "seconds": 1.36
+   }
+  },
+  "T22_stop_file_cancels/pytest9": {
+   "expect": "stopped",
+   "observed": {
+    "equivalent": null,
+    "unclassified": null,
+    "xdist_rc": 3,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 3,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 3,
+    "seconds": 1.39
+   }
+  },
+  "T22_timeout_stops_tree/pytest8-solo": {
+   "expect": "stopped",
+   "observed": {
+    "equivalent": null,
+    "unclassified": null,
+    "xdist_rc": 3,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 3,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 3,
+    "seconds": 25.36
+   }
+  },
+  "T22_timeout_stops_tree/pytest8-sub": {
+   "expect": "stopped",
+   "observed": {
+    "equivalent": null,
+    "unclassified": null,
+    "xdist_rc": 3,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 3,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 3,
+    "seconds": 25.31
+   }
+  },
+  "T22_timeout_stops_tree/pytest9": {
+   "expect": "stopped",
+   "observed": {
+    "equivalent": null,
+    "unclassified": null,
+    "xdist_rc": 3,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "xdist": {
+    "doc": {
+     "child_rc": 1,
+     "collection_errors": null,
+     "compare": "not_run",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {},
+     "plugin_violations": null,
+     "rc": 3,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 0,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 3,
+    "seconds": 25.31
+   }
+  },
+  "T23_conftest_and_ini_ignored/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "refused_no_subtest",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_a.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_a.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.39
+   }
+  },
+  "T23_conftest_and_ini_ignored/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "PASS"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     true
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 0,
+    "xdist_status": "PASS"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_a.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_a.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 1.5
+   }
+  },
+  "T23_conftest_and_ini_ignored/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "PASS"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     true
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 0,
+    "xdist_status": "PASS"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_a.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.92
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_a.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 1.41
+   }
+  },
+  "T23_pytest_plugins_in_module/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inject.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inject.A.test_x": "pass"
+     },
+     "plugin_violations": [
+      "tests.evil_plugin"
+     ],
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.42
+   }
+  },
+  "T23_pytest_plugins_in_module/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inject.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.89
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inject.A.test_x": "pass"
+     },
+     "plugin_violations": [
+      "tests.evil_plugin"
+     ],
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.5
+   }
+  },
+  "T23_pytest_plugins_in_module/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "xdist_fails",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inject.A.test_x": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_inject.A.test_x": "pass"
+     },
+     "plugin_violations": [
+      "tests.evil_plugin"
+     ],
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 1,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.5
+   }
+  },
+  "T24_import_side_effect/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "refused_no_subtest",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_side.A.test_0": "pass",
+      "tests.test_side.A.test_1": "pass",
+      "tests.test_side.A.test_2": "pass",
+      "tests.test_side.A.test_3": "pass",
+      "tests.test_side.A.test_4": "pass",
+      "tests.test_side.A.test_5": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91,
+    "side_effect_lines": 2
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_side.A.test_0": "pass",
+      "tests.test_side.A.test_1": "pass",
+      "tests.test_side.A.test_2": "pass",
+      "tests.test_side.A.test_3": "pass",
+      "tests.test_side.A.test_4": "pass",
+      "tests.test_side.A.test_5": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.52,
+    "side_effect_lines": 3
+   }
+  },
+  "T24_import_side_effect/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "PASS"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     true
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 0,
+    "xdist_status": "PASS"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_side.A.test_0": "pass",
+      "tests.test_side.A.test_1": "pass",
+      "tests.test_side.A.test_2": "pass",
+      "tests.test_side.A.test_3": "pass",
+      "tests.test_side.A.test_4": "pass",
+      "tests.test_side.A.test_5": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.92,
+    "side_effect_lines": 2
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_side.A.test_0": "pass",
+      "tests.test_side.A.test_1": "pass",
+      "tests.test_side.A.test_2": "pass",
+      "tests.test_side.A.test_3": "pass",
+      "tests.test_side.A.test_4": "pass",
+      "tests.test_side.A.test_5": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 1.53,
+    "side_effect_lines": 3
+   }
+  },
+  "T24_import_side_effect/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": true,
+    "ids_only_left": [],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "PASS"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "equivalent",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     true
+    ]
+   },
+   "expect": "equivalent",
+   "observed": {
+    "equivalent": true,
+    "unclassified": null,
+    "xdist_rc": 0,
+    "xdist_status": "PASS"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_side.A.test_0": "pass",
+      "tests.test_side.A.test_1": "pass",
+      "tests.test_side.A.test_2": "pass",
+      "tests.test_side.A.test_3": "pass",
+      "tests.test_side.A.test_4": "pass",
+      "tests.test_side.A.test_5": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91,
+    "side_effect_lines": 2
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_side.A.test_0": "pass",
+      "tests.test_side.A.test_1": "pass",
+      "tests.test_side.A.test_2": "pass",
+      "tests.test_side.A.test_3": "pass",
+      "tests.test_side.A.test_4": "pass",
+      "tests.test_side.A.test_5": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 6,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 1.52,
+    "side_effect_lines": 3
+   }
+  },
+  "T25_load_tests_collection_differs/pytest8-solo": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [
+     "tests.test_lt_extra.D.check_x"
+    ],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "collection_mismatch",
+   "observed": {
+    "equivalent": false,
+    "unclassified": [
+     "pytest without unittest subTest support"
+    ],
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_lt_extra.D.check_x": "pass",
+      "tests.test_lt_extra.D.test_a": "pass",
+      "tests.test_lt_filter.C.test_a": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 3,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [
+      "tests.test_lt_filter.C.test_b"
+     ],
+     "failures": 0,
+     "missing": [
+      "tests.test_lt_extra.D.check_x"
+     ],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_lt_extra.D.test_a": "pass",
+      "tests.test_lt_filter.C.test_a": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": [
+      "pytest without unittest subTest support"
+     ],
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.53
+   }
+  },
+  "T25_load_tests_collection_differs/pytest8-sub": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "2ddb93f841a509475d3d53c9d27041ae889e8331926448034138cb77add6f262"
+     ],
+     "lock_digest": [
+      null,
+      "5e4ebe84c49008f821f9f388700c11878b6c84f2b0319c9cfc695e3bcec9fcfd"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [
+     "tests.test_lt_extra.D.check_x"
+    ],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "collection_mismatch",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_lt_extra.D.check_x": "pass",
+      "tests.test_lt_extra.D.test_a": "pass",
+      "tests.test_lt_filter.C.test_a": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 3,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [
+      "tests.test_lt_filter.C.test_b"
+     ],
+     "failures": 0,
+     "missing": [
+      "tests.test_lt_extra.D.check_x"
+     ],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_lt_extra.D.test_a": "pass",
+      "tests.test_lt_filter.C.test_a": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.52
+   }
+  },
+  "T25_load_tests_collection_differs/pytest9": {
+   "compare": {
+    "backend_specific_differences": {
+     "config_digest": [
+      "d1caa1506ecef6830b4bac0195d6ef59011598bb9a8af231e5759f7f94fb8050",
+      "bd10c262d7584f5b5109b8aed7510a4b362846d89980dacc4be17bfbf7c4c256"
+     ],
+     "lock_digest": [
+      null,
+      "2da7bf300ae70092f84eb917ca882dee604ea31b8fc4640d3ef1ee53d44eff24"
+     ]
+    },
+    "equivalent": false,
+    "ids_only_left": [
+     "tests.test_lt_extra.D.check_x"
+    ],
+    "ids_only_right": [],
+    "partition_violations": [],
+    "scope_mismatch": null,
+    "status": [
+     "PASS",
+     "FAIL"
+    ],
+    "subtest_mismatch": {},
+    "subtest_normalized": [],
+    "subtest_uncertain": {},
+    "verdict": "different",
+    "verdict_mismatch": {},
+    "would_be_eligible": [
+     true,
+     false
+    ]
+   },
+   "expect": "collection_mismatch",
+   "observed": {
+    "equivalent": false,
+    "unclassified": null,
+    "xdist_rc": 1,
+    "xdist_status": "FAIL"
+   },
+   "ok": true,
+   "pytest_cache_created": false,
+   "sequential": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "matched",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [],
+     "failures": 0,
+     "missing": [],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_lt_extra.D.check_x": "pass",
+      "tests.test_lt_extra.D.test_a": "pass",
+      "tests.test_lt_filter.C.test_a": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 0,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "PASS",
+     "subtests": {},
+     "tests_run": 3,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 0,
+    "seconds": 0.91
+   },
+   "xdist": {
+    "doc": {
+     "child_rc": 0,
+     "collection_errors": null,
+     "compare": "mismatch",
+     "crashes": null,
+     "errors": 0,
+     "expected_failures": 0,
+     "extra": [
+      "tests.test_lt_filter.C.test_b"
+     ],
+     "failures": 0,
+     "missing": [
+      "tests.test_lt_extra.D.check_x"
+     ],
+     "not_run": [],
+     "outcomes": {
+      "tests.test_lt_extra.D.test_a": "pass",
+      "tests.test_lt_filter.C.test_a": "pass"
+     },
+     "plugin_violations": null,
+     "rc": 1,
+     "record_rejected": null,
+     "scopes": {},
+     "skipped": 0,
+     "status": "FAIL",
+     "subtests": {},
+     "tests_run": 2,
+     "unclassified": null,
+     "unexpected_successes": 0
+    },
+    "rc": 1,
+    "seconds": 1.41
+   }
+  }
+ },
+ "leases_left": [],
+ "official_evidence": false,
+ "started": "2026-11-20T21:20:54+0900"
+}

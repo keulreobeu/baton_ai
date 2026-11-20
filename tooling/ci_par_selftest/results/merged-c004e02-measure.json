@@ -1,0 +1,123 @@
+{
+ "a-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "ebb24243d9189eb48237d124fbb72932d9a16ee4",
+   "config_digest": "e50d2d104f93138bf3425ee9489a8533800be499a53341e5ddbc6972677557f5",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "8c0669811fd3ef3b4b75ada3cd0211dacdabb642f8c513e145c17dd6e93e61da",
+   "tree": "e40f673d8291e4ff10e897ba4e0603aa990ec5d7"
+  },
+  "compare": "matched",
+  "cpu_seconds": 1648.328125,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 136540160,
+  "peak_process_bytes": 53993472,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 1791.86,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 927,
+  "total_processes": 26949,
+  "total_seconds": 1793.532,
+  "wall_seconds": 1794.1,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "ebb24243d9189eb48237d124fbb72932d9a16ee4",
+   "config_digest": "9825e865b82319c3fa49abf366f42144947dfb479e779da194ee3c17773e6fbc",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a",
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "8c0669811fd3ef3b4b75ada3cd0211dacdabb642f8c513e145c17dd6e93e61da",
+   "tree": "e40f673d8291e4ff10e897ba4e0603aa990ec5d7"
+  },
+  "compare": "matched",
+  "cpu_seconds": 2110.734375,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": {
+   "budget": 10,
+   "ram_slots": 25,
+   "used": 0
+  },
+  "lease_wait_seconds": 0.0,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 444010496,
+  "peak_process_bytes": 60899328,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 682.359,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 927,
+  "total_processes": 26909,
+  "total_seconds": 683.563,
+  "wall_seconds": 683.9,
+  "workers_granted": 6,
+  "workers_requested": 6,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-vs-a": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "e50d2d104f93138bf3425ee9489a8533800be499a53341e5ddbc6972677557f5",
+    "9825e865b82319c3fa49abf366f42144947dfb479e779da194ee3c17773e6fbc"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": false,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 1,
+  "scope_mismatch": null,
+  "subtest_mismatch": 0,
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_uncertain": [
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence"
+  ],
+  "verdict": "uncertain",
+  "verdict_mismatch": {}
+ },
+ "cbm_sampler": {
+  "samples": 1086,
+  "sightings": []
+ },
+ "leases_left": []
+}
