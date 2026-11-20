@@ -498,19 +498,63 @@ def validate_result(doc):
 
 # --------------------------------------------------------------------------- cross-run comparison
 
-BINDING_KEYS = ("candidate_sha", "tree", "installed_digest", "gms_extra", "selection_digest", "python", "platform")
+# Shared by every backend of one candidate: must be equal (R02).
+BINDING_KEYS = ("candidate_sha", "tree", "base", "installed_digest", "gms_extra", "selection_digest", "python",
+                "platform")
+# Differ by design between backends: each side must equal the value its own backend produces.
+BACKEND_KEYS = ("config_digest", "lock_digest")
+
+# Explicit subTest description normalization (R04, Spec AC-15). Only per-process dynamic values are
+# rewritten; anything else that differs is a mismatch, and an order-only difference is uncertain.
+SUBTEST_NORMALIZATION = (
+    ("tempfile_name", re.compile(r"\btmp[a-z0-9_]{8}\b"), "tmp<RAND>"),
+    ("hex_digest", re.compile(r"\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b"), "<SHA>"),
+    ("memory_address", re.compile(r"\b0x[0-9a-fA-F]{6,16}\b"), "<ADDR>"),
+)
+
+
+def normalize_subtest(desc):
+    for _, pattern, replacement in SUBTEST_NORMALIZATION:
+        desc = pattern.sub(replacement, desc)
+    return desc
 
 
 def subtests_differ(left, right):
-    """(mismatch, renamed). Every subTest outcome must match as a multiset, and every non-pass
-    subTest must match by description too. Passing subTests whose descriptions carry
-    per-process values (temporary paths, generated SHAs, set order under hash
-    randomization) may differ in text only; that is reported, not failed."""
-    def key(rows, failing):
-        return sorted((desc if failing else "", outcome) for desc, outcome in rows if (outcome != "pass") == failing)
-    mismatch = (len(left) != len(right) or key(left, True) != key(right, True)
-                or key(left, False) != key(right, False))
-    return mismatch, not mismatch and sorted(map(tuple, left)) != sorted(map(tuple, right))
+    """'same', 'normalized' (equal only after SUBTEST_NORMALIZATION), 'uncertain' (the remaining
+    differences pair up as same outcome with the same characters in another order, e.g. a set repr
+    under hash randomization) or 'different'. Descriptions of passing subTests count too."""
+    if Counter(map(tuple, left)) == Counter(map(tuple, right)):
+        return "same"
+    norm_l = Counter((normalize_subtest(d), o) for d, o in left)
+    norm_r = Counter((normalize_subtest(d), o) for d, o in right)
+    if norm_l == norm_r:
+        return "normalized"
+    only_l = list((norm_l - norm_r).elements())
+    only_r = list((norm_r - norm_l).elements())
+    if len(only_l) != len(only_r):
+        return "different"
+    pool = [(sorted(d), o) for d, o in only_r]
+    for d, o in only_l:
+        if (sorted(d), o) not in pool:
+            return "different"
+        pool.remove((sorted(d), o))
+    return "uncertain"
+
+
+def expected_backend_values(doc):
+    """What config_digest / lock_digest must be for the backend that produced doc (R02)."""
+    name = doc["summary"]["suite_backend"]["name"]
+    config = doc.get("backend_config")
+    if not isinstance(config, dict):
+        raise BackendError("binding_mismatch", "backend_config missing")
+    if name == "sequential":
+        return {"config_digest": config_digest(["unittest-recorder"]), "lock_digest": None}
+    try:
+        lock_text = "".join(Path(p).read_text(encoding="utf-8") for p in config["locks"])
+    except OSError:
+        raise BackendError("binding_mismatch", "lock file unavailable") from None
+    return {"config_digest": config_digest(argv_template(config["extra_plugins"])),
+            "lock_digest": sha256_text(lock_text) if config["locks"] else None}
 
 
 def compare_runs(left, right):
@@ -524,32 +568,45 @@ def compare_runs(left, right):
     mismatched = [k for k in BINDING_KEYS if left["binding"].get(k) != right["binding"].get(k)]
     if mismatched or left.get("worktree_dirty") != right.get("worktree_dirty"):
         raise BackendError("binding_mismatch", ",".join(mismatched) or "worktree_dirty")
+    for doc in (left, right):
+        expected = expected_backend_values(doc)
+        wrong = [k for k in BACKEND_KEYS if doc["binding"].get(k) != expected[k]]
+        if wrong:
+            name = doc["summary"]["suite_backend"]["name"]
+            raise BackendError("binding_mismatch", f"{name}: unexpected {','.join(wrong)}")
+    backend_specific = {k: [left["binding"].get(k), right["binding"].get(k)] for k in BACKEND_KEYS
+                        if left["binding"].get(k) != right["binding"].get(k)}
     a = {row["id"]: row for row in left["results"]}
     b = {row["id"]: row for row in right["results"]}
     in_scope = {r["id"] for r in left["results"] + right["results"] if r.get("blocked_by")}
     diagnostics = [d["summary"]["suite_backend"]["diagnostics"] for d in (left, right)]
     report = {"ids_only_left": sorted(a.keys() - b.keys()), "ids_only_right": sorted(b.keys() - a.keys()),
-              "verdict_mismatch": {}, "subtest_mismatch": {}, "subtest_desc_differs": [], "scope_mismatch": None,
+              "verdict_mismatch": {}, "subtest_mismatch": {}, "subtest_uncertain": {}, "subtest_normalized": [],
+              "backend_specific_differences": backend_specific, "scope_mismatch": None,
               "partition_violations": [], "status": [left["summary"]["status"], right["summary"]["status"]],
               "would_be_eligible": [d["would_be_eligible"] for d in diagnostics]}
     for key in sorted(a.keys() & b.keys()):
         if key not in in_scope and a[key]["outcome"] != b[key]["outcome"]:
             report["verdict_mismatch"][key] = [a[key]["outcome"], b[key]["outcome"]]
-        mismatch, renamed = subtests_differ(a[key]["subtests"], b[key]["subtests"])
-        if mismatch:
+        state = subtests_differ(a[key]["subtests"], b[key]["subtests"])
+        if state == "different":
             report["subtest_mismatch"][key] = [a[key]["subtests"], b[key]["subtests"]]
-        elif renamed:
-            report["subtest_desc_differs"].append(key)
+        elif state == "uncertain":
+            report["subtest_uncertain"][key] = [a[key]["subtests"], b[key]["subtests"]]
+        elif state == "normalized":
+            report["subtest_normalized"].append(key)
     if left["scopes"] != right["scopes"]:
         report["scope_mismatch"] = [left["scopes"], right["scopes"]]
     for doc in (left, right):
         for row in doc["results"]:
             if row["id"] in in_scope and not (row["started"] or row.get("blocked_by")):
                 report["partition_violations"].append(row["id"])
-    report["equivalent"] = not (report["ids_only_left"] or report["ids_only_right"] or report["verdict_mismatch"]
-                                or report["subtest_mismatch"] or report["scope_mismatch"]
-                                or report["partition_violations"] or report["status"][0] != report["status"][1]
-                                or report["would_be_eligible"][0] != report["would_be_eligible"][1])
+    different = (report["ids_only_left"] or report["ids_only_right"] or report["verdict_mismatch"]
+                 or report["subtest_mismatch"] or report["scope_mismatch"]
+                 or report["partition_violations"] or report["status"][0] != report["status"][1]
+                 or report["would_be_eligible"][0] != report["would_be_eligible"][1])
+    report["verdict"] = "different" if different else "uncertain" if report["subtest_uncertain"] else "equivalent"
+    report["equivalent"] = report["verdict"] == "equivalent"
     return report
 
 
@@ -1188,6 +1245,7 @@ def run(args, *, leases=None, stop=lambda: None):
                         diagnostics=diagnostics, stopped=reason, child_rc=rc)
     code = exit_code(summary)
     doc = {"schema": RESULT_SCHEMA, "nonce": nonce, "binding": binding, "worktree_dirty": dirty,
+           "backend_config": {"extra_plugins": extra, "locks": [str(path.resolve()) for path in lock_paths]},
            "summary": summary, "rc": code, "scopes": record["scopes"] if record else {},
            "results": result_rows(record) if record else []}
     if args.result_out:

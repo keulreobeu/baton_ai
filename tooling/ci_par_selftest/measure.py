@@ -111,8 +111,10 @@ def compare(out, left, right, env):
         report = json.loads(stdout)
     except ValueError:
         return {"rc": rc, "error": (stdout + stderr)[-500:]}
-    return {"rc": rc, "equivalent": report["equivalent"], "verdict_mismatch": report["verdict_mismatch"],
-            "subtest_mismatch": len(report["subtest_mismatch"]), "subtest_desc_differs": report["subtest_desc_differs"],
+    return {"rc": rc, "equivalent": report["equivalent"], "verdict": report["verdict"],
+            "verdict_mismatch": report["verdict_mismatch"], "subtest_mismatch": len(report["subtest_mismatch"]),
+            "subtest_uncertain": sorted(report["subtest_uncertain"]), "subtest_normalized": report["subtest_normalized"],
+            "backend_specific_differences": report["backend_specific_differences"],
             "scope_mismatch": report["scope_mismatch"],
             "ids_only_left": len(report["ids_only_left"]), "ids_only_right": len(report["ids_only_right"])}
 

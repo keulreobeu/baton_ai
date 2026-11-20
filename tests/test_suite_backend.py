@@ -361,9 +361,40 @@ class ResultFileTests(Workspace):
         run_record.write_record(record, record_for({"m.C.t": PASS_ROW}, producer="unittest"))
         self.assertEqual(run_record.read_record(record, "f" * 32, {}, 0)[1], "nonce_mismatch")
 
+    def as_xdist(self, doc, locks=(ROOT / "requirements" / "ci.lock",)):
+        other = json.loads(json.dumps(doc))
+        other["summary"]["suite_backend"]["name"] = "xdist"
+        other["backend_config"] = {"extra_plugins": [], "locks": [str(p) for p in locks]}
+        other["binding"].update(sb.expected_backend_values(other))
+        other["summary"]["suite_backend"]["binding"] = other["binding"]
+        return other
+
+    def test_backend_specific_values_checked_and_recorded(self):
+        doc = self.doc()
+        xdist = self.as_xdist(doc)
+        report = sb.compare_runs(doc, xdist)
+        self.assertTrue(report["equivalent"])
+        self.assertEqual(sorted(report["backend_specific_differences"]), ["config_digest", "lock_digest"])
+        self.assertIsNone(report["backend_specific_differences"]["lock_digest"][0])
+        for side, key, value in (("left", "config_digest", "0" * 64), ("left", "lock_digest", "1" * 64),
+                                 ("right", "config_digest", "2" * 64), ("right", "lock_digest", None)):
+            with self.subTest(side=side, key=key):
+                left, right = json.loads(json.dumps(doc)), json.loads(json.dumps(xdist))
+                target = left if side == "left" else right
+                target["binding"][key] = value
+                target["summary"]["suite_backend"]["binding"] = target["binding"]
+                with self.assertRaises(sb.BackendError) as raised:
+                    sb.compare_runs(left, right)
+                self.assertEqual(raised.exception.code, "binding_mismatch")
+        missing = json.loads(json.dumps(xdist))
+        del missing["backend_config"]
+        with self.assertRaises(sb.BackendError):
+            sb.compare_runs(doc, missing)
+
     def test_binding_mismatch_rejected(self):
         doc = self.doc()
-        for key in ("installed_digest", "gms_extra", "selection_digest"):
+        for key in ("candidate_sha", "tree", "base", "installed_digest", "gms_extra", "selection_digest",
+                    "python", "platform"):
             with self.subTest(key=key):
                 other = json.loads(json.dumps(doc))
                 other["binding"][key] = "different"
@@ -430,10 +461,14 @@ class FixtureTests(unittest.TestCase):
         record = record_for(rows, {self.scope: "error"}, producer=producer, collection=collection([self.a, self.b]))
         inventory = inventory_for([self.a, self.b])
         compare = sb.compare_inventory(inventory, record, {"tests/test_m.py"})
-        summary = sb.summarize(backend=producer, record=record, compare=compare, binding={"x": 1},
+        backend = "sequential" if producer == "unittest" else "xdist"
+        doc = {"backend_config": {"extra_plugins": [], "locks": []}, "summary": {"suite_backend": {"name": backend}}}
+        binding = dict(sb.expected_backend_values(doc), x=1)
+        summary = sb.summarize(backend=backend, record=record, compare=compare, binding=binding,
                                inventory=inventory, workers_requested=2, workers_granted=2, diagnostics={})
-        return {"schema": sb.RESULT_SCHEMA, "nonce": NONCE, "binding": {"x": 1}, "summary": summary,
-                "rc": sb.exit_code(summary), "scopes": record["scopes"], "results": sb.result_rows(record)}
+        return {"schema": sb.RESULT_SCHEMA, "nonce": NONCE, "binding": binding, "summary": summary,
+                "backend_config": doc["backend_config"], "rc": sb.exit_code(summary), "scopes": record["scopes"],
+                "results": sb.result_rows(record)}
 
     def test_partial_fixture_failure_two_workers(self):
         blocked = {"started": False, "blocked_by": self.scope, "events": [], "subtests": []}
@@ -581,12 +616,42 @@ class LockTests(unittest.TestCase):
         self.assertTrue(sb.check_lock(entries, dict(ok, pytest="8.4.2"), "win32"))
         self.assertTrue(sb.check_lock(entries, {"pytest": "9.2.0", "pytest-xdist": "3.8.0"}, "win32"))
 
-    def test_subtest_text_may_differ_only_for_passing_subtests(self):
-        same = [["(path='C:/t/a')", "pass"], ["(i=1)", "fail"]]
-        self.assertEqual(sb.subtests_differ(same, [["(path='C:/t/b')", "pass"], ["(i=1)", "fail"]]), (False, True))
-        self.assertEqual(sb.subtests_differ(same, [["(path='C:/t/a')", "pass"], ["(i=2)", "fail"]])[0], True)
-        self.assertEqual(sb.subtests_differ(same, [["(path='C:/t/a')", "pass"]])[0], True)
-        self.assertEqual(sb.subtests_differ(same, list(reversed(same))), (False, False))
+    def test_subtest_descriptions_compared_after_explicit_normalization(self):
+        base = [[r"(root='C:\\T\\tmp8hg0uoxp\\x')", "pass"], ["(sha='" + "a" * 40 + "')", "pass"], ["(i=1)", "fail"]]
+        renamed = [[r"(root='C:\\T\\tmppn74f6md\\x')", "pass"], ["(sha='" + "b" * 40 + "')", "pass"], ["(i=1)", "fail"]]
+        self.assertEqual(sb.subtests_differ(base, list(reversed(base))), "same")
+        self.assertEqual(sb.subtests_differ(base, renamed), "normalized")
+        self.assertEqual(sb.subtests_differ([["(obj=<X at 0x1f2e3d4c>)", "pass"]], [["(obj=<X at 0x7a6b5c4d>)", "pass"]]),
+                         "normalized")
+        stable = [["(path='C:/t/a')", "pass"]]
+        self.assertEqual(sb.subtests_differ(stable, [["(path='C:/t/b')", "pass"]]), "different")   # passing too
+        self.assertEqual(sb.subtests_differ(base, base[:2] + [["(i=2)", "fail"]]), "different")
+        self.assertEqual(sb.subtests_differ(base, base[:2]), "different")
+        self.assertEqual(sb.subtests_differ([["(i=1)", "pass"]], [["(i=1)", "fail"]]), "different")
+        self.assertEqual(sb.subtests_differ([["(s={'a', 'b'})", "pass"]], [["(s={'b', 'a'})", "pass"]]), "uncertain")
+        self.assertEqual([name for name, _, _ in sb.SUBTEST_NORMALIZATION],
+                         ["tempfile_name", "hex_digest", "memory_address"])           # Spec AC-15 list
+
+    def test_uncertain_subtests_are_not_equivalent(self):
+        row = dict(PASS_ROW, subtests=[["(s={'a', 'b'})", "pass"]])
+        docs = []
+        for subtests in ([["(s={'a', 'b'})", "pass"]], [["(s={'b', 'a'})", "pass"]]):
+            backend = "sequential"
+            meta = {"backend_config": {"extra_plugins": [], "locks": []}, "summary": {"suite_backend": {"name": backend}}}
+            binding = sb.expected_backend_values(meta)
+            record = record_for({"tests.test_m.C.test_t": dict(row, subtests=subtests)}, producer="unittest",
+                                collection=collection(["tests.test_m.C.test_t"]))
+            inventory = inventory_for(["tests.test_m.C.test_t"])
+            summary = sb.summarize(backend=backend, record=record, compare=sb.compare_inventory(inventory, record, {"tests/test_m.py"}),
+                                   binding=binding, inventory=inventory, workers_requested=None, workers_granted=1,
+                                   diagnostics={})
+            docs.append({"schema": sb.RESULT_SCHEMA, "nonce": NONCE, "binding": binding, "summary": summary,
+                         "backend_config": meta["backend_config"], "rc": sb.exit_code(summary), "scopes": {},
+                         "results": sb.result_rows(record)})
+        report = sb.compare_runs(*docs)
+        self.assertEqual(report["verdict"], "uncertain")
+        self.assertFalse(report["equivalent"])
+        self.assertIn("tests.test_m.C.test_t", report["subtest_uncertain"])
 
     def test_malformed_or_missing_hash_fails(self):
         for text in ("pytest==9.2.0\npytest-xdist==3.8.0 --hash=sha256:" + "1" * 64,

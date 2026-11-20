@@ -209,9 +209,16 @@ BATON 테스트에는 subTest가 140회(19개 파일) 쓰인다. P1에서 자가
   - (ii) unittest subTest 보고를 내장한 상위 pytest 버전
 - 어느 후보도 충족하지 못하면 의미 검증 **실패**로 기록하고 P1에서 멈춘다. 이 경우 사용자에게 보고한다(A 단독 유지 또는 대안 결정).
 - 실행 전체가 실패한 경우의 진단 문구 차이만 기록 대상으로 허용한다(RA-1).
+- **subTest 식별(2026-11-20 교차검토 R04):** 통과 subTest를 포함한 모든 subTest를 (설명, 결과) 다중집합으로 비교한다. 설명은 아래 명시 정규화 규칙(코드 `SUBTEST_NORMALIZATION`과 같은 목록)만 적용한 뒤 비교한다.
+  - `tempfile_name`: `tmp` + 소문자·숫자·`_` 8자(`tempfile` 임의 이름) → `tmp<RAND>`
+  - `hex_digest`: 40자 또는 64자 소문자 16진수(Git SHA·sha256) → `<SHA>`
+  - `memory_address`: `0x` + 16진수 6~16자 → `<ADDR>`
+  - 정규화 뒤에도 다르면 불일치다(`different`, `equivalent=false`). 남은 차이가 같은 결과·같은 문자의 순서 차이로만 짝지어지면(예: hash randomization 아래 set repr) 정규화할 수 없는 차이로 보고 `uncertain`으로 기록한다. `uncertain`도 `equivalent=true`가 아니다.
 
 ### CI-PAR-001-AC-14 동등성과 최소 실측 (D22)
 P1 보조 도구로 로컬 Windows에서 다음을 측정한다. 각 실행에는 AC-07 `binding`(후보 SHA·tree·base·lock·설정·Python·플랫폼)을 남긴다. 여기에 실제 설치 의존성 목록 digest(`pip freeze` 기준, GMS extra 설치 여부 포함)와 선택 ID 집합 digest를 더한다. 비교는 binding이 일치하는 실행끼리만 한다.
+  - 공통 binding(`candidate_sha`·`tree`·`base`·`installed_digest`·`gms_extra`·`selection_digest`·`python`·`platform`)은 같아야 한다.
+  - backend별 값(`config_digest`·`lock_digest`)은 각 결과 문서가 기록한 backend 설정(`backend_config`: 추가 plugin, lock 경로)으로 다시 계산한 기대값과 같아야 한다. 순차는 `lock_digest=null`이다. 허용한 차이는 비교 보고의 `backend_specific_differences`에 남긴다(2026-11-20 교차검토 R02).
 - (a) 보조 순차 ID 기준 실행: 공식 V3와 별개로, 읽기 전용으로 ID별 결과를 수집한다. 공식 V3는 집계만 출력하므로 ID 동등성 근거가 될 수 없다.
 - (b) 같은 binding의 xdist 전체 실행과 ID·판정 대조. GMS 설치·미설치 두 조합.
 - (c) 실제 V1·V2 선택 범위를 순차·xdist로 각 1회 실행해 시간·판정 비교. 선택 집합은 공식 planner의 plan 출력이며, D16에 따라 CBM 차단 환경(빈 `LOCALAPPDATA`·필터링한 PATH)에서 얻는다.
