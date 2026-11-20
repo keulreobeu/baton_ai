@@ -69,13 +69,41 @@ evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-r01-재검증--2026-11-20"
 acs = ["CI-EVID-001-AC-09"]
 
 [[verification]]
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 at the final HEAD a12abe0 after the D28 fix, suite reuse off, empty LOCALAPPDATA, codebase-memory-mcp filtered from PATH, no other V3 or full suite running, free memory 8.26 GB)"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#최종-후보-재검증--2026-11-21"
+acs = ["CI-EVID-001-AC-09"]
+tests_run = 878
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "cross-run at the final HEAD: origin/main 8e44620 scripts/verify_environment.py on the a12abe0 tree --base 8e44620: rc 1, 878 run, errors=4 = the same VerifyEnvironmentRecordTests subTests (SystemExit 2), failures 0, skip 0; original result kept as failed, user decision 1 conditional exception applies"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#최종-후보-재검증--2026-11-21"
+acs = ["CI-EVID-001-AC-09"]
+
+[[verification]]
+command = "auxiliary cross-run with the 4 errors removed (user decision 1): same a12abe0 tree with the origin/main verifier, the 2 methods holding the 4 subTest errors removed and their 3 traceability refs removed: rc 0, 876 run, failures 0, errors 0, skip 0"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#최종-후보-재검증--2026-11-21"
+acs = ["CI-EVID-001-AC-09"]
+tests_run = 876
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
 command = "independent cross review (ChatGPT via Drive BATON 교차검토 package, user-relayed) and remote CI verify.yml (requires D26 push approval; operational CI change requires D25-R)"
 result = "not_run"
 evidence = "docs/tasks/TASK-CI-EVID-001.md#검증-표"
 acs = ["CI-EVID-001-AC-09"]
 ```
 
-계약: [CI-EVID-001 rev3](../specs/CI-EVID-001.md), [Plan](../plans/ci-evid.md), [ADR](../adr/ADR-CI-EVID-001.md).
+계약: [CI-EVID-001 rev4](../specs/CI-EVID-001.md), [Plan](../plans/ci-evid.md), [ADR](../adr/ADR-CI-EVID-001.md).
 branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR·원격 CI 없음(D26 미승인).
 
 ## 순서 (사용자 지시 1~7)
@@ -142,7 +170,8 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `1c41fb0` | D28 재현 테스트만(red on base): `DeclaredPluginTrustTests` 9개 중 8 실패 |
 | `7816a56` | 사용자 D28 구체화(매핑·출처, 정확한 제외 ID 집합)에 맞춘 재현 테스트(red on base, `1c41fb0` 코드): 9개, failures 11(subTest 포함) |
 | `91619ef` | D28 수정: 신뢰 목록(배포==버전·`-p` 이름·모듈·site-packages 출처), 명시·간접 로딩 통제, 수집 무결성(정확한 제외 집합), 소비자 재확인; Spec rev4; traceability |
-| (이 커밋) | D28 증거, D25-R·D26·D27 기록(문서만) |
+| `a12abe0` | D28 증거, D25-R·D26·D27 기록(문서만) |
+| (이 커밋) | 최종 HEAD `a12abe0` 공식 V3·교차 실행·4건 제외 보조 실행 기록(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -320,6 +349,24 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 | 국소 회귀(7모듈, `df3594c` 작업 트리) | 342 OK, skip 0, 879 s |
 | 공식 순차 V3 `--base 8e44620`(`eaa2bd4`) | PASS, 865 OK, skip 0, rc 0, 1545 s; 실행 전후 HEAD·clean 동일, 빈 `LOCALAPPDATA` 그대로, 다른 V3 미실행·여유 메모리 7.49 GB 확인 뒤 실행 |
 | 교차 실행(origin/main verifier, `eaa2bd4` tree) | rc 1, 865 실행, errors 4(앞 절과 같은 `VerifyEnvironmentRecordTests` 4건, 모두 `SystemExit: 2`), failures 0, skip 0, 나머지 861 OK, 1802 s; 원본 결과 failed 유지, 조건부 예외 기준은 결정 대기 |
+
+## 최종 후보 재검증 — 2026-11-21
+
+대상은 마지막 코드 변경(`91619ef`) 뒤의 HEAD `a12abe0`이다. 세 실행은 하나씩 순서대로 돌렸다. 각 실행 전에 다른 `verify_environment`·`unittest discover` 프로세스가 0개이고 여유 메모리가 6 GB 이상인지 확인했다. 자식 `LOCALAPPDATA`는 빈 임시 폴더로 두었고, PATH에서 codebase-memory-mcp를 뺐다.
+
+| 항목 | 결과 |
+|---|---|
+| 공식 순차 V3 `--base 8e44620`(`a12abe0`) | PASS, 878 OK, skip 0, rc 0, 2157 s, eligible, reuse not_configured. 실행 전 다른 실행 0개, 여유 8.26 GB. 실행 전후 HEAD·clean 동일, `LOCALAPPDATA` 비어 있음(CBM 실행 없음) |
+| 교차 실행(origin/main verifier, `a12abe0` tree) | rc 1, 878 실행, failures 0, skip 0, errors 4. 4건은 모두 `VerifyEnvironmentRecordTests`의 `SystemExit: 2`이다(`test_record_mode_keeps_stdout_rc_and_writes_a_valid_record` subTest pass·fail·skip 3건, `test_sdd_static_failure_is_a_recorded_confirmed_failure` 1건). sdd_static PASS, 1820 s. 원본 판정은 failed로 둔다. |
+| 4건 제외 보조 실행 | rc 0, 876 OK, failures 0, errors 0, skip 0, sdd_static PASS, eligible, 1210 s |
+
+**결정 1 조건 대조:** 오류는 정확히 위 4건이고 모두 `SystemExit(2)`이다(옛 verifier에 `--record-out`이 없다). 나머지 failures·errors·skip은 0이고 오류 추가도 없다. 그래서 조건부 예외가 적용된다. unittest는 subTest가 아니라 method를 센다. 4건은 2개 method 안에 있으므로 보조 실행은 878 − 2 = 876개가 된다.
+
+**제거 방법(보조 실행 worktree에서만):**
+- 같은 시스템 임시 detached worktree(`a12abe0`, `scripts/verify_environment.py`만 origin/main 판으로 바꿈)를 썼다.
+- `ast`로 `tests/test_evidence_records.py`의 `VerifyEnvironmentRecordTests`에서 두 method의 줄 범위(454–473, 474–487)를 지웠다.
+- `docs/sdd/traceability.json`에서 두 method를 가리키는 ref 3개(AC-05 2개, AC-09 1개)를 정규식으로 최소 삭제했다. 지우지 않으면 sdd_static이 MISSING_TEST로 실패한다.
+- diff는 verifier 교체를 포함해 3 files, +7 −100이다. 끝난 뒤 worktree를 `remove --force`하고 `prune`했다. 이 branch와 다른 worktree는 건드리지 않았다.
 
 ## 보조 증거 (공식 suite 밖)
 
