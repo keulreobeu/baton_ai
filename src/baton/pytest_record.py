@@ -4,6 +4,14 @@ Load with ``-p baton.pytest_record --baton-record PATH --baton-nonce HEX``. Reco
 real per-phase outcomes, xfail/xpass, every unittest subTest result, class/module
 fixture events and xdist crash items (CI-EVID-001 AC-06, CI-PAR-001 AC-06/09).
 
+Modes (``--baton-mode``, fixed by the caller and recorded as ``mode``):
+``strict`` (default; CI-PAR suite_backend with ``--noconftest``) allows only the
+BASE_ALLOWED plugin modules and a clean plugin environment. ``declared`` (a Task's own
+``python -m pytest`` check, CI-EVID-001 rev2 AC-06) allows the checked tree's conftest.py
+files (trusted like its test code, RA-1) and other loaded plugins, records each plugin's
+module, distribution/version and conftest path in ``plugins``, and refuses a conftest
+outside the rootdir.
+
 Supported: pytest >= 8.4 and < 10 (unittest subTest results need pytest 9, or pytest 8.4
 with pytest-subtests; ``subtest_support`` says which). Outside that range the session
 stops with a usage error and no record is written, which consumers treat as a failure.
@@ -34,6 +42,8 @@ def pytest_addoption(parser):
     group.addoption("--baton-binding", default="{}", help="JSON binding fixed by the caller")
     group.addoption("--baton-ids-file", default=None, help="UTF-8 test IDs to keep, one per line")
     group.addoption("--baton-extra-plugins", default="", help="comma list of extra allowed plugin modules")
+    group.addoption("--baton-mode", default="strict", choices=("strict", "declared"),
+                    help="strict: allowlisted plugins only; declared: a Task's own pytest check")
 
 
 def _version():
@@ -62,7 +72,43 @@ def _plugins(config):
     return sorted({_plugin_module(p) for p in config.pluginmanager.get_plugins() if p is not None})
 
 
+def _conftest_path(plugin):
+    file = getattr(plugin, "__file__", None)
+    return Path(file).resolve() if type(plugin).__name__ == "module" and file and Path(file).name == "conftest.py" else None
+
+
+def _inside(path, root):
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _plugin_details(config):
+    """declared mode: every loaded plugin with its distribution and conftest path."""
+    dists = {}
+    for plugin, dist in config.pluginmanager.list_plugin_distinfo():
+        meta = getattr(dist, "metadata", None)
+        name = meta["name"] if meta is not None and "name" in meta else getattr(dist, "project_name", None)
+        dists[id(plugin)] = (name, getattr(dist, "version", None))
+    rows = []
+    for plugin in config.pluginmanager.get_plugins():
+        if plugin is None:
+            continue
+        name, version = dists.get(id(plugin), (None, None))
+        conftest = _conftest_path(plugin)
+        rows.append({"module": _plugin_module(plugin), "distribution": name, "version": version,
+                     "path": str(conftest) if conftest else None})
+    return sorted(rows, key=lambda r: (r["module"], r["path"] or ""))
+
+
 def _violations(config):
+    if config.getoption("baton_mode") == "declared":
+        root = Path(str(config.rootpath)).resolve()
+        return sorted({"conftest_outside_root:" + str(path) for path in
+                       (_conftest_path(p) for p in config.pluginmanager.get_plugins() if p is not None)
+                       if path is not None and not _inside(path, root)})
     extra = {x for x in config.getoption("baton_extra_plugins").split(",") if x}
     found = [m for m in _plugins(config) if m.split(".", 1)[0] not in BASE_ALLOWED and m not in extra]
     for name in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
@@ -267,6 +313,8 @@ def pytest_sessionfinish(session, exitstatus):
     if state is None or _worker(config) is not None:
         return
     distributed = config.pluginmanager.has_plugin("dsession")
+    mode = config.getoption("baton_mode")
+    declared = mode == "declared"
     collection, selected, collect_reports = {}, state.selected, list(state.collect_reports)
     violations = set(_violations(config))
     if distributed:
@@ -289,10 +337,14 @@ def pytest_sessionfinish(session, exitstatus):
     diag["no_collection"] = not collection
     record = run_record.make_record(
         producer="xdist" if distributed else "pytest", nonce=config.getoption("baton_nonce"),
-        binding=run_record.observed_binding(json.loads(config.getoption("baton_binding"))), rows=rows, scopes=scopes,
+        binding=run_record.observed_binding(
+            json.loads(config.getoption("baton_binding")),
+            argv=run_record.pytest_argv_for_digest(config.invocation_params.args) if declared else None),
+        rows=rows, scopes=scopes,
         exit_code=int(exitstatus),
         extra={"tests": rows, "scopes": scopes, "collection": collection, "selected": selected,
                "collect_reports": collect_reports, "events": state.events, "diag": diag,
-               "plugins": _plugins(config), "violations": sorted(violations), "pytest": pytest.__version__,
+               "plugins": _plugin_details(config) if declared else _plugins(config), "mode": mode,
+               "violations": sorted(violations), "pytest": pytest.__version__,
                "subtest_support": subtest_support()})
-    run_record.write_record(config.getoption("baton_record"), record)
+    run_record.write_record(config.getoption("baton_record"), record, once=declared)

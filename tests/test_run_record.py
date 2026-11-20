@@ -3,9 +3,12 @@ import ast
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from baton import run_record
 
@@ -79,8 +82,9 @@ class FormatTests(RecordTestCase):
         tree = ast.parse((ROOT / "src/baton/run_record.py").read_text(encoding="utf-8"))
         names = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
         names |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-        self.assertLessEqual(names, {"__future__", "collections", "json", "os", "pathlib", "platform", "re",
-                                     "subprocess", "sys"})
+        # CI-EVID-001 rev2: hashlib (binding digests), stat (not_regular), unittest (recorder).
+        self.assertLessEqual(names, {"__future__", "collections", "hashlib", "json", "os", "pathlib", "platform",
+                                     "re", "stat", "subprocess", "sys", "unittest"})
 
 
 class RejectionTests(RecordTestCase):
@@ -150,7 +154,9 @@ class RejectionTests(RecordTestCase):
     def test_every_reason_is_declared(self):
         self.assertEqual(set(run_record.REASONS), {
             "missing", "corrupt", "schema", "incomplete", "nonce_mismatch", "binding_mismatch", "stale",
-            "duplicate_ids", "self_inconsistent", "rc_mismatch", "summary_mismatch"})
+            "duplicate_ids", "self_inconsistent", "rc_mismatch", "summary_mismatch",
+            # CI-EVID-001 rev2 AC-03 additions.
+            "not_regular", "too_large", "extra_files", "producer_mismatch"})
 
 
 class PytestEventTests(unittest.TestCase):
@@ -228,6 +234,229 @@ class BindingTests(unittest.TestCase):
         first, second = run_record.new_nonce(), run_record.new_nonce()
         self.assertRegex(first, r"^[0-9a-f]{32}$")
         self.assertNotEqual(first, second)
+
+
+class RevTwoReasonTests(RecordTestCase):
+    """CI-EVID-001 rev2 AC-03: added reasons, producer rules and stage consistency."""
+
+    def test_producer_mismatch(self):
+        self.write()
+        self.assertEqual(self.read(producer="pytest"), (None, "producer_mismatch"))
+        self.assertIsNone(self.read(producer="unittest")[1])
+
+    def test_not_regular(self):
+        self.path.mkdir()
+        self.assertEqual(self.read(), (None, "not_regular"))
+
+    def test_too_large(self):
+        self.write()
+        with patch.object(run_record, "MAX_BYTES", 10):
+            self.assertEqual(self.read(), (None, "too_large"))
+
+    def test_extra_files_only_in_an_exclusive_directory(self):
+        self.write()
+        (Path(self.tmp.name) / ".record.json.123.tmp").write_text("{}", encoding="utf-8")
+        self.assertEqual(self.read(exclusive=True), (None, "extra_files"))
+        self.assertIsNone(self.read()[1])           # CI-PAR's shared run directory
+
+    def test_binding_changed_during_the_run(self):
+        self.write()
+        self.assertEqual(self.read(binding_after=dict(BINDING, worktree_digest="9" * 64)), (None, "binding_mismatch"))
+        self.assertIsNone(self.read(binding_after=dict(BINDING))[1])
+
+    def test_rc_zero_without_a_record_is_missing(self):
+        self.assertEqual(self.read(rc=0, producer="unittest", exclusive=True, not_before=time.time()),
+                         (None, "missing"))
+
+    def test_failed_may_repeat_a_parent_but_passed_may_not(self):
+        counts = dict(run_record.assemble({}, {})["counts"], tests_run=2, failures=2)
+        self.write(started=["m.C.test_a", "m.C.test_b"], passed=["m.C.test_b"], failed=["m.C.test_a", "m.C.test_a"],
+                   counts=counts, successful=False, exit_code=1)
+        self.assertIsNone(self.read(rc=1)[1])
+        self.write(passed=["m.C.test_a", "m.C.test_a"])
+        self.assertEqual(self.read()[1], "duplicate_ids")
+
+    def test_unittest_counts_must_match_the_record(self):
+        record = self.write()
+        self.write(unittest_counts=dict(record["counts"], tests_run=3))
+        self.assertEqual(self.read()[1], "self_inconsistent")
+
+    def pytest_record(self, exit_code, **tests):
+        return run_record.make_record(producer="pytest", nonce=NONCE, binding=BINDING, rows=rows(**tests),
+                                      scopes={}, exit_code=exit_code)
+
+    def test_pytest_rc_follows_pytest_semantics(self):
+        cases = [(self.pytest_record(0, **{"t::xp": ["unexpected_success"]}), 0, None),   # non-strict XPASS
+                 (self.pytest_record(5), 5, None),                                       # nothing collected
+                 (self.pytest_record(1, **{"t::f": ["fail"]}), 1, None),
+                 (self.pytest_record(2, **{"t::e": ["error"]}), 2, None),                # collection error
+                 (self.pytest_record(2, **{"t::a": ["pass"]}), 2, "rc_mismatch"),
+                 (self.pytest_record(0, **{"t::e": ["error"]}), 0, "rc_mismatch"),
+                 (self.pytest_record(5, **{"t::a": ["pass"]}), 5, "rc_mismatch")]
+        for record, rc, reason in cases:
+            with self.subTest(rc=rc, counts=record["counts"]):
+                self.write(record)
+                self.assertEqual(self.read(rc=rc)[1], reason)
+
+    def test_unittest_rc_zero_needs_success(self):
+        record = run_record.make_record(producer="unittest", nonce=NONCE, binding=BINDING,
+                                        rows=rows(**{"m.C.test_a": ["unexpected_success"]}), scopes={}, exit_code=0)
+        self.write(record)
+        self.assertEqual(self.read(rc=0)[1], "rc_mismatch")
+
+    def verify(self, stages, exit_code, summary, **tests):
+        return run_record.make_record(producer="verify_environment", nonce=NONCE, binding=BINDING, rows=rows(**tests),
+                                      scopes={}, exit_code=exit_code, summary=summary, stages=stages)
+
+    def test_verify_environment_stages(self):
+        ok = {"status": "PASS", "tests_run": 1, "failures": 0, "errors": 0, "skipped": 0, "expected_failures": 0}
+        failed = dict(ok, status="FAIL", failures=1)
+        passed = {"status": "passed", "exit_code": 0}
+        sdd_failed = {"sdd_static": {"status": "failed", "exit_code": 2}, "offline_suite": {"status": "not_run", "exit_code": None}}
+        cases = [
+            (self.verify({"sdd_static": passed, "offline_suite": passed}, 0, ok, **{"m.C.a": ["pass"]}), 0, None),
+            (self.verify({"sdd_static": passed, "offline_suite": {"status": "failed", "exit_code": 1}}, 1, failed,
+                         **{"m.C.a": ["fail"]}), 1, None),
+            (self.verify(sdd_failed, 2, None), 2, None),
+            (self.verify(sdd_failed, 2, ok), 2, "summary_mismatch"),
+            (self.verify({"sdd_static": passed, "offline_suite": {"status": "failed", "exit_code": 0}}, 0, ok,
+                         **{"m.C.a": ["pass"]}), 0, "summary_mismatch"),
+            (self.verify({"sdd_static": passed, "offline_suite": passed}, 0, None, **{"m.C.a": ["pass"]}), 0,
+             "summary_mismatch"),
+            (self.verify(None, 0, ok, **{"m.C.a": ["pass"]}), 0, "schema"),
+        ]
+        for record, rc, reason in cases:
+            with self.subTest(stages=record.get("stages"), rc=rc):
+                self.write(record)
+                self.assertEqual(self.read(rc=rc, producer="verify_environment")[1], reason)
+
+    def test_producer_writes_once(self):
+        record = self.write()
+        with self.assertRaises(FileExistsError):
+            run_record.write_record(self.path, record, once=True)
+
+
+class RevTwoEventTests(unittest.TestCase):
+    def test_collection_error_counts_as_an_error(self):
+        reports = [{"nodeid": "tests/test_bad.py", "outcome": "failed", "message": None}]
+        found, scopes, _ = run_record.rows_from_pytest_events([], [], reports)
+        data = run_record.assemble(found, scopes)
+        self.assertEqual((data["counts"]["errors"], data["successful"]), (1, False))
+
+    def test_plain_pytest_setup_skip_is_a_skip(self):
+        collected = [{"nodeid": "t.py::test_s", "id": "t.py::test_s"}]
+        events = [{"nodeid": "t.py::test_s", "when": "setup", "outcome": "skipped", "baton": {"kind": "skip"},
+                   "subtest": None, "worker": None}]
+        found, scopes, _ = run_record.rows_from_pytest_events(events, collected, [])
+        self.assertEqual(run_record.assemble(found, scopes)["outcomes"], {"t.py::test_s": "skip"})
+
+    def test_declared_argv_digest_ignores_the_run_options(self):
+        args = ["-o", "addopts=", "tests", "--baton-record=/a/r.json", "--baton-nonce=" + NONCE]
+        self.assertEqual(run_record.pytest_argv_for_digest(args), ["-o", "addopts=", "tests"])
+
+
+class RevTwoBindingTests(unittest.TestCase):
+    def test_named_keys_only_and_digests(self):
+        given = {"head": None, "base": "b" * 40, "installed_digest": "d", "argv_digest": "caller"}
+        self.assertEqual(run_record.observed_binding(given)["argv_digest"], "caller")    # CI-PAR form
+        self.assertNotIn("worktree_digest", run_record.observed_binding(given))
+        self.assertEqual(run_record.observed_binding(given, argv=["a"])["argv_digest"], run_record.argv_digest(["a"]))
+        env = {"PYTHONPATH": "src", "UNRELATED": "1"}
+        self.assertEqual(run_record.observed_binding({"env_digest": None}, env=env)["env_digest"],
+                         run_record.env_digest({"PYTHONPATH": "src"}))
+        self.assertNotEqual(run_record.env_digest(env), run_record.env_digest({"PYTHONPATH": "lib"}))
+
+    def test_worktree_digest_sees_untracked_and_tracked_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                subprocess.run(["git", *args], cwd=directory, check=True, capture_output=True)
+            git("init", "-q")
+            git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "x")
+            clean = run_record.worktree_digest(directory)
+            (Path(directory) / "new.txt").write_text("1", encoding="utf-8")
+            untracked = run_record.worktree_digest(directory)
+            (Path(directory) / "new.txt").write_text("2", encoding="utf-8")
+            changed = run_record.worktree_digest(directory)
+            self.assertEqual(len({clean, untracked, changed}), 3)
+            self.assertEqual(changed, run_record.observed_binding({"worktree_digest": None}, cwd=directory)["worktree_digest"])
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertIsNone(run_record.worktree_digest(directory))       # not a Git work tree
+
+
+class RecordedUnittestRunnerTests(unittest.TestCase):
+    """rev2 AC-06: the shared recorder keeps ``python -m unittest`` argv meaning and rc."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "test_m.py").write_text(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_a(self): print('Ran 9 tests in 0.0s')\n"
+            "    def test_sub(self):\n"
+            "        for i in range(3):\n"
+            "            with self.subTest(i=i): self.assertLess(i, 1)\n"
+            "    @unittest.skip('x')\n"
+            "    def test_s(self): pass\n"
+            "    @unittest.expectedFailure\n"
+            "    def test_x(self): self.fail()\n"
+            "class U(unittest.TestCase):\n"
+            "    @classmethod\n"
+            "    def setUpClass(cls): raise RuntimeError('boom')\n"
+            "    def test_n(self): pass\n", encoding="utf-8")
+        (self.root / "test_k.py").write_text(
+            "import unittest\nclass K(unittest.TestCase):\n    def test_k(self): pass\n", encoding="utf-8")
+        (self.root / "test_lost.py").write_text(
+            "import unittest\n"
+            "class L(unittest.TestCase):\n"
+            "    def test_ok(self): pass\n"
+            "    def test_lost(self): pass\n"
+            "    def run(self, result=None):\n"
+            "        if self._testMethodName == 'test_lost':\n"
+            "            result.startTest(self); result.stopTest(self); return result\n"
+            "        return super().run(result)\n", encoding="utf-8")
+
+    def run_both(self, argv):
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        plain = subprocess.run([sys.executable, "-X", "utf8", "-m", "unittest", *argv], cwd=self.root,
+                               capture_output=True, text=True, env=env)
+        directory = tempfile.mkdtemp(dir=self.tmp.name)
+        out, nonce = os.path.join(directory, "record.json"), run_record.new_nonce()
+        recorded = subprocess.run(run_record.unittest_argv(sys.executable, out, nonce, {"head": None}, argv),
+                                  cwd=self.root, capture_output=True, text=True, env=env)
+        record, reason = run_record.read_record(out, nonce, {"argv_digest": run_record.argv_digest(argv)},
+                                                recorded.returncode, producer="unittest", exclusive=True)
+        return plain, recorded, record, reason
+
+    def test_argv_meaning_rc_and_counts_match_plain_unittest(self):
+        for argv, tests_run in ((["test_m"], 4), ([], 7), (["discover", "-p", "test_k.py"], 1),
+                                (["-k", "test_a", "test_m"], 1), (["test_m.T.test_sub", "test_k"], 2)):
+            with self.subTest(argv=argv):
+                plain, recorded, record, reason = self.run_both(argv)
+                self.assertIsNone(reason)
+                self.assertEqual(recorded.returncode, plain.returncode)
+                self.assertEqual(record["counts"]["tests_run"], tests_run)
+                self.assertEqual(record["counts"], record["unittest_counts"])
+                self.assertIn(f"Ran {tests_run} test", plain.stderr)
+
+    def test_record_details(self):
+        _, recorded, record, reason = self.run_both(["test_m"])
+        self.assertIsNone(reason)
+        self.assertEqual(record["counts"], {"tests_run": 4, "failures": 2, "errors": 1, "skipped": 1,
+                                            "expected_failures": 1, "unexpected_successes": 0})
+        self.assertEqual(record["outcomes"]["test_m.U.test_n"], "error")          # blocked by setUpClass
+        self.assertIn("setUpClass (test_m.U)", record["failed"])
+        self.assertNotIn("test_m.T.test_a", record["failed"])                      # printed text is not a result
+
+    def test_lost_result_and_no_tests(self):
+        _, recorded, record, reason = self.run_both(["test_lost"])
+        self.assertEqual((recorded.returncode, reason), (0, "self_inconsistent"))  # R401 kept
+        (self.root / "test_empty.py").write_text("import unittest\n", encoding="utf-8")
+        plain, recorded, record, reason = self.run_both(["test_empty"])
+        self.assertEqual(recorded.returncode, plain.returncode)
+        self.assertIsNone(reason)
+        self.assertEqual(record["counts"]["tests_run"], 0)
 
 
 if __name__ == "__main__":
