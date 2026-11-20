@@ -97,13 +97,53 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
+command = "EVID-D28-01 red: tests.test_evidence_records with the reproductions only, on the 672efed code (3ea5089: failures 4, errors 2) and with the D29 pinning reproductions (6f64f0e: failures 5, errors 3); the known-residual .pth unittest test passes on both (it pins the accepted behaviour)"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-d28-01--2026-11-21"
+acs = ["CI-EVID-001-AC-06", "CI-EVID-001-AC-08"]
+
+[[verification]]
+command = "EVID-D28-01 local regression (6ee7726 work tree): tests.test_run_record tests.test_evidence_records tests.test_managed_harness tests.test_ci_plan tests.test_verify_environment tests.test_flow_runtime: 340 OK, skip 0, 725 s"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-d28-01--2026-11-21"
+acs = ["CI-EVID-001-AC-06", "CI-EVID-001-AC-08"]
+
+[[verification]]
+command = "official sequential V3 at 6ee7726 (last code change, standalone without requirements/ci.lock): python -X utf8 scripts/verify_environment.py --base 8e44620: PASS, 884 OK, skip 0, rc 0, 1205 s, eligible, reuse not_configured; HEAD and clean tree unchanged, empty LOCALAPPDATA kept"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-d28-01--2026-11-21"
+acs = ["CI-EVID-001-AC-01", "CI-EVID-001-AC-02", "CI-EVID-001-AC-03", "CI-EVID-001-AC-04", "CI-EVID-001-AC-05", "CI-EVID-001-AC-06", "CI-EVID-001-AC-07", "CI-EVID-001-AC-08", "CI-EVID-001-AC-09"]
+tests_run = 884
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "cross-run at 6ee7726: origin/main 8e44620 scripts/verify_environment.py on the 6ee7726 tree --base 8e44620: rc 1, 884 run, errors=4 = the same VerifyEnvironmentRecordTests subTests (SystemExit 2), failures 0, skip 0; original result kept as failed, user decision 1 conditional exception applies"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-d28-01--2026-11-21"
+acs = ["CI-EVID-001-AC-09"]
+
+[[verification]]
+command = "auxiliary cross-run at 6ee7726 with the 4 errors removed (user decision 1): the 2 methods and their 3 traceability refs removed: rc 0, 882 run, failures 0, errors 0, skip 0"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#evid-d28-01--2026-11-21"
+acs = ["CI-EVID-001-AC-09"]
+tests_run = 882
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
 command = "independent cross review (ChatGPT via Drive BATON 교차검토 package, user-relayed) and remote CI verify.yml (requires D26 push approval; operational CI change requires D25-R)"
 result = "not_run"
 evidence = "docs/tasks/TASK-CI-EVID-001.md#검증-표"
 acs = ["CI-EVID-001-AC-09"]
 ```
 
-계약: [CI-EVID-001 rev4](../specs/CI-EVID-001.md), [Plan](../plans/ci-evid.md), [ADR](../adr/ADR-CI-EVID-001.md).
+계약: [CI-EVID-001 rev5](../specs/CI-EVID-001.md), [Plan](../plans/ci-evid.md), [ADR](../adr/ADR-CI-EVID-001.md).
 branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR·원격 CI 없음(D26 미승인).
 
 ## 순서 (사용자 지시 1~7)
@@ -127,7 +167,15 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 - **D25-R:** 병합으로 운영 원격 CI 판정(`ci_plan.py --remote run`)이 바뀌는 것의 승인 → **2026-11-20 조건부 승인**(아래 "D25-R·D26·D27" 절)
 - **D26:** Task branch push와 원격 CI 실행 → **2026-11-20 조건부 승인**, push 시점은 coordinator가 별도 지시(아직 push하지 않음)
 - **D27:** F-1~F-3 후속 Task 여부 → **2026-11-20 범위 제한**(후속 Task)
-- **D28:** RA-3(같은 권한 자식 프로세스의 기록 작성, declared 모드 외부 plugin) 수용 → **2026-11-20 불승인**(아래 "사용자 결정" 절, 신뢰 목록 방식)
+- **D28:** RA-3(같은 권한 자식 프로세스의 기록 작성, declared 모드 외부 plugin) 수용 → **2026-11-20 불승인**(아래 "사용자 결정" 절, 신뢰 목록 방식). 3차 검토 EVID-D28-01(P1) 뒤에도 불승인 유지
+- **D29:** 로컬 실행 환경 변조(시작 코드·설치 패키지·인터프리터)를 이 Task 위협 모델 밖에 두는 것 → **2026-11-21 조건부 승인**(coordinator msg_dee55ac23323). 해결이 아니라 잔여 위험이다. 조건:
+  1. 로컬 PASS는 Task 진행 증거일 뿐 단독 최종 승인 근거가 아니다.
+  2. `.pth` 사례와 그것이 unittest에도 적용된다는 사실을 알려진 잔여로 고정한다(I3).
+  3. I1~I4를 계획대로 진행한다.
+  4. xdist 신뢰는 이름·버전만으로 하지 않는다. 승인 wheel sha256(lock 해시와 같아야 함)과 설치 파일 전부의 sha256을 고정하고, 설치 경로와 로딩 경로가 같은 파일이며 해시가 맞을 때만 신뢰한다. 무결성 보장으로 부르지 않는다.
+  5. lock 없음·wheel 해시 불일치·파일 목록 불일치·metadata 읽기 실패는 fail-closed다.
+  6. 현재 main 대비 독립 병합 가능성을 확인한다(standalone에서는 xdist 미신뢰).
+  7. D25 차단을 유지한다.
 
 ## red on base — 2026-11-20
 
@@ -171,7 +219,11 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `7816a56` | 사용자 D28 구체화(매핑·출처, 정확한 제외 ID 집합)에 맞춘 재현 테스트(red on base, `1c41fb0` 코드): 9개, failures 11(subTest 포함) |
 | `91619ef` | D28 수정: 신뢰 목록(배포==버전·`-p` 이름·모듈·site-packages 출처), 명시·간접 로딩 통제, 수집 무결성(정확한 제외 집합), 소비자 재확인; Spec rev4; traceability |
 | `a12abe0` | D28 증거, D25-R·D26·D27 기록(문서만) |
-| (이 커밋) | 최종 HEAD `a12abe0` 공식 V3·교차 실행·4건 제외 보조 실행 기록(문서만) |
+| `672efed` | 최종 HEAD `a12abe0` 공식 V3·교차 실행·4건 제외 보조 실행 기록(문서만) |
+| `3ea5089` | EVID-D28-01 재현 테스트만(red on base, `672efed` 코드): failures 4, errors 2 |
+| `6f64f0e` | D29 xdist 고정값 재현 테스트만(red on base): failures 5, errors 3 |
+| `6ee7726` | EVID-D28-01·D29 수정: 무결성 주장 제거(`trust="list_metadata"`), 검사 tree의 `requirements/ci.lock` 해시 고정, wheel·설치 파일 sha256 고정, 설치 경로·로딩 경로 분리 기록; 알려진 잔여 `.pth` 테스트; Spec rev5; traceability |
+| (이 커밋) | EVID-D28-01 증거, D29 기록, 후속 목록(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -368,6 +420,71 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 - `docs/sdd/traceability.json`에서 두 method를 가리키는 ref 3개(AC-05 2개, AC-09 1개)를 정규식으로 최소 삭제했다. 지우지 않으면 sdd_static이 MISSING_TEST로 실패한다.
 - diff는 verifier 교체를 포함해 3 files, +7 −100이다. 끝난 뒤 worktree를 `remove --force`하고 `prune`했다. 이 branch와 다른 worktree는 건드리지 않았다.
 
+## EVID-D28-01 — 2026-11-21
+
+3차 검토(`review-chatgpt-d28-r3.md`)의 P1을 받아들였다. D28은 불승인 그대로다. 이 지적은 해결 표시 하나로 닫지 않고 두 가지로 나눠 기록한다.
+- **CI-EVID 결함(이 Task에서 고침):** rev4 신뢰 목록은 배포 이름·버전과 site-packages "출처"만 봤다. 그래서 이름과 버전만 맞춘 가짜 배포와 설치된 xdist 파일 변조를 받아들였다. rev4 문구의 "출처"는 metadata 일치였을 뿐 무결성이 아니다.
+- **잔여 환경 위험(분리):** 이미 변조된 로컬 venv(시작 코드·설치 패키지·인터프리터)는 D29에 따라 이 Task 위협 모델 밖이다. 이 위험은 남아 있고, TASK-ENV-INTEG-001(가칭)로 분리한다.
+
+**수정(`6ee7726`):**
+- I1: 코드 주석·Spec·Task에서 무결성 주장을 뺐다. trust 값은 `list_metadata`다. `read_record` 호환과 CI-PAR 호출 형태는 바꾸지 않았다.
+- I2: 검사 tree에 `requirements/ci.lock`이 없거나, lock에 `pytest-xdist==3.8.0`과 고정 wheel의 sha256이 없으면 `plugin_not_locked:pytest-xdist`(fail-closed)다.
+- D29-4: 고정한 xdist 18개 `.py` 파일의 sha256과 설치 목록이 맞아야 한다. 설치 경로(metadata가 가리키는 파일)와 로딩 경로(모듈 `__file__`)를 따로 기록하고, 둘이 같은 파일이며 해시가 맞을 때만 신뢰한다. 아니면 `plugin_not_trusted:<module>`다. `__channelexec__`는 이 검사를 통과한 xdist가 있을 때만 신뢰한다.
+- **고정값 출처:** wheel sha256 `202ca578…0f88`은 CI-PAR `requirements/ci.lock`의 해시다. 파일 해시는 CI-PAR의 `--require-hashes` 격리 venv(`.venv-ci`·`.venv-ci-alt`·`.venv-ci-nogms`)에서 읽었다. 세 venv의 값이 모두 같고 RECORD와도 맞는다(Spec AC-06 rev5에 출처 기재).
+- I3: `KnownResidualEnvironmentTests.test_known_residual_startup_code_can_drop_tests_unittest`. stdlib `--without-pip` venv에 `.pth` 시작 코드를 넣으면 실패 테스트가 빠진 기록(1 run)도 받아들여진다는 것을 고정한다. 주석에 ENV-INTEG 분리와 D29가 적혀 있다. 공식 suite skip 0은 그대로다.
+- I4: Spec "증거 신뢰 경계" 절. 검증되지 않은 로컬 Python 환경의 PASS는 독립 최종 증거가 아니고, main 병합에는 보호된 원격 gate가 필요하다. 이 절은 ruleset 27611909(gate 필수, bypass 없음, 원격 의존성 해시 미고정)를 적었다. 결론은 `remote-trust-boundary-20261121.md`에서 인용했다: "gate는 PR 내용으로 무력화될 수 있다", "최종 무결성은 관리자 검토 절차에 의존한다". verify.yml은 바꾸지 않았다.
+
+**red → green:**
+
+| 단계 | 결과 |
+|---|---|
+| `3ea5089` 재현만(`672efed` 코드) | failures 4, errors 2 |
+| `6f64f0e` D29 재현 추가 | failures 5, errors 3 |
+| `6ee7726` 수정 | `test_evidence_records`+`test_run_record` 107 OK |
+| 잔여 위험 테스트 | 수정 전후 모두 통과(받아들여지는 동작을 고정하는 테스트) |
+
+**실제 pytest 9.2.0 / xdist 3.8.0 보조(공식 suite 밖, `RecordedRun` 소비자 경로):**
+
+| 사례 | 수정 전(`6f64f0e` src) | 수정 후 |
+|---|---|---|
+| lock 없음 + xdist `-n 2` | 수락 | rc 4, `plugin_not_locked:pytest-xdist` |
+| lock 있음 + xdist `-n 2` | — | rc 1, 2 run, failures 1, trust list_metadata, 유효 |
+| xdist 없이(lock 유무) | — | 정상, rc 1 |
+| 같은 바이트 xdist를 PYTHONPATH 앞에 둠(shadowing) | rc 4 | rc 4, `plugin_not_trusted:xdist.plugin` |
+| 설치된 xdist/plugin.py 변조 | rc 0, 1 run, **수락** | rc 4, `plugin_not_trusted:xdist.plugin` |
+| 검토의 가짜 xdist 배포(이름·버전·일관된 RECORD) | rc 0, 1 run, **수락** | rc 4, `plugin_not_trusted:xdist.plugin` |
+
+pytest에서도 `.pth` 잔여(Module.collect 패치)가 남는다. 깨끗한 venv에서 xdist 유무와 관계없이 rc 0, 1 run으로 받아들여진다. 이 결과는 위 잔여 위험에 속하는 보조 증거다. 시험 뒤 `.pth`를 지웠다.
+
+**국소 회귀(`6ee7726` 작업 트리):** 6모듈(`test_run_record`·`test_evidence_records`·`test_managed_harness`·`test_ci_plan`·`test_verify_environment`·`test_flow_runtime`) 340 OK, skip 0, 725 s.
+
+**현재 main 대비 독립 병합(D29-6):**
+- origin/main `8e44620`은 HEAD의 조상이다.
+- `git merge-tree --write-tree origin/main HEAD`는 rc 0, 충돌 없음이다.
+- 이 branch에는 `requirements/`가 없다. 그래서 standalone에서 xdist는 신뢰되지 않는다(fail-closed). 공식 V3는 unittest이므로 영향이 없다.
+
+**CI-PAR 최신 임시 병합:**
+- 대상은 ci-par-001 `32a3cf7` × `6ee7726`이다. 커밋하지 않았고, 임시 worktree는 remove·prune했다.
+- 문서 3개만 충돌했다(HANDOFF·traceability·current).
+- `test_run_record`+`test_suite_backend`는 `.venv`와 깨끗한 pytest venv 양쪽에서 120 OK, skip 0이다.
+- 병합 src는 병합 lock이 있으면 xdist를 신뢰한다. lock이 없으면 `plugin_not_locked`이고, 가짜 xdist는 거부한다.
+- 그 뒤 ci-par-001은 `ca26668`로 움직였다. 바뀐 것은 문서와 selftest 결과 파일뿐이고 코드 변경은 없다.
+
+**최종 재검증(`6ee7726`, 마지막 코드 변경 뒤):**
+- 세 실행은 하나씩 돌렸다.
+- 매번 다른 실행이 0개이고 여유 메모리가 13.2 GB 이상인지 확인했다.
+- 빈 `LOCALAPPDATA`를 쓰고 PATH에서 CBM을 뺐다.
+
+| 항목 | 결과 |
+|---|---|
+| 공식 순차 V3 `--base 8e44620` | PASS, 884 OK, skip 0, rc 0, 1205 s, eligible, reuse not_configured; 실행 전후 HEAD·clean 동일, `LOCALAPPDATA` 비어 있음 |
+| 교차 실행(origin/main verifier) | rc 1, 884 실행, failures 0, skip 0, errors 4 = 앞 절과 같은 `VerifyEnvironmentRecordTests` 4건(모두 `SystemExit: 2`). 원본 판정 failed 유지, 결정 1 조건부 예외 적용 |
+| 4건 제외 보조 실행 | rc 0, 882 OK, failures 0, errors 0, skip 0, eligible(2 method와 traceability ref 3개 제거, 3 files +7 −100) |
+
+## 후속 (별도 Task, 이 Task 범위 밖)
+- **TASK-ENV-INTEG-001(가칭, 미착수):** 로컬 실행 환경 변조(`.pth` 시작 코드·설치 패키지·인터프리터) 방어. 범용 샌드박스는 이 Task에서 만들지 않는다.
+- **원격 검증 경로 보안 강화(별도 항목):** verify.yml을 PR이 스스로 바꿀 수 있는 문제, 승인 0명, 의존성·Actions 고정, ruleset 변경 권한. 이 Task에서 verify.yml은 바꾸지 않는다.
+
 ## 보조 증거 (공식 suite 밖)
 
 실제 pytest 9.2.0 / pytest-xdist 3.8.0(CI-PAR `requirements/ci.lock` 해시 설치, 시스템 임시 venv, 끝난 뒤 삭제). 결과:
@@ -387,5 +504,8 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 | 공식 순차 V3 | `python -X utf8 scripts/verify_environment.py --base 8e44620`(`abbcb7e`) | PASS, 859 OK, skip 0, rc 0, 2000 s, eligible, reuse not_configured; 실행 전후 HEAD·clean 동일, 빈 `LOCALAPPDATA` 그대로(CBM 실행 없음) |
 | 교차 실행 | origin/main `verify_environment.py`로 `abbcb7e` tree | rc 1, 859 실행, errors 4(아래 절), 나머지 855 OK, skip 0, 1416 s |
 | CI-PAR 병합 시험(최종) | ci-par-001 `8224921` × `abbcb7e`(커밋 없음) | 문서 3개 충돌(HANDOFF·traceability·current, 양쪽 항목 추가), `test_run_record`+`test_suite_backend` 107 중 103 OK; `IsolationTests.test_official_modules_do_not_import_backend` 4 subTest 실패(아래 절) |
+| EVID-D28-01 국소 회귀 | 6모듈(`6ee7726`) | 340 OK, skip 0, 725 s |
+| EVID-D28-01 공식 순차 V3 | `--base 8e44620`(`6ee7726`) | PASS, 884 OK, skip 0, rc 0, 1205 s |
+| EVID-D28-01 교차·보조 | origin/main verifier(`6ee7726`) | 교차 rc 1·errors 4(예외 적용), 보조 882 OK |
 | 독립 교차 검토 | ChatGPT(coordinator 패키지) | not_run |
 | 원격 CI | verify.yml(D26 뒤) | not_run |
