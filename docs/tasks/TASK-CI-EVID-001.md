@@ -116,7 +116,8 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `ad185a1` | pytest successful = rc 0 이고 failures+errors 0(CI-PAR 병합 시험에서 발견) |
 | `8dddfb5` | 소비자 교체 AC-04~07, SDD 문서, 테스트 기대값 갱신 |
 | `abbcb7e` | G1 검토 R01: 실제 rc≠0인데 successful=true인 기록은 모든 producer에서 rc_mismatch; unittest·verify_environment successful은 rc 0 필요; verify_environment rc≠0은 실패 stage 필요 |
-| (이 커밋) | 검증 기록(문서만) |
+| `755c9ec` | 검증 기록(문서만) |
+| `df3594c` | EVID-R01: declared pytest 경계를 검사 Git tree로(tree 밖 conftest·rootdir·inifile 위반), Spec AC-06 한 줄, RA-3 D28 대기 조건 |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -145,6 +146,12 @@ origin/main의 `verify_environment.py`(변경 전 검증기)로 후보 `abbcb7e`
 argparse `SystemExit 2`가 난다(예상된 실패). 나머지 855개는 변경 전 검증기로도 통과했다(skip 0). 결과는 failed로
 기록하며, 교차 실행을 통과로 볼지는 독립 검토·사용자 판단에 맡긴다.
 
+**조건부 예외 기준(결정 대기, ChatGPT 구현 검토 제안 — 승인 전에는 PASS로 바꾸지 않는다):**
+- 실패가 정확히 이 4개(`VerifyEnvironmentRecordTests`의 record-mode 3 subTest와 sdd_static 실패 기록 1)이다.
+- 4개 모두 원인이 옛 verifier의 미지원 인자에 따른 `SystemExit(2)`다.
+- 나머지는 실패·오류·skip이 모두 0이다.
+- 오류가 하나라도 늘면 예외 분류는 무효다. 원본 결과는 failed로 보존한다.
+
 ## CI-PAR 병합 시험 — 최종 후보
 
 ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detached worktree, 끝난 뒤 abort·remove·prune):
@@ -152,6 +159,25 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 - `tests.test_run_record tests.test_suite_backend` 107 중 103 OK(skip 0). 실패는 CI-PAR T01 `IsolationTests.test_official_modules_do_not_import_backend`
   (4 subTest): "공식 경로는 `run_record`·`pytest_record`를 import하지 않는다"는 G1 단계 불변식인데, 이 Task가 설계상 그 import를 넣는다(AC-05/06).
   CI-PAR 쪽에서 `NEW`를 `suite_backend`로 좁히는 갱신이 필요하다(CI-PAR scope, 이 Task는 고치지 않음).
+
+## EVID-R01 — 2026-11-20 (ChatGPT 구현 검토 FAIL, P1)
+
+- 결함: declared pytest의 경계가 `config.rootpath`였다. 상위 `pytest.ini`나 명시 `--rootdir`로 rootdir가 검사 Git tree 밖으로 넓어지면, 외부 conftest가 collection hook으로 실패 테스트를 빼도 `violations []`이고 eligible이 됐다.
+- 수정 `df3594c`:
+  - 경계는 호출자가 고정한 tree(`--baton-tree`)다. producer가 Git toplevel로 다시 관측해 대조하고(`tree_mismatch`) binding `tree_root`로 남긴다. 비교는 canonical path(realpath·normcase)다.
+  - tree 밖 conftest·rootdir·사용된 inifile은 위반이며 `record_unavailable`이다. strict 모드는 그대로다.
+- 합성 회귀 `DeclaredTreeBoundTests` a~d와 tree/binding 사례: 국소 7모듈 342 OK, skip 0.
+- 보조(실제 pytest 9.2.0 임시 venv, 소비자 `RecordedRun` 경로):
+
+  | 사례 | 결과 |
+  |---|---|
+  | a. tree 안 conftest | rc 0, 유효 기록 |
+  | b. 상위 pytest.ini와 실패 테스트를 빼는 conftest | rc 4, `record_unavailable`(conftest·inifile·rootdir 위반) |
+  | c. 명시 상위 `--rootdir` | rc 4, `record_unavailable`(`rootdir_outside_tree`) |
+  | d. 상위 `--confcutdir`로 로드된 외부 conftest가 실패 테스트를 뺌 | rc 4, `record_unavailable`(`conftest_outside_tree`) |
+
+- **wrong_reject 확인:** tree 안 설정(루트 `pytest.ini`, `pyproject.toml` `[tool.pytest.ini_options]`, `tox.ini` + 루트 conftest, 설정 없음, tree 안 `--rootdir`)은 모두 그대로 통과했다(rc 0, 유효 기록).
+- 새로 거부되는 것은 Git tree 밖에 있는 pytest 설정을 쓰는 실행뿐이다(예: 상위 폴더에 떠 있는 `pytest.ini`). 의도된 거부이지만, 그런 환경의 연결 프로젝트는 설정을 tree 안으로 옮겨야 한다.
 
 ## 보조 증거 (공식 suite 밖)
 
