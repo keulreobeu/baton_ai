@@ -54,10 +54,15 @@ evidence = "tooling/ci_par_selftest/results/measure-2026-11-20-11ed629.json"
 acs = ["CI-PAR-001-AC-10", "CI-PAR-001-AC-12", "CI-PAR-001-AC-14"]
 
 [[verification]]
-command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
-result = "not_run"
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 at 5917472, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
+result = "passed"
 evidence = "docs/tasks/TASK-CI-PAR-001.md#결과--2026-11-20"
 acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-13"]
+tests_run = 850
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
 
 [[verification]]
 command = "independent review (L3, reviewer != author) and required remote CI (existing verify.yml, sequential, no ci extra); push not approved"
@@ -209,7 +214,7 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
 - `scripts/suite_backend.py`의 `PER_WORKER_RAM`과 Spec AC-12를 256MiB로 고쳤다(이전 0.5GiB 가정값). 실측 당시 RAM 슬롯은 19~21개로 상한 S=10보다 커서 RAM 조건이 배분을 제한하지 않았으므로, 기본값 변경은 위 실측 결과를 바꾸지 않는다.
 
 ### 공식 순차 V3
-V3_LINE
+`.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 8e44620`을 HEAD `5917472`(clean)에서 1회 실행했다(실측): sdd_static PASS(acs 87, tasks 16), offline_suite **850 OK, failures 0, errors 0, skipped 0**, `verified_evidence_eligible=true`, `reuse_decision=not_configured`, rc 0, 1720.2 s. 새 테스트 `tests.test_suite_backend`·`tests.test_run_record`는 ci extra 없는 공식 순차 경로에서 skip 없이 실행됐다. 원격 CI는 `not_run`(push 미승인).
 
 ### 수용 기준 판정
 | AC | 판정 | 근거 |
