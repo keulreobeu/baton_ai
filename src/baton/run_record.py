@@ -106,12 +106,16 @@ def make_record(*, producer, nonce, binding, rows, scopes, exit_code, summary=No
         raise ValueError("unknown producer")
     record = {"schema": SCHEMA, "producer": producer, "nonce": nonce, "binding": dict(binding),
               **assemble(rows, scopes), "exit_code": int(exit_code), "summary": summary}
+    counts = record["counts"]
     if producer in ("pytest", "xdist"):
         # rev3 E203: pytest's own success is rc 0 with no failure or error (a non-strict
         # XPASS keeps rc 0 and successful=true; it is still ineligible, see ``eligible``).
         # Counts that contradict the rc stay unsuccessful and are refused as rc_mismatch.
-        counts = record["counts"]
         record["successful"] = int(exit_code) == 0 and counts["failures"] + counts["errors"] == 0
+    else:
+        # G1 review R01: a run whose rc is not 0 (e.g. unittest with no test: rc 1 or 5)
+        # is never successful, so a record cannot pair success with a failing rc.
+        record["successful"] = record["successful"] and int(exit_code) == 0
     if stages is not None:
         record["stages"] = {k: dict(v) for k, v in stages.items()}
     record.update(extra or {})
@@ -281,8 +285,12 @@ def _consistent(record):
             and len(record["skipped"]) == counts["skipped"]
             and len(record["failed"]) == (counts["failures"] + counts["errors"]
                                           + counts["expected_failures"] + counts["unexpected_successes"])
-            # pytest's success is its rc (checked with the rc below, rev3 E203).
-            and (record["producer"] in ("pytest", "xdist") or record["successful"] == unittest_success)
+            # pytest's success is its rc (checked with the rc below, rev3 E203); unittest's is
+            # wasSuccessful() with rc 0 (G1 review R01: success with a failing rc is left to
+            # the rc check, rc_mismatch).
+            and (record["producer"] in ("pytest", "xdist")
+                 or (unittest_success if record["successful"]
+                     else not unittest_success or record["exit_code"] != 0))
             and not (clean and set(started) != set(passed))):
         return False
     native = record.get("unittest_counts")
@@ -292,7 +300,9 @@ def _consistent(record):
 
 
 def _rc_consistent(record, returncode):
-    if record["exit_code"] != returncode:
+    # G1 review R01 (every producer): a real rc that is not 0 never goes with success, even
+    # when the record's own exit_code says the same rc.
+    if record["exit_code"] != returncode or (returncode != 0 and record["successful"]):
         return False
     counts = record["counts"]
     if record["producer"] in ("pytest", "xdist"):
@@ -324,6 +334,9 @@ def _summary_consistent(record):
     if record["producer"] != "verify_environment":
         return True
     sdd, suite = stages["sdd_static"], stages["offline_suite"]
+    # G1 review R01: a failing rc needs a failed stage.
+    if record["exit_code"] != 0 and "failed" not in (sdd["status"], suite["status"]):
+        return False
     if sdd["status"] == "failed":
         return (suite["status"] == "not_run" and summary is None and record["exit_code"] == sdd["exit_code"]
                 and counts["tests_run"] == 0)

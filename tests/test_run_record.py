@@ -323,6 +323,46 @@ class RevTwoReasonTests(RecordTestCase):
         (Path(self.tmp.name) / "record.json.collect-gw0.json").write_text("{}", encoding="utf-8")
         self.assertEqual(self.read(exclusive=True, producer="pytest")[1], "extra_files")
 
+    def test_failing_rc_never_goes_with_success(self):
+        """G1 review R01: rc 1/2/3 with successful=true and every test passed is rc_mismatch for
+        every producer, even when the record's own exit_code is that rc."""
+        stages = {"sdd_static": {"status": "passed", "exit_code": 0}}
+        for producer in ("unittest", "pytest", "xdist", "verify_environment"):
+            for rc in (1, 2, 3):
+                with self.subTest(producer=producer, rc=rc):
+                    record = run_record.make_record(
+                        producer=producer, nonce=NONCE, binding=BINDING, rows=rows(**{"t.T.a": ["pass"], "t.T.b": ["pass"]}),
+                        scopes={}, exit_code=rc,
+                        stages=dict(stages, offline_suite={"status": "failed", "exit_code": rc})
+                        if producer == "verify_environment" else None,
+                        summary={"status": "FAIL", "tests_run": 2} if producer == "verify_environment" else None)
+                    self.assertFalse(record["successful"])          # a producer never claims it
+                    self.write(record)
+                    # A valid confirmed failure; pytest's rc 1 itself needs a failure or error.
+                    expected = "rc_mismatch" if producer in ("pytest", "xdist") and rc == 1 else None
+                    self.assertEqual(self.read(rc=rc)[1], expected)
+                    self.write(record, successful=True)
+                    self.assertEqual(self.read(rc=rc)[1], "rc_mismatch")
+
+    def test_verify_environment_failing_rc_needs_a_failed_stage(self):
+        """G1 review R01: rc != 0 with both stages passed is summary_mismatch."""
+        record = run_record.make_record(
+            producer="verify_environment", nonce=NONCE, binding=BINDING, rows=rows(**{"t.T.a": ["pass"]}), scopes={},
+            exit_code=1, summary={"status": "FAIL", "tests_run": 1},
+            stages={"sdd_static": {"status": "passed", "exit_code": 0},
+                    "offline_suite": {"status": "passed", "exit_code": 0}})
+        self.write(record)
+        self.assertEqual(self.read(rc=1)[1], "summary_mismatch")
+
+    def test_unittest_without_tests_is_an_unsuccessful_valid_record(self):
+        """unittest's rc 5 (or a verifier's rc 1) for no test is a failure, never success."""
+        for rc in (1, 5):
+            record = run_record.make_record(producer="unittest", nonce=NONCE, binding=BINDING, rows={}, scopes={},
+                                            exit_code=rc)
+            self.assertFalse(record["successful"])
+            self.write(record)
+            self.assertIsNone(self.read(rc=rc)[1])
+
     def test_unittest_rc_zero_needs_success(self):
         record = run_record.make_record(producer="unittest", nonce=NONCE, binding=BINDING,
                                         rows=rows(**{"m.C.test_a": ["unexpected_success"]}), scopes={}, exit_code=0)
