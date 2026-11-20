@@ -60,10 +60,15 @@ evidence = "tooling/ci_par_selftest/results/measure-2026-11-20-11ed629.json"
 acs = ["CI-PAR-001-AC-10", "CI-PAR-001-AC-12", "CI-PAR-001-AC-14"]
 
 [[verification]]
-command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 on the final cross-review HEAD, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
-result = "not_run"
-evidence = "docs/tasks/TASK-CI-PAR-001.md#결과--2026-11-20"
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 at ee4fbbb after the cross-review fixes, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-PAR-001.md#공식-순차-v3-재실행"
 acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-13"]
+tests_run = 857
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
 
 [[verification]]
 command = "independent review (L3, reviewer != author) and required remote CI (existing verify.yml, sequential, no ci extra); push not approved"
@@ -281,3 +286,7 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
 - import skip만 있는 선택(예: GMS 미설치에서 GMS 모듈만 고른 V1)은 xdist에서 fail-closed 실패다. 거짓 PASS는 아니지만 순차와 판정이 다르다.
 - 병합 상태 확인은 CI-EVID `755c9ec` 시점이며 문서 충돌은 현재 branch 쪽으로 임시 해소했다. 실제 병합 시에는 문서 3개를 양쪽 내용으로 다시 맞춰야 한다.
 - Windows Job 경합(할당 경쟁) 재현과 POSIX 실제 실행은 하지 않았다(POSIX 경로는 단위 수준).
+
+### 공식 순차 V3 재실행
+- **1차(미실행):** `ee4fbbb`에서 시작했으나 242/약 857 tests(696 s) 시점에 Claude Code가 시스템 메모리 부족(세션 유휴 중 보호 종료)으로 중단했다. V3 실패가 아니라 미실행이며 결과로 쓰지 않는다. 남은 프로세스는 없었다.
+- **2차(코디네이터 승인 뒤 1회):** ci-evid-001 worktree의 python 종료, 여유 물리 메모리 11.17 GB, 다른 `verify_environment.py` 미실행을 확인한 뒤 같은 명령 `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 8e44620`을 HEAD `ee4fbbb`(clean)에서 빈 LOCALAPPDATA·PATH 필터(CBM 제거)로 실행했다(실측): sdd_static PASS(acs 87, tasks 16), offline_suite **857 OK, failures 0, errors 0, skipped 0**, `verified_evidence_eligible=true`, `reuse_decision=not_configured`, rc 0, 1388.6 s. 원격 CI는 `not_run`(push 미승인). 이 기록 커밋 자체는 문서만 바꾼다.
