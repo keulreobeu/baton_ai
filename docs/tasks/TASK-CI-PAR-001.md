@@ -16,6 +16,7 @@ approval_ref = "2026-11-20 사용자 D24: G1만 승인(보조 도구·회귀 테
 # scripts/ci_plan.py, src/baton/observability.py, src/baton/execution.py, .github/workflows/**)와 계약 문서는
 # 이 Task에서 편집하지 않는다. 2026-11-20 G1 범위 조정(공용 기록 모듈): src/baton/run_record.py,
 # src/baton/pytest_record.py, tests/test_run_record.py 추가, scripts/suite_backend_outcomes.py 제외.
+# 1870230 이후 run_record.py·pytest_record.py의 공용 계약 보강은 CI-EVID-001이 소유한다(CI-EVID-001 rev3 E208).
 scope = ["scripts/suite_backend.py", "scripts/suite_backend.ini",
          "src/baton/run_record.py", "src/baton/pytest_record.py",
          "tests/test_suite_backend.py", "tests/test_run_record.py", "tooling/ci_par_selftest",
@@ -85,6 +86,8 @@ Task 선언 검사, AC 증거, 원격 실행 어디에도 연결하지 않는다
 **후속 Task(각각 별도 승인):** TASK-CI-PAR-002(G2 계약), TASK-CI-PAR-003(G3 공식 연결), TASK-CI-PAR-003b(G3b 활성화),
 TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈 커밋 위에서 시작한다.
 
+**병합 순서(2026-11-20, CI-EVID-001 rev3 E208):** G1 공용 커밋 `1870230` 선행 → CI-EVID-001 병합 → CI-PAR G3/G4. G1의 나머지 커밋(보조 도구·자가 시험·문서)은 공식 경로에 연결되지 않는 보조 도구로 별도 병합 대상이다. `1870230` 이후 `run_record.py`·`pytest_record.py`의 공용 계약 보강은 CI-EVID-001이 소유한다.
+
 ## 범위 조정 — 2026-11-20 공용 기록 모듈 (코디네이터 지시, G1 범위 안)
 
 - D25 수정(CI-EVID-001)과 결과 기록 구현이 중복되지 않게 결과 기록 계층을 공용 모듈로 만든다.
@@ -95,6 +98,7 @@ TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈
 - `src/baton/pytest_record.py`: `-p baton.pytest_record` plugin. pytest >=8.4,<10 밖이면 usage error(기록 없음 → 실패).
   계획했던 `scripts/suite_backend_outcomes.py` 역할을 통합했다(그 파일은 만들지 않음).
 - 두 모듈도 공식 경로에서 import되지 않는다(T01).
+- **소유권(2026-11-20, E208):** `1870230` 이후 두 모듈의 공용 계약 보강은 CI-EVID-001이 소유한다. 이 Task는 그 보강을 따라가며 직접 바꾸지 않는다.
 
 ## 회귀 테스트 목록 (AC-13)
 
@@ -231,4 +235,5 @@ V3_LINE
 - 독립 검토(L3)와 원격 CI는 `not_run`(push 미승인). Task는 verified로 올리지 않는다.
 - 실측은 이 PC 1회이며 반복 분산을 재지 않았다. Python 3.11 matrix는 보조 백엔드로 재지 않았다.
 - 다른 OS 사용자·BATON 밖 프로세스와의 CPU 경합은 AC-12 범위 밖이다(RA-5).
+- **CI-EVID-001 보강 영향 가능성:** CI-EVID branch `3d88d8c`가 공용 모듈을 보강했다(collection 오류를 errors로 계수, setup skip을 skip으로 분류). 코디네이터 병합 시험에서 `test_run_record`·`test_suite_backend` 93 tests OK였다. 이 Task의 AC-14·자가 시험 수치는 `1870230` 기준 모듈로 잰 것이므로, 보강 뒤에는 수집 오류·setup skip 사례의 집계(errors·skipped)와 T09·T10·T18·T19 판정 표기가 달라질 수 있다. 이후 추가될 xdist 보조 파일 정리(E204) 보강도 `<record>.collect-<worker>.json` 처리에 영향을 줄 수 있다. 병합 뒤 층 (a)·(b)를 다시 실행해 확인한다(이 Task에서는 미검증).
 - 다음: 독립 검토 → G2(TASK-CI-PAR-002, 계약 개정)는 별도 사용자 승인 뒤.
