@@ -12,6 +12,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+from unittest.mock import patch
 
 from baton import run_record
 from scripts import suite_backend as sb
@@ -651,15 +652,20 @@ class RunTempTests(Workspace):
         self.assertEqual((report["verdict"], report["subtest_normalized"]), ("equivalent", ["tests.test_t.T.test_tmp"]))
 
     def test_run_temp_removed_when_the_run_fails_early(self):
-        def mine():
-            return {p.name for p in Path(tempfile.gettempdir()).glob("bs*")}
-        before = mine()
+        made = []      # only this run's own folder: other workers may create bs* folders meanwhile
+
+        def mkdtemp(*args, **kwargs):
+            made.append(real(*args, **kwargs))
+            return made[-1]
+        real = tempfile.mkdtemp
         root = make_root(self.base / "root", {"test_a.py": "import unittest\nclass A(unittest.TestCase):\n    def test_x(self): pass\n"})
         ids = self.base / "ids.txt"
         ids.write_text("tests.test_a.A.test_missing\n", encoding="utf-8")
-        with self.assertRaises(sb.BackendError):
+        with patch.object(sb.tempfile, "mkdtemp", mkdtemp), self.assertRaises(sb.BackendError):
             sb.run(run_args(root, "--suite-backend", "sequential", "--ids-file", str(ids)))
-        self.assertEqual(mine() - before, set())
+        self.assertEqual(len(made), 1)
+        self.assertTrue(Path(made[0]).name.startswith("bs"))
+        self.assertFalse(Path(made[0]).exists())
 
 
 class LockTests(unittest.TestCase):
