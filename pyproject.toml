@@ -11,6 +11,9 @@ dependencies = []
 
 [project.optional-dependencies]
 gms = ["cryptography>=42"]
+# CI-PAR-001 auxiliary backend only; install from the hash lock requirements/ci.lock
+# (pip install --require-hashes --only-binary :all: -r requirements/ci.lock), never by default.
+ci = ["pytest==9.2.0", "pytest-xdist==3.8.0"]
 
 [project.scripts]
 baton = "baton.__main__:main"

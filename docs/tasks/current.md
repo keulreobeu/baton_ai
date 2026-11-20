@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-20 CI-PAR-001 G1 (보조 pytest-xdist 백엔드)
+
+- [TASK-CI-PAR-001](TASK-CI-PAR-001.md) in_progress L3, owner Claude: 사용자 D24 G1만 승인(보조 도구·회귀 테스트·실제 pytest 동작 확인·최소 실측·격리 venv). G2·G3·G3b·G4 미승인. 공식 검증 경로·계약 문서 무변경, xdist 결과는 공식 증거 아님(`contract_not_revised`). 공용 기록 모듈 `run_record`·`pytest_record`는 CI-EVID-001(D25)과 공유한다. push·원격 CI는 미승인으로 `not_run`.
+
 ## 현재 작업 — 2026-11-19 CI-VTIER verified 재승격
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(범위 조정 뒤 재승격): 공식 로컬 V3(`73ac42e`) 777 OK skip 0, 원격 Windows CI run `44537342217`(headSha `cad9203`) plan·3.11·3.12·gate success, Codex 18·19차 독립 검토 PASS_WITH_FINDINGS 지적 반영. 남은 위험 PR #17 comment 4624337778(TASK-SETTLE-RECOVERY-001 보류). 승격 커밋 CI·스레드 처리·병합은 보고와 사용자 결정으로 넘긴다.

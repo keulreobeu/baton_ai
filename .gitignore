@@ -6,3 +6,6 @@ dist/
 .venv/
 .local_runtime/
 .codebase-memory/
+.venv-ci/
+.venv-ci-alt/
+.venv-ci-nogms/

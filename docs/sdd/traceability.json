@@ -46,7 +46,11 @@
     "docs/specs/CI-VTIER-001.md",
     "docs/plans/ci-vtier.md",
     "docs/adr/ADR-CI-VTIER-001.md",
-    "docs/tasks/TASK-CI-VTIER-001.md"
+    "docs/tasks/TASK-CI-VTIER-001.md",
+    "docs/specs/CI-PAR-001.md",
+    "docs/plans/ci-par.md",
+    "docs/adr/ADR-CI-PAR-001.md",
+    "docs/tasks/TASK-CI-PAR-001.md"
   ],
   "features": [
     {
@@ -1793,6 +1797,38 @@
             }
           ]
         }
+      ]
+    },
+    {
+      "id": "CI-PAR-001",
+      "spec": "docs/specs/CI-PAR-001.md",
+      "requirements": [
+        {"id": "CI-PAR-001-REQ-01", "acs": ["CI-PAR-001-AC-01", "CI-PAR-001-AC-02", "CI-PAR-001-AC-03"]},
+        {"id": "CI-PAR-001-REQ-02", "acs": ["CI-PAR-001-AC-04", "CI-PAR-001-AC-05", "CI-PAR-001-AC-06", "CI-PAR-001-AC-07", "CI-PAR-001-AC-08"]},
+        {"id": "CI-PAR-001-REQ-03", "acs": ["CI-PAR-001-AC-09", "CI-PAR-001-AC-10"]},
+        {"id": "CI-PAR-001-REQ-04", "acs": ["CI-PAR-001-AC-11"]},
+        {"id": "CI-PAR-001-REQ-05", "acs": ["CI-PAR-001-AC-12"]},
+        {"id": "CI-PAR-001-REQ-06", "acs": ["CI-PAR-001-AC-13"]},
+        {"id": "CI-PAR-001-REQ-07", "acs": ["CI-PAR-001-AC-15", "CI-PAR-001-AC-14"]},
+        {"id": "CI-PAR-001-REQ-08", "acs": ["CI-PAR-001-AC-16"]}
+      ],
+      "acs": [
+        {"id": "CI-PAR-001-AC-01", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "IsolationTests.test_official_modules_do_not_import_backend"}, {"file": "tests/test_suite_backend.py", "symbol": "IsolationTests.test_backend_imports_no_official_module_and_no_pytest"}]},
+        {"id": "CI-PAR-001-AC-02", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "OptionTests.test_workers_rejects_auto_zero_negative_noninteger"}, {"file": "tests/test_suite_backend.py", "symbol": "OptionTests.test_env_opt_in_rejected"}, {"file": "tests/test_suite_backend.py", "symbol": "OptionTests.test_reuse_flag_rejected"}, {"file": "tests/test_suite_backend.py", "symbol": "OptionTests.test_cli_reports_usage_error_code"}]},
+        {"id": "CI-PAR-001-AC-03", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "OptionTests.test_xdist_without_pytest_fails_without_fallback"}]},
+        {"id": "CI-PAR-001-AC-04", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "InventoryTests.test_current_suite_with_inherited_bases_is_accepted"}, {"file": "tests/test_suite_backend.py", "symbol": "InventoryTests.test_load_tests_module_is_reported"}, {"file": "tests/test_suite_backend.py", "symbol": "InventoryTests.test_import_failure_rejects_the_run"}, {"file": "tests/test_suite_backend.py", "symbol": "MappingTests.test_same_class_method_in_other_module_and_basename"}, {"file": "tests/test_suite_backend.py", "symbol": "MappingTests.test_windows_paths_unicode_long_ids_file"}]},
+        {"id": "CI-PAR-001-AC-05", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "CompareTests.test_matched"}, {"file": "tests/test_suite_backend.py", "symbol": "CompareTests.test_missing_extra_duplicate_zero_not_run"}, {"file": "tests/test_suite_backend.py", "symbol": "CompareTests.test_module_level_function_is_extra"}, {"file": "tests/test_suite_backend.py", "symbol": "InventoryTests.test_inventory_runs_no_test"}]},
+        {"id": "CI-PAR-001-AC-06", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "NormalizeTests.test_fail_error_custom_failure_exception_teardown_xfail_xpass"}, {"file": "tests/test_suite_backend.py", "symbol": "FixtureTests.test_partial_fixture_failure_two_workers"}, {"file": "tests/test_suite_backend.py", "symbol": "FixtureTests.test_fixture_skip_is_scope_skip"}, {"file": "tests/test_suite_backend.py", "symbol": "ModuleSkipTests.test_module_skiptest_maps_to_synthetic_id"}, {"file": "tests/test_suite_backend.py", "symbol": "ModuleSkipTests.test_other_collection_error_fails"}, {"file": "tests/test_run_record.py", "symbol": "PytestEventTests.test_class_fixture_failure_blocks_and_skip_is_scope_skip"}, {"file": "tests/test_run_record.py", "symbol": "PytestEventTests.test_module_skiptest_maps_to_unittest_synthetic_id"}]},
+        {"id": "CI-PAR-001-AC-07", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "SummaryTests.test_existing_fields_types_and_single_object"}, {"file": "tests/test_suite_backend.py", "symbol": "SummaryTests.test_metrics_projection_excludes_backend"}]},
+        {"id": "CI-PAR-001-AC-08", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "SummaryTests.test_always_contract_not_revised"}, {"file": "tests/test_suite_backend.py", "symbol": "IsolationTests.test_official_modules_do_not_import_backend"}, {"file": "tests/test_suite_backend.py", "symbol": "ResultFileTests.test_fake_stdout_summary_ignored"}, {"file": "tests/test_suite_backend.py", "symbol": "ResultFileTests.test_binding_mismatch_rejected"}]},
+        {"id": "CI-PAR-001-AC-09", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "CrashTests.test_crash_item_error_and_queue_not_run"}, {"file": "tests/test_suite_backend.py", "symbol": "CrashTests.test_crash_during_collection_has_no_ids"}, {"file": "tests/test_suite_backend.py", "symbol": "CrashTests.test_rc_zero_with_crash_report_fails"}, {"file": "tests/test_suite_backend.py", "symbol": "TerminationTests.test_unverified_termination_reports_failure"}, {"file": "tests/test_suite_backend.py", "symbol": "TerminationTests.test_timeout_kills_tree_including_grandchild"}]},
+        {"id": "CI-PAR-001-AC-10", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "ModuleSkipTests.test_module_skiptest_maps_to_synthetic_id"}, {"file": "tests/test_suite_backend.py", "symbol": "SummaryTests.test_skip_only_run_is_pass_but_ineligible"}]},
+        {"id": "CI-PAR-001-AC-11", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "LockTests.test_repository_lock_parses"}, {"file": "tests/test_suite_backend.py", "symbol": "LockTests.test_version_mismatch_fails"}, {"file": "tests/test_suite_backend.py", "symbol": "LockTests.test_malformed_or_missing_hash_fails"}]},
+        {"id": "CI-PAR-001-AC-12", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_concurrent_acquire_never_exceeds_budget"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_pid_reuse_detected"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_dead_owner_reclaim_only_with_proof"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_explicit_release_command"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_budget_conflict_and_default"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_namespace_independent_of_baton_home"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_corrupt_or_inaccessible_namespace_rejected"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_saturation_waits_then_stops"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_low_ram_waits_without_minimum_one"}, {"file": "tests/test_suite_backend.py", "symbol": "LeaseTests.test_release_requires_termination"}]},
+        {"id": "CI-PAR-001-AC-13", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "IsolationTests.test_suite_needs_no_ci_extra"}]},
+        {"id": "CI-PAR-001-AC-14", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "ResultFileTests.test_binding_mismatch_rejected"}, {"file": "tests/test_suite_backend.py", "symbol": "MappingTests.test_windows_paths_unicode_long_ids_file"}]},
+        {"id": "CI-PAR-001-AC-15", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "NormalizeTests.test_subtests_after_failure_and_skip_preserved"}, {"file": "tests/test_run_record.py", "symbol": "PytestEventTests.test_subtests_after_failure_and_skip_are_kept"}]},
+        {"id": "CI-PAR-001-AC-16", "tests": [{"file": "tests/test_suite_backend.py", "symbol": "ResultFileTests.test_missing_stale_truncated_duplicate_rejected"}, {"file": "tests/test_suite_backend.py", "symbol": "ResultFileTests.test_rc_result_contradiction_rejected"}, {"file": "tests/test_run_record.py", "symbol": "RejectionTests.test_nonce_mismatch"}, {"file": "tests/test_run_record.py", "symbol": "RejectionTests.test_rc_mismatch"}, {"file": "tests/test_run_record.py", "symbol": "RejectionTests.test_stale"}]}
       ]
     }
   ]
