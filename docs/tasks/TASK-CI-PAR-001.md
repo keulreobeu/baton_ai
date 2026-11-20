@@ -72,11 +72,11 @@ evidence = "tooling/ci_par_selftest/results/measure-2026-11-20-11ed629.json"
 acs = ["CI-PAR-001-AC-10", "CI-PAR-001-AC-12", "CI-PAR-001-AC-14"]
 
 [[verification]]
-command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 at ee4fbbb after the cross-review fixes, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 at 94d86ab after the 2nd review fixes and the self_variance proof, last code change 7946c85; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
 result = "passed"
-evidence = "docs/tasks/TASK-CI-PAR-001.md#공식-순차-v3-재실행"
+evidence = "docs/tasks/TASK-CI-PAR-001.md#2차-검토-보완--2026-11-20-chatgpt-g1-2차-검토-fail-대상-c03c3b0"
 acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-13"]
-tests_run = 857
+tests_run = 868
 failures = 0
 errors = 0
 skipped = 0
@@ -343,7 +343,10 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
   - **이 실행은 "FAIL 0 전체 통과" 증거가 아니다.** 판정 동등성 증거로만 쓴다(코디네이터 결정 (1)).
   - CBM 표본 1290회, 목격 0. 남은 임대 0, 남은 `bs*` 폴더 0.
   - 증거: `tooling/ci_par_selftest/results/merged-7816a56-{check,selftest,measure}.json`. binding의 `candidate_sha`는 병합 전 HEAD `7946c85`이고 `worktree_dirty=true`다.
-- **공식 순차 V3:** 이 문서 커밋 뒤 최종 HEAD에서 1회 실행한다. 결과는 다음 커밋에 기록한다.
+- **공식 순차 V3(최종, 실측):** 시작 전 PC 전체에 다른 `verify_environment.py`·전체 suite가 없음을 확인했다. CI-EVID worker의 V3가 끝나기를 기다린 뒤였다. 여유 물리 메모리는 11.4 GB였다.
+  - 명령: `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 8e44620`. HEAD `94d86ab`(clean, 마지막 코드 변경 `7946c85`)에서 빈 LOCALAPPDATA·PATH 필터(CBM 제거)로 1회 실행했다.
+  - 결과: sdd_static PASS(acs 87, tasks 16). offline_suite **868 OK, failures 0, errors 0, skipped 0**. `verified_evidence_eligible=true`, `reuse_decision=not_configured`, rc 0, 1030 s.
+  - 원격 CI는 `not_run`(push 미승인). 이 기록 커밋은 문서만 바꾸며 코드는 바꾸지 않는다.
 
 ### G1 필수 수용 기준 충족 표 (AC-01~15, 2차 검토 반영 뒤)
 | AC | 판정 | 근거 |
