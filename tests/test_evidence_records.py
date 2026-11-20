@@ -924,49 +924,63 @@ PASS_ID, FAIL_ID = "tests/test_demo.py::test_pass", "tests/test_demo.py::test_fa
 
 
 class DeclaredPluginTrustTests(unittest.TestCase):
-    """D28 not accepted (user decision 2026-11-20): an official declared pytest run loads
-    only trusted plugins and every collected item has a result or a declared deselect.
+    """D28 not accepted (user decisions 2026-11-20): an official declared pytest run loads
+    only trusted plugins (distribution==version, -p name and module, from the venv's
+    site-packages) and every collected test ID has a result or is in the allowed exclusion
+    set, which no Task/Spec/AC declares today (so it is empty).
 
     Synthetic records as baton.pytest_record writes them, read by the consumer
     (RecordedRun.read), because the official suite has no pytest; the real plugin run is
     auxiliary evidence. Each case is the reproduction the ChatGPT review (2nd implementation
-    review) or the user decision named: before the fix each was a valid rc 0 record."""
+    review) or the user decisions named: before the fix each was a valid rc 0 record."""
 
     def setUp(self):
-        from baton.orchestrator import RecordedRun, child_environment
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.tree = Path(self.tmp.name).resolve() / "checked_tree"
         (self.tree / "tests").mkdir(parents=True)
         subprocess.run(["git", "init", "-q", str(self.tree)], check=True, capture_output=True)
-        self.run = RecordedRun("pytest", [sys.executable, "-m", "pytest", "tests"], self.tree,
-                               child_environment(str(self.tree)))
-        self.addCleanup(self.run.cleanup)
+        self.run = self.recorded()
 
-    def plugin(self, module, trust, *, distribution=None, version=None, file=None):
+    def recorded(self, **options):
+        from baton.orchestrator import RecordedRun, child_environment
+        run = RecordedRun("pytest", [sys.executable, "-m", "pytest", "tests"], self.tree,
+                          child_environment(str(self.tree)), **options)
+        self.addCleanup(run.cleanup)
+        return run
+
+    def plugin(self, module, trust, *, distribution=None, version=None, file=None, installed=None):
         return {"module": module, "distribution": distribution, "version": version, "path": None,
-                "file": file, "trust": trust}
+                "file": file, "trust": trust, "installed": installed}
+
+    def xdist(self, **changes):
+        row = self.plugin("xdist.plugin", "list", distribution="pytest-xdist", version="3.8.0", installed=True)
+        return {**row, **changes}
 
     def clean_plugins(self):
         return [self.plugin("_pytest.python", "core", distribution="pytest", version="9.2.0"),
                 self.plugin("baton.pytest_record", "baton")]
 
-    def read(self, *, plugins=None, control=None, collected=(PASS_ID,), selected=None, deselected=(),
+    def control(self, **changes):
+        return {"autoload_disabled": True, "env_plugins": None, "env_addopts": "", "addopts": [],
+                "required_plugins": [], "explicit": [], "disabled": ["cacheprovider"], **changes}
+
+    def read(self, *, run=None, plugins=None, control=None, collected=(PASS_ID,), selected=None, deselected=(),
              passed=(PASS_ID,), rc=0, extra=None):
+        run = run or self.run
         selected = list(collected if selected is None else selected)
         rows = {test_id: {"started": True, "events": ["pass"]} if test_id in passed else {"started": False}
                 for test_id in selected}
         fields = {"mode": "declared", "violations": [],
                   "plugins": self.clean_plugins() if plugins is None else plugins,
-                  "plugin_control": {"autoload_disabled": True, "env_plugins": None, "env_addopts": "",
-                                     "addopts": [], "required_plugins": []} if control is None else control,
+                  "plugin_control": self.control() if control is None else control,
                   "items_collected": list(collected), "selected": selected,
                   "deselected": [{"id": i, "by": by} for i, by in deselected]}
         fields.update(extra or {})
-        record = run_record.make_record(producer="pytest", nonce=self.run.nonce, binding=self.run.expected,
+        record = run_record.make_record(producer="pytest", nonce=run.nonce, binding=run.expected,
                                         rows=rows, scopes={}, exit_code=rc, extra=fields)
-        run_record.write_record(self.run.path, record)
-        return self.run.read(rc)
+        run_record.write_record(run.path, record)
+        return run.read(rc)
 
     def assertRefused(self, outcome):
         self.assertEqual(outcome, (None, "record_unavailable"))
@@ -980,14 +994,16 @@ class DeclaredPluginTrustTests(unittest.TestCase):
         # Review reproduction: `-p evilplug` (outside the tree, no trusted distribution)
         # removes test_fail in pytest_collection_modifyitems; rc 0, 1 passed.
         self.assertRefused(self.read(plugins=[*self.clean_plugins(), self.plugin("evilplug", None)],
+                                     control=self.control(explicit=[{"name": "evilplug", "trust": None}]),
                                      collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,)))
+        # The explicit -p alone is refused, whatever the loaded rows say.
+        self.assertRefused(self.read(control=self.control(explicit=[{"name": "evilplug", "trust": None}])))
 
     def test_entry_point_plugin_is_refused(self):
         evilep = self.plugin("evilep", None, distribution="evilep", version="1.0")
         self.assertRefused(self.read(plugins=[*self.clean_plugins(), evilep]))
         # The caller fixes autoload off; a producer that saw it on is refused.
-        self.assertRefused(self.read(control={"autoload_disabled": False, "env_plugins": None, "env_addopts": "",
-                                              "addopts": [], "required_plugins": []}))
+        self.assertRefused(self.read(control=self.control(autoload_disabled=False)))
         from baton.orchestrator import child_environment
         self.assertEqual(child_environment("src")["PYTEST_DISABLE_PLUGIN_AUTOLOAD"], "1")
 
@@ -995,24 +1011,29 @@ class DeclaredPluginTrustTests(unittest.TestCase):
         from baton.orchestrator import child_environment
         with patch.dict(os.environ, {"PYTEST_PLUGINS": "evilplug"}):
             self.assertIsNone(child_environment("src")["PYTEST_PLUGINS"])
-        self.assertRefused(self.read(control={"autoload_disabled": True, "env_plugins": "evilplug",
-                                              "env_addopts": "", "addopts": [], "required_plugins": []}))
+        self.assertRefused(self.read(control=self.control(env_plugins="evilplug")))
+        self.assertRefused(self.read(control=self.control(env_addopts="-p evilplug")))
 
     def test_ini_addopts_and_required_plugins_are_controlled(self):
         # The caller's `-o addopts=` empties ini/pyproject/tox addopts; a producer that still
         # saw `-p evilplug` there, or an untrusted required plugin, is refused.
-        self.assertRefused(self.read(control={"autoload_disabled": True, "env_plugins": None, "env_addopts": "",
-                                              "addopts": ["-p", "evilplug"], "required_plugins": []}))
-        self.assertRefused(self.read(control={"autoload_disabled": True, "env_plugins": None, "env_addopts": "",
-                                              "addopts": [], "required_plugins": ["evilplug"]}))
+        self.assertRefused(self.read(control=self.control(addopts=["-p", "evilplug"])))
+        self.assertRefused(self.read(control=self.control(required_plugins=["evilplug"])))
 
-    def test_plugin_deselect_is_refused_but_declared_k_is_not(self):
+    def test_any_deselect_outside_the_allowed_set_is_refused(self):
+        # A plugin's (here a conftest's) deselect, and -k/-m/--deselect too: none is allowed
+        # unless the exact ID set is declared.
         self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,),
                                      deselected=[(FAIL_ID, "conftest")]))
-        record, reason = self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,),
+        self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,),
+                                     deselected=[(FAIL_ID, "_pytest.mark")]))
+        allowed = self.recorded(allowed_deselect=[FAIL_ID])
+        record, reason = self.read(run=allowed, collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,),
                                    deselected=[(FAIL_ID, "_pytest.mark")])
         self.assertIsNone(reason)
         self.assertEqual(record["deselected"], [{"id": FAIL_ID, "by": "_pytest.mark"}])
+        # The declared set must be exactly what was deselected.
+        self.assertRefused(self.read(run=self.recorded(allowed_deselect=[FAIL_ID])))
 
     def test_a_collected_item_without_result_or_deselect_is_refused(self):
         # A silent drop (items[:] = ...) and a result that never came both leave an item
@@ -1020,18 +1041,21 @@ class DeclaredPluginTrustTests(unittest.TestCase):
         self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), selected=(PASS_ID,)))
         self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), passed=(PASS_ID,)))
 
-    def test_trusted_list_is_name_and_version(self):
-        xdist = self.plugin("xdist.plugin", "list", distribution="pytest-xdist", version="3.8.0")
-        record, reason = self.read(plugins=[*self.clean_plugins(), xdist])
+    def test_trusted_plugin_matches_distribution_version_module_and_source(self):
+        record, reason = self.read(plugins=[*self.clean_plugins(), self.xdist()],
+                                   control=self.control(explicit=[{"name": "xdist", "trust": "list"}]))
         self.assertIsNone(reason)
-        other = dict(xdist, version="3.7.0")
-        self.assertRefused(self.read(plugins=[*self.clean_plugins(), other]))
+        for changed in ({"version": "3.7.0"}, {"module": "xdist.injected"}, {"installed": False},
+                        {"distribution": "pytest-xdist-fork"}):
+            with self.subTest(changed=changed):
+                self.assertRefused(self.read(plugins=[*self.clean_plugins(), self.xdist(**changed)]))
 
     def test_record_without_plugin_control_facts_is_refused(self):
         # A record from a producer that does not report these facts is no evidence.
         self.assertRefused(self.read(extra={"plugin_control": None}))
+        self.assertRefused(self.read(control={key: value for key, value in self.control().items()
+                                              if key != "explicit"}))
         self.assertRefused(self.read(extra={"items_collected": None}))
-
 
 if __name__ == "__main__":
     unittest.main()
