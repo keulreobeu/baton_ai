@@ -105,8 +105,11 @@ def run_one(name, flavor, backend, out, env, *, workers=None, ids_file=None, roo
     return entry
 
 
-def compare(out, left, right, env):
-    rc, stdout, stderr, _ = tool(PY["gms"], ["compare", str(Path(out) / f"{left}.json"), str(Path(out) / f"{right}.json")], env)
+def compare(out, left, right, env, reruns=()):
+    args = ["compare", str(Path(out) / f"{left}.json"), str(Path(out) / f"{right}.json")]
+    for name in reruns:
+        args += ["--rerun", str(Path(out) / f"{name}.json")]
+    rc, stdout, stderr, _ = tool(PY["gms"], args, env)
     try:
         report = json.loads(stdout)
     except ValueError:
@@ -115,7 +118,7 @@ def compare(out, left, right, env):
             "verdict_mismatch": report["verdict_mismatch"], "subtest_mismatch": len(report["subtest_mismatch"]),
             "subtest_uncertain": sorted(report["subtest_uncertain"]), "subtest_normalized": report["subtest_normalized"],
             "backend_specific_differences": report["backend_specific_differences"],
-            "scope_mismatch": report["scope_mismatch"],
+            "scope_mismatch": report["scope_mismatch"], "self_variance": report.get("self_variance"),
             "ids_only_left": len(report["ids_only_left"]), "ids_only_right": len(report["ids_only_right"])}
 
 
@@ -184,6 +187,15 @@ def main(argv=None):
             elif step in ("b-gms", "b-nogms"):
                 report[step] = run_one(step, step[2:], "xdist", out, env, workers=args.workers)
                 report[step + "-vs-a"] = compare(out, "a-" + step[2:], step, env)
+                uncertain = report[step + "-vs-a"].get("subtest_uncertain")
+                if uncertain:       # self_variance proof: the uncertain IDs alone, sequential, twice
+                    ids = out / f"{step}-uncertain.txt"
+                    ids.write_text("\n".join(uncertain) + "\n", encoding="utf-8")
+                    names = [f"{step}-sv{i}" for i in (1, 2)]
+                    for name in names:
+                        report[name] = run_one(name, step[2:], "sequential", out, env, ids_file=ids)
+                    report[step + "-vs-a-uncertain"] = report[step + "-vs-a"]
+                    report[step + "-vs-a"] = compare(out, "a-" + step[2:], step, env, reruns=names)
             elif step == "c-plan":
                 for stage, key in (("in_progress", "V1"), ("checkpoint", "V2")):
                     _, report["c-plan-" + key] = plan_selection(out, env, stage)

@@ -594,15 +594,19 @@ def expected_backend_values(doc):
             "lock_digest": sha256_text(lock_text) if config["locks"] else None}
 
 
-def compare_runs(left, right):
-    """Per-ID verdict and subTest equivalence of two result documents with one binding (AC-14/15).
+# self_variance proof (2026-11-20 user decision, Spec AC-15): an uncertain subTest difference counts as
+# run-varying only by observation. The ID alone is rerun SELF_VARIANCE_RERUNS times on the sequential
+# backend, each in its own fresh run_temp. All four must hold, else it stays uncertain (fail-closed):
+#   a. at every token position where the compared runs differ, the sequential runs differ as well;
+#   b. every run has the same outcome, for the ID and for each subTest;
+#   c. after SUBTEST_NORMALIZATION every run has the same descriptions;
+#   d. the differences sit only at those token positions.
+SELF_VARIANCE_RERUNS = 2
+TOKEN = re.compile("|".join(f"(?:{pattern.pattern})" for _, pattern, _ in SUBTEST_NORMALIZATION))
 
-    IDs inside a failed class/module fixture are compared at scope level: the failed scope
-    sets must match and, on each side, every scope ID either started or is blocked by it.
-    """
-    validate_result(left)
-    validate_result(right)
-    mismatched = [k for k in BINDING_KEYS if left["binding"].get(k) != right["binding"].get(k)]
+
+def _check_binding(left, right, keys):
+    mismatched = [k for k in keys if left["binding"].get(k) != right["binding"].get(k)]
     if mismatched or left.get("worktree_dirty") != right.get("worktree_dirty"):
         raise BackendError("binding_mismatch", ",".join(mismatched) or "worktree_dirty")
     for doc in (left, right):
@@ -611,6 +615,81 @@ def compare_runs(left, right):
         if wrong:
             name = doc["summary"]["suite_backend"]["name"]
             raise BackendError("binding_mismatch", f"{name}: unexpected {','.join(wrong)}")
+
+
+def _token_slots(row, proof):
+    """{(template, outcome): [tokens of each such subTest]} after the proven normalization."""
+    slots = {}
+    for desc, outcome in row["subtests"]:
+        desc = normalize_proven(desc, proof)
+        slots.setdefault((TOKEN.sub("<T>", desc), outcome), []).append(TOKEN.findall(desc))
+    return slots
+
+
+def self_variance(key, compared, reruns):
+    """Proof record for one uncertain ID. compared: the two compared result documents; reruns: the
+    sequential rerun documents of that ID. result is "normalized" only when a-d all hold."""
+    record = {"reruns": [{"nonce": d.get("nonce"), "run_temp": d.get("run_temp"), "rc": d.get("rc")} for d in reruns],
+              "tokens": [], "result": "uncertain", "reason": None}
+
+    def keep(reason):
+        record["reason"] = reason
+        return record
+    if len(reruns) < SELF_VARIANCE_RERUNS:
+        return keep("reruns_missing")
+    rows = []
+    for doc in reruns:
+        row = next((r for r in doc["results"] if r["id"] == key), None)
+        diagnostics = doc["summary"]["suite_backend"]["diagnostics"]
+        if (row is None or not row["started"] or doc["rc"] != 0 or diagnostics.get("outcome")
+                or diagnostics.get("termination") != "verified"):
+            return keep("rerun_failed")
+        rows.append(row)
+    runs = [(next(r for r in d["results"] if r["id"] == key), d) for d in compared] + list(zip(rows, reruns))
+    if len({row["outcome"] for row, _ in runs}) != 1:
+        return keep("outcome_differs")                                                    # b
+    slots = [_token_slots(row, run_proof(doc)) for row, doc in runs]
+    if any(set(s) != set(slots[0]) or any(len(s[k]) != len(slots[0][k]) for k in s) for s in slots):
+        return keep("descriptions_differ_after_normalization")                            # b, c, d
+    sequential = [i for i, (_, doc) in enumerate(runs) if doc["summary"]["suite_backend"]["name"] == "sequential"]
+    for slot in sorted(slots[0]):
+        if len(slots[0][slot]) != 1:
+            if any(sorted(s[slot]) != sorted(slots[0][slot]) for s in slots):
+                return keep("ambiguous_alignment")
+            continue
+        tokens = [s[slot][0] for s in slots]
+        for position, (one, two) in enumerate(zip(tokens[0], tokens[1])):
+            if one == two:
+                continue
+            values = [tokens[i][position] for i in sequential]
+            record["tokens"].append({"subtest": slot[0], "outcome": slot[1], "position": position,
+                                     "compared": [one, two], "sequential": values})
+            if len(set(values)) != len(values):
+                return keep("not_self_varying")                                           # a
+    if not record["tokens"]:
+        return keep("no_token_difference")
+    record["result"] = "normalized"
+    return record
+
+
+def compare_runs(left, right, reruns=()):
+    """Per-ID verdict and subTest equivalence of two result documents with one binding (AC-14/15).
+
+    IDs inside a failed class/module fixture are compared at scope level: the failed scope
+    sets must match and, on each side, every scope ID either started or is blocked by it.
+    reruns: sequential result documents of the uncertain IDs alone, for the self_variance proof.
+    """
+    validate_result(left)
+    validate_result(right)
+    _check_binding(left, right, BINDING_KEYS)
+    for doc in reruns:
+        validate_result(doc)
+        if doc["summary"]["suite_backend"]["name"] != "sequential":
+            raise BackendError("binding_mismatch", "self_variance reruns must be sequential")
+        _check_binding(left, doc, [k for k in BINDING_KEYS if k != "selection_digest"])
+    nonces = [d.get("nonce") for d in reruns]
+    if len(set(nonces)) != len(nonces) or set(nonces) & {left.get("nonce"), right.get("nonce")}:
+        raise BackendError("result_duplicate", "a self_variance rerun given twice or equal to a compared run")
     backend_specific = {k: [left["binding"].get(k), right["binding"].get(k)] for k in BACKEND_KEYS
                         if left["binding"].get(k) != right["binding"].get(k)}
     a = {row["id"]: row for row in left["results"]}
@@ -633,6 +712,14 @@ def compare_runs(left, right):
             report["subtest_uncertain"][key] = [a[key]["subtests"], b[key]["subtests"]]
         elif state == "normalized":
             report["subtest_normalized"].append(key)
+    if reruns:
+        report["self_variance"] = {}
+        for key in sorted(report["subtest_uncertain"]):
+            proof = report["self_variance"][key] = self_variance(key, (left, right), reruns)
+            if proof["result"] == "normalized":
+                del report["subtest_uncertain"][key]
+                report["subtest_normalized"].append(key)
+        report["subtest_normalized"].sort()
     if left["scopes"] != right["scopes"]:
         report["scope_mismatch"] = [left["scopes"], right["scopes"]]
     for doc in (left, right):
@@ -1332,6 +1419,8 @@ def build_parser():
     c = sub.add_parser("compare", help="per-ID equivalence of two --result-out documents")
     c.add_argument("left")
     c.add_argument("right")
+    c.add_argument("--rerun", action="append", default=[],
+                   help="sequential result document of the uncertain IDs alone (self_variance proof)")
     lease = sub.add_parser("leases", help="list or explicitly release worker leases")
     lease.add_argument("--release", metavar="ID")
     for name in ("_inventory", "_sequential"):
@@ -1356,7 +1445,7 @@ def main(argv=None):
             run_record.write_record(args.out, record)
             return rc
         if args.command == "compare":
-            report = compare_runs(load_json(args.left), load_json(args.right))
+            report = compare_runs(load_json(args.left), load_json(args.right), [load_json(p) for p in args.rerun])
             print(json.dumps(report, ensure_ascii=False, sort_keys=True))
             return 0 if report["equivalent"] else EXIT_FAIL
         if args.command == "leases":

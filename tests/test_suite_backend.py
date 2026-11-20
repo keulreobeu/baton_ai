@@ -668,6 +668,106 @@ class RunTempTests(Workspace):
         self.assertFalse(Path(made[0]).exists())
 
 
+SV_ID = "tests.test_m.C.test_t"
+
+
+def sv_doc(sha, nonce, *, backend="sequential", event="pass", child_rc=0, termination="verified"):
+    """A result document of SV_ID whose one subTest carries a candidate_sha-like token."""
+    meta = {"backend_config": {"extra_plugins": [], "locks": []}, "summary": {"suite_backend": {"name": "sequential"}}}
+    binding = sb.expected_backend_values(meta)
+    row = dict(PASS_ROW, events=[event], subtests=[["(change={'candidate_sha': '" + sha + "'})", event],
+                                                   ["(change={'findings': ['x']})", "pass"]])
+    record = record_for({SV_ID: row}, producer="unittest", collection=collection([SV_ID]))
+    inventory = inventory_for([SV_ID])
+    summary = sb.summarize(backend="sequential", record=record,
+                           compare=sb.compare_inventory(inventory, record, {"tests/test_m.py"}), binding=binding,
+                           inventory=inventory, workers_requested=None, workers_granted=1,
+                           diagnostics={"termination": termination}, child_rc=child_rc)
+    doc = {"schema": sb.RESULT_SCHEMA, "nonce": nonce, "binding": binding, "summary": summary,
+           "run_temp": "C:\\T\\bs" + nonce[:8], "backend_config": meta["backend_config"],
+           "rc": sb.exit_code(summary), "scopes": {}, "results": sb.result_rows(record)}
+    if backend == "xdist":
+        doc["summary"]["suite_backend"]["name"] = "xdist"
+        doc["backend_config"] = {"extra_plugins": [], "locks": [str(ROOT / "requirements" / "ci.lock")]}
+        doc["binding"].update(sb.expected_backend_values(doc))
+        doc["summary"]["suite_backend"]["binding"] = doc["binding"]
+    return doc
+
+
+class SelfVarianceTests(unittest.TestCase):
+    """self_variance proof (2026-11-20 user decision, Spec AC-15): an uncertain difference becomes
+    normalized only when two sequential reruns of the ID show the same token varying by itself."""
+
+    def compare(self, left_sha, right_sha, reruns):
+        left = sv_doc(left_sha, "1" * 32)
+        right = sv_doc(right_sha, "2" * 32, backend="xdist")
+        return sb.compare_runs(left, right, reruns)
+
+    def test_sha_varying_between_sequential_runs_is_normalized(self):
+        reruns = [sv_doc("c" * 40, "3" * 32), sv_doc("d" * 40, "4" * 32)]
+        report = self.compare("a" * 40, "b" * 40, reruns)
+        self.assertEqual((report["verdict"], report["equivalent"]), ("equivalent", True))
+        self.assertEqual((report["subtest_normalized"], report["subtest_uncertain"]), ([SV_ID], {}))
+        proof = report["self_variance"][SV_ID]
+        self.assertEqual((proof["result"], proof["reason"]), ("normalized", None))
+        self.assertEqual([r["nonce"] for r in proof["reruns"]], ["3" * 32, "4" * 32])
+        self.assertEqual(proof["tokens"], [{"subtest": "(change={'candidate_sha': '<T>'})", "outcome": "pass",
+                                            "position": 0, "compared": ["a" * 40, "b" * 40],
+                                            "sequential": ["a" * 40, "c" * 40, "d" * 40]}])
+
+    def test_sha_stable_between_sequential_runs_stays_uncertain(self):
+        # Same SHA in every sequential run, different only under xdist: not proven run-varying.
+        for reruns in ([sv_doc("a" * 40, "3" * 32), sv_doc("a" * 40, "4" * 32)],
+                       [sv_doc("c" * 40, "3" * 32), sv_doc("c" * 40, "4" * 32)]):
+            with self.subTest(rerun_sha=reruns[0]["results"][0]["subtests"][0][0]):
+                report = self.compare("a" * 40, "b" * 40, reruns)
+                self.assertEqual(report["verdict"], "uncertain")
+                self.assertEqual(report["self_variance"][SV_ID]["reason"], "not_self_varying")
+
+    def test_rerun_with_a_different_outcome_stays_uncertain(self):
+        reruns = [sv_doc("c" * 40, "3" * 32), sv_doc("d" * 40, "4" * 32, event="fail", child_rc=1)]
+        report = self.compare("a" * 40, "b" * 40, reruns)
+        self.assertEqual(report["verdict"], "uncertain")
+        self.assertIn(report["self_variance"][SV_ID]["reason"], ("rerun_failed", "outcome_differs"))
+        # Same rc but a different subTest outcome or description is also refused.
+        changed = sv_doc("d" * 40, "4" * 32)
+        changed["results"][0]["subtests"][1] = ["(change={'findings': ['y']})", "pass"]
+        report = self.compare("a" * 40, "b" * 40, [sv_doc("c" * 40, "3" * 32), changed])
+        self.assertEqual(report["self_variance"][SV_ID]["reason"], "descriptions_differ_after_normalization")
+
+    def test_failed_stopped_or_missing_rerun_stays_uncertain(self):
+        cases = {"rerun_failed": [sv_doc("c" * 40, "3" * 32), sv_doc("d" * 40, "4" * 32, child_rc=2)],
+                 "reruns_missing": [sv_doc("c" * 40, "3" * 32)]}
+        stopped = sv_doc("d" * 40, "4" * 32)
+        stopped["summary"]["suite_backend"]["diagnostics"]["termination"] = "unverified"
+        cases["rerun_failed (unverified)"] = [sv_doc("c" * 40, "3" * 32), stopped]
+        empty = sv_doc("d" * 40, "4" * 32)
+        empty["results"], empty["summary"]["tests_run"] = [], 0
+        empty["rc"], empty["summary"]["status"] = 1, "FAIL"
+        cases["rerun_failed (ID absent)"] = [sv_doc("c" * 40, "3" * 32), empty]
+        for name, reruns in cases.items():
+            with self.subTest(name):
+                report = self.compare("a" * 40, "b" * 40, reruns)
+                self.assertEqual(report["verdict"], "uncertain")
+                self.assertEqual(report["self_variance"][SV_ID]["reason"], name.split(" ")[0])
+
+    def test_reruns_must_be_distinct_sequential_runs_of_the_same_candidate(self):
+        with self.assertRaises(sb.BackendError):
+            self.compare("a" * 40, "b" * 40, [sv_doc("c" * 40, "3" * 32, backend="xdist"), sv_doc("d" * 40, "4" * 32)])
+        with self.assertRaises(sb.BackendError):
+            self.compare("a" * 40, "b" * 40, [sv_doc("c" * 40, "1" * 32), sv_doc("d" * 40, "4" * 32)])
+        other = sv_doc("c" * 40, "3" * 32)
+        other["binding"]["tree"] = "f" * 40
+        other["summary"]["suite_backend"]["binding"] = other["binding"]
+        with self.assertRaises(sb.BackendError):
+            self.compare("a" * 40, "b" * 40, [other, sv_doc("d" * 40, "4" * 32)])
+
+    def test_stable_hex_negative_without_reruns_is_still_not_equivalent(self):
+        report = self.compare("a" * 40, "b" * 40, ())
+        self.assertEqual((report["verdict"], report["equivalent"]), ("uncertain", False))
+        self.assertNotIn("self_variance", report)
+
+
 class LockTests(unittest.TestCase):
     """T15: the installed set must equal the hash lock (AC-11)."""
 
