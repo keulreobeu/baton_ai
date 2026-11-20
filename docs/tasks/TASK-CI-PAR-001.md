@@ -45,13 +45,13 @@ expected_failures = 0
 command = "python -X utf8 tooling/ci_par_selftest/run.py (layer b at 89d4942 after the cross-review fixes, real pytest-xdist 3.8.0 with pytest 9.2.0 and 8.4.2+pytest-subtests 0.15.0: 31/31 cases match expectations incl. T25 and T20a/b, rc 0; 8.4.2 alone is an expected refusal; auxiliary, not official evidence)"
 result = "passed"
 evidence = "tooling/ci_par_selftest/results/selftest-2026-11-20-89d4942.json"
+acs = ["CI-PAR-001-AC-04", "CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-15"]
 
 [[verification]]
 command = "auxiliary merge check: temporary detached worktree of b3f1d67 + merge --no-commit CI-EVID-001 755c9ec (doc conflicts taken from this branch, temporary only), CBM blocked: layer a 107 OK, layer b 31/31, full sequential vs xdist 916 PASS each, equivalent; nothing committed to either branch"
 result = "passed"
 evidence = "tooling/ci_par_selftest/results/merged-755c9ec-check.json"
 acs = ["CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
-acs = ["CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-15"]
 
 [[verification]]
 command = "AC-14 (a)-(d) with scripts/suite_backend.py at 11ed629 (auxiliary, CBM blocked, 0 sightings): sequential ID baseline vs xdist full (GMS installed / not installed), actual V1/V2 selections, two concurrent worktrees"
