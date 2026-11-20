@@ -1,0 +1,417 @@
+{
+ "argv": [
+  "-X",
+  "utf8",
+  "-m",
+  "pytest",
+  "-p",
+  "xdist.plugin",
+  "-n",
+  "2",
+  "-p",
+  "baton.pytest_record",
+  "--baton-record=C:\\Users\\lwwde\\AppData\\Local\\Temp\\claude\\C--Users-lwwde-orca-workspaces-baton-ai-ci-par-001\\8c3cf91a-1b80-4fb0-8982-e00121294835\\scratchpad\\merged-06a18e7\\declared\\record.json",
+  "--baton-nonce=1d913323f9fed3dfd0f856c7198526fe",
+  "--baton-mode=declared",
+  "--baton-tree=C:\\Users\\lwwde\\AppData\\Local\\Temp\\cipar-merge-23140\\wt",
+  "--baton-binding={}",
+  "-o",
+  "addopts=",
+  "-q",
+  "tests/test_run_record.py"
+ ],
+ "rc": 0,
+ "tail": "bringing up nodes...\nbringing up nodes...\n\n.......uuuu..................uuuuuuuuuuuu.uuuuuuu..............u.uuuuuu. [ 84%]\n..u.u.u.uuu.uu.uu.                                                       [100%]\n50 passed, 40 subtests passed in 7.81s\n",
+ "producer": "xdist",
+ "mode": "declared",
+ "violations": [],
+ "counts": {
+  "tests_run": 50,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "expected_failures": 0,
+  "unexpected_successes": 0
+ },
+ "successful": true,
+ "pytest": "9.2.0",
+ "consumer_violations": [],
+ "plugins": [
+  {
+   "module": "_pytest.assertion",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\assertion\\__init__.py"
+  },
+  {
+   "module": "_pytest.cacheprovider",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\cacheprovider.py"
+  },
+  {
+   "module": "_pytest.cacheprovider",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\cacheprovider.py"
+  },
+  {
+   "module": "_pytest.cacheprovider",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\cacheprovider.py"
+  },
+  {
+   "module": "_pytest.capture",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\capture.py"
+  },
+  {
+   "module": "_pytest.capture",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\capture.py"
+  },
+  {
+   "module": "_pytest.config",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\config\\__init__.py"
+  },
+  {
+   "module": "_pytest.config",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\config\\__init__.py"
+  },
+  {
+   "module": "_pytest.debugging",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\debugging.py"
+  },
+  {
+   "module": "_pytest.doctest",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\doctest.py"
+  },
+  {
+   "module": "_pytest.faulthandler",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\faulthandler.py"
+  },
+  {
+   "module": "_pytest.fixtures",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\fixtures.py"
+  },
+  {
+   "module": "_pytest.fixtures",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\fixtures.py"
+  },
+  {
+   "module": "_pytest.helpconfig",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\helpconfig.py"
+  },
+  {
+   "module": "_pytest.junitxml",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\junitxml.py"
+  },
+  {
+   "module": "_pytest.legacypath",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\legacypath.py"
+  },
+  {
+   "module": "_pytest.legacypath",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\legacypath.py"
+  },
+  {
+   "module": "_pytest.logging",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\logging.py"
+  },
+  {
+   "module": "_pytest.logging",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\logging.py"
+  },
+  {
+   "module": "_pytest.main",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\main.py"
+  },
+  {
+   "module": "_pytest.main",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\main.py"
+  },
+  {
+   "module": "_pytest.mark",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\mark\\__init__.py"
+  },
+  {
+   "module": "_pytest.monkeypatch",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\monkeypatch.py"
+  },
+  {
+   "module": "_pytest.pastebin",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\pastebin.py"
+  },
+  {
+   "module": "_pytest.python",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\python.py"
+  },
+  {
+   "module": "_pytest.recwarn",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\recwarn.py"
+  },
+  {
+   "module": "_pytest.reports",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\reports.py"
+  },
+  {
+   "module": "_pytest.runner",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\runner.py"
+  },
+  {
+   "module": "_pytest.setuponly",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\setuponly.py"
+  },
+  {
+   "module": "_pytest.setupplan",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\setupplan.py"
+  },
+  {
+   "module": "_pytest.skipping",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\skipping.py"
+  },
+  {
+   "module": "_pytest.stepwise",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\stepwise.py"
+  },
+  {
+   "module": "_pytest.subtests",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\subtests.py"
+  },
+  {
+   "module": "_pytest.terminal",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\terminal.py"
+  },
+  {
+   "module": "_pytest.terminal",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\terminal.py"
+  },
+  {
+   "module": "_pytest.terminalprogress",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\terminalprogress.py"
+  },
+  {
+   "module": "_pytest.threadexception",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\threadexception.py"
+  },
+  {
+   "module": "_pytest.tmpdir",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\tmpdir.py"
+  },
+  {
+   "module": "_pytest.unittest",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\unittest.py"
+  },
+  {
+   "module": "_pytest.unraisableexception",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\unraisableexception.py"
+  },
+  {
+   "module": "_pytest.warnings",
+   "distribution": "pytest",
+   "version": "9.2.0",
+   "trust": "core",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\_pytest\\warnings.py"
+  },
+  {
+   "module": "baton.pytest_record",
+   "distribution": null,
+   "version": null,
+   "trust": "baton",
+   "installed": null,
+   "file": "c:\\users\\lwwde\\appdata\\local\\temp\\cipar-merge-23140\\wt\\src\\baton\\pytest_record.py"
+  },
+  {
+   "module": "xdist.dsession",
+   "distribution": "pytest-xdist",
+   "version": "3.8.0",
+   "trust": "list_metadata",
+   "installed": true,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\xdist\\dsession.py"
+  },
+  {
+   "module": "xdist.dsession",
+   "distribution": "pytest-xdist",
+   "version": "3.8.0",
+   "trust": "list_metadata",
+   "installed": true,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\xdist\\dsession.py"
+  },
+  {
+   "module": "xdist.plugin",
+   "distribution": "pytest-xdist",
+   "version": "3.8.0",
+   "trust": "list_metadata",
+   "installed": true,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\xdist\\plugin.py"
+  },
+  {
+   "module": "xdist.workermanage",
+   "distribution": "pytest-xdist",
+   "version": "3.8.0",
+   "trust": "list_metadata",
+   "installed": true,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\xdist\\workermanage.py"
+  },
+  {
+   "module": "xdist.workermanage",
+   "distribution": "pytest-xdist",
+   "version": "3.8.0",
+   "trust": "list_metadata",
+   "installed": true,
+   "file": "c:\\users\\lwwde\\orca\\workspaces\\baton_ai\\ci-par-001\\.venv-ci\\lib\\site-packages\\xdist\\workermanage.py"
+  }
+ ]
+}

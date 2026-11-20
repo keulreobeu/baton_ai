@@ -1,0 +1,64 @@
+{
+ "baton_import": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\cipar-merge-23140\\wt\\src\\baton\\run_record.py",
+ "cbm_sampler": {
+  "samples": 815,
+  "sightings": []
+ },
+ "ci_evid_sha": "06a18e7dea6b5db8049c930dffd00836b3f27dcd",
+ "declared_trust": {
+  "log": "declared_trust.log",
+  "rc": 0,
+  "seconds": 8.5
+ },
+ "doc_conflicts_resolved": {
+  "docs/HANDOFF.md": "ours (current CI-PAR branch side)",
+  "docs/sdd/traceability.json": "ours (current CI-PAR branch side)",
+  "docs/tasks/current.md": "ours (current CI-PAR branch side)"
+ },
+ "head": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+ "layer_a": {
+  "log": "layer_a.log",
+  "rc": 0,
+  "seconds": 32.8
+ },
+ "layer_b": {
+  "log": "layer_b.log",
+  "rc": 0,
+  "seconds": 146.5
+ },
+ "leases_left": [],
+ "merge": {
+  "conflicts": "docs/HANDOFF.md\ndocs/sdd/traceability.json\ndocs/tasks/current.md",
+  "rc": 1,
+  "stdout": "Auto-merging docs/HANDOFF.md\nCONFLICT (content): Merge conflict in docs/HANDOFF.md\nAuto-merging docs/sdd/traceability.json\nCONFLICT (content): Merge conflict in docs/sdd/traceability.json\nAuto-merging docs/tasks/current.md\nCONFLICT (content): Merge conflict in docs/tasks/current.md\nAutomatic merge failed; fix conflicts and then commit the result."
+ },
+ "merge_abort_rc": 0,
+ "merged_files": [
+  "docs/HANDOFF.md",
+  "docs/adr/ADR-CI-EVID-001.md",
+  "docs/plans/ci-evid.md",
+  "docs/sdd/traceability.json",
+  "docs/specs/CI-EVID-001.md",
+  "docs/tasks/TASK-CI-EVID-001.md",
+  "docs/tasks/current.md",
+  "scripts/ci_plan.py",
+  "scripts/verify_environment.py",
+  "src/baton/evidence.py",
+  "src/baton/managed.py",
+  "src/baton/orchestrator.py",
+  "src/baton/pytest_record.py",
+  "src/baton/run_record.py",
+  "tests/test_ci_plan.py",
+  "tests/test_evidence_records.py",
+  "tests/test_managed_harness.py",
+  "tests/test_run_record.py"
+ ],
+ "pair": {
+  "log": "pair.log",
+  "rc": 0,
+  "seconds": 1538.5
+ },
+ "started": "2026-11-21T02:41:56",
+ "venvs_intact": true,
+ "worktree_removed": true
+}

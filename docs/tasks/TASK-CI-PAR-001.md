@@ -54,6 +54,12 @@ evidence = "tooling/ci_par_selftest/results/merged-755c9ec-check.json"
 acs = ["CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
 
 [[verification]]
+command = "auxiliary merge check, final G1 merged pair (3rd review rules, code 32a3cf7): temporary detached worktree of ci-par-001 1c5d4cd + merge --no-commit keulreobeu/ci-evid-001 06a18e7 (doc conflicts taken from this branch, temporary only, not committed), CBM blocked: layer a 120 OK, layer b 31/31, full sequential 954 PASS vs xdist 6 workers 954 PASS, FAIL 0, verdict equivalent, uncertain 0, normalized 4 (all by self_variance with 2 sequential + 2 xdist reruns); declared-mode xdist diagnostic in the merged tree: pytest-xdist 3.8.0 trust list_metadata, installed true, violations []"
+result = "passed"
+evidence = "tooling/ci_par_selftest/results/merged-06a18e7-check.json"
+acs = ["CI-PAR-001-AC-10", "CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
+
+[[verification]]
 command = "auxiliary merge check, interim: temporary detached worktree of 0b710be (code 7946c85) + merge --no-commit CI-EVID-001 672efed (doc conflicts taken from this branch, temporary only), CBM blocked: layer a 118 OK, layer b 31/31, full sequential 946 PASS vs xdist 946 PASS, FAIL 0, verdict equivalent under the pre-3rd-review rules (normalized 4, uncertain 0); interim only, the final merged pair runs once against the CI-EVID final commit on the coordinator's instruction"
 result = "blocked"
 evidence = "tooling/ci_par_selftest/results/merged-672efed-check.json"
@@ -370,8 +376,8 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
 | AC-11 hash lock·버전 | 충족 | T15, `--require-hashes` 설치 |
 | AC-12 worker 총량 | 충족 | T16, T16d, AC-14 (d) 6+4=S, RAM 256 MiB 산출 |
 | AC-13 회귀 테스트 배치 | 충족 | 층 (a) 91 skip 0, 층 (b) 31/31, 공식 V3에서 skip 없이 실행 |
-| AC-14 동등성·최소 실측 | 충족(병합 상태는 동등성 증거, FAIL 0 아님) | binding 공통 8개·backend별 값 검증(R02). 병합 쌍 verdict equivalent. 시간은 1회 측정(아래 한계) |
-| AC-15 의미 차이 | 충족, 미해결 예외 1 | subTest 보존. 정규화는 입증된 값과 self_variance 관측만 허용한다. uncertain 0, 형식 규칙만으로는 동등이 아니다(R201 음성). T20(b)는 AC-10과 같은 미해결 예외다 |
+| AC-14 동등성·최소 실측 | 충족(2026-11-21 최종 병합 쌍, 3차 규칙) | binding 공통 8개·backend별 값 검증(R02). CI-EVID `06a18e7` 최종 병합 쌍: 순차·xdist 954 PASS, FAIL 0, verdict equivalent, uncertain 0. 시간은 1회 측정(아래 한계). 이전 `7816a56` 쌍(FAIL 11, 넓은 규칙)은 대체됨 |
+| AC-15 의미 차이 | 충족(3차 규칙), 미해결 예외 1 | subTest 보존. 정규화는 run 값(`run_temp` 접두·nonce, R301)과 두 backend self_variance 관측(R302)만 허용한다. 최종 병합 쌍 uncertain 0, normalized 4(모두 self_variance). 형식 규칙만으로는 동등이 아니다(R201·R301 음성). T20(b)는 AC-10과 같은 미해결 예외다 |
 | AC-16 공식 연결 | 해당 없음(P3) | 공용 기록 형식·검증기만 만듦 |
 
 ### 남은 위험 (2차 추가)
@@ -422,7 +428,53 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
   - 기대: equivalent, uncertain 0, FAIL 0.
   - CI-EVID가 EVID-D28-01 수정으로 공용 모듈을 다시 바꾸므로 지금은 돌리지 않는다.
   - `test_flow_evidence`가 uncertain으로 남으면 고치지 않고 그대로 보고한다.
-- **AC-15 판정:** 규칙 수정과 층 a·b, 실제 4 ID 확인은 끝났다. 새 규칙에 따른 전체 병합 쌍 equivalent는 아직 없다. 그 전까지 AC-14·AC-15는 부분 충족이다.
+- **AC-15 판정:** 아래 최종 병합 쌍(`06a18e7`)으로 AC-14·AC-15를 충족으로 갱신했다(2026-11-21).
 - **self_variance 비용:** uncertain ID마다 순차 2회와 xdist 2회 재실행이 든다. 이번 4 ID 확인은 6회 실행으로 약 2분이었다. 값이 우연히 반복되면 uncertain으로 남는다(fail-closed).
 - **미검증:** `rmtree` 실패 상황(3차 검토 지적). Windows 실제 xdist 음성 사례(고정값 xdist)는 단위 수준에서만 확인했다. 원격 CI는 `not_run`.
 - **G1 수용 판단: 사용자 결정 대기.** G2는 착수하지 않는다.
+
+## 최종 병합 쌍 — 2026-11-21 (CI-EVID 후보 `06a18e7`, 3차 규칙)
+
+코디네이터 지시(CI-EVID EVID-D28-01·D29 반영 완료, HEAD `06a18e7`, 마지막 코드 커밋 `6ee7726`)로 실행했다. CI-PAR 코드는 바꾸지 않았다.
+
+### 병합 조건
+- **병합한 두 SHA:**
+  - ci-par-001 HEAD `1c5d4cdf913fe14b890a36144bbf580656db5404`. 코드 `32a3cf7`, 3차 규칙.
+  - keulreobeu/ci-evid-001 `06a18e7dea6b5db8049c930dffd00836b3f27dcd`.
+- **방법:** 시스템 임시 폴더의 detached worktree에서 `merge --no-commit`했다.
+  - 문서 3개(`docs/HANDOFF.md`·`docs/sdd/traceability.json`·`docs/tasks/current.md`) 충돌은 확인용으로만 현재 branch 쪽을 택했고 커밋하지 않았다.
+  - 끝난 뒤 merge --abort(rc 0), worktree remove, prune을 하고 제거를 확인했다. venv 연결 junction은 먼저 풀었고 원본 venv는 무손상이다.
+- **실행 조건:**
+  - 시작 전 PC 전체에서 다른 V3·full suite 0개를 확인했고, 여유 물리 메모리는 15.1 GB였다.
+  - CBM 차단(빈 LOCALAPPDATA, PATH 필터): 표본 815회, 목격 0.
+  - 남은 임대 0, 남은 `bs*` 폴더 0.
+
+### 결과 (모두 실측)
+- **층 (a):** 병합 tree에서 **120 OK**(`tests.test_suite_backend`·`tests.test_run_record`).
+- **층 (b):** **31/31** 기대값 일치, rc 0.
+- **전체 순차·xdist 한 쌍(GMS 설치):**
+  - 순차 **954 PASS**, failures·errors·skipped 0, 1148.6 s.
+  - xdist 6 worker **954 PASS**, failures·errors·skipped 0, 338.0 s.
+  - **FAIL 0.** 양쪽 `would_be_eligible=true`. crash·기록 거부·plugin 위반 없음.
+- **판정:**
+  - 재실행 전: verdict `uncertain`, uncertain 4. run_temp 아래 tmp 이름 3건, 임시 git SHA 1건이다.
+  - 3차 규칙대로 uncertain 4 ID만 순차 2회와 xdist 2 worker 2회로 재실행했다. 모두 PASS, 각 약 13 s.
+  - 최종: **verdict `equivalent`, uncertain 0, normalized 4(모두 self_variance, reason null).** verdict·ID·subTest·scope 차이 0.
+  - 4건 모두 순차 3값과 xdist 3값이 각각 서로 달랐다.
+  - `test_flow_evidence…test_author_cannot_self_review_and_raw_pass_is_not_evidence`도 normalized다.
+  - `backend_specific_differences`는 config_digest·lock_digest다.
+- **xdist 신뢰 확인:**
+  - 한 쌍의 xdist는 CI-PAR 보조 backend 계약대로 `strict` 모드다. 병합 tree의 lock(`requirements/ci.lock`·`tooling/ci_par_selftest/gms.lock`)과 설치 집합이 일치했고 `lock_digest=9367b013…`이다.
+  - strict 모드는 허용 목록 위반을 `violations`로 남기는데, 결과는 위반 없음이다.
+  - strict 모드 기록에는 plugin별 `trust` 값이 없다. 그래서 같은 병합 tree에서 CI-EVID `declared` 모드로 xdist 2 worker 진단 실행을 1회 더 했다. 방법은 orchestrator와 같은 인자이고, 대상은 `tests/test_run_record.py`, 코드 변경은 없다.
+  - 진단 결과: rc 0, 50 passed, `violations=[]`, 소비자 재검사 `declared_record_violations=[]`.
+  - `pytest-xdist 3.8.0`의 `xdist.plugin`·`xdist.dsession`·`xdist.workermanage`는 `trust="list_metadata"`, `installed=true`다. 그 밖은 `core` 41행과 `baton` 1행(병합 tree의 `src/baton/pytest_record.py`)이다.
+- **증거:** `tooling/ci_par_selftest/results/merged-06a18e7-{check,selftest,measure,declared-trust}.json`. binding의 `candidate_sha`는 병합 전 HEAD `1c5d4cd`이고 `worktree_dirty=true`다.
+- **공식 V3:** 코드 변경이 없어 다시 돌리지 않았다. 최종 V3는 `ca26668`(코드 `32a3cf7`) 870 OK다.
+
+### AC-14·AC-15 판정 갱신
+- **AC-14 충족:** 같은 binding의 순차·xdist 전체 실행이 ID·판정 동등이다. 병합 상태 FAIL 0, eligible 양쪽 true다.
+- **AC-15 충족(미해결 예외 1):** 3차 규칙에서 uncertain 0이다. normalized 4건은 모두 두 backend self_variance 관측으로 입증됐다. T20(b)(import skip만 있는 선택)는 AC-10과 같은 공식 연결 전 정책 필요 항목이다.
+- **남은 조건:** ChatGPT 4차 검토 결과로 공용 모듈이 다시 바뀌면 이 병합 쌍을 한 번 더 돌린다(코디네이터 지시).
+  - 시간(1148.6 s 대 338.0 s)은 임시 병합에서 1회 잰 값이며 일반화하지 않는다.
+  - G1 수용은 사용자 판정 대기다. G2는 착수하지 않았다.

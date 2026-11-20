@@ -1,0 +1,703 @@
+{
+ "a-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+   "config_digest": "06eb2b0a10fa4639dd964817b0f1c03b32ea56fc24967a43f8143556160905e0",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "d21f2a8064b71813ca7ae4f42710f631dbb031b927307cd49a7b6574384be285",
+   "tree": "2f753daeb2b1fd4e8d1fede946f9fe1d7fe5faa3"
+  },
+  "compare": "matched",
+  "cpu_seconds": 1107.921875,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 142725120,
+  "peak_process_bytes": 54542336,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 1147.5,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 954,
+  "total_processes": 27446,
+  "total_seconds": 1148.297,
+  "wall_seconds": 1148.6,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+   "config_digest": "2fa1866595e3e40185182dd8e6caaa4230b0731f47335c046111cf2f97982f40",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a",
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "d21f2a8064b71813ca7ae4f42710f631dbb031b927307cd49a7b6574384be285",
+   "tree": "2f753daeb2b1fd4e8d1fede946f9fe1d7fe5faa3"
+  },
+  "compare": "matched",
+  "cpu_seconds": 1587.234375,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": {
+   "budget": 10,
+   "ram_slots": 52,
+   "used": 0
+  },
+  "lease_wait_seconds": 0.0,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 451096576,
+  "peak_process_bytes": 62742528,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 336.891,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 954,
+  "total_processes": 27406,
+  "total_seconds": 337.719,
+  "wall_seconds": 338.0,
+  "workers_granted": 6,
+  "workers_requested": 6,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv-sequential1": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+   "config_digest": "06eb2b0a10fa4639dd964817b0f1c03b32ea56fc24967a43f8143556160905e0",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "28870d1bdda726db3ff1dbc473a3f5e9d62d620f1e0c9c768b17f373de3ccc57",
+   "tree": "2f753daeb2b1fd4e8d1fede946f9fe1d7fe5faa3"
+  },
+  "compare": "matched",
+  "cpu_seconds": 11.609375,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 55324672,
+  "peak_process_bytes": 37158912,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 11.657,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 4,
+  "total_processes": 285,
+  "total_seconds": 12.547,
+  "wall_seconds": 12.8,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv-sequential2": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+   "config_digest": "06eb2b0a10fa4639dd964817b0f1c03b32ea56fc24967a43f8143556160905e0",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": null,
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "28870d1bdda726db3ff1dbc473a3f5e9d62d620f1e0c9c768b17f373de3ccc57",
+   "tree": "2f753daeb2b1fd4e8d1fede946f9fe1d7fe5faa3"
+  },
+  "compare": "matched",
+  "cpu_seconds": 11.203125,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": null,
+  "lease_wait_seconds": null,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 55226368,
+  "peak_process_bytes": 36986880,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 11.843,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 4,
+  "total_processes": 285,
+  "total_seconds": 12.64,
+  "wall_seconds": 12.9,
+  "workers_granted": 1,
+  "workers_requested": null,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv-xdist1": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+   "config_digest": "2fa1866595e3e40185182dd8e6caaa4230b0731f47335c046111cf2f97982f40",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a",
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "28870d1bdda726db3ff1dbc473a3f5e9d62d620f1e0c9c768b17f373de3ccc57",
+   "tree": "2f753daeb2b1fd4e8d1fede946f9fe1d7fe5faa3"
+  },
+  "compare": "matched",
+  "cpu_seconds": 12.421875,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": {
+   "budget": 10,
+   "ram_slots": 51,
+   "used": 0
+  },
+  "lease_wait_seconds": 0.0,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 121348096,
+  "peak_process_bytes": 43560960,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 11.844,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 4,
+  "total_processes": 289,
+  "total_seconds": 12.625,
+  "wall_seconds": 12.9,
+  "workers_granted": 2,
+  "workers_requested": 2,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-sv-xdist2": {
+  "binding": {
+   "base": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+   "candidate_sha": "1c5d4cdf913fe14b890a36144bbf580656db5404",
+   "config_digest": "2fa1866595e3e40185182dd8e6caaa4230b0731f47335c046111cf2f97982f40",
+   "gms_extra": true,
+   "installed_digest": "30dc7c360108958351de1cd022ed520ce097641410aca40f3b3c0c6c882330b5",
+   "lock_digest": "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a",
+   "platform": "win32-AMD64",
+   "python": "3.12.16",
+   "selection_digest": "28870d1bdda726db3ff1dbc473a3f5e9d62d620f1e0c9c768b17f373de3ccc57",
+   "tree": "2f753daeb2b1fd4e8d1fede946f9fe1d7fe5faa3"
+  },
+  "compare": "matched",
+  "cpu_seconds": 12.53125,
+  "crashes": null,
+  "eligibility_reasons": [
+   "contract_not_revised"
+  ],
+  "errors": 0,
+  "expected_failures": 0,
+  "failures": 0,
+  "lease": {
+   "budget": 10,
+   "ram_slots": 51,
+   "used": 0
+  },
+  "lease_wait_seconds": 0.0,
+  "non_pass": {},
+  "not_run": 0,
+  "peak_job_bytes": 123760640,
+  "peak_process_bytes": 45166592,
+  "rc": 0,
+  "record_rejected": null,
+  "run_seconds": 11.954,
+  "skipped": 0,
+  "status": "PASS",
+  "tests_run": 4,
+  "total_processes": 289,
+  "total_seconds": 12.735,
+  "wall_seconds": 13.0,
+  "workers_granted": 2,
+  "workers_requested": 2,
+  "worktree_dirty": true,
+  "would_be_eligible": true
+ },
+ "b-gms-vs-a": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "06eb2b0a10fa4639dd964817b0f1c03b32ea56fc24967a43f8143556160905e0",
+    "2fa1866595e3e40185182dd8e6caaa4230b0731f47335c046111cf2f97982f40"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": true,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 0,
+  "scope_mismatch": null,
+  "self_variance": {
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "00b1585567d9b013b5f61c188d25a08d",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsp7i2h3mk"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "4a9306a85a1c674ff247a8eff65c1afc",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsnl3p6xis"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "e33857a37320440576de96991db193ac",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs_rnlltos"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "a0faf773d777086d96889d21eada340c",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsvoppps1v"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "tmp2rjvoqmd",
+       "tmpy93l4s8l"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmp2rjvoqmd",
+       "tmpviqu64e9",
+       "tmpmd1dl0p3"
+      ],
+      "subtest": "(status={'git': {'worktree_root': '<RUN_TMP>\\\\<T>'}})",
+      "xdist": [
+       "tmpy93l4s8l",
+       "tmpd5_aor0x",
+       "tmpdirhz7_7"
+      ]
+     },
+     {
+      "compared": [
+       "tmp2rjvoqmd",
+       "tmpy93l4s8l"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmp2rjvoqmd",
+       "tmpviqu64e9",
+       "tmpmd1dl0p3"
+      ],
+      "subtest": "(status={'root_path': '<RUN_TMP>\\\\<T>', 'git': None})",
+      "xdist": [
+       "tmpy93l4s8l",
+       "tmpd5_aor0x",
+       "tmpdirhz7_7"
+      ]
+     },
+     {
+      "compared": [
+       "tmp2rjvoqmd",
+       "tmpy93l4s8l"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmp2rjvoqmd",
+       "tmpviqu64e9",
+       "tmpmd1dl0p3"
+      ],
+      "subtest": "(status={'root_path': '<RUN_TMP>\\\\<T>'})",
+      "xdist": [
+       "tmpy93l4s8l",
+       "tmpd5_aor0x",
+       "tmpdirhz7_7"
+      ]
+     }
+    ]
+   },
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "00b1585567d9b013b5f61c188d25a08d",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsp7i2h3mk"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "4a9306a85a1c674ff247a8eff65c1afc",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsnl3p6xis"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "e33857a37320440576de96991db193ac",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs_rnlltos"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "a0faf773d777086d96889d21eada340c",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsvoppps1v"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "627a18f76d5eef02944747624b775e36c6d2a02f",
+       "461d4bbb69e90b4bd6c8f51c434f9d3e51d7c579"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "627a18f76d5eef02944747624b775e36c6d2a02f",
+       "52ebee9d4274f4322a5ea56e74618428df11609e",
+       "e4021e1fe282c4a7705e060fc4f337dcc69f70d1"
+      ],
+      "subtest": "(change={'candidate_sha': '<T>'})",
+      "xdist": [
+       "461d4bbb69e90b4bd6c8f51c434f9d3e51d7c579",
+       "dc908bd1802b13cfe1a3c2474da709578d20acaf",
+       "9399262d23ce53ffc4f8d66ade4c637570322278"
+      ]
+     }
+    ]
+   },
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "00b1585567d9b013b5f61c188d25a08d",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsp7i2h3mk"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "4a9306a85a1c674ff247a8eff65c1afc",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsnl3p6xis"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "e33857a37320440576de96991db193ac",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs_rnlltos"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "a0faf773d777086d96889d21eada340c",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsvoppps1v"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "tmpd5ls1m10",
+       "tmp1dikci2r"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpd5ls1m10",
+       "tmp4s6rrk4q",
+       "tmpps19k1ci"
+      ],
+      "subtest": "(argv=['--enable-suite-reuse', '--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence', '--lock-home', ''])",
+      "xdist": [
+       "tmp1dikci2r",
+       "tmpv0_6xzam",
+       "tmp_mj_rw4j"
+      ]
+     },
+     {
+      "compared": [
+       "tmpd5ls1m10",
+       "tmp1dikci2r"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpd5ls1m10",
+       "tmp4s6rrk4q",
+       "tmpps19k1ci"
+      ],
+      "subtest": "(argv=['--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence', '--lock-home', '<RUN_TMP>\\\\<T>\\\\home'])",
+      "xdist": [
+       "tmp1dikci2r",
+       "tmpv0_6xzam",
+       "tmp_mj_rw4j"
+      ]
+     },
+     {
+      "compared": [
+       "tmpd5ls1m10",
+       "tmp1dikci2r"
+      ],
+      "outcome": "pass",
+      "position": 1,
+      "sequential": [
+       "tmpd5ls1m10",
+       "tmp4s6rrk4q",
+       "tmpps19k1ci"
+      ],
+      "subtest": "(argv=['--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence', '--lock-home', '<RUN_TMP>\\\\<T>\\\\home'])",
+      "xdist": [
+       "tmp1dikci2r",
+       "tmpv0_6xzam",
+       "tmp_mj_rw4j"
+      ]
+     },
+     {
+      "compared": [
+       "tmpd5ls1m10",
+       "tmp1dikci2r"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpd5ls1m10",
+       "tmp4s6rrk4q",
+       "tmpps19k1ci"
+      ],
+      "subtest": "(argv=['--evidence-dir', '<RUN_TMP>\\\\<T>\\\\evidence'])",
+      "xdist": [
+       "tmp1dikci2r",
+       "tmpv0_6xzam",
+       "tmp_mj_rw4j"
+      ]
+     },
+     {
+      "compared": [
+       "tmpd5ls1m10",
+       "tmp1dikci2r"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpd5ls1m10",
+       "tmp4s6rrk4q",
+       "tmpps19k1ci"
+      ],
+      "subtest": "(argv=['--lock-home', '<RUN_TMP>\\\\<T>\\\\home'])",
+      "xdist": [
+       "tmp1dikci2r",
+       "tmpv0_6xzam",
+       "tmp_mj_rw4j"
+      ]
+     }
+    ]
+   },
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path": {
+    "reason": null,
+    "reruns": [
+     {
+      "backend": "sequential",
+      "nonce": "00b1585567d9b013b5f61c188d25a08d",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsp7i2h3mk"
+     },
+     {
+      "backend": "sequential",
+      "nonce": "4a9306a85a1c674ff247a8eff65c1afc",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsnl3p6xis"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "e33857a37320440576de96991db193ac",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bs_rnlltos"
+     },
+     {
+      "backend": "xdist",
+      "nonce": "a0faf773d777086d96889d21eada340c",
+      "rc": 0,
+      "run_temp": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\bsvoppps1v"
+     }
+    ],
+    "result": "normalized",
+    "tokens": [
+     {
+      "compared": [
+       "tmpki11kuva",
+       "tmp4funrjgz"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpki11kuva",
+       "tmpe0uowqwt",
+       "tmpz456sru1"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/bin/custom.exe'))",
+      "xdist": [
+       "tmp4funrjgz",
+       "tmpz3hv05f8",
+       "tmpr7crg47o"
+      ]
+     },
+     {
+      "compared": [
+       "tmpki11kuva",
+       "tmp4funrjgz"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpki11kuva",
+       "tmpe0uowqwt",
+       "tmpz456sru1"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/custom/git.exe'))",
+      "xdist": [
+       "tmp4funrjgz",
+       "tmpz3hv05f8",
+       "tmpr7crg47o"
+      ]
+     },
+     {
+      "compared": [
+       "tmpki11kuva",
+       "tmp4funrjgz"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpki11kuva",
+       "tmpe0uowqwt",
+       "tmpz456sru1"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/mingw64/bin/git.exe'))",
+      "xdist": [
+       "tmp4funrjgz",
+       "tmpz3hv05f8",
+       "tmpr7crg47o"
+      ]
+     },
+     {
+      "compared": [
+       "tmpki11kuva",
+       "tmp4funrjgz"
+      ],
+      "outcome": "pass",
+      "position": 0,
+      "sequential": [
+       "tmpki11kuva",
+       "tmpe0uowqwt",
+       "tmpz456sru1"
+      ],
+      "subtest": "(selected=WindowsPath('<RUN_TMP>/<T>/missing-install/cmd/git.exe'))",
+      "xdist": [
+       "tmp4funrjgz",
+       "tmpz3hv05f8",
+       "tmpr7crg47o"
+      ]
+     }
+    ]
+   }
+  },
+  "subtest_mismatch": 0,
+  "subtest_normalized": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "subtest_uncertain": [],
+  "verdict": "equivalent",
+  "verdict_mismatch": {}
+ },
+ "b-gms-vs-a-uncertain": {
+  "backend_specific_differences": {
+   "config_digest": [
+    "06eb2b0a10fa4639dd964817b0f1c03b32ea56fc24967a43f8143556160905e0",
+    "2fa1866595e3e40185182dd8e6caaa4230b0731f47335c046111cf2f97982f40"
+   ],
+   "lock_digest": [
+    null,
+    "9367b013e8dac798ee5a2f59d9f03c14dfbe0ef5764ee68ea6b95ab0a37d326a"
+   ]
+  },
+  "equivalent": false,
+  "ids_only_left": 0,
+  "ids_only_right": 0,
+  "rc": 1,
+  "scope_mismatch": null,
+  "self_variance": null,
+  "subtest_mismatch": 0,
+  "subtest_normalized": [],
+  "subtest_uncertain": [
+   "tests.test_ci_plan.SyntheticGitTests.test_missing_cbm_root_paths_are_never_this_root",
+   "tests.test_flow_evidence.FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence",
+   "tests.test_verify_environment.EvidenceReuseTests.test_lock_home_requires_evidence_dir",
+   "tests.test_verify_environment.GitPathTests.test_missing_custom_and_already_direct_preserve_path"
+  ],
+  "verdict": "uncertain",
+  "verdict_mismatch": {}
+ },
+ "cbm_sampler": {
+  "samples": 725,
+  "sightings": []
+ },
+ "leases_left": []
+}
