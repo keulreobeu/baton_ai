@@ -188,12 +188,16 @@ def main(argv=None):
                 report[step] = run_one(step, step[2:], "xdist", out, env, workers=args.workers)
                 report[step + "-vs-a"] = compare(out, "a-" + step[2:], step, env)
                 uncertain = report[step + "-vs-a"].get("subtest_uncertain")
-                if uncertain:       # self_variance proof: the uncertain IDs alone, sequential, twice
+                if uncertain:       # self_variance proof: the uncertain IDs alone, twice on each backend
                     ids = out / f"{step}-uncertain.txt"
                     ids.write_text("\n".join(uncertain) + "\n", encoding="utf-8")
-                    names = [f"{step}-sv{i}" for i in (1, 2)]
-                    for name in names:
-                        report[name] = run_one(name, step[2:], "sequential", out, env, ids_file=ids)
+                    names = []
+                    for backend in ("sequential", "xdist"):
+                        for i in (1, 2):
+                            name = f"{step}-sv-{backend}{i}"
+                            report[name] = run_one(name, step[2:], backend, out, env, ids_file=ids,
+                                                   workers=min(args.workers, 2))
+                            names.append(name)
                     report[step + "-vs-a-uncertain"] = report[step + "-vs-a"]
                     report[step + "-vs-a"] = compare(out, "a-" + step[2:], step, env, reruns=names)
             elif step == "c-plan":

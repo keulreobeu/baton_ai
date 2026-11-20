@@ -506,15 +506,16 @@ BINDING_KEYS = ("candidate_sha", "tree", "base", "installed_digest", "gms_extra"
 # Differ by design between backends: each side must equal the value its own backend produces.
 BACKEND_KEYS = ("config_digest", "lock_digest")
 
-# subTest description normalization (R04, PAR-R201, Spec AC-15), fail-closed in two levels.
-# Proven: a value the result document itself shows to be run-varying is rewritten, and an equality
-# reached this way is equivalent: the run's own temporary folder (the child runs with TEMP/TMP/TMPDIR
-# set to a fresh bs<random> folder directly in the system temp folder, recorded as run_temp; kept short
-# because deep test paths reach the Windows path limit), tempfile names directly inside it, and hex values the
-# run recorded (its nonce and binding). PROVEN_NORMALIZATION lists them.
+# subTest description normalization (R04, PAR-R201, PAR-R301, Spec AC-15), fail-closed in two levels.
+# Proven: only values the result document shows to be created anew for this run are rewritten, and an
+# equality reached this way is equivalent: the run's own temporary folder prefix (the child runs with
+# TEMP/TMP/TMPDIR set to a fresh bs<random> folder directly in the system temp folder, recorded as
+# run_temp; kept short because deep test paths reach the Windows path limit) and the run's nonce.
+# Names below run_temp (tmp+8 and the like) are kept: their randomness is not proven. Stable binding
+# values (candidate_sha, tree, ...) are not run values and are never rewritten. PROVEN_NORMALIZATION.
 # Pattern only: SUBTEST_NORMALIZATION below has no proof of where the value came from (two stable SHAs
 # or fixed tmp-like names would also match), so an equality reached only through it is uncertain.
-PROVEN_NORMALIZATION = ("run_temp", "run_tempfile_name", "run_recorded_hex")
+PROVEN_NORMALIZATION = ("run_temp", "run_nonce")
 SUBTEST_NORMALIZATION = (
     ("tempfile_name", re.compile(r"\btmp[a-z0-9_]{8}\b"), "tmp<RAND>"),
     ("hex_digest", re.compile(r"\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b"), "<SHA>"),
@@ -528,15 +529,9 @@ def normalize_subtest(desc):
     return desc
 
 
-RUN_TEMPFILE = re.compile(r"<RUN_TMP>([\\/]+)tmp[a-z0-9_]{8}\b")
-HEX_VALUE = re.compile(r"[0-9a-f]{32,64}")
-
-
 def run_proof(doc):
-    """The run-varying values a result document proves about its own run (PAR-R201)."""
-    hexes = {doc.get("nonce")} | set((doc.get("binding") or {}).values())
-    return {"run_temp": doc.get("run_temp"),
-            "hexes": sorted(v for v in hexes if isinstance(v, str) and HEX_VALUE.fullmatch(v))}
+    """The values a result document proves were created for its own run (PAR-R201, PAR-R301)."""
+    return {"run_temp": doc.get("run_temp"), "nonce": doc.get("nonce")}
 
 
 def normalize_proven(desc, proof):
@@ -545,9 +540,9 @@ def normalize_proven(desc, proof):
         # Spelled with escaped backslashes (str repr), natively, or with forward slashes (Path repr).
         for spelling in dict.fromkeys((temp.replace("\\", "\\\\"), temp, temp.replace("\\", "/"))):
             desc = re.sub(re.escape(spelling), "<RUN_TMP>", desc, flags=re.IGNORECASE)
-        desc = RUN_TEMPFILE.sub(r"<RUN_TMP>\1tmp<RAND>", desc)
-    for value in (proof or {}).get("hexes", ()):
-        desc = desc.replace(value, "<RUN_HEX>")
+    nonce = (proof or {}).get("nonce")
+    if isinstance(nonce, str) and nonce:          # whole hex tokens only, never part of a longer value
+        desc = re.sub(f"(?<![0-9a-fA-F]){re.escape(nonce)}(?![0-9a-fA-F])", "<RUN_NONCE>", desc)
     return desc
 
 
@@ -594,14 +589,16 @@ def expected_backend_values(doc):
             "lock_digest": sha256_text(lock_text) if config["locks"] else None}
 
 
-# self_variance proof (2026-11-20 user decision, Spec AC-15): an uncertain subTest difference counts as
-# run-varying only by observation. The ID alone is rerun SELF_VARIANCE_RERUNS times on the sequential
-# backend, each in its own fresh run_temp. All four must hold, else it stays uncertain (fail-closed):
-#   a. at every token position where the compared runs differ, the sequential runs differ as well;
-#   b. every run has the same outcome, for the ID and for each subTest;
+# self_variance proof (2026-11-20 user decision, PAR-R302, Spec AC-15): an uncertain subTest difference
+# counts as run-varying only by observation on both backends. The ID alone is rerun
+# SELF_VARIANCE_RERUNS times on the sequential backend and as many times on the xdist backend, each in
+# its own fresh run_temp. All must hold, else it stays uncertain (fail-closed):
+#   a. the sequential reruns differ from each other, and so do the xdist reruns;
+#   b. every run (the compared pair and all reruns) has the same outcome, for the ID and each subTest;
 #   c. after SUBTEST_NORMALIZATION every run has the same descriptions;
-#   d. the differences sit only at those token positions.
+#   d. between every two runs the differing token positions are the same set as in the compared pair.
 SELF_VARIANCE_RERUNS = 2
+SELF_VARIANCE_BACKENDS = ("sequential", "xdist")
 TOKEN = re.compile("|".join(f"(?:{pattern.pattern})" for _, pattern, _ in SUBTEST_NORMALIZATION))
 
 
@@ -628,14 +625,16 @@ def _token_slots(row, proof):
 
 def self_variance(key, compared, reruns):
     """Proof record for one uncertain ID. compared: the two compared result documents; reruns: the
-    sequential rerun documents of that ID. result is "normalized" only when a-d all hold."""
-    record = {"reruns": [{"nonce": d.get("nonce"), "run_temp": d.get("run_temp"), "rc": d.get("rc")} for d in reruns],
+    sequential and xdist rerun documents of that ID. result is "normalized" only when a-d all hold."""
+    record = {"reruns": [{"backend": d["summary"]["suite_backend"]["name"], "nonce": d.get("nonce"),
+                          "run_temp": d.get("run_temp"), "rc": d.get("rc")} for d in reruns],
               "tokens": [], "result": "uncertain", "reason": None}
 
     def keep(reason):
         record["reason"] = reason
         return record
-    if len(reruns) < SELF_VARIANCE_RERUNS:
+    names = [d["summary"]["suite_backend"]["name"] for d in reruns]
+    if any(names.count(b) < SELF_VARIANCE_RERUNS for b in SELF_VARIANCE_BACKENDS):
         return keep("reruns_missing")
     rows = []
     for doc in reruns:
@@ -650,22 +649,27 @@ def self_variance(key, compared, reruns):
         return keep("outcome_differs")                                                    # b
     slots = [_token_slots(row, run_proof(doc)) for row, doc in runs]
     if any(set(s) != set(slots[0]) or any(len(s[k]) != len(slots[0][k]) for k in s) for s in slots):
-        return keep("descriptions_differ_after_normalization")                            # b, c, d
-    sequential = [i for i, (_, doc) in enumerate(runs) if doc["summary"]["suite_backend"]["name"] == "sequential"]
+        return keep("descriptions_differ_after_normalization")                            # b, c
+    backend = [doc["summary"]["suite_backend"]["name"] for _, doc in runs]
     for slot in sorted(slots[0]):
         if len(slots[0][slot]) != 1:
             if any(sorted(s[slot]) != sorted(slots[0][slot]) for s in slots):
                 return keep("ambiguous_alignment")
             continue
         tokens = [s[slot][0] for s in slots]
-        for position, (one, two) in enumerate(zip(tokens[0], tokens[1])):
-            if one == two:
-                continue
-            values = [tokens[i][position] for i in sequential]
+        varying = {p for p, (one, two) in enumerate(zip(tokens[0], tokens[1])) if one != two}
+        for position in sorted(varying):
             record["tokens"].append({"subtest": slot[0], "outcome": slot[1], "position": position,
-                                     "compared": [one, two], "sequential": values})
-            if len(set(values)) != len(values):
-                return keep("not_self_varying")                                           # a
+                                     "compared": [tokens[0][position], tokens[1][position]],
+                                     **{b: [t[position] for t, n in zip(tokens, backend) if n == b]
+                                        for b in SELF_VARIANCE_BACKENDS}})
+        for i in range(len(tokens)):
+            for j in range(i + 1, len(tokens)):
+                differ = {p for p, (one, two) in enumerate(zip(tokens[i], tokens[j])) if one != two}
+                if differ < varying:
+                    return keep("not_self_varying")                                       # a
+                if differ != varying:
+                    return keep("varying_positions_differ")                               # d
     if not record["tokens"]:
         return keep("no_token_difference")
     record["result"] = "normalized"
@@ -677,16 +681,21 @@ def compare_runs(left, right, reruns=()):
 
     IDs inside a failed class/module fixture are compared at scope level: the failed scope
     sets must match and, on each side, every scope ID either started or is blocked by it.
-    reruns: sequential result documents of the uncertain IDs alone, for the self_variance proof.
+    reruns: sequential and xdist result documents of the uncertain IDs alone (self_variance proof).
     """
     validate_result(left)
     validate_result(right)
     _check_binding(left, right, BINDING_KEYS)
+    same_backend = {d["summary"]["suite_backend"]["name"]: d for d in (left, right)}
     for doc in reruns:
         validate_result(doc)
-        if doc["summary"]["suite_backend"]["name"] != "sequential":
-            raise BackendError("binding_mismatch", "self_variance reruns must be sequential")
+        name = doc["summary"]["suite_backend"]["name"]
+        if name not in SELF_VARIANCE_BACKENDS:
+            raise BackendError("binding_mismatch", "self_variance reruns must be sequential or xdist")
         _check_binding(left, doc, [k for k in BINDING_KEYS if k != "selection_digest"])
+        if name in same_backend and any(doc["binding"].get(k) != same_backend[name]["binding"].get(k)
+                                        for k in BACKEND_KEYS):
+            raise BackendError("binding_mismatch", f"self_variance {name} rerun: backend settings differ")
     nonces = [d.get("nonce") for d in reruns]
     if len(set(nonces)) != len(nonces) or set(nonces) & {left.get("nonce"), right.get("nonce")}:
         raise BackendError("result_duplicate", "a self_variance rerun given twice or equal to a compared run")
