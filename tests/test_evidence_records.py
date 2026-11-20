@@ -960,8 +960,9 @@ LOCK = ("pytest==9.2.0 --hash=sha256:" + "a" * 64 + "\n"
 class DeclaredPluginTrustTests(unittest.TestCase):
     """D28 not accepted (user decisions 2026-11-20): an official declared pytest run loads
     only trusted plugins (distribution==version, -p name and module, from the venv's
-    site-packages) and every collected test ID has a result or is in the allowed exclusion
-    set, which no Task/Spec/AC declares today (so it is empty).
+    site-packages; rev5: the tree's hash lock and the pinned files on the installed path, a
+    loading limit, not an integrity guarantee) and every collected test ID has a result or is
+    in the allowed exclusion set, which no Task/Spec/AC declares today (so it is empty).
 
     Synthetic records as baton.pytest_record writes them, read by the consumer
     (RecordedRun.read), because the official suite has no pytest; the real plugin run is

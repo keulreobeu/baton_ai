@@ -13,8 +13,12 @@ inside that tree (trusted like its test code, RA-1) and other loaded plugins, re
 plugin's module, distribution/version and conftest path in ``plugins``, and refuses a
 rootdir, used inifile or conftest outside that tree (EVID-R01). rev4 (D28 not accepted):
 it also loads only trusted plugins (pytest's own, BATON's, the tree's code and
-``run_record.TRUSTED_PLUGINS`` entries: distribution==version, ``-p`` name and module, from
-this venv's site-packages; each row's ``trust`` recorded), with autoload, PYTEST_PLUGINS,
+``run_record.TRUSTED_PLUGINS`` entries: distribution==version and ``-p`` name and module by
+metadata, the approved wheel hash in the checked tree's hash lock, and the loaded module file
+being the installed file the metadata names with its pinned sha256 (D29); each row's
+``trust`` recorded, ``list_metadata`` for those). This limits what loads in the approved
+environment; it does not establish that the environment is intact (start-up code, other
+packages, the interpreter: EVID-D28-01, D29, TASK-ENV-INTEG-001). With autoload, PYTEST_PLUGINS,
 PYTEST_ADDOPTS and ini addopts off and every explicit ``-p`` recorded (``plugin_control``),
 and accounts for every collected test ID (``items_collected``; ``deselected`` must be
 exactly the ``--baton-allowed-deselect`` set, empty by default);
@@ -26,6 +30,7 @@ stops with a usage error and no record is written, which consumers treat as a fa
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -112,7 +117,8 @@ def _module_distribution(module):
 
 
 def _installed(distribution, file):
-    """D28 provenance: ``file`` is one of ``distribution``'s own files in this venv's site-packages."""
+    """D28: ``file`` is under this venv's site-packages and listed in ``distribution``'s RECORD.
+    Metadata only: the file's content is not compared with the locked distribution (EVID-D28-01)."""
     homes = {sysconfig.get_paths()[k] for k in ("purelib", "platlib")}
     if not file or not any(run_record.inside_tree(file, home) for home in homes):
         return False
@@ -121,6 +127,35 @@ def _installed(distribution, file):
     except importlib.metadata.PackageNotFoundError:
         return False
     return any(run_record.canonical_path(dist.locate_file(f)) == file for f in dist.files or ())
+
+
+def _sha256(path):
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _install_facts(distribution, module, file):
+    """D29 condition 4: the installed file the distribution metadata names for ``module``
+    (``install_file``), kept apart from the loaded ``file`` (its __file__), the loaded file's
+    sha256 and the sha256 of every .py file the distribution installs. Values the metadata
+    cannot give stay None, which plugin_violations refuses (fail-closed)."""
+    facts = {"installed": _installed(distribution, file), "install_rel": None, "install_file": None,
+             "sha256": _sha256(file), "distribution_files": None}
+    try:
+        dist = importlib.metadata.distribution(distribution)
+        listed = [f for f in dist.files or () if f.suffix == ".py"]
+        stem = module.replace(".", "/")
+        for f in listed:
+            rel = str(f).replace("\\", "/")
+            if rel in (stem + ".py", stem + "/__init__.py"):
+                facts["install_rel"], facts["install_file"] = rel, run_record.canonical_path(dist.locate_file(f))
+        facts["distribution_files"] = {str(f).replace("\\", "/"): _sha256(dist.locate_file(f))
+                                       for f in listed} or None
+    except (importlib.metadata.PackageNotFoundError, OSError, ValueError):
+        pass
+    return facts
 
 
 def _trust(module, distribution, file, tree):
@@ -134,7 +169,9 @@ def _trust(module, distribution, file, tree):
     if module == "__channelexec__":
         return "channel"            # execnet's module for the xdist worker loop
     if distribution in run_record.TRUSTED_PLUGINS:
-        return "list"               # plugin_violations checks version, module and ``installed``
+        # Named by metadata only (EVID-D28-01 I1); plugin_violations checks version, module,
+        # the tree's hash lock and the pinned file hashes on the installed path (D29).
+        return run_record.LIST_TRUST
     installed = {sys.prefix, sys.base_prefix, sys.exec_prefix}
     if file and tree and run_record.inside_tree(file, tree) \
             and not any(run_record.inside_tree(file, prefix) for prefix in installed):
@@ -158,9 +195,11 @@ def _plugin_details(config):
         name, version = dists.get(id(plugin)) or _module_distribution(module)
         conftest, file = _conftest_path(plugin), _plugin_file(plugin)
         trust = _trust(module, name, file, tree)
-        rows.append({"module": module, "distribution": name, "version": version,
-                     "path": str(conftest) if conftest else None, "file": file, "trust": trust,
-                     "installed": _installed(name, file) if trust == "list" else None})
+        row = {"module": module, "distribution": name, "version": version,
+               "path": str(conftest) if conftest else None, "file": file, "trust": trust, "installed": None}
+        if trust == run_record.LIST_TRUST:
+            row.update(_install_facts(name, module, file))
+        rows.append(row)
     return sorted(rows, key=lambda r: (r["module"], r["path"] or ""))
 
 
@@ -177,7 +216,7 @@ def _explicit(config):
     loaded = []
     for name in (n for n in names if not n.startswith("no:")):
         trust = ("baton" if name == run_record.BATON_PLUGIN else "core" if name in builtin_plugins
-                 else "list" if name in listed else None)
+                 else run_record.LIST_TRUST if name in listed else None)
         loaded.append({"name": name, "trust": trust})
     return loaded, [n[3:] for n in names if n.startswith("no:")]
 

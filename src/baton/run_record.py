@@ -254,30 +254,110 @@ def declared_violations(tree, *, observed_tree, rootdir, inifile, conftests):
 
 
 # rev4 (D28 not accepted; user decisions 2026-11-20): the pytest plugins an official declared
-# run may load besides pytest's own, BATON's and the checked tree's code. Each entry maps a
-# distribution (name==version; its dependencies are pinned by the hash lock, CI-PAR-001
-# requirements/ci.lock) to the ``-p`` names that load it and the modules it registers. A
-# loaded plugin matches all three and its module file is that distribution's file in the
-# running venv's site-packages (``installed``, checked by the producer).
+# run may load besides pytest's own, BATON's and the checked tree's code. This limits what
+# loads inside the approved environment; it does not prove what runs. Each entry maps a
+# distribution name==version to the ``-p`` names that load it and the modules it registers.
+# D29 condition 4 (2026-11-21): name==version is not enough. ``wheel_sha256`` is the approved
+# wheel, which the checked tree's hash lock must name (``locked_pins``), and ``files`` the
+# sha256 of every .py file that wheel installs, read from CI-PAR-001's .venv-ci (installed
+# from requirements/ci.lock with --require-hashes; .venv-ci-alt and .venv-ci-nogms agree and
+# each file matches its RECORD hash). A loaded module is trusted only when its file
+# (``file``, the module's __file__) is the installed file the distribution metadata names
+# (``install_file``), that file's sha256 is the pinned one and the distribution's .py files
+# are exactly the pinned set. This too is a loading limit inside the approved environment,
+# not an integrity guarantee (EVID-D28-01 I1).
 TRUSTED_PLUGINS = {
-    "pytest-xdist": {"version": "3.8.0", "p_names": ("xdist", "xdist.plugin", "xdist.looponfail"),
-                     "modules": ("xdist.plugin", "xdist.looponfail", "xdist.dsession", "xdist.workermanage",
-                                 "xdist.remote")},
+    "pytest-xdist": {
+        "version": "3.8.0", "p_names": ("xdist", "xdist.plugin", "xdist.looponfail"),
+        "modules": ("xdist.plugin", "xdist.looponfail", "xdist.dsession", "xdist.workermanage", "xdist.remote"),
+        "wheel_sha256": "202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88",
+        "files": {
+        "xdist/__init__.py": "164b4229983b8f3db54e8f27e799deb51aee5593b85d4c1b98bab1977f2daabd",
+        "xdist/_path.py": "2bd5a866dd8b2ad0c17159e95d6cca103871bb8653ce6963d16c9f1099758e2a",
+        "xdist/_version.py": "1cd94691c150b24dac11a969f5d0b0dcfe0ae16aa683b2ff1595249aa8d6fce2",
+        "xdist/dsession.py": "1b78c9e7efe0a1884048e075608fffac56c2c8c5a8e3f9e6a96d9f5137bb387e",
+        "xdist/looponfail.py": "84971024df50889ecfd562daaf5f13dd64941f901f138c91611b9fa95bc65da4",
+        "xdist/newhooks.py": "14b53ea2371c243a316924b7c0d1d772d8d62ed9818e0d2fdacadb9f1ac7930c",
+        "xdist/plugin.py": "62df71dfe342969ab667cb3a4f2280a93be9c11bc9a4c2d9ead271c979d2afd8",
+        "xdist/remote.py": "86d2f8132b3ef7e190f622c2b3cfd83cde464a4dd07ccd75486b27b161336b3d",
+        "xdist/report.py": "811e5bb28e4bbe6279b34bef5d6832359dd2ac09053467d11f998e08cb2b5c7c",
+        "xdist/scheduler/__init__.py": "858a4d13a95b64fc24ebddbefd7371a8eaa1392be37ef3afe43babcba72a56f3",
+        "xdist/scheduler/each.py": "7ef6f21911b65afca3a7916b27db671135f0aef8cc93ebce55c0b5bef7224fd1",
+        "xdist/scheduler/load.py": "51781738dbc5088b26ed0f1a26feb9293a35373935fed436811a51fbf49a4128",
+        "xdist/scheduler/loadfile.py": "e00d0cfa66ea39caf7af1a4b94dbc5ea635363584c804de3afba181fc24b61cb",
+        "xdist/scheduler/loadgroup.py": "9ac209b15c0dffffa74ddad508bd6f83393583d27cc4e234844f9f906f36bdef",
+        "xdist/scheduler/loadscope.py": "1eb3b1031d74b120e0537593a7cfcedc9ca8142d41eda0eb22c3df6dc8dc0951",
+        "xdist/scheduler/protocol.py": "1416e7389656b8e3e9f99642c03c14628905ed6e2f7b4062739b3b60fff35b74",
+        "xdist/scheduler/worksteal.py": "af8b131d8668a32aa1bf492e81a89fd49f9334c6dd0af42a4c895476fea5f847",
+        "xdist/workermanage.py": "efbca7d514fb94bd16ef566862a435dc7a541cb1ffd1d3826fc0cf2026fca3de",
+        },
+    },
 }
 BATON_PLUGIN = "baton.pytest_record"
+# EVID-D28-01 (I1): the ``trust`` value of a TRUSTED_PLUGINS row. It names what was matched
+# (metadata, lock and pinned file hashes in the approved environment), not that the
+# environment is intact: start-up code, other installed packages or the interpreter are not
+# checked (D29: out of this Task's threat model, TASK-ENV-INTEG-001).
+LIST_TRUST = "list_metadata"
+LOCK_PATH = ("requirements", "ci.lock")
+
+
+def locked_pins(tree):
+    """EVID-D28-01 (I2): {name: (version, sha256 hashes)} of the hash-pinned ``name==version``
+    lines in the checked tree's ``requirements/ci.lock`` (CI-PAR-001); {} without a lock, so
+    CI-EVID alone trusts no listed distribution (fail-closed)."""
+    try:
+        text = Path(tree, *LOCK_PATH).read_text(encoding="utf-8")
+    except (OSError, TypeError, ValueError):
+        return {}
+    pins = {}
+    for line in text.replace("\r\n", "\n").replace("\\\n", " ").splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)", line)
+        hashes = tuple(h.lower() for h in re.findall(r"--hash=sha256:([0-9a-fA-F]{64})(?=\s|$)", line))
+        if match and hashes:
+            pins[re.sub(r"[-_.]+", "-", match.group(1)).lower()] = (match.group(2), hashes)
+    return pins
 
 
 def trusted_plugin(distribution, version, module):
+    """The name, version and module match of a TRUSTED_PLUGINS entry (see listed_violation)."""
     entry = TRUSTED_PLUGINS.get(distribution)
     return entry is not None and entry["version"] == version and module in entry["modules"]
+
+
+def listed_violation(row, pins):
+    """D29 condition 4/5: None when a ``list_metadata`` row is trusted, else why not. Fail-closed:
+    no lock, another wheel hash, another file list, unreadable metadata, a file loaded from
+    elsewhere than the installed path, or a pinned hash that differs."""
+    distribution, module = row.get("distribution"), str(row.get("module"))
+    entry = TRUSTED_PLUGINS[distribution]
+    version, hashes = pins.get(distribution) or (None, ())
+    if version != entry["version"] or entry["wheel_sha256"] not in hashes:
+        return "plugin_not_locked:" + distribution
+    rel = row.get("install_rel")
+    expected = (module.replace(".", "/") + ".py", module.replace(".", "/") + "/__init__.py")
+    if rel not in expected or rel not in entry["files"] or row.get("distribution_files") != entry["files"] \
+            or not row.get("file") or row.get("install_file") != row.get("file") \
+            or row.get("sha256") != entry["files"][rel]:
+        return "plugin_not_trusted:" + module
+    return None
 
 
 def plugin_violations(plugins, tree):
     """D28: every loaded plugin row (``trust`` as the producer classified it) is pytest's
     own, BATON's, the checked tree's code (a conftest or a module its ``pytest_plugins``
-    names, RA-1), execnet's xdist worker module or a trusted distribution entry."""
-    found = set()
-    xdist = any(row.get("trust") == "list" and row.get("distribution") == "pytest-xdist" for row in plugins)
+    names, RA-1), execnet's xdist worker module or a trusted distribution entry that the
+    tree's lock and the pinned files confirm (``listed_violation``)."""
+    found, pins = set(), locked_pins(tree) if tree else {}
+
+    def listed(row):
+        return row.get("trust") == LIST_TRUST and row.get("installed") is True \
+            and trusted_plugin(row.get("distribution"), row.get("version"), str(row.get("module")))
+
+    xdist = any(listed(row) and row.get("distribution") == "pytest-xdist" and listed_violation(row, pins) is None
+                for row in plugins)
     for row in plugins:
         module, trust = str(row.get("module")), row.get("trust")
         top, distribution = module.split(".", 1)[0], row.get("distribution")
@@ -289,8 +369,10 @@ def plugin_violations(plugins, tree):
             continue
         if trust == "tree" and row.get("file") and tree and inside_tree(row["file"], tree):
             continue
-        if trust == "list" and row.get("installed") is True and trusted_plugin(distribution, row.get("version"),
-                                                                               module):
+        if listed(row):
+            violation = listed_violation(row, pins)
+            if violation:
+                found.add(violation)
             continue
         if distribution in TRUSTED_PLUGINS and TRUSTED_PLUGINS[distribution]["version"] != row.get("version"):
             found.add(f"plugin_version_mismatch:{distribution}=={row.get('version')}")
@@ -322,7 +404,7 @@ def control_violations(control):
     for explicit in control["explicit"]:
         name, trust = (explicit.get("name"), explicit.get("trust")) if isinstance(explicit, dict) else (explicit, None)
         if not ((trust == "core" and "." not in str(name)) or (trust == "baton" and name == BATON_PLUGIN)
-                or (trust == "list" and name in names)):
+                or (trust == LIST_TRUST and name in names)):
             found.append("explicit_plugin_not_trusted:" + str(name))
     return found
 

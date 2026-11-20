@@ -2049,6 +2049,26 @@
           "tests": [
             {
               "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_xdist_is_trusted_only_with_its_hash_lock_in_the_checked_tree"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_xdist_trust_needs_pinned_files_on_the_installed_path"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_pinned_xdist_values_are_the_ci_par_lock_install"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_list_trust_names_a_metadata_match_not_integrity"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredTrustRuleTests.test_locked_pins_need_a_sha256_hash"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
               "symbol": "DeclaredPluginTrustTests.test_external_p_plugin_dropping_a_failing_test_is_refused"
             },
             {
@@ -2153,6 +2173,10 @@
         {
           "id": "CI-EVID-001-AC-08",
           "tests": [
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "KnownResidualEnvironmentTests.test_known_residual_startup_code_can_drop_tests_unittest"
+            },
             {
               "file": "tests/test_evidence_records.py",
               "symbol": "RecordedRunTests.test_unchanged_run_is_evidence"
