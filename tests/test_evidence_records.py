@@ -929,6 +929,8 @@ class DeclaredTreeBoundTests(unittest.TestCase):
 
 
 PASS_ID, FAIL_ID = "tests/test_demo.py::test_pass", "tests/test_demo.py::test_fail"
+LOCK = ("pytest==9.2.0 --hash=sha256:" + "a" * 64 + "\n"
+        "pytest-xdist==3.8.0 \\\n    --hash=sha256:" + "b" * 64 + "\n")
 
 
 class DeclaredPluginTrustTests(unittest.TestCase):
@@ -962,8 +964,15 @@ class DeclaredPluginTrustTests(unittest.TestCase):
                 "file": file, "trust": trust, "installed": installed}
 
     def xdist(self, **changes):
-        row = self.plugin("xdist.plugin", "list", distribution="pytest-xdist", version="3.8.0", installed=True)
+        row = self.plugin("xdist.plugin", "list_metadata", distribution="pytest-xdist", version="3.8.0",
+                          installed=True)
         return {**row, **changes}
+
+    def locked(self, text=None):
+        """A run over the checked tree with ``requirements/ci.lock`` written first (EVID-D28-01 I2)."""
+        (self.tree / "requirements").mkdir(exist_ok=True)
+        (self.tree / "requirements" / "ci.lock").write_text(LOCK if text is None else text, encoding="utf-8")
+        return self.recorded()
 
     def clean_plugins(self):
         return [self.plugin("_pytest.python", "core", distribution="pytest", version="9.2.0"),
@@ -1050,13 +1059,38 @@ class DeclaredPluginTrustTests(unittest.TestCase):
         self.assertRefused(self.read(collected=(PASS_ID, FAIL_ID), passed=(PASS_ID,)))
 
     def test_trusted_plugin_matches_distribution_version_module_and_source(self):
-        record, reason = self.read(plugins=[*self.clean_plugins(), self.xdist()],
-                                   control=self.control(explicit=[{"name": "xdist", "trust": "list"}]))
+        run = self.locked()
+        record, reason = self.read(run=run, plugins=[*self.clean_plugins(), self.xdist()],
+                                   control=self.control(explicit=[{"name": "xdist", "trust": "list_metadata"}]))
         self.assertIsNone(reason)
         for changed in ({"version": "3.7.0"}, {"module": "xdist.injected"}, {"installed": False},
                         {"distribution": "pytest-xdist-fork"}):
             with self.subTest(changed=changed):
-                self.assertRefused(self.read(plugins=[*self.clean_plugins(), self.xdist(**changed)]))
+                self.assertRefused(self.read(run=run, plugins=[*self.clean_plugins(), self.xdist(**changed)]))
+
+    def test_xdist_is_trusted_only_with_its_hash_lock_in_the_checked_tree(self):
+        # EVID-D28-01 (I2): name==version means something only against the checked tree's
+        # hash lock (CI-PAR-001 requirements/ci.lock). CI-EVID alone has none, so xdist is
+        # not trusted there (fail-closed); after the CI-PAR merge the lock trusts it.
+        plugins = [*self.clean_plugins(), self.xdist()]
+        self.assertRefused(self.read(plugins=plugins))
+        record, reason = self.read(run=self.locked(), plugins=plugins)
+        self.assertIsNone(reason)
+        refused = {"other version": LOCK.replace("pytest-xdist==3.8.0", "pytest-xdist==3.7.0"),
+                   "no hash": "pytest-xdist==3.8.0\n",
+                   "not listed": LOCK.splitlines()[0] + "\n",
+                   "bad hash": "pytest-xdist==3.8.0 --hash=sha256:abc\n"}
+        for label, text in refused.items():
+            with self.subTest(lock=label):
+                self.assertRefused(self.read(run=self.locked(text), plugins=plugins))
+
+    def test_list_trust_names_a_metadata_match_not_integrity(self):
+        # EVID-D28-01 (I1): a trusted distribution is matched by metadata (name, version, the
+        # RECORD file list), not by the bytes it runs; the record's trust value says so.
+        self.assertEqual(run_record.LIST_TRUST, "list_metadata")
+        run = self.locked()
+        self.assertRefused(self.read(run=run, plugins=[*self.clean_plugins(), self.xdist(trust="list")]))
+        self.assertRefused(self.read(run=run, control=self.control(explicit=[{"name": "xdist", "trust": "list"}])))
 
     def test_record_without_plugin_control_facts_is_refused(self):
         # A record from a producer that does not report these facts is no evidence.
@@ -1075,10 +1109,10 @@ class DeclaredTrustRuleTests(unittest.TestCase):
 
     def test_explicit_p_names(self):
         allowed = [{"name": "baton.pytest_record", "trust": "baton"}, {"name": "pytester", "trust": "core"},
-                   {"name": "xdist", "trust": "list"}, {"name": "xdist.plugin", "trust": "list"}]
+                   {"name": "xdist", "trust": "list_metadata"}, {"name": "xdist.plugin", "trust": "list_metadata"}]
         self.assertEqual(run_record.control_violations(self.control(explicit=allowed, disabled=["doctest"])), [])
         for name, trust in (("evilplug", None), ("evil.plugin", "core"), ("baton.other", "baton"),
-                            ("xdist_fork", "list")):
+                            ("xdist_fork", "list_metadata"), ("xdist", "list")):
             with self.subTest(name=name):
                 self.assertEqual(run_record.control_violations(self.control(explicit=[{"name": name, "trust": trust}])),
                                  ["explicit_plugin_not_trusted:" + name])
@@ -1090,12 +1124,18 @@ class DeclaredTrustRuleTests(unittest.TestCase):
 
     def test_channel_module_needs_trusted_xdist_and_tree_code_needs_the_tree(self):
         channel = {"module": "__channelexec__", "trust": "channel"}
-        xdist = {"module": "xdist.remote", "trust": "list", "distribution": "pytest-xdist", "version": "3.8.0",
-                 "installed": True}
-        self.assertEqual(run_record.plugin_violations([channel, xdist], "t"), [])
-        self.assertEqual(run_record.plugin_violations([channel], "t"), ["plugin_not_trusted:__channelexec__"])
+        xdist = {"module": "xdist.remote", "trust": "list_metadata", "distribution": "pytest-xdist",
+                 "version": "3.8.0", "installed": True}
         with tempfile.TemporaryDirectory() as tmp:
             tree, outside = Path(tmp) / "tree", Path(tmp) / "elsewhere.py"
+            (tree / "requirements").mkdir(parents=True)
+            (tree / "requirements" / "ci.lock").write_text(LOCK, encoding="utf-8")
+            self.assertEqual(run_record.plugin_violations([channel, xdist], str(tree)), [])
+            self.assertEqual(run_record.plugin_violations([channel], str(tree)),
+                             ["plugin_not_trusted:__channelexec__"])
+            # Without the lock neither xdist nor its worker channel is trusted.
+            self.assertEqual(run_record.plugin_violations([channel, xdist], tmp),
+                             ["plugin_not_locked:pytest-xdist", "plugin_not_trusted:__channelexec__"])
             inside = {"module": "helpers.fixtures", "trust": "tree", "file": str(tree / "helpers" / "fixtures.py")}
             self.assertEqual(run_record.plugin_violations([inside], str(tree)), [])
             self.assertEqual(run_record.plugin_violations([dict(inside, file=str(outside))], str(tree)),
@@ -1108,6 +1148,74 @@ class DeclaredTrustRuleTests(unittest.TestCase):
         self.assertEqual(run_record.collection_violations(record), [])
         self.assertEqual(run_record.collection_violations(dict(record, successful=True, outcomes={"a": "pass"})),
                          ["no_result:b"])
+
+    def test_locked_versions_need_a_sha256_hash(self):
+        # EVID-D28-01 (I2): only hash-pinned name==version lines of the tree's lock count.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(run_record.locked_versions(tmp), {})
+            (Path(tmp) / "requirements").mkdir()
+            (Path(tmp) / "requirements" / "ci.lock").write_text(
+                "# comment\n" + LOCK + 'colorama==0.4.6 ; sys_platform == "win32" --hash=sha256:' + "c" * 64 + "\n"
+                "Pytest_Other==1.0\nexecnet==2.1.2 --hash=md5:" + "d" * 32 + "\n", encoding="utf-8")
+            self.assertEqual(run_record.locked_versions(tmp),
+                             {"pytest": "9.2.0", "pytest-xdist": "3.8.0", "colorama": "0.4.6"})
+
+
+# --------------------------------------------------------------------------- EVID-D28-01 known residual risk
+
+class KnownResidualEnvironmentTests(unittest.TestCase):
+    """EVID-D28-01 (I3): pinned known residual risk, not a defence. Start-up code already
+    present in the running Python environment (here a ``.pth`` line in a stdlib venv's
+    site-packages) runs before any recorder and can change what is collected, so a record of
+    that run is accepted. Defending the local environment (start-up code, installed packages,
+    the interpreter) is split out to TASK-ENV-INTEG-001 (user decision D29 pending); a local
+    PASS from an environment whose integrity is not established is not independent final
+    evidence (Spec CI-EVID-001 "증거 신뢰 경계"). The pytest case is auxiliary evidence."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name).resolve()
+        self.tree, self.venv = base / "tree", base / "venv"
+        (self.tree / "tests").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(self.tree)], check=True, capture_output=True)
+        (self.tree / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        (self.tree / "tests" / "test_demo.py").write_text(
+            "import unittest\nclass T(unittest.TestCase):\n"
+            "    def test_pass(self): pass\n    def test_fail(self): self.fail('real failure')\n", encoding="utf-8")
+        subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(self.venv)], check=True,
+                       capture_output=True)
+        self.python = self.venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        site = subprocess.run([str(self.python), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        self.site = Path(site)
+
+    def run_recorded(self):
+        from baton.orchestrator import RecordedRun, child_environment
+        environment = child_environment(str(self.tree))
+        run = RecordedRun("unittest", [str(self.python), "-m", "unittest", "tests.test_demo"], self.tree, environment)
+        self.addCleanup(run.cleanup)
+        env = {**os.environ, **{k: v for k, v in environment.items() if v is not None}}
+        for key, value in environment.items():
+            if value is None:
+                env.pop(key, None)
+        done = subprocess.run(run.argv, cwd=self.tree, env=env, capture_output=True, text=True)
+        return run.read(done.returncode)
+
+    def test_known_residual_startup_code_can_drop_tests_unittest(self):
+        record, reason = self.run_recorded()
+        self.assertIsNone(reason)
+        self.assertFalse(run_record.eligible(record))          # the real failure is seen
+        (self.site / "zz_residual.pth").write_text("import zz_residual_hook\n", encoding="utf-8")
+        (self.site / "zz_residual_hook.py").write_text(
+            "import unittest\n_names = unittest.TestLoader.getTestCaseNames\n"
+            "unittest.TestLoader.getTestCaseNames = lambda self, cls: [n for n in _names(self, cls) "
+            "if n != 'test_fail']\n", encoding="utf-8")
+        record, reason = self.run_recorded()
+        # Known residual (ENV-INTEG): the dropped failure leaves an accepted, eligible record.
+        self.assertIsNone(reason)
+        self.assertTrue(run_record.eligible(record))
+        self.assertEqual(record["counts"]["tests_run"], 1)
 
 if __name__ == "__main__":
     unittest.main()
