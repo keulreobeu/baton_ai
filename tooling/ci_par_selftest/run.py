@@ -1,4 +1,4 @@
-"""CI-PAR-001 layer (b): real pytest / pytest-xdist self-test T17-T24 (auxiliary, not official evidence).
+"""CI-PAR-001 layer (b): real pytest / pytest-xdist self-test T17-T25 (auxiliary, not official evidence).
 
 Builds synthetic unittest suites in a temporary directory and runs each one with the
 unittest ID baseline and with pytest-xdist through scripts/suite_backend.py, for every
@@ -184,6 +184,17 @@ CASES = {
                         "    f.write(str(os.getpid()) + '\\n')\n"
                         "class A(unittest.TestCase):\n" + "".join(f"    def test_{i}(self): pass\n" for i in range(6)),
     }, "expect": "equivalent", "fresh": ["imports.log"], "count_lines": "imports.log"},
+    # AC-04: pytest ignores load_tests, so its collection differs from the loader inventory.
+    "T25_load_tests_collection_differs": {"files": {
+        "test_lt_filter.py": "import unittest\nclass C(unittest.TestCase):\n"
+                             "    def test_a(self): pass\n    def test_b(self): pass\n"
+                             "def load_tests(loader, tests, pattern):\n"
+                             "    return unittest.TestSuite([C('test_a')])\n",
+        "test_lt_extra.py": "import unittest\nclass D(unittest.TestCase):\n"
+                            "    def test_a(self): pass\n    def check_x(self): pass\n"
+                            "def load_tests(loader, tests, pattern):\n"
+                            "    tests.addTest(D('check_x'))\n    return tests\n",
+    }, "expect": "collection_mismatch"},
 }
 
 
@@ -216,6 +227,7 @@ def summarize_doc(path):
             "errors": s["errors"], "skipped": s["skipped"], "expected_failures": s["expected_failures"],
             "unexpected_successes": d.get("unexpected_successes"), "compare": s["suite_backend"]["compare"]["status"],
             "not_run": s["suite_backend"]["compare"]["not_run"], "crashes": d.get("crashes"),
+            "missing": s["suite_backend"]["compare"]["missing"], "extra": s["suite_backend"]["compare"]["extra"],
             "plugin_violations": d.get("plugin_violations"), "record_rejected": d.get("record_rejected"),
             "unclassified": d.get("unclassified"),
             "collection_errors": d.get("collection_errors"), "scopes": doc["scopes"],
@@ -260,6 +272,10 @@ def run_case(name, case, candidate, work, lease_home):
         ok = out["xdist"]["rc"] == 3 and out["xdist"]["seconds"] < 120 and not list(lease_home.rglob("leases/*.json"))
     elif expect == "equivalent":
         ok = bool(out.get("compare", {}).get("equivalent")) and not out["pytest_cache_created"]
+    elif expect == "collection_mismatch":
+        seq, xd = out["sequential"]["doc"] or {}, out["xdist"]["doc"] or {}
+        ok = (seq.get("status") == "PASS" and out["xdist"]["rc"] != 0 and xd.get("status") == "FAIL"
+              and xd.get("compare") == "mismatch" and bool(xd.get("missing")) and bool(xd.get("extra")))
     elif expect == "refused_no_subtest":
         doc = out["xdist"]["doc"] or {}
         ok = (out["xdist"]["rc"] != 0 and doc.get("status") == "FAIL"
