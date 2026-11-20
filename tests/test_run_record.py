@@ -3,6 +3,7 @@ import ast
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -290,13 +291,37 @@ class RevTwoReasonTests(RecordTestCase):
                  (self.pytest_record(5), 5, None),                                       # nothing collected
                  (self.pytest_record(1, **{"t::f": ["fail"]}), 1, None),
                  (self.pytest_record(2, **{"t::e": ["error"]}), 2, None),                # collection error
-                 (self.pytest_record(2, **{"t::a": ["pass"]}), 2, "rc_mismatch"),
+                 (self.pytest_record(2, **{"t::a": ["pass"]}), 2, None),               # interrupted (rev3 E203)
                  (self.pytest_record(0, **{"t::e": ["error"]}), 0, "rc_mismatch"),
                  (self.pytest_record(5, **{"t::a": ["pass"]}), 5, "rc_mismatch")]
         for record, rc, reason in cases:
             with self.subTest(rc=rc, counts=record["counts"]):
                 self.write(record)
                 self.assertEqual(self.read(rc=rc)[1], reason)
+
+    def test_pytest_successful_is_the_run_status_and_eligibility_is_separate(self):
+        """rev3 E203: non-strict XPASS rc 0 successful=true but ineligible; strict XPASS is a
+        failure (rc 1); rc 5 and rc 2/3/4 are unsuccessful."""
+        xpass = self.pytest_record(0, **{"t::xp": ["unexpected_success"]})
+        self.assertTrue(xpass["successful"])
+        self.assertFalse(run_record.eligible(xpass))
+        strict = self.pytest_record(1, **{"t::xp": ["fail"]})
+        self.write(strict)
+        self.assertIsNone(self.read(rc=1)[1])
+        self.assertFalse(strict["successful"])
+        for rc in (2, 3, 4, 5):
+            self.assertFalse(self.pytest_record(rc)["successful"])
+        self.write(self.pytest_record(2, **{"t::a": ["pass"]}), successful=True)
+        self.assertEqual(self.read(rc=2)[1], "rc_mismatch")
+        clean = self.pytest_record(0, **{"t::a": ["pass"]})
+        self.assertTrue(run_record.eligible(clean))
+        self.assertTrue(run_record.eligible(self.write()))      # unittest producer
+
+    def test_leftover_worker_collection_file_is_extra_files(self):
+        """rev3 E204: a crash leaves <record>.collect-<worker>.json beside the record."""
+        self.write(self.pytest_record(0, **{"t::a": ["pass"]}))
+        (Path(self.tmp.name) / "record.json.collect-gw0.json").write_text("{}", encoding="utf-8")
+        self.assertEqual(self.read(exclusive=True, producer="pytest")[1], "extra_files")
 
     def test_unittest_rc_zero_needs_success(self):
         record = run_record.make_record(producer="unittest", nonce=NONCE, binding=BINDING,
@@ -350,9 +375,13 @@ class RevTwoEventTests(unittest.TestCase):
         found, scopes, _ = run_record.rows_from_pytest_events(events, collected, [])
         self.assertEqual(run_record.assemble(found, scopes)["outcomes"], {"t.py::test_s": "skip"})
 
-    def test_declared_argv_digest_ignores_the_run_options(self):
-        args = ["-o", "addopts=", "tests", "--baton-record=/a/r.json", "--baton-nonce=" + NONCE]
-        self.assertEqual(run_record.pytest_argv_for_digest(args), ["-o", "addopts=", "tests"])
+    def test_argv_for_digest_normalises_the_interpreter_and_run_values(self):
+        args = [sys.executable, "-m", "pytest", "-o", "addopts=", "tests", "--baton-record=/a/r.json",
+                "--baton-nonce=" + NONCE, "--baton-binding={}", "--baton-mode=declared"]
+        self.assertEqual(run_record.argv_for_digest(args),
+                         ["python", "-m", "pytest", "-o", "addopts=", "tests", "--baton-mode=declared"])
+        self.assertEqual(run_record.argv_for_digest(["py", "--record-out", "/r", "--record-nonce", NONCE],
+                                                    drop=("/r", NONCE)), ["python", "--record-out", "--record-nonce"])
 
 
 class RevTwoBindingTests(unittest.TestCase):
@@ -360,7 +389,11 @@ class RevTwoBindingTests(unittest.TestCase):
         given = {"head": None, "base": "b" * 40, "installed_digest": "d", "argv_digest": "caller"}
         self.assertEqual(run_record.observed_binding(given)["argv_digest"], "caller")    # CI-PAR form
         self.assertNotIn("worktree_digest", run_record.observed_binding(given))
-        self.assertEqual(run_record.observed_binding(given, argv=["a"])["argv_digest"], run_record.argv_digest(["a"]))
+        self.assertEqual(run_record.observed_binding(given, argv=["a"])["argv_digest"], "caller")
+        self.assertEqual(run_record.observed_binding(dict(given, argv_digest=None), argv=["a"])["argv_digest"],
+                         run_record.argv_digest(["a"]))
+        self.assertNotEqual(run_record.observed_binding({}, plugins=["a"])["plugins_digest"],
+                            run_record.observed_binding({}, plugins=["a", "b"])["plugins_digest"])
         env = {"PYTHONPATH": "src", "UNRELATED": "1"}
         self.assertEqual(run_record.observed_binding({"env_digest": None}, env=env)["env_digest"],
                          run_record.env_digest({"PYTHONPATH": "src"}))
@@ -377,7 +410,17 @@ class RevTwoBindingTests(unittest.TestCase):
             untracked = run_record.worktree_digest(directory)
             (Path(directory) / "new.txt").write_text("2", encoding="utf-8")
             changed = run_record.worktree_digest(directory)
-            self.assertEqual(len({clean, untracked, changed}), 3)
+            (Path(directory) / ".gitignore").write_text("ignored_*.py\n", encoding="utf-8")
+            (Path(directory) / "src").mkdir()
+            with_ignore = run_record.worktree_digest(directory)
+            (Path(directory) / "src" / "ignored_mod.py").write_text("x = 1\n", encoding="utf-8")
+            ignored = run_record.worktree_digest(directory)
+            (Path(directory) / "ignored_top.py").write_text("x = 1\n", encoding="utf-8")   # outside the roots
+            self.assertEqual(ignored, run_record.worktree_digest(directory))
+            self.assertEqual(len({clean, untracked, changed, with_ignore, ignored}), 5)
+            (Path(directory) / "ignored_top.py").unlink()
+            (Path(directory) / "src" / "ignored_mod.py").unlink()
+            (Path(directory) / ".gitignore").unlink()
             self.assertEqual(changed, run_record.observed_binding({"worktree_digest": None}, cwd=directory)["worktree_digest"])
         with tempfile.TemporaryDirectory() as directory:
             self.assertIsNone(run_record.worktree_digest(directory))       # not a Git work tree
@@ -407,30 +450,62 @@ class RecordedUnittestRunnerTests(unittest.TestCase):
             "    def test_n(self): pass\n", encoding="utf-8")
         (self.root / "test_k.py").write_text(
             "import unittest\nclass K(unittest.TestCase):\n    def test_k(self): pass\n", encoding="utf-8")
-        (self.root / "test_lost.py").write_text(
-            "import unittest\n"
-            "class L(unittest.TestCase):\n"
-            "    def test_ok(self): pass\n"
-            "    def test_lost(self): pass\n"
-            "    def run(self, result=None):\n"
-            "        if self._testMethodName == 'test_lost':\n"
-            "            result.startTest(self); result.stopTest(self); return result\n"
-            "        return super().run(result)\n", encoding="utf-8")
 
-    def run_both(self, argv):
+    PLACEHOLDERS = {"head": None, "tree": None, "worktree_digest": None, "env_digest": None, "argv_digest": None}
+
+    def run_both(self, argv, binding=None):
         env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
         plain = subprocess.run([sys.executable, "-X", "utf8", "-m", "unittest", *argv], cwd=self.root,
                                capture_output=True, text=True, env=env)
         directory = tempfile.mkdtemp(dir=self.tmp.name)
         out, nonce = os.path.join(directory, "record.json"), run_record.new_nonce()
-        recorded = subprocess.run(run_record.unittest_argv(sys.executable, out, nonce, {"head": None}, argv),
-                                  cwd=self.root, capture_output=True, text=True, env=env)
-        record, reason = run_record.read_record(out, nonce, {"argv_digest": run_record.argv_digest(argv)},
-                                                recorded.returncode, producer="unittest", exclusive=True)
+        command = run_record.unittest_argv(sys.executable, out, nonce, self.PLACEHOLDERS if binding is None else binding,
+                                           argv)
+        expected = run_record.observed_binding(
+            self.PLACEHOLDERS, cwd=self.root, env=env,
+            argv=run_record.argv_for_digest(command, drop=run_record.unittest_run_values(command)))
+        recorded = subprocess.run(command, cwd=self.root, capture_output=True, text=True, env=env)
+        record, reason = run_record.read_record(out, nonce, expected, recorded.returncode, producer="unittest",
+                                                exclusive=True, not_before=time.time() - 60)
+        # The same run made verbose lists the IDs plain unittest really ran (fixture
+        # error lines such as "setUpClass (m.C)" are not tests).
+        verbose = argv[:1] + ["-v"] + argv[1:] if argv[:1] == ["discover"] else ["-v", *argv]
+        listed = subprocess.run([sys.executable, "-X", "utf8", "-m", "unittest", *verbose], cwd=self.root,
+                                capture_output=True, text=True, env=env)
+        self.plain_ids = sorted({m.group(2) for m in re.finditer(r"^(\w+) \(([\w.]+)\)", listed.stderr, re.M)
+                                 if not m.group(1).startswith(("setUp", "tearDown"))})
         return plain, recorded, record, reason
 
+    def test_unittest_options_and_bad_arguments(self):
+        """rev3 E202: -f, -b, -v, discover -s/-t and an argument error behave as under
+        ``python -m unittest`` (an argument error is rc 2 and no record)."""
+        (self.root / "pkg").mkdir()
+        (self.root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (self.root / "pkg" / "test_p.py").write_text(
+            "import unittest\nclass P(unittest.TestCase):\n    def test_p(self): print('noise')\n"
+            "    def test_q(self): self.fail()\n", encoding="utf-8")
+        for argv in (["-f", "test_m"], ["-b", "pkg.test_p"], ["-v", "test_k"],
+                     ["discover", "-s", "pkg", "-t", "."], ["discover", "-s", "pkg", "-p", "test_*.py", "-t", "."]):
+            with self.subTest(argv=argv):
+                plain, recorded, record, reason = self.run_both(argv)
+                self.assertIsNone(reason)
+                self.assertEqual(recorded.returncode, plain.returncode)
+                self.assertEqual(record["counts"], record["unittest_counts"])
+                ran = re.search(r"Ran (\d+) tests?", plain.stderr)
+                self.assertEqual(record["counts"]["tests_run"], int(ran.group(1)))
+                self.assertEqual(sorted(record["started"]), self.plain_ids)
+        plain, recorded, record, reason = self.run_both(["--no-such-option"])
+        self.assertEqual((plain.returncode, recorded.returncode, reason), (2, 2, "missing"))
+
+    def test_producer_copying_the_caller_binding_is_refused(self):
+        """rev3 E206: a producer that writes what it was given instead of observing it."""
+        copied = {"head": "a" * 40, "tree": "b" * 40, "worktree_digest": "c" * 64, "env_digest": "d" * 64,
+                  "argv_digest": "e" * 64}
+        _, _, record, reason = self.run_both(["test_k"], binding=copied)
+        self.assertEqual(reason, "binding_mismatch")
+
     def test_argv_meaning_rc_and_counts_match_plain_unittest(self):
-        for argv, tests_run in ((["test_m"], 4), ([], 7), (["discover", "-p", "test_k.py"], 1),
+        for argv, tests_run in ((["test_m"], 4), ([], 5), (["discover", "-p", "test_k.py"], 1),
                                 (["-k", "test_a", "test_m"], 1), (["test_m.T.test_sub", "test_k"], 2)):
             with self.subTest(argv=argv):
                 plain, recorded, record, reason = self.run_both(argv)
@@ -439,6 +514,7 @@ class RecordedUnittestRunnerTests(unittest.TestCase):
                 self.assertEqual(record["counts"]["tests_run"], tests_run)
                 self.assertEqual(record["counts"], record["unittest_counts"])
                 self.assertIn(f"Ran {tests_run} test", plain.stderr)
+                self.assertEqual(sorted(record["started"]), self.plain_ids)
 
     def test_record_details(self):
         _, recorded, record, reason = self.run_both(["test_m"])
@@ -450,6 +526,16 @@ class RecordedUnittestRunnerTests(unittest.TestCase):
         self.assertNotIn("test_m.T.test_a", record["failed"])                      # printed text is not a result
 
     def test_lost_result_and_no_tests(self):
+        # A test that starts and stops without a result (not listed by verbose unittest).
+        (self.root / "test_lost.py").write_text(
+            "import unittest\n"
+            "class L(unittest.TestCase):\n"
+            "    def test_ok(self): pass\n"
+            "    def test_lost(self): pass\n"
+            "    def run(self, result=None):\n"
+            "        if self._testMethodName == 'test_lost':\n"
+            "            result.startTest(self); result.stopTest(self); return result\n"
+            "        return super().run(result)\n", encoding="utf-8")
         _, recorded, record, reason = self.run_both(["test_lost"])
         self.assertEqual((recorded.returncode, reason), (0, "self_inconsistent"))  # R401 kept
         (self.root / "test_empty.py").write_text("import unittest\n", encoding="utf-8")

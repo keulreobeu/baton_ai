@@ -103,6 +103,10 @@ def make_record(*, producer, nonce, binding, rows, scopes, exit_code, summary=No
         raise ValueError("unknown producer")
     record = {"schema": SCHEMA, "producer": producer, "nonce": nonce, "binding": dict(binding),
               **assemble(rows, scopes), "exit_code": int(exit_code), "summary": summary}
+    if producer in ("pytest", "xdist"):
+        # rev3 E203: pytest's own success is its exit status (a non-strict XPASS keeps rc 0
+        # and successful=true; it is still ineligible as evidence, see ``eligible``).
+        record["successful"] = int(exit_code) == 0
     if stages is not None:
         record["stages"] = {k: dict(v) for k, v in stages.items()}
     record.update(extra or {})
@@ -153,16 +157,29 @@ def env_digest(env):
     return _sha256(json.dumps({k: env.get(k) for k in ENV_KEYS}, sort_keys=True).encode("utf-8"))
 
 
+# Ignored Python source here can still be imported or discovered (ci_plan.freeze() scope).
+IGNORED_SOURCE_ROOTS = ("src", "tests", "scripts")
+
+
 def worktree_digest(cwd=None):
-    """Tracked changes against HEAD plus every untracked, not ignored file (name and content);
-    None when Git cannot tell (rev2 AC-02: a dirty copy is not identified by its HEAD tree)."""
+    """Tracked changes against HEAD, every untracked not ignored file and every ignored
+    ``*.py`` under IGNORED_SOURCE_ROOTS (name and content); None when Git cannot tell
+    (rev2/rev3 AC-02 E206: a dirty copy is not identified by its HEAD tree)."""
     diff = _git_bytes("diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", cwd=cwd)
-    names = _git_bytes("ls-files", "--others", "--exclude-standard", "-z", cwd=cwd)
-    if diff is None or names is None:
+    others = _git_bytes("ls-files", "--others", "--exclude-standard", "-z", cwd=cwd)
+    tracked = _git_bytes("ls-files", "-z", cwd=cwd)
+    if diff is None or others is None or tracked is None:
         return None
     base = Path(cwd or ".")
+    names = {n for n in others.split(b"\0") if n}
+    known = names | {n for n in tracked.split(b"\0") if n}
+    for directory in IGNORED_SOURCE_ROOTS:
+        for file in (base / directory).rglob("*.py"):
+            name = os.fsencode(file.relative_to(base).as_posix())
+            if name not in known:
+                names.add(name)
     digest = hashlib.sha256(b"diff\0" + _sha256(diff).encode() + b"\0")
-    for name in sorted(n for n in names.split(b"\0") if n):
+    for name in sorted(names):
         try:
             content = _sha256((base / os.fsdecode(name)).read_bytes()).encode()
         except OSError:
@@ -171,20 +188,38 @@ def worktree_digest(cwd=None):
     return digest.hexdigest()
 
 
-def pytest_argv_for_digest(args):
-    """pytest arguments as the declared-mode argv_digest sees them: without the run's own
-    ``--baton-*=VALUE`` options (path, nonce, binding), which differ on every run."""
-    return [str(a) for a in args if not str(a).startswith("--baton-")]
+RUN_OPTIONS = ("--baton-record=", "--baton-nonce=", "--baton-binding=")
 
 
-def observed_binding(given, *, cwd=None, argv=None, env=None):
+def argv_for_digest(argv, drop=()):
+    """The process argv as argv_digest sees it (rev3 E206): the interpreter path is
+    ``python`` and the run's own record path, nonce and binding values are left out."""
+    argv = [str(a) for a in argv]
+    drop = {str(d) for d in drop}
+    return ["python"] + [a for a in argv[1:] if a not in drop and not a.startswith(RUN_OPTIONS)]
+
+
+def process_argv():
+    """This process's actual command line (``sys.orig_argv``: interpreter, options, -c/-m)."""
+    return list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
+
+
+def plugins_digest(plugins):
+    return _sha256(json.dumps(plugins, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+
+
+def observed_binding(given, *, cwd=None, argv=None, env=None, plugins=None):
     """The caller's binding with what this process observes written over it, so a tree, work
     copy or interpreter that changed before the record was written shows as binding_mismatch.
 
-    The one definition for callers (before and after a run) and producers (rev2 AC-02):
-    python/platform are always observed; head, tree, worktree_digest and env_digest are
-    observed when ``given`` names them; argv_digest when ``argv`` is passed. Other keys
-    (base, installed_digest, a caller's own argv_digest) pass through unchanged.
+    The one definition for callers (before and after a run) and producers (rev2/rev3
+    AC-02 E206): python/platform are always observed; head, tree, worktree_digest and
+    env_digest are observed when ``given`` names them (official consumers name them with
+    a None placeholder and keep the expected values to themselves, so a producer that
+    copies its input instead of observing is a binding_mismatch); argv_digest is computed
+    from ``argv`` (normalised with ``argv_for_digest``) unless ``given`` carries a caller
+    value (CI-PAR's own config digest); plugins_digest from ``plugins``. Other keys (base,
+    installed_digest) pass through unchanged.
     """
     binding = dict(given)
     binding["python"] = sys.version.split()[0]
@@ -197,9 +232,20 @@ def observed_binding(given, *, cwd=None, argv=None, env=None):
         binding["worktree_digest"] = worktree_digest(cwd)
     if "env_digest" in binding:
         binding["env_digest"] = env_digest(os.environ if env is None else env)
-    if argv is not None:
+    if argv is not None and binding.get("argv_digest") is None:
         binding["argv_digest"] = argv_digest(argv)
+    if plugins is not None:
+        binding["plugins_digest"] = plugins_digest(plugins)
     return binding
+
+
+def eligible(record):
+    """Evidence eligibility, apart from a producer's own success (rev3 E203): the same
+    rule as evidence._checks (nonzero tests, no skip, expected failure or unexpected success)."""
+    counts = record["counts"]
+    return (record["successful"] is True and counts["tests_run"] > 0 and counts["failures"] == 0
+            and counts["errors"] == 0 and counts["skipped"] == 0 and counts["expected_failures"] == 0
+            and counts["unexpected_successes"] == 0)
 
 
 def _int(value):
@@ -225,12 +271,13 @@ def _consistent(record):
                  or counts["expected_failures"] or counts["unexpected_successes"])
     # Same rules as orchestrator.read_unittest_record (CI-VTIER-001 R01/R401). ``failed``
     # may repeat a parent ID (one entry per failing subTest); only started repeats are duplicates.
+    unittest_success = counts["failures"] == 0 and counts["errors"] == 0 and counts["unexpected_successes"] == 0
     if not (len(started) == counts["tests_run"] and set(passed) <= set(started)
             and len(record["skipped"]) == counts["skipped"]
             and len(record["failed"]) == (counts["failures"] + counts["errors"]
                                           + counts["expected_failures"] + counts["unexpected_successes"])
-            and record["successful"] == (counts["failures"] == 0 and counts["errors"] == 0
-                                         and counts["unexpected_successes"] == 0)
+            # pytest's success is its rc (checked with the rc below, rev3 E203).
+            and (record["producer"] in ("pytest", "xdist") or record["successful"] == unittest_success)
             and not (clean and set(started) != set(passed))):
         return False
     native = record.get("unittest_counts")
@@ -244,12 +291,20 @@ def _rc_consistent(record, returncode):
         return False
     counts = record["counts"]
     if record["producer"] in ("pytest", "xdist"):
-        # pytest semantics: rc 5 = nothing collected; otherwise rc 0 <=> no failure/error
-        # (a non-strict XPASS keeps rc 0 and is counted as an unexpected success).
+        # rev3 E203, pytest semantics: rc 0 <=> successful <=> no failure/error (a strict
+        # XPASS is a failure; a non-strict XPASS keeps rc 0). rc 1 needs a failure, an error
+        # or a unittest unexpected success (pytest fails it); rc 5 = nothing collected;
+        # rc 2/3/4 are unsuccessful runs.
         broken = counts["failures"] + counts["errors"]
+        if record["successful"] != (returncode == 0):
+            return False
+        if returncode == 0:
+            return broken == 0
+        if returncode == 1:
+            return broken + counts["unexpected_successes"] > 0
         if returncode == 5:
             return counts["tests_run"] == 0 and broken == 0
-        return (returncode == 0) == (broken == 0)
+        return True
     return not (returncode == 0 and not record["successful"])
 
 
@@ -507,6 +562,19 @@ class RecordingResult(RecordingMixin, unittest.TextTestResult):
     pass
 
 
+class RecordingRunner(unittest.TextTestRunner):
+    """TextTestRunner with the recording result; verbosity, failfast, buffer and the other
+    options are what unittest.main passes (rev3 E202)."""
+    resultclass = RecordingResult
+
+    def run(self, test):
+        # Before the run: a suite drops each test it has run (TestSuite._cleanup).
+        selected = [t for t in iter_tests(test) if t is not None]
+        result = super().run(test)
+        result.selected = selected
+        return result
+
+
 def iter_tests(suite):
     for item in suite:
         if isinstance(item, unittest.TestSuite):
@@ -523,28 +591,22 @@ def unittest_exit_code(result):
     return 0 if result.wasSuccessful() else 1
 
 
-def run_unittest(argv, *, out, nonce, binding):
+def run_unittest(argv, *, out, nonce, binding, drop=()):
     """``python -m unittest <argv>`` unchanged (default discovery, ``discover -s/-t/-p``,
     ``-k``, ``-f``, ``-b``, ``-v``, test names) with only the result class replaced; writes
     one run-record/1 (producer unittest) at the end and returns unittest's exit status."""
     argv = [str(a) for a in argv]
-
-    selected = []
-
-    class Runner(unittest.TextTestRunner):
-        resultclass = RecordingResult
-
-        def run(self, test):
-            # Before the run: a suite drops each test it has run (TestSuite._cleanup).
-            selected.extend(t for t in iter_tests(test) if t is not None)
-            return super().run(test)
-
-    program = unittest.main(module=None, argv=["python -m unittest", *argv], testRunner=Runner, exit=False)
+    environment = dict(os.environ)            # as this process started (rev3 E206)
+    # rev3 E202: module=None as ``python -m unittest`` (module='__main__' breaks ``discover``);
+    # an argument error leaves unittest's own SystemExit(2) and no record.
+    program = unittest.main(module=None, argv=["python -m unittest", *argv], testRunner=RecordingRunner, exit=False)
     result = program.result
+    selected = getattr(result, "selected", [])
     result.settle(selected)
     rc = unittest_exit_code(result)
     record = make_record(producer="unittest", nonce=nonce,
-                         binding=observed_binding(binding, cwd=os.getcwd(), argv=argv),
+                         binding=observed_binding(binding, cwd=os.getcwd(), env=environment,
+                                                  argv=argv_for_digest(process_argv(), drop=drop)),
                          rows=result.rows, scopes=result.scopes, exit_code=rc,
                          extra={"unittest_counts": result.unittest_counts(),
                                 "selected": sorted({t.id() for t in selected})})
@@ -555,7 +617,8 @@ def run_unittest(argv, *, out, nonce, binding):
 def unittest_child(args):
     """Child entry: ``[record_path, spec_json, *unittest_argv]``; spec = {nonce, binding}."""
     out, spec, argv = args[0], json.loads(args[1]), args[2:]
-    return run_unittest(argv, out=out, nonce=spec["nonce"], binding=spec.get("binding") or {})
+    return run_unittest(argv, out=out, nonce=spec["nonce"], binding=spec.get("binding") or {},
+                        drop=(args[0], args[1]))
 
 
 # ``python -c UNITTEST_BOOTSTRAP <run_record.py> <record> <spec> <unittest argv...>``. Loads
@@ -570,8 +633,15 @@ UNITTEST_BOOTSTRAP = (
     "sys.exit(module.unittest_child(sys.argv[2:]))\n")
 
 
-def unittest_argv(python, out, nonce, binding, argv):
-    """Process argv of the shared recorded unittest runner (callers and the remote run)."""
+def unittest_argv(python, out, nonce, binding, argv, *, options=("-X", "utf8")):
+    """Process argv of the shared recorded unittest runner (callers and the remote run);
+    ``argv_for_digest(result, drop=unittest_run_values(result))`` is its argv_digest input."""
     spec = json.dumps({"nonce": nonce, "binding": binding}, sort_keys=True)
-    return [str(python), "-X", "utf8", "-c", UNITTEST_BOOTSTRAP, str(Path(__file__).resolve()), str(out), spec,
+    return [str(python), *options, "-c", UNITTEST_BOOTSTRAP, str(Path(__file__).resolve()), str(out), spec,
             *[str(a) for a in argv]]
+
+
+def unittest_run_values(argv):
+    """The record path and spec of a ``unittest_argv`` command line (left out of argv_digest)."""
+    index = [str(a) for a in argv].index(UNITTEST_BOOTSTRAP)
+    return (str(argv[index + 2]), str(argv[index + 3]))

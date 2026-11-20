@@ -145,6 +145,7 @@ def pytest_configure(config):
     if not run_record.NONCE.fullmatch(config.getoption("baton_nonce") or ""):
         raise pytest.UsageError("baton.pytest_record needs --baton-nonce (32 hex)")
     config._baton_record = _State()
+    config._baton_environ = dict(os.environ)    # as the session started (rev3 E206 env_digest)
     bad = _violations(config)
     if bad:
         raise pytest.UsageError("baton: plugin/config outside the allowlist: " + ", ".join(bad))
@@ -264,12 +265,18 @@ def pytest_runtest_makereport(item, call):
         else:
             info["kind"] = "fail"
     elif report.failed:
-        # A strict xpass fails without an exception.
-        info["kind"] = "unexpected_success" if hasattr(report, "wasxfail") or "XPASS" in str(report.longrepr) else "fail"
+        # rev3 E203: a strict XPASS fails without an exception; pytest reports it as a
+        # failure (rc 1), so it is counted as one (the raw marker is kept beside it).
+        strict = "XPASS(strict)" in str(report.longrepr)
+        info["kind"] = "fail"
+        if strict or hasattr(report, "wasxfail"):
+            info.update(xpass_strict=True, wasxfail=getattr(report, "wasxfail", None))
     elif report.skipped:
         info["kind"] = "expected_failure" if hasattr(report, "wasxfail") else "skip"
+        if hasattr(report, "wasxfail"):
+            info["wasxfail"] = report.wasxfail
     elif hasattr(report, "wasxfail"):
-        info["kind"] = "unexpected_success"       # non-strict xpass
+        info.update(kind="unexpected_success", wasxfail=report.wasxfail, xpass_strict=False)  # non-strict XPASS
     else:
         info["kind"] = "pass"
     if call.when in ("setup", "teardown") and not report.passed:
@@ -315,11 +322,12 @@ def pytest_sessionfinish(session, exitstatus):
     distributed = config.pluginmanager.has_plugin("dsession")
     mode = config.getoption("baton_mode")
     declared = mode == "declared"
-    collection, selected, collect_reports = {}, state.selected, list(state.collect_reports)
+    collection, selected, collect_reports, auxiliary = {}, state.selected, list(state.collect_reports), []
     violations = set(_violations(config))
     if distributed:
         record_path = Path(config.getoption("baton_record"))
         for path in sorted(record_path.parent.glob(record_path.name + ".collect-*.json")):
+            auxiliary.append(path)
             data = json.loads(path.read_text(encoding="utf-8"))
             if data.get("nonce") != config.getoption("baton_nonce"):
                 violations.add("stale_worker_collection")
@@ -335,16 +343,22 @@ def pytest_sessionfinish(session, exitstatus):
     rows, scopes, diag = run_record.rows_from_pytest_events(state.events, first, collect_reports, selected)
     diag["worker_collection_mismatch"] = len({json.dumps(v, sort_keys=True) for v in collection.values()}) > 1
     diag["no_collection"] = not collection
+    plugins = _plugin_details(config) if declared else _plugins(config)
     record = run_record.make_record(
         producer="xdist" if distributed else "pytest", nonce=config.getoption("baton_nonce"),
         binding=run_record.observed_binding(
-            json.loads(config.getoption("baton_binding")),
-            argv=run_record.pytest_argv_for_digest(config.invocation_params.args) if declared else None),
+            json.loads(config.getoption("baton_binding")), env=getattr(config, "_baton_environ", None),
+            argv=run_record.argv_for_digest(run_record.process_argv()), plugins=plugins),
         rows=rows, scopes=scopes,
         exit_code=int(exitstatus),
         extra={"tests": rows, "scopes": scopes, "collection": collection, "selected": selected,
                "collect_reports": collect_reports, "events": state.events, "diag": diag,
-               "plugins": _plugin_details(config) if declared else _plugins(config), "mode": mode,
+               "plugins": plugins, "mode": mode,
                "violations": sorted(violations), "pytest": pytest.__version__,
                "subtest_support": subtest_support()})
+    # rev3 E204: every worker file was read and compared above; remove them, then commit
+    # the final record, so a completed run leaves exactly one file (a crash leaves the
+    # worker files, which the reader refuses as extra_files).
+    for path in auxiliary:
+        path.unlink()
     run_record.write_record(config.getoption("baton_record"), record, once=declared)
