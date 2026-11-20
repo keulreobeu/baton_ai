@@ -852,5 +852,73 @@ class RecordedRunTests(unittest.TestCase):
             run_record.write_record(out, forged, once=True)  # the real producer's single write fails
 
 
+# --------------------------------------------------------------------------- EVID-R01 declared tree bound
+
+class DeclaredTreeBoundTests(unittest.TestCase):
+    """EVID-R01 (ChatGPT implementation review, P1): a declared pytest run is bounded by the
+    checked Git work tree, not by pytest's rootdir. Synthetic: the plugin's own decision
+    (run_record.declared_violations) without pytest; the real plugin run is auxiliary evidence."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.outer = Path(self.tmp.name).resolve()
+        self.tree = self.outer / "checked_tree"
+        (self.tree / "tests").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(self.tree)], check=True, capture_output=True)
+
+    def violations(self, *, rootdir=None, inifile=None, conftests=(), tree=None, observed=None):
+        tree = self.tree if tree is None else tree
+        return run_record.declared_violations(
+            str(tree), observed_tree=run_record.git_toplevel(self.tree) if observed is None else observed,
+            rootdir=rootdir or self.tree, inifile=inifile, conftests=list(conftests))
+
+    def test_a_conftest_and_ini_inside_the_tree_are_allowed(self):
+        self.assertEqual(self.violations(inifile=self.tree / "pytest.ini",
+                                         conftests=[self.tree / "conftest.py", self.tree / "tests" / "conftest.py"],
+                                         rootdir=self.tree / "tests"), [])
+        # Canonical comparison: another spelling of the same tree is the same tree.
+        spelled = str(self.tree).swapcase() if os.path.normcase("A") == "a" else str(self.tree)
+        self.assertEqual(self.violations(tree=spelled, conftests=[self.tree / "conftest.py"]), [])
+
+    def test_b_a_parent_pytest_ini_widening_rootdir_is_refused(self):
+        self.assertEqual(self.violations(rootdir=self.outer, inifile=self.outer / "pytest.ini"),
+                         ["inifile_outside_tree", "rootdir_outside_tree"])
+
+    def test_c_an_explicit_parent_rootdir_is_refused(self):
+        self.assertEqual(self.violations(rootdir=self.outer), ["rootdir_outside_tree"])
+
+    def test_d_an_outside_conftest_that_drops_failing_tests_is_record_unavailable(self):
+        found = self.violations(rootdir=self.outer, inifile=self.outer / "pytest.ini",
+                                conftests=[self.outer / "conftest.py", self.tree / "tests" / "conftest.py"])
+        self.assertIn("conftest_outside_tree:" + run_record.canonical_path(self.outer / "conftest.py"), found)
+        self.assertNotIn("conftest_outside_tree:" + run_record.canonical_path(self.tree / "tests" / "conftest.py"),
+                         found)
+        # The plugin writes these violations into the record (or stops with a usage error):
+        # the consumer then has no evidence, whatever the counts say.
+        from baton.orchestrator import RecordedRun, child_environment
+        run = RecordedRun("pytest", [sys.executable, "-m", "pytest", "tests"], self.tree,
+                          child_environment(str(self.tree)))
+        self.addCleanup(run.cleanup)
+        self.assertIn(f"--baton-tree={self.tree}", run.argv)
+        record = run_record.make_record(producer="pytest", nonce=run.nonce, binding=run.expected,
+                                        rows={"tests/test_demo.py::test_pass": {"started": True, "events": ["pass"]}},
+                                        scopes={}, exit_code=0, extra={"mode": "declared", "violations": found})
+        run_record.write_record(run.path, record)
+        self.assertEqual(run.read(0), (None, "record_unavailable"))
+
+    def test_tree_not_given_or_not_the_observed_toplevel_is_refused(self):
+        self.assertEqual(run_record.declared_violations(None, observed_tree=None, rootdir=self.tree, inifile=None,
+                                                        conftests=[]), ["tree_not_given"])
+        self.assertEqual(self.violations(observed=str(self.outer)), ["tree_mismatch"])
+        self.assertEqual(self.violations(tree=self.tree / "tests"), ["tree_mismatch"])
+
+    def test_binding_carries_the_observed_tree_root(self):
+        self.assertEqual(run_record.observed_binding({"tree_root": "copied"}, cwd=self.tree)["tree_root"],
+                         run_record.git_toplevel(self.tree))
+        self.assertIn("tree_root", run_record.PLACEHOLDERS)
+        self.assertIsNone(run_record.git_toplevel(self.outer))
+
+
 if __name__ == "__main__":
     unittest.main()

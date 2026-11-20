@@ -2072,6 +2072,14 @@
               "symbol": "DeclaredPytestWithoutRecordTests.test_no_plugin_record_is_record_unavailable_and_the_declared_argv_is_kept"
             },
             {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredTreeBoundTests.test_b_a_parent_pytest_ini_widening_rootdir_is_refused"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredTreeBoundTests.test_d_an_outside_conftest_that_drops_failing_tests_is_record_unavailable"
+            },
+            {
               "file": "tests/test_ci_plan.py",
               "symbol": "RemoteResultTests.test_real_v2_unittest_rejects_skip_and_zero_cases"
             },

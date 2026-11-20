@@ -44,6 +44,8 @@ def pytest_addoption(parser):
     group.addoption("--baton-extra-plugins", default="", help="comma list of extra allowed plugin modules")
     group.addoption("--baton-mode", default="strict", choices=("strict", "declared"),
                     help="strict: allowlisted plugins only; declared: a Task's own pytest check")
+    group.addoption("--baton-tree", default=None,
+                    help="declared mode: the checked Git work tree fixed by the caller (EVID-R01)")
 
 
 def _version():
@@ -77,14 +79,6 @@ def _conftest_path(plugin):
     return Path(file).resolve() if type(plugin).__name__ == "module" and file and Path(file).name == "conftest.py" else None
 
 
-def _inside(path, root):
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
 def _plugin_details(config):
     """declared mode: every loaded plugin with its distribution and conftest path."""
     dists = {}
@@ -103,12 +97,22 @@ def _plugin_details(config):
     return sorted(rows, key=lambda r: (r["module"], r["path"] or ""))
 
 
+def _observed_tree(config):
+    """The Git toplevel this session runs in, observed once (EVID-R01)."""
+    if not hasattr(config, "_baton_tree"):
+        config._baton_tree = run_record.git_toplevel(str(config.invocation_params.dir))
+    return config._baton_tree
+
+
 def _violations(config):
     if config.getoption("baton_mode") == "declared":
-        root = Path(str(config.rootpath)).resolve()
-        return sorted({"conftest_outside_root:" + str(path) for path in
-                       (_conftest_path(p) for p in config.pluginmanager.get_plugins() if p is not None)
-                       if path is not None and not _inside(path, root)})
+        # EVID-R01: bounded by the checked Git work tree, not by pytest's rootdir.
+        conftests = [c for c in (_conftest_path(p) for p in config.pluginmanager.get_plugins() if p is not None)
+                     if c is not None]
+        inifile = getattr(config, "inipath", None)
+        return run_record.declared_violations(
+            config.getoption("baton_tree"), observed_tree=_observed_tree(config), rootdir=config.rootpath,
+            inifile=inifile, conftests=conftests)
     extra = {x for x in config.getoption("baton_extra_plugins").split(",") if x}
     found = [m for m in _plugins(config) if m.split(".", 1)[0] not in BASE_ALLOWED and m not in extra]
     for name in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):

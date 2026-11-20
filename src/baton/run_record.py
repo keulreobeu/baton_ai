@@ -34,7 +34,8 @@ REASONS = ("missing", "corrupt", "schema", "incomplete", "nonce_mismatch", "bind
 STAGE_STATUSES = ("passed", "failed", "not_run")
 # Observed binding keys an official consumer names with None placeholders (rev3 E206): the
 # producer must observe them itself; the caller keeps its expected values to itself.
-PLACEHOLDERS = {"head": None, "tree": None, "worktree_digest": None, "env_digest": None, "argv_digest": None}
+PLACEHOLDERS = {"head": None, "tree": None, "worktree_digest": None, "env_digest": None, "argv_digest": None,
+                "tree_root": None}
 MAX_BYTES = 64 * 1024 * 1024
 # Environment that changes what a test run means (rev2 AC-02 env_digest); a fixed list.
 ENV_KEYS = ("PYTHONPATH", "PYTHONHOME", "PYTHONSAFEPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED",
@@ -217,6 +218,41 @@ def plugins_digest(plugins):
     return _sha256(json.dumps(plugins, sort_keys=True, ensure_ascii=False).encode("utf-8"))
 
 
+def canonical_path(path):
+    """A path compared as the file system names it: symlinks/junctions resolved, case folded
+    where the platform folds it (EVID-R01)."""
+    return os.path.normcase(os.path.realpath(os.fspath(path)))
+
+
+def git_toplevel(cwd=None):
+    """The canonical root of the Git work tree at ``cwd``, or None."""
+    top = _git("rev-parse", "--show-toplevel", cwd=cwd)
+    return canonical_path(top) if top else None
+
+
+def inside_tree(path, tree):
+    path, tree = canonical_path(path), canonical_path(tree)
+    return path == tree or path.startswith(tree.rstrip(os.sep) + os.sep)
+
+
+def declared_violations(tree, *, observed_tree, rootdir, inifile, conftests):
+    """EVID-R01: what a declared pytest run may read is bounded by the checked Git work tree
+    (the caller's fixed path, observed again by the producer as its Git toplevel), never by
+    pytest's rootdir: a parent pytest.ini or an explicit --rootdir widens rootdir, and a
+    conftest, rootdir or inifile outside the tree can change collection or results."""
+    if not tree:
+        return ["tree_not_given"]
+    if observed_tree is None or canonical_path(observed_tree) != canonical_path(tree):
+        return ["tree_mismatch"]
+    found = set()
+    if rootdir is None or not inside_tree(rootdir, tree):
+        found.add("rootdir_outside_tree")
+    if inifile is not None and not inside_tree(inifile, tree):
+        found.add("inifile_outside_tree")
+    found.update("conftest_outside_tree:" + canonical_path(c) for c in conftests if not inside_tree(c, tree))
+    return sorted(found)
+
+
 def observed_binding(given, *, cwd=None, argv=None, env=None, plugins=None):
     """The caller's binding with what this process observes written over it, so a tree, work
     copy or interpreter that changed before the record was written shows as binding_mismatch.
@@ -239,6 +275,8 @@ def observed_binding(given, *, cwd=None, argv=None, env=None, plugins=None):
         binding["tree"] = _git("rev-parse", "HEAD^{tree}", cwd=cwd)
     if "worktree_digest" in binding:
         binding["worktree_digest"] = worktree_digest(cwd)
+    if "tree_root" in binding:
+        binding["tree_root"] = git_toplevel(cwd)
     if "env_digest" in binding:
         binding["env_digest"] = env_digest(os.environ if env is None else env)
     if argv is not None and binding.get("argv_digest") is None:

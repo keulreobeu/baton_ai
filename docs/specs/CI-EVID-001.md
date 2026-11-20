@@ -249,6 +249,7 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
       - 검사 대상 tree(rootdir) 안의 `conftest.py`는 테스트 코드와 같은 신뢰(RA-1)로 허용한다.
       - 자동 로드된 외부 plugin도 현행 선언 검사처럼 허용한다. 대신 로드된 plugin 이름·배포 버전과 conftest 경로를 기록 필드 `plugins`에 남긴다.
       - tree 밖 conftest는 `record_unavailable`로 거부한다.
+      - **EVID-R01 반영(구현 검토 P1):** 경계는 pytest rootdir가 아니라 호출자가 고정한 검사 Git 작업 트리(`--baton-tree`, producer가 Git toplevel로 다시 관측해 `tree_root` binding으로 남김, canonical path 비교)이며, tree 밖의 conftest·rootdir·사용된 inifile(`config.inipath`)은 모두 위반(`record_unavailable`)이다.
     - 모드는 호출자가 고정하고 기록에 `mode`를 남긴다.
     - **rev3(E207) binding 연결과 신뢰 경계:**
       - declared 모드의 `plugins` 목록(이름·배포 버전·경로, conftest 경로)은 `plugins_digest`로 binding에 들어간다. 같은 Task의 같은 검사에서 plugin 집합이 바뀌면 이전 기록과 구별된다.
@@ -431,3 +432,8 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
   - **rev3(E207):** declared 모드에서 자동 로드된 외부 plugin이 pytest 결과 hook으로 원시 결과를 바꾸는 경우도 이 한계에 포함한다.
     - 기록은 plugin 집합(`plugins_digest`)의 변화만 추적한다.
     - 고의 조작을 막는다고 주장하지 않는다.
+  - **D28 결정 대기 조건(구현 검토 권고, 수용 완료 아님):** 수용한다면 다음 네 경계를 함께 승인한다.
+    1. 신뢰된 환경에서 로드되는 외부 plugin의 동작은 수용 위험이다.
+    2. 기록은 관측만 하며 조작 방지는 보장하지 않는다.
+    3. tree 밖 conftest 자동 로드(그리고 EVID-R01의 tree 밖 rootdir·inifile)는 여전히 금지한다.
+    4. 의도적 기록 위조는 RA-1과 같은 위험이며 별도 finding으로 중복 처리하지 않는다.

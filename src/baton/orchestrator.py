@@ -56,7 +56,7 @@ class RecordedRun:
             drop = run_record.unittest_run_values(self.argv)
         else:
             self.argv = [*argv[:3], "-p", "baton.pytest_record", f"--baton-record={self.path}",
-                         f"--baton-nonce={self.nonce}", "--baton-mode=declared",
+                         f"--baton-nonce={self.nonce}", "--baton-mode=declared", f"--baton-tree={tree}",
                          "--baton-binding=" + json.dumps(PLACEHOLDERS, sort_keys=True), *argv[3:]]
         self.digest_argv = run_record.argv_for_digest(self.argv, drop)
         self.expected = self.observe()
