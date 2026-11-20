@@ -701,10 +701,10 @@ class LeaseTests(unittest.TestCase):
         self.assertEqual(raised.exception.reason, "cancel")
 
     def test_low_ram_waits_without_minimum_one(self):
-        leases = self.leases(ram=lambda: 2 * sb.GIB + sb.GIB // 4)       # under one worker above the reserve
+        leases = self.leases(ram=lambda: 2 * sb.GIB + sb.PER_WORKER_RAM // 2)  # under one worker above the reserve
         with self.assertRaises(sb.Stopped):
             leases.acquire(1, deadline=0, owner=self.owner(80))
-        _, granted, info = self.leases(ram=lambda: 2 * sb.GIB + 3 * (sb.GIB // 2)).acquire(8, owner=self.owner(81))
+        _, granted, info = self.leases(ram=lambda: 2 * sb.GIB + 3 * sb.PER_WORKER_RAM).acquire(8, owner=self.owner(81))
         self.assertEqual((granted, info["ram_slots"]), (3, 3))
 
     def test_release_requires_termination(self):

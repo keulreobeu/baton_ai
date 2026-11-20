@@ -47,7 +47,7 @@ INVENTORY_SCHEMA = "baton-suite-inventory/1"
 BAD = {"fail", "error", "unexpected_success", "not_run"}
 EXTRA_PLUGINS = {"pytest_subtests.plugin"}
 GIB = 1024 ** 3
-PER_WORKER_RAM = GIB // 2      # assumption until AC-14 measurement (Spec AC-12)
+PER_WORKER_RAM = 256 * 1024 ** 2  # calculated from the AC-14 peaks x 3, rounded to 64 MiB (Spec AC-12)
 RAM_RESERVE = 2 * GIB
 EXIT_FAIL, EXIT_USAGE, EXIT_STOPPED, EXIT_UNVERIFIED = 1, 2, 3, 4
 

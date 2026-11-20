@@ -9,7 +9,8 @@ candidate environment, then compares per-ID verdicts, subTests and fixture scope
 Candidates (isolated venvs installed with --require-hashes from the locks):
   pytest9      .venv-ci        requirements/ci.lock + gms.lock      (adopted)
   pytest8-sub  .venv-ci-alt    alt.lock + gms.lock, -p pytest_subtests.plugin
-  pytest8-solo .venv-ci-alt    alt.lock, pytest-subtests not loaded (expected to fail T17)
+  pytest8-solo .venv-ci-alt    alt.lock, pytest-subtests not loaded: every case that expects equivalence
+               instead expects the refusal "pytest without unittest subTest support" (expected refusal)
 No model, network or official path is involved; leases use a temporary namespace.
 """
 from __future__ import annotations
@@ -31,8 +32,11 @@ CANDIDATES = {
     "pytest9": {"venv": ".venv-ci", "args": ["--lock", "requirements/ci.lock"]},
     "pytest8-sub": {"venv": ".venv-ci-alt", "args": ["--lock", "tooling/ci_par_selftest/alt.lock",
                                                      "--extra-plugin", "pytest_subtests.plugin"]},
-    "pytest8-solo": {"venv": ".venv-ci-alt", "args": ["--lock", "tooling/ci_par_selftest/alt.lock"]},
+    "pytest8-solo": {"venv": ".venv-ci-alt", "args": ["--lock", "tooling/ci_par_selftest/alt.lock"],
+                     "expect_override": {"equivalent": "refused_no_subtest"}},
 }
+
+REFUSAL = "pytest without unittest subTest support"
 
 SEMANTICS = """
 import unittest
@@ -213,6 +217,7 @@ def summarize_doc(path):
             "unexpected_successes": d.get("unexpected_successes"), "compare": s["suite_backend"]["compare"]["status"],
             "not_run": s["suite_backend"]["compare"]["not_run"], "crashes": d.get("crashes"),
             "plugin_violations": d.get("plugin_violations"), "record_rejected": d.get("record_rejected"),
+            "unclassified": d.get("unclassified"),
             "collection_errors": d.get("collection_errors"), "scopes": doc["scopes"],
             "outcomes": {r["id"]: r["outcome"] for r in doc["results"]},
             "subtests": {r["id"]: r["subtests"] for r in doc["results"] if r["subtests"]}}
@@ -250,13 +255,21 @@ def run_case(name, case, candidate, work, lease_home):
         rc, stdout, _, _ = call(python, ["compare", str(base / "sequential.json"), str(base / "xdist.json")], env)
         out["compare"] = json.loads(stdout) if stdout.startswith("{") else {"error": stdout}
     out["pytest_cache_created"] = (root / ".pytest_cache").exists()
-    expect = case["expect"]
+    expect = spec.get("expect_override", {}).get(case["expect"], case["expect"])
     if expect == "stopped":
         ok = out["xdist"]["rc"] == 3 and out["xdist"]["seconds"] < 120 and not list(lease_home.rglob("leases/*.json"))
     elif expect == "equivalent":
         ok = bool(out.get("compare", {}).get("equivalent")) and not out["pytest_cache_created"]
+    elif expect == "refused_no_subtest":
+        doc = out["xdist"]["doc"] or {}
+        ok = (out["xdist"]["rc"] != 0 and doc.get("status") == "FAIL"
+              and REFUSAL in (doc.get("unclassified") or []) and not out["pytest_cache_created"])
     else:
         ok = out["xdist"]["rc"] != 0 and not (out["xdist"]["doc"] or {}).get("status") == "PASS"
+    xd = out["xdist"]["doc"] or {}
+    out["observed"] = {"xdist_rc": out["xdist"]["rc"], "xdist_status": xd.get("status"),
+                       "equivalent": (out.get("compare") or {}).get("equivalent"),
+                       "unclassified": xd.get("unclassified")}
     out["expect"], out["ok"] = expect, ok
     return out
 

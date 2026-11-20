@@ -162,7 +162,11 @@ skip 판정은 순차와 같다. 정상 실행의 skip·expected_failure는 rc 0
   - 처음 만들 때 정한다. `BATON_TEST_WORKER_BUDGET`이 있으면 그 값, 없으면 논리 CPU − 2(최소 1)다.
   - 다른 S가 요청되면 오류다(조용히 바꾸지 않음). 원격 단독 runner의 S는 G4에서 따로 정한다.
 - **배분 시 RAM 확인:** 요청 N에 줄 수 g = min(N, S − 사용 중, ⌊(가용 RAM − 예약 2GiB) ÷ worker당 RAM⌋)다.
-  - worker당 RAM 0.5GiB는 가정값이며 P1 실측으로 확정한다.
+  - worker당 RAM 기본값은 256MiB(산출값)다. 산출식은 ⌈max(P_proc, P_job ÷ g) × 3 ÷ 64MiB⌉ × 64MiB다.
+    - P_proc = 프로세스 최대 working set 58,744,832B(56.0MiB, **실측**, 2026-11-20 AC-14 (d)).
+    - P_job ÷ g = 6 worker 실행 Job 최대 428,732,416B ÷ 6 = 68.1MiB(controller 포함, **산출**, AC-14 (b)).
+    - 여유 배수 3(정책값)을 곱하면 204.4MiB(**산출**)이고, 64MiB 단위로 올려 256MiB다.
+    - 실측 환경: Windows 11, Python 3.12.16, pytest 9.2.0·xdist 3.8.0, 현재 suite 850 ID. suite·버전이 바뀌면 다시 잰다.
   - g < 1이면 기다린다. 예약을 침범하는 "최소 1"은 두지 않는다.
 - **원자적 임대:**
   - acquire/release는 파일 잠금 안에서만 한다.
