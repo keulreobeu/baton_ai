@@ -31,20 +31,26 @@ acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-02", "CI-PAR-001-AC-03", "CI-PAR-001-A
        "CI-PAR-001-AC-16"]
 
 [[verification]]
-command = ".venv (no ci extra, pytest not importable): python -X utf8 -m unittest tests.test_suite_backend tests.test_run_record (layer a, stdlib only)"
+command = ".venv (no ci extra, pytest not importable): python -X utf8 -m unittest tests.test_suite_backend tests.test_run_record (layer a, stdlib only; b3f1d67 after the cross-review fixes)"
 result = "passed"
 evidence = "docs/tasks/TASK-CI-PAR-001.md#결과--2026-11-20"
 acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-02", "CI-PAR-001-AC-03", "CI-PAR-001-AC-04", "CI-PAR-001-AC-05", "CI-PAR-001-AC-06", "CI-PAR-001-AC-07", "CI-PAR-001-AC-08", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-11", "CI-PAR-001-AC-12", "CI-PAR-001-AC-13"]
-tests_run = 73
+tests_run = 80
 failures = 0
 errors = 0
 skipped = 0
 expected_failures = 0
 
 [[verification]]
-command = "python -X utf8 tooling/ci_par_selftest/run.py (layer b at d472a77, real pytest-xdist 3.8.0 with pytest 9.2.0 and 8.4.2+pytest-subtests 0.15.0: 28/28 cases match expectations, rc 0; 8.4.2 alone is an expected refusal; auxiliary, not official evidence)"
+command = "python -X utf8 tooling/ci_par_selftest/run.py (layer b at 89d4942 after the cross-review fixes, real pytest-xdist 3.8.0 with pytest 9.2.0 and 8.4.2+pytest-subtests 0.15.0: 31/31 cases match expectations incl. T25 and T20a/b, rc 0; 8.4.2 alone is an expected refusal; auxiliary, not official evidence)"
 result = "passed"
-evidence = "tooling/ci_par_selftest/results/selftest-2026-11-20-d472a77.json"
+evidence = "tooling/ci_par_selftest/results/selftest-2026-11-20-89d4942.json"
+
+[[verification]]
+command = "auxiliary merge check: temporary detached worktree of b3f1d67 + merge --no-commit CI-EVID-001 755c9ec (doc conflicts taken from this branch, temporary only), CBM blocked: layer a 107 OK, layer b 31/31, full sequential vs xdist 916 PASS each, equivalent; nothing committed to either branch"
+result = "passed"
+evidence = "tooling/ci_par_selftest/results/merged-755c9ec-check.json"
+acs = ["CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-14", "CI-PAR-001-AC-15"]
 acs = ["CI-PAR-001-AC-06", "CI-PAR-001-AC-09", "CI-PAR-001-AC-10", "CI-PAR-001-AC-15"]
 
 [[verification]]
@@ -54,15 +60,10 @@ evidence = "tooling/ci_par_selftest/results/measure-2026-11-20-11ed629.json"
 acs = ["CI-PAR-001-AC-10", "CI-PAR-001-AC-12", "CI-PAR-001-AC-14"]
 
 [[verification]]
-command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 at 5917472, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
-result = "passed"
+command = "python -X utf8 scripts/verify_environment.py --base 8e44620 (official sequential V3 on the final cross-review HEAD, unchanged; includes tests/test_suite_backend.py and tests/test_run_record.py without the ci extra)"
+result = "not_run"
 evidence = "docs/tasks/TASK-CI-PAR-001.md#결과--2026-11-20"
 acs = ["CI-PAR-001-AC-01", "CI-PAR-001-AC-13"]
-tests_run = 850
-failures = 0
-errors = 0
-skipped = 0
-expected_failures = 0
 
 [[verification]]
 command = "independent review (L3, reviewer != author) and required remote CI (existing verify.yml, sequential, no ci extra); push not approved"
@@ -244,3 +245,39 @@ binding 공통: candidate `11ed629`, tree `efa8e05a`, base `8e44620`, Python 3.1
 - 다른 OS 사용자·BATON 밖 프로세스와의 CPU 경합은 AC-12 범위 밖이다(RA-5).
 - **CI-EVID-001 보강 영향 가능성:** CI-EVID branch `3d88d8c`가 공용 모듈을 보강했다(collection 오류를 errors로 계수, setup skip을 skip으로 분류). 코디네이터 병합 시험에서 `test_run_record`·`test_suite_backend` 93 tests OK였다. 이 Task의 AC-14·자가 시험 수치는 `1870230` 기준 모듈로 잰 것이므로, 보강 뒤에는 수집 오류·setup skip 사례의 집계(errors·skipped)와 T09·T10·T18·T19 판정 표기가 달라질 수 있다. 이후 추가될 xdist 보조 파일 정리(E204) 보강도 `<record>.collect-<worker>.json` 처리에 영향을 줄 수 있다. 병합 뒤 층 (a)·(b)를 다시 실행해 확인한다(이 Task에서는 미검증).
 - 다음: 독립 검토 → G2(TASK-CI-PAR-002, 계약 개정)는 별도 사용자 승인 뒤.
+
+## 교차검토 보완 — 2026-11-20 (ChatGPT G1 교차검토 FAIL, 대상 `69b4765`)
+
+근거: `E:\docs\BATON\research\2026-11-20-ci-par\review-chatgpt-g1.md`. 판정 FAIL·G2 진행 비권고였다. 사용자 승인 D24(G1) 안의 국소 수정이며 G2~G4는 여전히 미승인이다. 공용 모듈(`run_record`·`pytest_record`·`tests/test_run_record.py`)과 공식 경로는 수정하지 않았다.
+
+| 지적 | 수정 | 커밋 | 테스트 |
+|---|---|---|---|
+| R01 rc 불일치 조합 PASS | `summarize()`는 자식 실행 rc 0일 때만 PASS. rc≠0이면 기록이 성공이어도 FAIL(`child_rc_nonzero`) | `e433e93` | `ResultFileTests.test_nonzero_child_rc_never_passes`(rc 1/2/3 + successful=true + 전부 pass) |
+| R03 lease 종료 입증 | lease는 입증 없이 생성. `run_tree`가 `Leases.mark()`로 파일 잠금 안에서 입증을 기록한다: Windows는 Job 할당 성공 뒤(resume 전) `job_assigned=true`, POSIX는 자식 session의 PGID. 기록은 원자적 교체 | `c53edd4` | `LeaseProofTests` 4종: 자식 정상 종료·부모 강제 종료(실제 프로세스), PID 재사용·Job 할당 전 종료(단위). 실행할 수 없는 플랫폼 사례는 단위 수준으로 대체, skip 없음 |
+| R02 binding 일부 미비교 | 공통 8개(`candidate_sha`·`tree`·`base`·`installed_digest`·`gms_extra`·`selection_digest`·`python`·`platform`) 일치 검증. `config_digest`·`lock_digest`는 결과 문서의 `backend_config`로 다시 계산한 backend별 기대값과 대조하고 허용한 차이를 `backend_specific_differences`에 기록 | `1c0ebdb` | `ResultFileTests.test_binding_mismatch_rejected`(base 포함 8개), `ResultFileTests.test_backend_specific_values_checked_and_recorded`(lock·config 기대값 위반 4종, backend_config 누락) |
+| R04 통과 subTest 설명 차이 허용 | 통과 subTest도 설명을 비교한다. 명시 정규화 3종(`tempfile_name`·`hex_digest`·`memory_address`, Spec AC-15와 코드 `SUBTEST_NORMALIZATION`)만 적용. 정규화 뒤 다르면 `different`, 순서만 다른 차이는 `uncertain`(equivalent 아님) | `1c0ebdb`(R02와 같은 블록이라 한 커밋) | `LockTests.test_subtest_descriptions_compared_after_explicit_normalization`, `LockTests.test_uncertain_subtests_are_not_equivalent` |
+| R05 HANDOFF 이전 branch | 재개 카드에 현재 branch 복원 명령을 먼저 두고 `codex/ci-vtier-001` 명령은 과거 기록으로 표시 | `8224921`, 문구 `3fd0197` | 문서 |
+| AC-04 load_tests xdist 음성 | T25: `load_tests`가 테스트를 거르거나 비-test_ 메서드를 더하면 unittest 기준선 PASS, xdist는 수집 불일치(missing·extra)로 실패 | `d091b30` | `T25_load_tests_collection_differs`(후보 3개 모두 ok) |
+| (병합 발견) T20 | 병합 상태에서 import skip만 있는 선택은 pytest exit 5로 xdist가 실패했다. R01 이후 이 브랜치 단독도 같다. 이는 안전한 fail-closed 차이다. T20을 (a) 일반 테스트 1개를 더한 매핑 동등과 (b) skip만 있는 선택의 xdist 실패 기대로 나눴다 | `89d4942` | `T20_gms_less_real_modules` |
+| (코디네이터 지시) T01 축소 | 공식 경로 import 금지 집합을 `suite_backend`·`tooling.ci_par_selftest`로 좁혔다. `run_record`·`pytest_record`는 D25로 CI-EVID-001 소유 공용 모듈이며 공식 소비자가 설계상 import한다. 반대 방향 불변식은 유지 | `b3f1d67` | `IsolationTests` |
+
+### 재검증 결과 (모두 실측)
+- **국소 회귀(층 a):** branch `b3f1d67`, `.venv`(pytest 없음)에서 `tests.test_suite_backend`·`tests.test_run_record` **80 OK, skip 0**.
+- **층 (b), branch 단독:** `89d4942`에서 31 사례(10 사례 × 3 후보 + T20) 전부 기대값 일치, rc 0, 남은 임대 0. 증거 `tooling/ci_par_selftest/results/selftest-2026-11-20-89d4942.json`. T01 축소(`b3f1d67`)는 층 (b)에 영향이 없다.
+- **CI-EVID 병합 상태(보조 증거, 어느 branch에도 병합하지 않음):** 시스템 임시 폴더에 HEAD `b3f1d67`의 detached worktree를 만들고 CI-EVID-001 `755c9ec`를 `merge --no-commit`했다. 문서 3개(`docs/HANDOFF.md`·`docs/sdd/traceability.json`·`docs/tasks/current.md`) 충돌은 임시 병합에서만 현재 branch 쪽으로 풀었다. 코드 충돌은 없었다(병합 대상 18파일). CI-EVID branch의 커밋되지 않은 변경은 포함되지 않는다. CBM 차단(빈 LOCALAPPDATA, PATH 필터, 표본 1056회 목격 0). 끝난 뒤 merge --abort, worktree remove, prune을 하고 제거를 확인했다(venv 연결은 junction이며 원본 venv 무손상 확인).
+  - 층 (a): 107 OK(CI-EVID 쪽 `test_run_record` 보강 포함).
+  - 층 (b) 전체: 31/31 기대값 일치, rc 0. T09(층 a)·T10·T18·T19·T21·T22 포함. T20(b)는 기록 거부 `rc_mismatch`(CI-EVID `read_record`)로 실패한다(기대값).
+  - 전체 순차·xdist 한 쌍(GMS 설치): 순차 916 PASS skip 0, 1606.5 s / xdist 6 worker 916 PASS skip 0, 610.2 s. **동등**(verdict 불일치 0, ID 차이 0, subTest 불일치 0, uncertain 0, 정규화 4건 = 임시 폴더명·SHA). `backend_specific_differences`는 config_digest·lock_digest(순차 null)다. 속도비 2.63배(산출).
+  - binding 주의: `candidate_sha`·`tree`는 병합 전 HEAD `b3f1d67`(tree `108d7825`)이고 `worktree_dirty=true`다. 병합 tree 자체의 Git 식별자는 없다(커밋하지 않음). 증거 `tooling/ci_par_selftest/results/merged-755c9ec-{check,selftest,measure}.json`.
+  - 이전 시도: CI-EVID `ad185a1` 병합(충돌 없음)에서는 전체 한 쌍이 순차·xdist 모두 같은 13건 실패로 동등했고, 실패는 전부 `tests.test_evidence_records`였다. 같은 모듈을 `ad185a1` 단독 worktree에서 돌려도 11 실패·2 오류였으므로 CI-EVID 진행 중 상태의 결과이며 CI-PAR 원인이 아니다. 그 뒤 CI-EVID가 `abbcb7e`·`755c9ec`로 진행해 최종 확인은 `755c9ec`로 했다.
+
+### 측정 한계 (교차검토 측정 평가 반영)
+- 단일 PC 1회 측정이며 반복 분산을 재지 않았다. 속도비(이전 3.31배, 병합 상태 2.63배)는 실행마다 다르며 일반화하지 않는다.
+- Python 3.11은 측정하지 않았다(Python 3.12.16만).
+- V2 부분 범위의 효과는 입증되지 않았다. 실제 `ci_plan` V2 선택이 `REGRESSION_UNMAPPED`로 full(V3)로 상향되어 전체 실행과 같았다.
+- 원격 CI 결과는 없다(push 미승인).
+
+### 남은 위험
+- import skip만 있는 선택(예: GMS 미설치에서 GMS 모듈만 고른 V1)은 xdist에서 fail-closed 실패다. 거짓 PASS는 아니지만 순차와 판정이 다르다.
+- 병합 상태 확인은 CI-EVID `755c9ec` 시점이며 문서 충돌은 현재 branch 쪽으로 임시 해소했다. 실제 병합 시에는 문서 3개를 양쪽 내용으로 다시 맞춰야 한다.
+- Windows Job 경합(할당 경쟁) 재현과 POSIX 실제 실행은 하지 않았다(POSIX 경로는 단위 수준).

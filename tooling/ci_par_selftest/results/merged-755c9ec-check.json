@@ -1,0 +1,59 @@
+{
+ "baton_import": "C:\\Users\\lwwde\\AppData\\Local\\Temp\\cipar-merge-31168\\wt\\src\\baton\\run_record.py",
+ "cbm_sampler": {
+  "samples": 1056,
+  "sightings": []
+ },
+ "ci_evid_sha": "755c9ec41603d0109dcc08acfdf62266de997609",
+ "doc_conflicts_resolved": {
+  "docs/HANDOFF.md": "ours (current CI-PAR branch side)",
+  "docs/sdd/traceability.json": "ours (current CI-PAR branch side)",
+  "docs/tasks/current.md": "ours (current CI-PAR branch side)"
+ },
+ "head": "b3f1d67abdf697d7f7eff3e30b3b302456e2e259",
+ "layer_a": {
+  "log": "layer_a.log",
+  "rc": 0,
+  "seconds": 34.8
+ },
+ "layer_b": {
+  "log": "layer_b.log",
+  "rc": 0,
+  "seconds": 156.2
+ },
+ "leases_left": [],
+ "merge": {
+  "conflicts": "docs/HANDOFF.md\ndocs/sdd/traceability.json\ndocs/tasks/current.md",
+  "rc": 1,
+  "stdout": "Auto-merging docs/HANDOFF.md\nCONFLICT (content): Merge conflict in docs/HANDOFF.md\nAuto-merging docs/sdd/traceability.json\nCONFLICT (content): Merge conflict in docs/sdd/traceability.json\nAuto-merging docs/tasks/current.md\nCONFLICT (content): Merge conflict in docs/tasks/current.md\nAutomatic merge failed; fix conflicts and then commit the result."
+ },
+ "merge_abort_rc": 0,
+ "merged_files": [
+  "docs/HANDOFF.md",
+  "docs/adr/ADR-CI-EVID-001.md",
+  "docs/plans/ci-evid.md",
+  "docs/sdd/traceability.json",
+  "docs/specs/CI-EVID-001.md",
+  "docs/tasks/TASK-CI-EVID-001.md",
+  "docs/tasks/current.md",
+  "scripts/ci_plan.py",
+  "scripts/verify_environment.py",
+  "src/baton/evidence.py",
+  "src/baton/managed.py",
+  "src/baton/orchestrator.py",
+  "src/baton/pytest_record.py",
+  "src/baton/run_record.py",
+  "tests/test_ci_plan.py",
+  "tests/test_evidence_records.py",
+  "tests/test_managed_harness.py",
+  "tests/test_run_record.py"
+ ],
+ "pair": {
+  "log": "pair.log",
+  "rc": 0,
+  "seconds": 2217.0
+ },
+ "started": "2026-11-20T16:51:48",
+ "venvs_intact": true,
+ "worktree_removed": true
+}
