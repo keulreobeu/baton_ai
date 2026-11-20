@@ -102,7 +102,7 @@ TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈
   self_inconsistent는 `orchestrator.read_unittest_record`와 같은 규칙이며 코드는 복사하지 않았다.
 - `src/baton/pytest_record.py`: `-p baton.pytest_record` plugin. pytest >=8.4,<10 밖이면 usage error(기록 없음 → 실패).
   계획했던 `scripts/suite_backend_outcomes.py` 역할을 통합했다(그 파일은 만들지 않음).
-- 두 모듈도 공식 경로에서 import되지 않는다(T01).
+- ~~두 모듈도 공식 경로에서 import되지 않는다(T01).~~ 2026-11-20 축소(코디네이터 지시, CI-EVID 병합 충돌): D25 설계상 공식 소비자(verify_environment·orchestrator·evidence·managed·ci_plan)가 공용 모듈 `run_record`를 import하므로 T01 금지 집합은 CI-PAR 보조 백엔드와 자가 시험으로 좁혔다. 반대 방향(보조 도구가 공식 모듈·pytest를 import하지 않음)은 유지한다.
 - **소유권(2026-11-20, E208):** `1870230` 이후 두 모듈의 공용 계약 보강은 CI-EVID-001이 소유한다. 이 Task는 그 보강을 따라가며 직접 바꾸지 않는다.
 
 ## 회귀 테스트 목록 (AC-13)
@@ -113,7 +113,7 @@ TASK-CI-PAR-004(G4 원격). CI-EVID-001(D25)은 이 Task의 공용 기록 모듈
 
 | # | 층 | 확인 내용 | 판정 | AC | 테스트 |
 |---|---|---|---|---|---|
-| T01 | a | 공식 경로 모듈 6개와 `src/baton/*`가 `suite_backend`·`run_record`·`pytest_record`를 import하지 않음. 보조 도구가 공식 모듈·pytest를 import하지 않음 | — | 01, 08 | `IsolationTests` |
+| T01 | a | 공식 경로 모듈 7개(managed 포함)와 `src/baton/*`가 CI-PAR 보조 백엔드(`suite_backend`)·자가 시험(`tooling.ci_par_selftest`)을 import하지 않음. 보조 도구가 공식 모듈·pytest를 import하지 않음. 2026-11-20 축소: `run_record`·`pytest_record`는 금지 대상에서 뺐다(D25, `1870230` 이후 CI-EVID-001 소유 공용 모듈이며 공식 소비자가 설계상 import한다) | — | 01, 08 | `IsolationTests` |
 | T02 | a | pytest 미설치에서 xdist 요청 → `ci_extra_missing`, 순차 실행 없음 | 실패 | 03, 11 | `OptionTests.test_xdist_without_pytest_fails_without_fallback` |
 | T03 | a | `--workers` auto·0·음수·비정수, `BATON_SUITE_*`, `--enable-suite-reuse` 거부 | 실패 | 02 | `OptionTests` |
 | T04 | a | 독립 loader inventory: 현행 suite(상속 Base 포함) 허용, `load_tests` 모듈 보고, import 실패 거부, 테스트 미실행 | 허용/실패 | 04, 05 | `InventoryTests` |

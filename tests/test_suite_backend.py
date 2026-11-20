@@ -19,8 +19,15 @@ from scripts import suite_backend as sb
 ROOT = Path(__file__).resolve().parents[1]
 NONCE = "0123456789abcdef0123456789abcdef"
 OFFICIAL = ["scripts/verify_environment.py", "src/baton/orchestrator.py", "src/baton/evidence.py",
-            "scripts/ci_plan.py", "src/baton/observability.py", "src/baton/execution.py"]
-NEW = {"suite_backend", "run_record", "pytest_record"}
+            "scripts/ci_plan.py", "src/baton/observability.py", "src/baton/execution.py", "src/baton/managed.py"]
+# Only the CI-PAR auxiliary backend and its self-test are off limits to official paths. run_record and
+# pytest_record left this set in 2026-11-20 (D25): since 1870230 they are CI-EVID-001's shared record
+# modules, which the official consumers import by design.
+NEW = {"suite_backend", "ci_par_selftest"}
+
+
+def forbidden(names):
+    return {n for n in names if n.rsplit(".", 1)[-1] in NEW or "ci_par_selftest" in n.split(".")}
 
 
 def imported(path):
@@ -87,17 +94,16 @@ PASS_ROW = {"started": True, "blocked_by": None, "events": ["pass"], "subtests":
 
 
 class IsolationTests(unittest.TestCase):
-    """T01: no official path imports the auxiliary tool or the shared record modules (AC-01/08)."""
+    """T01: no official path imports the CI-PAR auxiliary backend or its self-test (AC-01/08).
+    The shared record modules are allowed there (D25, CI-EVID-001 owns them since 1870230)."""
 
     def test_official_modules_do_not_import_backend(self):
         for path in OFFICIAL:
             with self.subTest(path=path):
-                self.assertFalse({n for n in imported(path) if n.rsplit(".", 1)[-1] in NEW})
+                self.assertFalse(forbidden(imported(path)))
         for path in sorted((ROOT / "src/baton").glob("*.py")):
-            if path.stem not in NEW:
-                with self.subTest(path=path.name):
-                    self.assertFalse({n for n in imported(path.relative_to(ROOT).as_posix())
-                                      if n.rsplit(".", 1)[-1] in NEW})
+            with self.subTest(path=path.name):
+                self.assertFalse(forbidden(imported(path.relative_to(ROOT).as_posix())))
 
     def test_backend_imports_no_official_module_and_no_pytest(self):
         names = imported("scripts/suite_backend.py")

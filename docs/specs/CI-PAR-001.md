@@ -14,6 +14,7 @@ approval_ref = "2026-11-20 사용자 D24: G1만 승인(보조 도구·회귀 테
 - **위치:** G1 승인(2026-11-20 D24) 뒤 Task branch `keulreobeu/ci-par-001`에서 제출본(`E:\docs\BATON\research\2026-11-20-ci-par\`, rev5)을 옮겼다. G1은 P1만 승인했다(G2·G3·G3b·G4 미승인).
 - **2026-11-20 G1 범위 조정(공용 기록 모듈):** 결과 기록 계층은 CI-EVID-001(D25)과 공유하는 `src/baton/run_record.py`(run-record/1)·`src/baton/pytest_record.py`로 둔다. 아래 AC-06·AC-09·AC-16의 "결과 기록 plugin"·"구조화 결과 파일"은 이 두 모듈을 가리킨다.
 - **병합 순서(2026-11-20, CI-EVID-001 rev3 E208):** G1 공용 커밋 `1870230` 선행 → CI-EVID-001 병합 → CI-PAR G3/G4. G1의 나머지 커밋(보조 도구·자가 시험·문서)은 공식 경로에 연결되지 않는 보조 도구로 별도 병합 대상이다. `1870230` 이후 `run_record.py`·`pytest_record.py`의 공용 계약 보강은 CI-EVID-001이 소유한다.
+- **격리 불변식 축소(2026-11-20, D25):** 공식 경로가 import하면 안 되는 대상은 CI-PAR 보조 백엔드(`scripts/suite_backend.py`)와 자가 시험(`tooling/ci_par_selftest`)뿐이다. `run_record`·`pytest_record`는 CI-EVID-001 소유 공용 모듈이며 공식 소비자가 설계상 import한다. 보조 도구가 공식 모듈·pytest를 import하지 않는다는 반대 방향 불변식은 유지한다.
 - **이전판:** CI-PARALLEL-001 초안 rev2 → rev3(첫 제출). rev4는 Codex 독립 검토(`ctx_4084c99a7995`: 수정 후 사용, 차단 4·중요 6·경미 1)를 반영했다. rev5는 재확인(`ctx_369f041e3b34`: 해소 3·부분 7·미해소 1)을 반영했다.
 - **근거 연구(REFERENCE_ONLY):** `../2026-11-20-ci-engine-longterm/LT-reevaluation.md` rev2.
 - **사용자 결정(2026-11-20):**
