@@ -373,6 +373,27 @@ class ResultFileTests(Workspace):
                 self.assertEqual(raised.exception.code, "binding_mismatch")
         self.assertTrue(sb.compare_runs(doc, json.loads(json.dumps(doc)))["equivalent"])
 
+    def test_nonzero_child_rc_never_passes(self):
+        record = record_for({"tests.test_m.C.test_t": PASS_ROW}, producer="xdist", collection=collection(["tests.test_m.C.test_t"]))
+        self.assertTrue(record["successful"])
+        inventory = inventory_for(["tests.test_m.C.test_t"])
+        compare = sb.compare_inventory(inventory, record, {"tests/test_m.py"})
+        self.assertEqual(compare["status"], "matched")
+        for child_rc in (1, 2, 3):
+            with self.subTest(child_rc=child_rc):
+                summary = sb.summarize(backend="xdist", record=record, compare=compare, binding={},
+                                       inventory=inventory, workers_requested=2, workers_granted=2,
+                                       diagnostics={}, child_rc=child_rc)
+                self.assertEqual((summary["status"], sb.exit_code(summary)), ("FAIL", sb.EXIT_FAIL))
+                self.assertIn("child_rc_nonzero", summary["suite_backend"]["eligibility_reasons"])
+                self.assertFalse(summary["suite_backend"]["diagnostics"]["would_be_eligible"])
+                doc = {"schema": sb.RESULT_SCHEMA, "nonce": NONCE, "binding": {}, "summary": summary,
+                       "rc": sb.exit_code(summary), "scopes": {}, "results": sb.result_rows(record)}
+                sb.validate_result(doc)                     # nonzero rc is explained by the child rc
+        passed = sb.summarize(backend="xdist", record=record, compare=compare, binding={}, inventory=inventory,
+                              workers_requested=2, workers_granted=2, diagnostics={}, child_rc=0)
+        self.assertEqual(passed["status"], "PASS")
+
     def test_rc_result_contradiction_rejected(self):
         doc = self.doc()
         forged = json.loads(json.dumps(doc))

@@ -387,10 +387,12 @@ def compare_inventory(inventory, record, files):
 # --------------------------------------------------------------------------- AC-07 summary
 
 def summarize(*, backend, record, compare, binding, inventory, workers_requested, workers_granted,
-              diagnostics, stopped=None):
+              diagnostics, stopped=None, child_rc=0):
+    """PASS needs the child's own rc 0 as well as a successful record (R01): a record that claims
+    success never outweighs a nonzero process exit."""
     counts = record["counts"] if record else dict.fromkeys(run_record.COUNTS, 0)
     selected = len(record["outcomes"]) if record else 0
-    passed = (record is not None and record["successful"] and counts["tests_run"] > 0
+    passed = (child_rc == 0 and record is not None and record["successful"] and counts["tests_run"] > 0
               and compare["status"] == "matched" and stopped is None
               and not any(diagnostics.get(k) for k in ("crashes", "plugin_violations", "unclassified",
                                                         "record_rejected", "rc_inconsistent")))
@@ -399,6 +401,8 @@ def summarize(*, backend, record, compare, binding, inventory, workers_requested
     reasons = [] if OFFICIAL_EVIDENCE_ENABLED else [INELIGIBLE_REASON]
     if not passed:
         reasons.append("not_passed")
+    if child_rc != 0:
+        reasons.append("child_rc_nonzero")
     if counts["skipped"] or counts["expected_failures"]:
         reasons.append("skipped_or_expected_failure")
     if compare["status"] != "matched":
@@ -417,7 +421,8 @@ def summarize(*, backend, record, compare, binding, inventory, workers_requested
                               "workers_granted": workers_granted,
                               "inventory": {"count": inventory["count"], "digest": inventory["digest"]},
                               "compare": compare, "eligibility_reasons": reasons, "binding": binding,
-                              "diagnostics": dict(diagnostics, unexpected_successes=counts["unexpected_successes"],
+                              "diagnostics": dict(diagnostics, child_rc=child_rc,
+                                                  unexpected_successes=counts["unexpected_successes"],
                                                   would_be_eligible=would_be_eligible,
                                                   outcome="validation_stopped" if stopped else None)}}
 
@@ -480,6 +485,7 @@ def validate_result(doc):
     if summary["status"] == "PASS" and bad:
         raise BackendError("result_inconsistent", "PASS with failing IDs")
     explained = (bad or summary["failures"] or summary["errors"] or summary["tests_run"] == 0
+                 or backend["diagnostics"].get("child_rc") not in (0, None)
                  or backend["compare"]["status"] != "matched" or doc["scopes"]
                  or backend["diagnostics"].get("termination") == "unverified"
                  or any(backend["diagnostics"].get(k) for k in
@@ -1113,7 +1119,7 @@ def run(args, *, leases=None, stop=lambda: None):
     diagnostics["total_seconds"] = round(time.monotonic() - t0, 3)
     summary = summarize(backend=args.suite_backend, record=record, compare=compare, binding=binding,
                         inventory=inventory, workers_requested=workers, workers_granted=granted,
-                        diagnostics=diagnostics, stopped=reason)
+                        diagnostics=diagnostics, stopped=reason, child_rc=rc)
     code = exit_code(summary)
     doc = {"schema": RESULT_SCHEMA, "nonce": nonce, "binding": binding, "worktree_dirty": dirty,
            "summary": summary, "rc": code, "scopes": record["scopes"] if record else {},
