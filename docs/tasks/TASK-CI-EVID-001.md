@@ -99,7 +99,7 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 - **D25-R:** 병합으로 운영 원격 CI 판정(`ci_plan.py --remote run`)이 바뀌는 것의 승인
 - **D26:** Task branch push와 원격 CI 실행
 - **D27:** F-1~F-3 후속 Task 여부
-- **D28:** RA-3(같은 권한 자식 프로세스의 기록 작성, declared 모드 외부 plugin) 수용
+- **D28:** RA-3(같은 권한 자식 프로세스의 기록 작성, declared 모드 외부 plugin) 수용 → **2026-11-20 불승인**(아래 "사용자 결정" 절, 신뢰 목록 방식)
 
 ## red on base — 2026-11-20
 
@@ -136,7 +136,9 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `755c9ec` | 검증 기록(문서만) |
 | `df3594c` | EVID-R01: declared pytest 경계를 검사 Git tree로(tree 밖 conftest·rootdir·inifile 위반), Spec AC-06 한 줄, RA-3 D28 대기 조건 |
 | `eaa2bd4` | EVID-R01 증거와 교차 실행 조건부 예외 기준(결정 대기) |
-| (이 커밋) | EVID-R01 재검증 기록(문서만) |
+| `c004e02` | EVID-R01 재검증 기록(문서만) |
+| `d9c04ae` | EVID-R02(P3): docstring·Spec AC-06의 경계 표현을 "호출자가 지정한 검사 Git 작업 트리"로 통일, tree 밖 rootdir·inifile·conftest 거부 명시(동작 변화 없음) |
+| (이 커밋) | 사용자 결정 1·2 기록, EVID-R01 resolved(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -197,6 +199,32 @@ ci-par-001 `8224921`에 `abbcb7e`을 `merge --no-commit`(시스템 임시 detach
 
 - **wrong_reject 확인:** tree 안 설정(루트 `pytest.ini`, `pyproject.toml` `[tool.pytest.ini_options]`, `tox.ini` + 루트 conftest, 설정 없음, tree 안 `--rootdir`)은 모두 그대로 통과했다(rc 0, 유효 기록).
 - 새로 거부되는 것은 Git tree 밖에 있는 pytest 설정을 쓰는 실행뿐이다(예: 상위 폴더에 떠 있는 `pytest.ini`). 의도된 거부이지만, 그런 환경의 연결 프로젝트는 설정을 tree 안으로 옮겨야 한다.
+
+## 2차 구현 검토 — 2026-11-20 (ChatGPT, 대상 `c004e02`)
+
+- 판정 FAIL(D25 차단 해제 불가): 코드 finding P1 0, P2 0, P3 1(EVID-R02). 차단 사유는 교차 실행 failed, 예외 승인 미결정, D28 미결정이었다.
+- **EVID-R01: resolved.** 검토자 격리 18개 시나리오(Linux, Python 3.13.5, pytest 9.0.2)에서 tree 밖 rootdir·ini·`-c`·confcutdir·symlink·하위 경로·cwd·`-p` conftest는 모두 rc 4 `record_unavailable`, tree 안 정상 설정은 유효했다.
+- **EVID-R02(P3): 해소 `d9c04ae`**(문서만).
+- **D28 결정 근거로 남긴 사례(수용 아님):** 외부 일반 plugin을 `-p`로 로드하면 실패 테스트를 빼고도 rc 0 유효 기록이 나왔다. 검토는 이를 RA-3(D28) 범위로 보고 P1로 올리지 않았다. 아래 결정 2에서 사용자가 이 위험의 수용을 거부했다.
+- AC: AC-01~08 충족, AC-09 부분(교차 실행 failed, 원격 not_run).
+
+## 사용자 결정 — 2026-11-20
+
+**결정 1. 교차 실행 errors 4 조건부 예외 승인.** 원본 판정 failed는 보존하고, 예외는 별도 결정으로 기록한다.
+- 조건: 정확히 `VerifyEnvironmentRecordTests`의 그 4건(`test_record_mode_keeps_stdout_rc_and_writes_a_valid_record`의 subTest 3개와 `test_sdd_static_failure_is_a_recorded_confirmed_failure` 1개)이고, 원인이 모두 `SystemExit(2)`다. 나머지는 failures·errors·skip이 0이다. 오류가 하나라도 늘면 예외는 무효다.
+- 최종 후보에서도 교차 실행과 "4건 제외 보조 실행"(기대 rc 0, 나머지 전부 OK)을 남긴다.
+- 계수 정정: unittest의 `Ran N`은 메서드 수이고 errors 4는 subTest 단위다. 4건은 2개 메서드(subTest 3 + 1)라서, 앞 절의 "나머지 861 OK"는 정확히는 "865개 중 나머지 863개 메서드 통과"다. 보조 실행은 2개 메서드를 빼므로 863개 실행이 기대값이다.
+
+**결정 2. D28: 현 상태의 RA-3 위험 수용은 불승인.** 외부 plugin이 실패 테스트를 빼도 정상 PASS 증거가 생기는 현상을 공식 검증의 잘못된 승인 위험으로 분류한다. 해결 전에는 공식 증거 경로의 차단 사항이다. 사용자가 정한 해결 방향(신뢰 목록 방식):
+1. 공식 declared pytest에서 외부 plugin 자동 로딩을 기본 차단한다. 호출자가 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 고정하고 producer가 다시 확인한다.
+2. 명시적 `-p`는 승인된 plugin만 허용한다.
+3. 환경 변수(`PYTEST_PLUGINS`, `PYTEST_ADDOPTS`)와 설정 파일(ini·pyproject·tox의 addopts `-p`, `required_plugins` 등)을 통한 추가 plugin 로딩도 통제한다.
+4. pytest-xdist 등 필요한 plugin은 신뢰 목록(이름==버전)으로 관리하고, 의존성은 기존 해시 잠금으로 고정한다. 목록에 없거나 버전이 다른 plugin이 로드되면 위반(`record_unavailable`)이다.
+5. 수집과 실제 실행 결과의 누락을 fail-closed로 처리한다. 수집된 모든 항목은 최종 결과를 가져야 한다. deselect된 항목은 수와 ID를 기록하며, 선언 argv의 `-k`·`-m`·`--deselect`가 아닌 deselect는 위반이다.
+6. 기존 정상 pytest 검사와 CI-PAR(strict 모드, `read_record` 호출 형태)의 호환성을 회귀 검증한다.
+- 범용 plugin 샌드박스나 별도 보안 프레임워크는 만들지 않는다. 비공식 개발용 pytest 실행의 외부 plugin 사용은 허용하되, 공식 완료 증거와 분리한다(기록되면 ineligible).
+- 진행 순서(D25 방식): 결정 기록 → 재현 테스트(red) → 구현·Spec rev4 → 재검증(국소 회귀, 실제 pytest 9.2.0 보조, CI-PAR 최신 임시 병합, 최종 HEAD 공식 V3, 교차 실행과 4건 제외 보조 실행).
+- 이 결정 전에 계획했던 `d9c04ae` 기준 4건 제외 보조 실행은 시작 전에 보류했다(임시 worktree 제거·prune).
 
 ## EVID-R01 재검증 — 2026-11-20
 
