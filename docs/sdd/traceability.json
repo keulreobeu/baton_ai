@@ -2049,6 +2049,10 @@
           "tests": [
             {
               "file": "tests/test_evidence_records.py",
+              "symbol": "DeclaredPluginTrustTests.test_lock_hashes_are_read_as_pip_reads_requirements"
+            },
+            {
+              "file": "tests/test_evidence_records.py",
               "symbol": "DeclaredPluginTrustTests.test_xdist_is_trusted_only_with_its_hash_lock_in_the_checked_tree"
             },
             {

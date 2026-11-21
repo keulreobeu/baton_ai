@@ -1115,6 +1115,42 @@ class DeclaredPluginTrustTests(unittest.TestCase):
             with self.subTest(lock=label):
                 self.assertRefused(self.read(run=self.locked(text), plugins=plugins))
 
+    def test_lock_hashes_are_read_as_pip_reads_requirements(self):
+        # EVID-R4-01: the lock is read in pip's order (join `\` lines except comment lines,
+        # strip `(^|\s+)#.*$`, then the requirement and its --hash options), so a hash that
+        # pip would treat as a comment locks nothing. A duplicated name or an unreadable hash
+        # option leaves that name unlocked (fail-closed).
+        plugins = [*self.clean_plugins(), self.xdist()]
+        approved = "--hash=sha256:" + XDIST_WHEEL
+        other = "--hash=sha256:" + "e" * 64
+        trusted = {"plain": "pytest-xdist==3.8.0 " + approved + "\n",
+                   "continued lines": "pytest-xdist==3.8.0 \\\n    " + other + " \\\n    " + approved + "\n",
+                   "several hashes, one approved": "pytest-xdist==3.8.0 " + other + " " + approved + "\n",
+                   "comment line ending in a backslash": "# note \\\npytest-xdist==3.8.0 " + approved + "\n",
+                   "trailing comment after the hash": "pytest-xdist==3.8.0 " + approved + "  # pinned\n"}
+        refused = {"hash in an inline comment (one space)": "pytest-xdist==3.8.0 # " + approved + "\n",
+                   "hash in an inline comment (spaces)": "pytest-xdist==3.8.0    # " + approved + "\n",
+                   "hash in an inline comment (tab)": "pytest-xdist==3.8.0\t# " + approved + "\n",
+                   "hash in a comment line": "pytest-xdist==3.8.0 \\\n# " + approved + "\n",
+                   "hash after a comment line ending in a backslash": "# note \\\n" + approved + "\npytest-xdist==3.8.0\n",
+                   "duplicated requirement": "pytest-xdist==3.8.0 " + approved + "\npytest_xdist==3.8.0 " + approved + "\n",
+                   "'#' without a space before it is not a comment": "pytest-xdist==3.8.0 " + approved + "#x\n",
+                   "unreadable hash option": "pytest-xdist==3.8.0 " + approved + " --hash=sha256:abc\n",
+                   "upper-case hash": "pytest-xdist==3.8.0 --hash=sha256:" + XDIST_WHEEL.upper() + "\n"}
+        for label, text in trusted.items():
+            with self.subTest(trusted=label):
+                run = self.locked(text)
+                self.assertIn(XDIST_WHEEL, run_record.locked_pins(self.tree)["pytest-xdist"][1])
+                record, reason = self.read(run=run, plugins=plugins)
+                self.assertIsNone(reason)
+        for label, text in refused.items():
+            with self.subTest(refused=label):
+                run = self.locked(text)
+                self.assertNotIn("pytest-xdist", run_record.locked_pins(self.tree))
+                self.assertRefused(self.read(run=run, plugins=plugins))
+                self.assertIn("plugin_not_locked:pytest-xdist",
+                              run_record.plugin_violations(plugins, self.tree))
+
     def test_xdist_trust_needs_pinned_files_on_the_installed_path(self):
         # D29 condition 4 (synthetic, before the fix each was trusted): name==version is not
         # enough. The approved wheel's files must be what is installed and what is loaded.
