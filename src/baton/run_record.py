@@ -259,7 +259,8 @@ def declared_violations(tree, *, observed_tree, rootdir, inifile, conftests):
 # distribution name==version to the ``-p`` names that load it and the modules it registers.
 # D29 condition 4 (2026-11-21): name==version is not enough. ``wheel_sha256`` is the approved
 # wheel, which the checked tree's hash lock must name (``locked_pins``), and ``files`` the
-# sha256 of every .py file that wheel installs, read from CI-PAR-001's .venv-ci (installed
+# sha256 of the 18 .py files the distribution metadata lists (EVID-R4-02: other installed
+# files and the environment as a whole are not checked), read from CI-PAR-001's .venv-ci (installed
 # from requirements/ci.lock with --require-hashes; .venv-ci-alt and .venv-ci-nogms agree and
 # each file matches its RECORD hash). A loaded module is trusted only when its file
 # (``file``, the module's __file__) is the installed file the distribution metadata names
@@ -302,23 +303,55 @@ LIST_TRUST = "list_metadata"
 LOCK_PATH = ("requirements", "ci.lock")
 
 
+LOCK_COMMENT = re.compile(r"(^|\s+)#.*$")  # pip._internal.req.req_file COMMENT_RE
+LOCK_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+LOCK_REQUIREMENT = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)\s*(?:;.*)?")
+LOCK_HASH = re.compile(r"--hash=sha256:([0-9a-f]{64})")
+
+
+def lock_lines(text):
+    """EVID-R4-01: the lock's logical lines in pip's order (join_lines, then ignore_comments):
+    a line ending in ``\\`` joins the next unless it is a comment line, then ``(^|\\s+)#.*$``
+    is removed, so a ``#`` with no whitespace before it is not a comment."""
+    lines, joined = [], []
+    for line in text.splitlines():
+        comment = LOCK_COMMENT.match(line)
+        if line.endswith("\\") and not comment:
+            joined.append(line.strip("\\"))
+            continue
+        lines.append("".join(joined) + (" " + line if comment else line))
+        joined = []
+    if joined:
+        lines.append("".join(joined))
+    return [kept for kept in (LOCK_COMMENT.sub("", line).strip() for line in lines) if kept]
+
+
 def locked_pins(tree):
-    """EVID-D28-01 (I2): {name: (version, sha256 hashes)} of the hash-pinned ``name==version``
-    lines in the checked tree's ``requirements/ci.lock`` (CI-PAR-001); {} without a lock, so
-    CI-EVID alone trusts no listed distribution (fail-closed)."""
+    """EVID-D28-01 (I2), EVID-R4-01: {name: (version, sha256 hashes)} of the hash-pinned
+    ``name==version`` requirements in the checked tree's ``requirements/ci.lock`` (CI-PAR-001)
+    as pip reads them; {} without a lock, so CI-EVID alone trusts no listed distribution.
+    Fail-closed: a hash only in a comment locks nothing, and a name that appears more than once
+    or whose options are not all ``--hash=sha256:<64 lower-case hex>`` is not locked."""
     try:
         text = Path(tree, *LOCK_PATH).read_text(encoding="utf-8")
     except (OSError, TypeError, ValueError):
         return {}
-    pins = {}
-    for line in text.replace("\r\n", "\n").replace("\\\n", " ").splitlines():
-        if line.lstrip().startswith("#"):
+    pins, seen = {}, {}
+    for line in lock_lines(text):
+        # pip's break_args_options: the requirement runs up to the first token starting with "-".
+        tokens = line.split(" ")
+        at = next((i for i, token in enumerate(tokens) if token.startswith("-")), len(tokens))
+        requirement, options = " ".join(tokens[:at]), " ".join(tokens[at:]).split()
+        name = LOCK_NAME.match(requirement)
+        if not name:
             continue
-        match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)", line)
-        hashes = tuple(h.lower() for h in re.findall(r"--hash=sha256:([0-9a-fA-F]{64})(?=\s|$)", line))
-        if match and hashes:
-            pins[re.sub(r"[-_.]+", "-", match.group(1)).lower()] = (match.group(2), hashes)
-    return pins
+        key = re.sub(r"[-_.]+", "-", name.group()).lower()
+        seen[key] = seen.get(key, 0) + 1
+        match = LOCK_REQUIREMENT.fullmatch(requirement)
+        hashes = [LOCK_HASH.fullmatch(option) for option in options]
+        if match and hashes and all(hashes):
+            pins[key] = (match.group(2), tuple(found.group(1) for found in hashes))
+    return {key: pin for key, pin in pins.items() if seen[key] == 1}
 
 
 def trusted_plugin(distribution, version, module):

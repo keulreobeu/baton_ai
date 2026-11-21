@@ -139,7 +139,8 @@ def _sha256(path):
 def _install_facts(distribution, module, file):
     """D29 condition 4: the installed file the distribution metadata names for ``module``
     (``install_file``), kept apart from the loaded ``file`` (its __file__), the loaded file's
-    sha256 and the sha256 of every .py file the distribution installs. Values the metadata
+    sha256 and the sha256 of every .py file the distribution metadata lists (only those, not
+    the other installed files, EVID-R4-02). Values the metadata
     cannot give stay None, which plugin_violations refuses (fail-closed)."""
     facts = {"installed": _installed(distribution, file), "install_rel": None, "install_file": None,
              "sha256": _sha256(file), "distribution_files": None}

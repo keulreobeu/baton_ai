@@ -8,7 +8,7 @@ owner = "Claude"
 revision = 5
 approved_by = "user"
 approved_at = "2026-11-20"
-approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separate Task CI-EVID-001, fix order 1-7, instruction 'D25의 변경 계약과 CI-PAR 연동 지점을 먼저 확정하고 진행하자. 완료 전에는 차단을 해제하지 않는다.' Contract finalized by the coordinator as rev3 after independent reviews (Codex rev1: modify-then-use; ChatGPT rev2: modify-then-use, no P1). rev3 text not separately reviewed by the user. Pending user decisions: D25-R (operational remote CI judgement change at merge), D26 (push/remote CI), D27 (F-1..F-3 follow-up). rev4: 사용자 D28 결정(2026-11-20) — RA-3 external-plugin risk not accepted, replaced by the trusted-list method (AC-06 rev4), with the user's refinement of the same day (trust-list mapping and provenance, exact exclusion ID set); cross-run errors-4 conditional exception approved by the user (2026-11-20). rev5: EVID-D28-01 (ChatGPT 3rd review P1) handled within the user's instruction of 2026-11-21 (plan I1-I4: no integrity claim, hash-lock dependency, residual risk pinned, evidence trust boundary) and 사용자 결정 D29 조건부 승인(2026-11-21): tampering already present in the local venv is outside this Task's threat model (TASK-ENV-INTEG-001), xdist pinned by wheel and per-file sha256."
+approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separate Task CI-EVID-001, fix order 1-7, instruction 'D25의 변경 계약과 CI-PAR 연동 지점을 먼저 확정하고 진행하자. 완료 전에는 차단을 해제하지 않는다.' Contract finalized by the coordinator as rev3 after independent reviews (Codex rev1: modify-then-use; ChatGPT rev2: modify-then-use, no P1). rev3 text not separately reviewed by the user. Pending user decisions: D25-R (operational remote CI judgement change at merge), D26 (push/remote CI), D27 (F-1..F-3 follow-up). rev4: 사용자 D28 결정(2026-11-20) — RA-3 external-plugin risk not accepted, replaced by the trusted-list method (AC-06 rev4), with the user's refinement of the same day (trust-list mapping and provenance, exact exclusion ID set); cross-run errors-4 conditional exception approved by the user (2026-11-20). rev5: EVID-D28-01 (ChatGPT 3rd review P1) handled within the user's instruction of 2026-11-21 (plan I1-I4: no integrity claim, hash-lock dependency, residual risk pinned, evidence trust boundary) and 사용자 결정 D29 조건부 승인(2026-11-21): tampering already present in the local venv is outside this Task's threat model (TASK-ENV-INTEG-001), xdist pinned by wheel and per-file sha256. rev5 보완(2026-11-22, ChatGPT 4th review EVID-R4-01 P2 and EVID-R4-02 P3, coordinator scope): the lock is read in pip's requirements order (a hash only in a comment locks nothing; duplicate names and unreadable hash options are not locked); the file pin wording is limited to the 18 .py files the distribution metadata lists."
 ```
 
 **rev5 반영(EVID-D28-01, 사용자 지시와 D29 조건부 승인, 2026-11-21):** ChatGPT 3차 검토(P1)는 두 가지를 재현했다. 하나는 venv의 `.pth` 시작 코드가 수집 전에 실패 테스트를 빼는 사례다(rc 0, 위반 없음). 다른 하나는 이름·버전·RECORD만 맞춘 가짜 pytest-xdist를 신뢰하는 사례다. 사용자는 P1을 유효하다고 보았고, D28 거부 결정은 유지했다. 처리는 둘로 나눴다.
@@ -18,6 +18,8 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
   - D29 조건 4·5: 승인 wheel의 sha256과 파일별 sha256을 고정하고, 설치 경로와 로딩 경로를 구분해 검증한다.
 - **잔여 환경 위험(D29로 이 Task의 위협 모델에서 제외, TASK-ENV-INTEG-001):** 이미 변조된 로컬 venv의 시작 코드·설치 패키지·인터프리터다. 해결했다는 뜻이 아니다. 알려진 잔여 위험으로 테스트(I3)와 RA-4에 남긴다.
 - 반영 위치: AC-06 "rev5 신뢰 목록 고정값", AC-08, "증거 신뢰 경계", RA-3·RA-4, 승인 구분.
+
+**rev5 보완(ChatGPT 4차 검토, 2026-11-22):** EVID-R4-01(P2)은 인라인 주석 안의 해시를 잠금으로 인정한 결함이다. 잠금을 pip requirements와 같은 순서로 해석하도록 고쳤다(AC-06 "잠금 해석"). EVID-R4-02(P3)는 파일 고정 표현의 과장이다. 비교 대상을 배포 metadata에 나열된 18개 `.py` 파일로 한정해 적었다. RA-1에 후보가 잠금과 신뢰 목록을 함께 바꿀 수 있다는 한계를 더했다.
 
 **rev4 반영(사용자 D28 결정, 2026-11-20):** ChatGPT 2차 구현 검토가 외부 일반 plugin(`-p`)이 실패 테스트를 빼고도 rc 0 유효 기록을 만드는 사례를 재현했다. 사용자는 이 위험(RA-3의 외부 plugin 부분)의 수용을 승인하지 않고 신뢰 목록 방식으로 정했다. 같은 날 매핑·출처 조건과 정확한 제외 ID 집합 조건을 더했다. 반영 위치: AC-06 "rev4 plugin 신뢰 목록과 수집 무결성", RA-3, 승인 구분.
 
@@ -283,7 +285,13 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
       - **rev5 신뢰 목록 고정값(EVID-D28-01 I1·I2, D29 조건 4·5, 2026-11-21):**
         - **표현(I1):** 신뢰 목록은 "승인된 실행 환경 안에서의 로딩 제한"이다. 이름·버전·RECORD 일치나 아래 해시 대조가 실행 코드나 환경의 무결성을 보장한다고 주장하지 않는다. 기록의 신뢰 목록 행 `trust` 값은 `list_metadata`다(rev4의 `list`는 이제 거부한다).
         - **해시 잠금(I2):** 검사 tree의 `requirements/ci.lock`(CI-PAR-001)이 그 배포를 `이름==버전`과 sha256 `--hash`로 고정해야 한다. 잠금에 승인 wheel의 sha256(`wheel_sha256`, 현재 `202ca578…0f0b88`)이 있어야 한다. 잠금 파일이 없거나, 그 줄이 없거나, 버전·해시가 다르면 `plugin_not_locked:<배포>`다. 그래서 CI-EVID 단독(잠금 없음)에서는 xdist를 신뢰하지 않는다(fail-closed). CI-PAR 병합 뒤에는 그 잠금으로 신뢰한다.
+          - **잠금 해석(EVID-R4-01, 2026-11-22):** pip requirements 해석과 같은 순서로 읽는다. 표준 라이브러리만 쓰고 pip을 import하지 않는다.
+            1. 연속 줄(pip join_lines): `\`로 끝나는 줄을 다음 줄과 합친다. 주석 줄은 `\`로 끝나도 합치지 않는다.
+            2. 주석 제거(pip ignore_comments): `(^|\s+)#.*$`를 지운다. 공백 없이 붙은 `#`은 주석이 아니다.
+            3. 남은 부분에서 첫 `-` 토큰 앞을 요구사항(`이름==버전`, 환경 표지 허용)으로, 나머지를 옵션으로 읽는다. 옵션은 모두 `--hash=sha256:<소문자 64 hex>`여야 한다.
+            - 주석 안에만 있는 해시는 잠금이 아니다. 같은 정규화 이름이 두 번 이상 나오거나 해석할 수 없는 옵션이 있으면 그 이름은 잠금 없음(`plugin_not_locked`)이다.
         - **파일 고정(D29 조건 4):** `files`는 승인 wheel이 설치하는 xdist `.py` 파일 18개의 파일별 sha256이다.
+          - 비교 범위(EVID-R4-02): 승인된 pytest-xdist wheel의 sha256을 검사 tree의 lock과 대조하고, 배포 metadata에 나열된 18개 .py 파일의 sha256을 고정값과 비교한다. 나머지 설치 파일과 실행 환경 전체의 무결성은 보장하지 않는다.
           - 출처: CI-PAR-001 `.venv-ci`(잠금에서 `--require-hashes --only-binary :all:`로 설치)에서 2026-11-21에 읽었다.
           - `.venv-ci-alt`·`.venv-ci-nogms`의 값도 같고, 각 파일은 그 배포 RECORD의 해시와 일치했다.
         - **경로 구분 기록:** 생산자는 신뢰 목록 행마다 다음을 따로 남긴다.
@@ -508,6 +516,7 @@ approval_ref = "D25 user decision 2026-11-20: both D25 defects blocking, separat
 
 ## 위험 수용
 - **RA-1:** 같은 프로세스 안 테스트 코드의 고의 기록 위조는 현행 CI-OPT-001 RA-4와 같이 남는다. 기록은 비고의 오염(출력 혼입·잘림·후행 출력·이전 실행 파일)을 막는 장치다.
+  - rev5 보완(ChatGPT 4차 검토 RA-1 의견, 2026-11-22): 후보 tree가 `requirements/ci.lock`과 `TRUSTED_PLUGINS`를 함께 바꿀 수 있으므로, 로컬 검사는 독립 정책 검증이 아니다("증거 신뢰 경계").
 - **RA-2:** pytest plugin은 지원 버전 범위를 명시하고, 범위 밖이면 fail-closed다. 연결 프로젝트가 자체 pytest 버전을 쓸 때 실패할 수 있으며, 이는 의도된 거부다.
 - **RA-3(D28 불승인 → 신뢰 목록 방식, 사용자 결정 2026-11-20):** 아래 rev3 문안의 외부 plugin 수용은 승인되지 않았다. 외부 plugin은 AC-06 rev4 신뢰 목록·간접 로딩 통제·수집 무결성으로 차단하며, 수용 위험이 아니다. 남는 것은 다음과 같다.
   - 신뢰 목록 배포와 pytest 자체는 테스트 도구로 신뢰한다. rev5부터 신뢰 목록 배포(pytest-xdist==3.8.0)는 검사 tree 잠금의 wheel 해시와 고정 파일 해시가 맞을 때만 신뢰한다. 이것도 무결성 보장이 아니다(RA-4).
