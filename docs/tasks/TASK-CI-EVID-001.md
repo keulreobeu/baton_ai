@@ -137,6 +137,46 @@ skipped = 0
 expected_failures = 0
 
 [[verification]]
+command = "EVID-R4-01 red: DeclaredPluginTrustTests.test_lock_hashes_are_read_as_pip_reads_requirements on the 6ee7726 code (eb8b3be): failures 7, errors 1 (inline-comment and comment-line hashes, duplicate name, unreadable and upper-case hash accepted; comment line ending in a backslash wrongly rejected)"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#4차-검토-반영--2026-11-22-chatgpt-대상-06a18e7"
+acs = ["CI-EVID-001-AC-06"]
+
+[[verification]]
+command = "EVID-R4-01 local regression (87ff7f1): tests.test_run_record tests.test_evidence_records tests.test_managed_harness tests.test_ci_plan tests.test_verify_environment tests.test_flow_runtime: 341 OK, skip 0, 501 s; real CI-PAR 9d6ebab ci.lock gives the same 8 pins before and after the fix"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#4차-검토-반영--2026-11-22-chatgpt-대상-06a18e7"
+acs = ["CI-EVID-001-AC-06", "CI-EVID-001-AC-08"]
+
+[[verification]]
+command = "official sequential V3 at 87ff7f1 (last code change): python -X utf8 scripts/verify_environment.py --base 8e44620: PASS, 885 OK, skip 0, rc 0, 1084 s, eligible, reuse not_configured; HEAD and clean tree unchanged, empty LOCALAPPDATA kept"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#4차-검토-반영--2026-11-22-chatgpt-대상-06a18e7"
+acs = ["CI-EVID-001-AC-01", "CI-EVID-001-AC-02", "CI-EVID-001-AC-03", "CI-EVID-001-AC-04", "CI-EVID-001-AC-05", "CI-EVID-001-AC-06", "CI-EVID-001-AC-07", "CI-EVID-001-AC-08", "CI-EVID-001-AC-09"]
+tests_run = 885
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = "cross-run at 87ff7f1: origin/main 8e44620 scripts/verify_environment.py on the 87ff7f1 tree --base 8e44620: rc 1, 885 run, errors=4 = the same VerifyEnvironmentRecordTests subTests (SystemExit 2), failures 0, skip 0; original result kept as failed, user decision 1 conditional exception applies"
+result = "failed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#4차-검토-반영--2026-11-22-chatgpt-대상-06a18e7"
+acs = ["CI-EVID-001-AC-09"]
+
+[[verification]]
+command = "auxiliary cross-run at 87ff7f1 with the 4 errors removed (user decision 1): the 2 methods and their 3 traceability refs removed: rc 0, 883 run, failures 0, errors 0, skip 0"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-EVID-001.md#4차-검토-반영--2026-11-22-chatgpt-대상-06a18e7"
+acs = ["CI-EVID-001-AC-09"]
+tests_run = 883
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
 command = "independent cross review (ChatGPT via Drive BATON 교차검토 package, user-relayed) and remote CI verify.yml (requires D26 push approval; operational CI change requires D25-R)"
 result = "not_run"
 evidence = "docs/tasks/TASK-CI-EVID-001.md#검증-표"
@@ -172,7 +212,7 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
   1. 로컬 PASS는 Task 진행 증거일 뿐 단독 최종 승인 근거가 아니다.
   2. `.pth` 사례와 그것이 unittest에도 적용된다는 사실을 알려진 잔여로 고정한다(I3).
   3. I1~I4를 계획대로 진행한다.
-  4. xdist 신뢰는 이름·버전만으로 하지 않는다. 승인 wheel sha256(lock 해시와 같아야 함)과 설치 파일 전부의 sha256을 고정하고, 설치 경로와 로딩 경로가 같은 파일이며 해시가 맞을 때만 신뢰한다. 무결성 보장으로 부르지 않는다.
+  4. xdist 신뢰는 이름·버전만으로 하지 않는다. 승인된 pytest-xdist wheel의 sha256을 검사 tree의 lock과 대조하고, 배포 metadata에 나열된 18개 .py 파일의 sha256을 고정값과 비교한다. 나머지 설치 파일과 실행 환경 전체의 무결성은 보장하지 않는다(EVID-R4-02 정정, 2026-11-22). 설치 경로와 로딩 경로가 같은 파일이며 해시가 맞을 때만 신뢰한다. 무결성 보장으로 부르지 않는다.
   5. lock 없음·wheel 해시 불일치·파일 목록 불일치·metadata 읽기 실패는 fail-closed다.
   6. 현재 main 대비 독립 병합 가능성을 확인한다(standalone에서는 xdist 미신뢰).
   7. D25 차단을 유지한다.
@@ -223,7 +263,10 @@ branch `keulreobeu/ci-evid-001`(CI-PAR G1 공용 커밋 `1870230` 위). push·PR
 | `3ea5089` | EVID-D28-01 재현 테스트만(red on base, `672efed` 코드): failures 4, errors 2 |
 | `6f64f0e` | D29 xdist 고정값 재현 테스트만(red on base): failures 5, errors 3 |
 | `6ee7726` | EVID-D28-01·D29 수정: 무결성 주장 제거(`trust="list_metadata"`), 검사 tree의 `requirements/ci.lock` 해시 고정, wheel·설치 파일 sha256 고정, 설치 경로·로딩 경로 분리 기록; 알려진 잔여 `.pth` 테스트; Spec rev5; traceability |
-| (이 커밋) | EVID-D28-01 증거, D29 기록, 후속 목록(문서만) |
+| `06a18e7` | EVID-D28-01 증거, D29 기록, 후속 목록(문서만) |
+| `eb8b3be` | EVID-R4-01 재현 테스트만(red on base, `6ee7726` 코드): failures 7, errors 1 |
+| `87ff7f1` | EVID-R4-01 수정: lock을 pip requirements 순서로 해석; EVID-R4-02 파일 고정 표현 정정(Spec·코드 주석); Spec rev5 보완 |
+| (이 커밋) | 4차 검토 반영 증거, D29 조건 4 문구 정정, RA-1 의견(문서만) |
 
 ## 공용 모듈 변경과 CI-PAR 영향
 
@@ -481,6 +524,52 @@ pytest에서도 `.pth` 잔여(Module.collect 패치)가 남는다. 깨끗한 ven
 | 교차 실행(origin/main verifier) | rc 1, 884 실행, failures 0, skip 0, errors 4 = 앞 절과 같은 `VerifyEnvironmentRecordTests` 4건(모두 `SystemExit: 2`). 원본 판정 failed 유지, 결정 1 조건부 예외 적용 |
 | 4건 제외 보조 실행 | rc 0, 882 OK, failures 0, errors 0, skip 0, eligible(2 method와 traceability ref 3개 제거, 3 files +7 −100) |
 
+## 4차 검토 반영 — 2026-11-22 (ChatGPT, 대상 `06a18e7`)
+
+검토 요약은 `review-chatgpt-evid-r4.md`다. 판정은 A(CI-EVID 결함) 미해결, B(D29 잔여 위험 기록) 보완 필요였다. 범위는 아래 두 가지로 제한했다. D25 차단은 유지하고 push는 하지 않았다.
+
+**EVID-R4-01(P2): lock 인라인 주석 안의 해시를 잠금으로 인정.** `pytest-xdist==3.8.0  # --hash=sha256:<승인 wheel>`을 잠금으로 읽었다. pip 기준으로 이 줄에는 해시가 없다. 수정(`87ff7f1`, `run_record.lock_lines`·`locked_pins`)은 pip requirements와 같은 순서로 lock을 읽는다. 표준 라이브러리만 쓰고 pip을 import하지 않는다.
+1. 연속 줄(pip join_lines): `\`로 끝나는 줄을 다음 줄과 합친다. 주석 줄은 `\`로 끝나도 합치지 않는다.
+2. 주석 제거(pip ignore_comments): `(^|\s+)#.*$`를 지운다. 공백 없이 붙은 `#`은 주석이 아니다.
+3. 첫 `-` 토큰 앞을 요구사항으로 읽는다(`이름==버전`, 환경 표지 허용, pip break_args_options). 나머지 옵션은 모두 `--hash=sha256:<소문자 64 hex>`여야 한다.
+- fail-closed: 주석에만 있는 해시는 잠금이 아니다. 같은 정규화 이름이 두 번 이상 나오거나 해석할 수 없는 해시·옵션이 있으면 그 이름은 잠금 없음(`plugin_not_locked`)이다.
+
+**red → green (`DeclaredPluginTrustTests.test_lock_hashes_are_read_as_pip_reads_requirements`):**
+
+| 사례 | 기대 | `eb8b3be`(수정 전 코드) | `87ff7f1` |
+|---|---|---|---|
+| 정상, 연속 줄의 정상 해시, 다중 해시(하나가 승인 wheel), 해시 뒤 주석 | 신뢰 | 통과 | 통과 |
+| 주석 줄 끝 `\` 뒤 정상 줄 | 신뢰 | **오류**(wrong_reject: 주석 줄과 합쳐져 사라짐) | 통과 |
+| 인라인 주석 안 해시(공백 1개·여러 개·탭) | `plugin_not_locked` | **실패 3**(wrong_accept) | 통과 |
+| 별도 주석 줄 해시(연속 줄 뒤) | `plugin_not_locked` | **실패**(wrong_accept) | 통과 |
+| 중복 요구사항(`pytest-xdist`·`pytest_xdist`) | `plugin_not_locked` | **실패**(마지막 줄 채택) | 통과 |
+| 해석할 수 없는 해시 옵션, 대문자 hex | `plugin_not_locked` | **실패 2** | 통과 |
+| 공백 없는 `#`(해시 토큰에 붙음), 주석 줄 끝 `\` 뒤 해시만 있는 줄 | `plugin_not_locked` | 통과 | 통과 |
+
+수정 전에는 failures 7, errors 1이었다. 수정 뒤 `test_evidence_records`+`test_run_record`는 108 OK다.
+
+**실제 CI-PAR lock 대조:** ci-par-001 `9d6ebab`(1c5d4cd 이후 최신)의 `requirements/ci.lock`으로 비교했다. 수정 전 해석과 수정 뒤 해석이 같은 8개 pins를 낸다(colorama·execnet·iniconfig·packaging·pluggy·pygments·pytest·pytest-xdist, xdist는 `3.8.0`과 승인 wheel 해시). wrong_reject는 없다.
+
+**pip 대조(보조):** 깨끗한 venv에서 `pip install --dry-run --ignore-installed --no-deps --require-hashes`를 돌렸다. 인라인 주석 xdist 줄은 "Hashes are required … missing"으로 rc 1이고, 정상 줄은 rc 0이다. 새 해석과 같다.
+
+**EVID-R4-02(P3): "설치 파일 전부" 과장.** D29 조건 4 문구를 정정했다(위 결정 대기 절). Spec AC-06 "파일 고정"에 비교 범위를 적고, `run_record`·`pytest_record` 주석의 같은 표현을 "배포 metadata에 나열된 .py 파일"로 맞췄다.
+
+**RA-1 의견(검토 기록):** 후보가 lock과 TRUSTED_PLUGINS를 함께 바꿀 수 있으므로, 로컬 검사는 독립 정책 검증이 아니다. Spec RA-1에도 한 줄 더했다.
+
+**재검증(마지막 코드 변경 `87ff7f1` 뒤):**
+- 실행은 하나씩 돌렸다. 매번 다른 V3·full suite가 0개이고 여유 메모리가 6 GB 이상인지 확인했다.
+- 빈 `LOCALAPPDATA`를 쓰고 PATH에서 CBM을 뺐다.
+
+| 항목 | 결과 |
+|---|---|
+| 국소 회귀 6모듈(`test_run_record`·`test_evidence_records`·`test_managed_harness`·`test_ci_plan`·`test_verify_environment`·`test_flow_runtime`) | 341 OK, skip 0, 501 s |
+| 실제 pytest 9.2.0 / xdist 3.8.0 보조(CI-PAR lock 해시 설치 임시 venv) | 정상 lock + `-n 2`: rc 1, 2 run, failures 1, trust list_metadata, 유효. 인라인 주석 lock: rc 4, `plugin_not_locked:pytest-xdist`. xdist 없이: 두 lock 모두 정상 |
+| 공식 순차 V3 `--base 8e44620` | PASS, 885 OK, skip 0, rc 0, 1084 s, eligible, reuse not_configured; 실행 전후 HEAD·clean 동일, `LOCALAPPDATA` 비어 있음 |
+| 교차 실행(origin/main verifier) | rc 1, 885 실행, failures 0, skip 0, errors 4 = 같은 `VerifyEnvironmentRecordTests` 4건(모두 `SystemExit: 2`). 원본 판정 failed 유지, 결정 1 조건부 예외 적용 |
+| 4건 제외 보조 실행 | rc 0, 883 OK, failures 0, errors 0, skip 0, eligible |
+| origin/main fetch 뒤 merge-tree | origin/main `8e44620` 그대로(움직이지 않음), HEAD의 조상, `git merge-tree --write-tree` rc 0 충돌 없음 |
+| CI-PAR 최신 임시 병합 | ci-par-001 `9d6ebab` × `87ff7f1`(커밋 없음, remove·prune). 문서 3개만 충돌(HANDOFF·traceability·current). `test_run_record`+`test_suite_backend`는 `.venv`와 깨끗한 pytest venv 양쪽 120 OK, skip 0. 병합 src와 병합 lock: xdist 신뢰, lock 없음·인라인 주석 lock은 `plugin_not_locked`, 병합 lock pins 8개 동일. 전체 병합 쌍은 coordinator가 CI-PAR worker에게 따로 지시한다 |
+
 ## 후속 (별도 Task, 이 Task 범위 밖)
 - **TASK-ENV-INTEG-001(가칭, 미착수):** 로컬 실행 환경 변조(`.pth` 시작 코드·설치 패키지·인터프리터) 방어. 범용 샌드박스는 이 Task에서 만들지 않는다.
 - **원격 검증 경로 보안 강화(별도 항목):** verify.yml을 PR이 스스로 바꿀 수 있는 문제, 승인 0명, 의존성·Actions 고정, ruleset 변경 권한. 이 Task에서 verify.yml은 바꾸지 않는다.
@@ -507,5 +596,8 @@ pytest에서도 `.pth` 잔여(Module.collect 패치)가 남는다. 깨끗한 ven
 | EVID-D28-01 국소 회귀 | 6모듈(`6ee7726`) | 340 OK, skip 0, 725 s |
 | EVID-D28-01 공식 순차 V3 | `--base 8e44620`(`6ee7726`) | PASS, 884 OK, skip 0, rc 0, 1205 s |
 | EVID-D28-01 교차·보조 | origin/main verifier(`6ee7726`) | 교차 rc 1·errors 4(예외 적용), 보조 882 OK |
+| EVID-R4 국소 회귀 | 6모듈(`87ff7f1`) | 341 OK, skip 0, 501 s |
+| EVID-R4 공식 순차 V3 | `--base 8e44620`(`87ff7f1`) | PASS, 885 OK, skip 0, rc 0, 1084 s |
+| EVID-R4 교차·보조 | origin/main verifier(`87ff7f1`) | 교차 rc 1·errors 4(예외 적용), 보조 883 OK |
 | 독립 교차 검토 | ChatGPT(coordinator 패키지) | not_run |
 | 원격 CI | verify.yml(D26 뒤) | not_run |
