@@ -46,7 +46,10 @@
     "docs/specs/CI-VTIER-001.md",
     "docs/plans/ci-vtier.md",
     "docs/adr/ADR-CI-VTIER-001.md",
-    "docs/tasks/TASK-CI-VTIER-001.md"
+    "docs/tasks/TASK-CI-VTIER-001.md",
+    "docs/specs/ADAPT-001.md",
+    "docs/tasks/TASK-ADAPT-RULES-001.md",
+    "docs/tasks/TASK-ADAPT-USAGE-001.md"
   ],
   "features": [
     {
@@ -1791,6 +1794,64 @@
               "file": "tests/test_ci_plan.py",
               "symbol": "PolicyTests.test_risk_paths_raise_final_and_remote_but_not_local_v1"
             }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADAPT-001",
+      "spec": "docs/specs/ADAPT-001.md",
+      "requirements": [
+        {"id": "ADAPT-001-REQ-01", "acs": ["ADAPT-001-AC-01", "ADAPT-001-AC-02", "ADAPT-001-AC-03"]},
+        {"id": "ADAPT-001-REQ-02", "acs": ["ADAPT-001-AC-04", "ADAPT-001-AC-05", "ADAPT-001-AC-06"]}
+      ],
+      "acs": [
+        {
+          "id": "ADAPT-001-AC-01",
+          "tests": [
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptRouteDocsTests.test_route_terms_present_in_sdd"},
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptRouteDocsTests.test_agents_points_to_the_single_rule_location"}
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-02",
+          "tests": [
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptReplanDocsTests.test_replan_terms_present_in_sdd"}
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-03",
+          "tests": [
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptCoordinatorDocsTests.test_coordinator_model_and_loading_terms_present_in_sdd"},
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptCoordinatorDocsTests.test_skill_guide_limits_large_planning_skill"}
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-04",
+          "tests": [
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_codex_export_keeps_only_allowlisted_numbers_and_identifiers"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_other_branches_and_unbranched_sessions_are_not_exported"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_output_is_never_overwritten_or_written_inside_the_logs"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "VerifyTests.test_free_text_and_unknown_fields_are_rejected"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "VerifyTests.test_verify_command_exit_codes"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "StandaloneTests.test_script_is_standard_library_only_without_network_or_subprocess"}
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-05",
+          "tests": [
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_claude_mismatch_dedup_and_synthetic"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_missing_usage_is_unavailable_not_zero"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_malformed_lines_and_invalid_values_are_flagged"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "ExportTests.test_date_window"}
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-06",
+          "tests": [
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptTransferDocsTests.test_transfer_procedure_terms_present"},
+            {"file": "tests/test_adapt_docs.py", "symbol": "AdaptTransferDocsTests.test_import_location_is_ignored_by_git"},
+            {"file": "tests/test_export_session_usage.py", "symbol": "VerifyTests.test_valid_export_passes"}
           ]
         }
       ]

@@ -1,5 +1,12 @@
 # BATON 현재 개발
 
+## 현재 작업 — 2026-11-22 ADAPT-001 작업 준비 Route·세션 사용량 인계
+
+- [ADAPT-001](../specs/ADAPT-001.md) revision 1 승인(2026-11-22, 통합 설계 검토 권장안). branch `keulreobeu/adapt-001`(base origin/main `8e44620`).
+- [TASK-ADAPT-RULES-001](TASK-ADAPT-RULES-001.md) in_progress L2: Route A/B/C·재계획·코디네이터·모델 배정 규칙을 `docs/sdd.md`에 두고 AGENTS는 포인터만. 코드 변경 없음.
+- [TASK-ADAPT-USAGE-001](TASK-ADAPT-USAGE-001.md) in_progress L2: 다른 PC 세션 로그를 그 자리에서 정제하는 `scripts/export_session_usage.py`와 [인계 절차](../measurements/session-usage-transfer.md). 2026-11-23 다른 PC 실행 예정.
+- 후속: TASK-ADAPT-MODEL-001(실행 모델 대조 기록)은 CI-EVID-001 병합 뒤. 독립 검토·원격 CI·push는 미실행/별도 승인.
+
 ## 현재 작업 — 2026-11-19 CI-VTIER verified 재승격
 
 - [TASK-CI-VTIER-001](TASK-CI-VTIER-001.md) verified(범위 조정 뒤 재승격): 공식 로컬 V3(`73ac42e`) 777 OK skip 0, 원격 Windows CI run `44537342217`(headSha `cad9203`) plan·3.11·3.12·gate success, Codex 18·19차 독립 검토 PASS_WITH_FINDINGS 지적 반영. 남은 위험 PR #17 comment 4624337778(TASK-SETTLE-RECOVERY-001 보류). 승격 커밋 CI·스레드 처리·병합은 보고와 사용자 결정으로 넘긴다.

@@ -23,6 +23,18 @@ Provider Adapter는 호스트 도구만 담당하며 프로젝트 정책을 대�
 L0가 아니다. checker는 알려진 민감 경로의 최소 등급만 판정한다. 의미 기반 위험도는 담당자가
 상향하며 모델 출력으로 낮추지 않는다. 전체 AI 계획/리뷰/문서 체인을 매번 실행하지 않는다.
 
+## 작업 준비 Route와 재계획 (ADAPT-001)
+
+Route는 위험 등급이 아니라 구현 준비 절차다. A = L3 또는 새 구조·높은 설계 불확실성의 L2(상세 Plan·착수 전 설계 검토), B = 나머지 L2(간략 Plan·자체 일관성 점검), C = L0/L1(기존 계약 확인 후 구현).
+Route는 L을 낮추지 않는다. L3는 항상 A이고 L2 이상은 C가 될 수 없다. Route는 필수 검증·독립 검토·사용자 승인을 바꾸지 않는다. 선택·근거·변경 이력은 Task 본문 `## Route` 절에 적는다.
+Task 시작과 범위·위험·가용성·실패 원인이 의미 있게 바뀔 때만 재평가하며 Worker 호출마다 반복하지 않는다. `plan-eng-review`는 A에서 승인된 Plan/ADR이 이번 설계를 덮지 못하거나 재계획이 발동했을 때 코디네이터 세션에서 호출하고, 덮으면 생략 근거를 남긴다.
+재계획 트리거: 같은 근본 원인의 차단 결함이 두 회차 연속, 여러 모듈의 공통 불변식 위반 반복, 독립 검토 PASS 뒤 공식 검증에서 설계 가정이 깨짐. 검토 기록 줄에 `원인:` 태그를 쓴다.
+트리거 시 코디네이터가 공통 원인·계약·반례·범위 축소·기능 분리를 검토하고 `### 재계획 판단` 절에 결정과 근거를 남긴다. 재계획하지 않기로 해도 근거를 남긴다. 검토자의 PASS/FAIL 판정이 재계획 판단을 대체하지 않는다. 범위 축소·기능 분리는 사용자 결정이며 이력을 지우지 않는다. 두 회차는 운영 가설이다.
+runtime=orca Task에서 코디네이터는 Worker 소유 worktree·scope에 쓰지 않고 위임·검증·통합만 한다. local Task는 단일 작성자인 코디네이터가 구현할 수 있다.
+모델·effort는 기존 `execution.model/effort`와 `execution.orca.review_*`로 지정한다. 저비용/고성능 모드는 기본값 묶음일 뿐 별도 승인 체계가 아니다. 모델 ID는 문서에 고정하지 않고 설치된 CLI·Orca에서 확인하며 임의로 대체하지 않는다. 독립 검토는 다른 provider를 우선한다. Worker는 기본 작성자 1명과 검토자 1명이고 독립 scope만 병렬로 둔다.
+재개 시 읽기 순서는 HANDOFF resume → current.md 해당 절 → Task TOML과 최신 절이며 긴 Task 전체를 기본으로 읽지 않는다. 스킬·Hook 파일 존재는 실행 가능을 뜻하지 않는다.
+저장 위치: 실행 중 임시 메모=Memory(untrusted), 현재 상태=managed store와 Task, 승인된 결정=Spec revision·ADR, 반복 규칙=AGENTS/SDD, 실패 분석=Task `### 재계획 판단`, 인계=HANDOFF 카드. 같은 내용은 복사하지 않고 ID로 연결한다.
+
 ## 문서와 상태
 
 Spec은 draft/approved/baseline/superseded, Task는 draft/ready/in_progress/verified/blocked,

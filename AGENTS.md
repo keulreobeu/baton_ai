@@ -41,6 +41,11 @@ L3는 Spec/Plan/ADR/Task·독립 검토와 필요한 사용자 승인을 유지�
 GMS는 2026-11-06 사용자 재승인으로 DEFERRED_GMS를 해제했다. 범위는 [GMS-001](docs/specs/GMS-001.md)의 로컬 키 관리와 사용자가 직접 켠 GMS 실행이다.
 에이전트는 테스트·검증 목적으로 실제 GMS를 호출하거나 키·잔액을 조회하지 않는다. 실제 모델·Windows 등록·전원·원격 Git 제한은 유지한다.
 
+## 작업 준비 Route와 재계획 — ADAPT-001 (2026-11-22)
+
+Route A/B/C는 위험 등급이 아니라 구현 준비 절차이며 L을 낮추지 않고 필수 검증·독립 검토·사용자 승인을 바꾸지 않는다.
+재계획 트리거와 `### 재계획 판단` 기록, 코디네이터 위임, 모델·effort 배정, 읽기 순서의 정본은 [docs/sdd.md](docs/sdd.md) "작업 준비 Route와 재계획" 절이다.
+
 ## 검증 사다리와 Worker 입출력 — CI-OPT-001 (2026-11-11)
 
 - 검증 사다리: 편집 중(in_progress/debugging)=V1 `graph_affected` 대상 테스트. 작업 단위/checkpoint=V2 `affected_modules` 전체 테스트 + Task 시작 base 기준 `check_sdd.py --base`. 리뷰 반영은 지적을 묶은 뒤 V2 1회이며 회차마다 push하지 않는다. 최종 L2/L3 후보(task_complete/pre_merge)=V3 `full`: 정확한 현재 조건의 공식 순차 `verify_environment.py` 1회 + 필수 독립 검토·CI. 통합·충돌 반영은 영향 파일 검사 후 바뀐 후보/base의 최종 증거 갱신.
