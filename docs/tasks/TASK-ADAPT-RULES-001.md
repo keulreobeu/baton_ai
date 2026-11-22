@@ -77,3 +77,22 @@ rev2 정정 범위(Worker, 승인 대기): `docs/sdd.md` ADAPT 절의 local 직�
 
 `hermit` worktree는 다른 코디네이터 세션(CI-EVID/CI-PAR 조율)도 cwd로 쓴다. 이 세션이 2026-11-22 03:15에 확인 없이 `hermit` branch를 `keulreobeu/codex-ci-vtier-001`에서 `keulreobeu/adapt-001`로 바꿨다.
 권장(승인 대기): ADAPT 전용 Orca worktree를 만들고 `hermit`은 원래 branch로 되돌린다. 다른 세션 영향은 미확인이다.
+
+## 환경 이전 push 점검 — 2026-11-22 (코디네이터 기록)
+
+사용자 지시(2026-11-22): "진행중인 브랜치 갱신해도됨"(GitHub에서 pull, 없는 것은 Drive로 복원). 대상 원격 origin, branch 5개를 같은 이름으로 게시한다. 새 branch이므로 force 없음, PR·병합·원격 CI 실행 없음(`verify.yml`은 PR·main push에만, PoC workflow는 `exp/ci-engine-poc-20261120`에만 반응).
+
+| branch | HEAD | 원격에 없는 커밋 | Task·상태 |
+|---|---|---|---|
+| keulreobeu/adapt-001 | 이 기록 커밋 | 3 | TASK-ADAPT-RULES/USAGE-001 in_progress |
+| keulreobeu/ci-evid-001 | `a505844` | 25 | TASK-CI-EVID-001 in_progress(L3) |
+| keulreobeu/ci-par-001 | `9d6ebab` | 29 | TASK-CI-PAR-001 in_progress(L3, G1) |
+| keulreobeu/ci-par-002 | `4e355de` | 30(ci-par-001 29 공유) | TASK-CI-PAR-002 draft |
+| keulreobeu/ci-engine-poc | `a4856e8` | 1 | TASK-CI-ENGINE-POC-001 in_progress |
+
+- 점검: 원격 refs 직접 조회(진행 branch 0개 존재). 고유 미게시 커밋 57개(이 기록 전) 전부 작성자 lwwde07(이미 게시된 커밋과 같은 주소), merge 0. 패치 전체에서 계정 이메일·토큰·키 패턴 0, DB·로그·키 파일 0. 각 branch `check_sdd.py` PASS.
+- 공개 저장소(PUBLIC) 참고: CI-PAR branch의 `tooling/ci_par_selftest/results/*.json`에 로컬 Windows 사용자명·작업/임시 경로 약 100줄이 있다. 같은 종류가 이미 main에 게시돼 있어 새 노출 유형이 아니다.
+- 성격: 백업·환경 이전용 게시다. 완료·병합 후보가 아니며 Task 상태를 승격하지 않는다. 독립 검토·원격 CI 증거가 아니다.
+- 세션 B branch에는 새 커밋을 만들지 않았다(branch 카드 갱신은 HANDOFF가 Task scope 밖이라 하지 않음). CI-EVID D26의 push 시점은 이 사용자 지시로 정해졌고, 원격 CI 실행·D25 차단은 그대로다.
+- 다른 로컬 branch: `main`(origin보다 뒤, 미게시 없음), `keulreobeu/codex-ci-vtier-001`(전부 원격에 포함). 미포함 미게시 커밋 없음.
+
