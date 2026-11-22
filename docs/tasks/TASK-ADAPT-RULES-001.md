@@ -59,3 +59,21 @@ Python 코드·검사기·CI·Task 상태 체계는 바꾸지 않는다. `skills
 
 - V2(작업 단위): 영향 7모듈 228 tests OK, 166.6초, 실패·오류·skip 0. Task base `8e44620` 기준 `check_sdd.py --base` PASS(changed_paths 14).
 - 공식 V3(`verify_environment.py`)·독립 검토·원격 CI는 미실행(NOT_RUN). V2 결과는 Task를 verified로 올리지 않는다.
+
+## 결정 기록 — 2026-11-22 rev2 (구현 대기, 코디네이터 기록)
+
+사용자 결정(같은 날 coordinator 채팅, 구현·Worker 실행 승인은 아님):
+
+- ① `adc3602`는 보존한다(amend·reset 없음). rev1 시점에 코디네이터가 직접 작성한 이력이며 rev2 규칙 이전 기록이다. 독립 Worker 검토를 받고, 정정은 Worker가 Spec revision 2와 새 커밋으로 한다.
+- ② 코디네이터는 모든 Route에서 구현하지 않는다. 코드·테스트·설정·Spec·ADR·SDD·AGENTS·Skill·템플릿·traceability 변경은 Worker. 코디네이터는 Task 상태·결정 근거·승인 대기·증거 참조·current.md·HANDOFF·브리핑 기록만 관리하고 검증·승인 결과를 근거 없이 바꾸지 않는다.
+- ③ Worker 실행은 Task별 승인 scope 안에서 일괄 승인한다. scope 확대·새 비용/권한·외부 게시·환경 변경은 별도 승인.
+- ④ Codex CLI는 최신 버전을 쓴다. `CODEX_VERSIONS`의 0.164.0은 회계 의미 검증 기준선일 뿐 실행 조건이 아니다. 현재 코드가 이미 실행은 막지 않고 미검증 버전을 partial/unknown으로 기록하므로 코드 변경은 없다. 버전 문구는 Spec AC-06 한 곳에만 둔다(중복 제거).
+- ⑤ 모델 불일치는 기록만 한다. Orca 보고 모델과 Provider 세션 검증 모델을 구분하고 확인 불가는 unknown.
+
+rev2 정정 범위(Worker, 승인 대기): `docs/sdd.md` ADAPT 절의 local 직접 구현 문구 삭제와 역할 범위·일괄 승인 추가, `AGENTS.md` 포인터, Spec rev2(AC-01~03 수정, AC-06 한 문장, AC-07~09 추가), `tests/test_adapt_docs.py`(삭제 문구 음성 검사), traceability, transfer 문서 한 줄.
+독립 검토: Codex 1명, 범위 `8e44620..<정정 커밋>`(export 비밀 경계·테스트 충분성·rev2 정합성·traceability), 검토자는 수정하지 않는다.
+
+### 작업 위치 주의
+
+`hermit` worktree는 다른 코디네이터 세션(CI-EVID/CI-PAR 조율)도 cwd로 쓴다. 이 세션이 2026-11-22 03:15에 확인 없이 `hermit` branch를 `keulreobeu/codex-ci-vtier-001`에서 `keulreobeu/adapt-001`로 바꿨다.
+권장(승인 대기): ADAPT 전용 Orca worktree를 만들고 `hermit`은 원래 branch로 되돌린다. 다른 세션 영향은 미확인이다.

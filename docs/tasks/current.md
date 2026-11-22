@@ -6,6 +6,7 @@
 - [TASK-ADAPT-RULES-001](TASK-ADAPT-RULES-001.md) in_progress L2: Route A/B/C·재계획·코디네이터·모델 배정 규칙을 `docs/sdd.md`에 두고 AGENTS는 포인터만. 코드 변경 없음.
 - [TASK-ADAPT-USAGE-001](TASK-ADAPT-USAGE-001.md) in_progress L2: 다른 PC 세션 로그를 그 자리에서 정제하는 `scripts/export_session_usage.py`와 [인계 절차](../measurements/session-usage-transfer.md). 2026-11-23 다른 PC 실행 예정.
 - 후속: TASK-ADAPT-MODEL-001(실행 모델 대조 기록)은 CI-EVID-001 병합 뒤. 독립 검토·원격 CI·push는 미실행/별도 승인.
+- 2026-11-22 rev2 결정 ①~⑤ 기록(코디네이터 직접 구현 전 Route 금지, Task별 일괄 Worker 승인, Codex 최신 버전 사용·0.164.0은 기준선, 모델 불일치 기록만). rev2 정정은 Worker 승인 대기. 다른 환경 이동은 HANDOFF 카드.
 
 ## 현재 작업 — 2026-11-19 CI-VTIER verified 재승격
 

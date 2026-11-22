@@ -1,24 +1,25 @@
 <!-- BATON_RESUME_START -->
-# BATON 재개 — 2026-11-22 (ADAPT-001, 다른 PC 세션 사용량 인계)
+# BATON 재개 — 2026-11-22 체크포인트 (ADAPT-001 rev2 구현 대기, 다른 환경 이동)
 
 ```text
-repo: BATON 원격 저장소(origin), 작업 branch keulreobeu/adapt-001(base origin/main 8e44620 = PR #17 병합)
-ref: branch HEAD=재개 시 git log -1로 확인(이 카드 자신의 SHA는 적지 않음)
-handoff: 집 PC Claude 코디네이터 → 2026-11-23 다른 PC(세션 로그 보유)
-task/status: TASK-ADAPT-RULES-001·TASK-ADAPT-USAGE-001 in_progress(L2); V2·check_sdd 결과는 각 Task TOML
-goal/order: 다른 PC 로그 정제 내보내기 → 집계 측정 문서 → 독립 검토 → (CI-EVID-001 병합 뒤) TASK-ADAPT-MODEL-001
-done: ADAPT-001 rev1 승인·규칙 문서·export_session_usage.py·오프라인 테스트, 이 PC 로그 읽기 전용 smoke verify ok
-next: 다른 PC에서 docs/measurements/session-usage-transfer.md 1~2단계(export·verify·sha256 기록) 실행
-scope: 각 Task scope만; CI-EVID-001·CI-PAR-002 worktree는 건드리지 않음
-checks: 각 Task [[verification]] 참조
-pending: 다른 PC export, 독립 검토, 원격 CI, push(사용자 결정)
-inputs: docs/specs/ADAPT-001.md; docs/measurements/session-usage-transfer.md; docs/tasks/TASK-ADAPT-USAGE-001.md
-usage: unknown(이 작업의 목적이 기준선 확보)
-rules: AGENTS.md; 원본 로그·정제 파일 커밋 금지; 실모델·GMS·스케줄러·전원 금지; push·병합은 사용자 승인 범위만
+repo: BATON(origin). 작업 branch keulreobeu/adapt-001(로컬 전용·원격에 없음, base origin/main 8e44620)
+ref: branch HEAD=재개 시 git log -1로 확인(이 카드 자신의 SHA는 적지 않음). rev1 커밋 adc3602
+handoff: 이 PC Claude 코디네이터(hermit worktree) → 다른 환경 코디네이터; 이동 방법은 인계 패키지 README
+task/status: TASK-ADAPT-RULES-001·TASK-ADAPT-USAGE-001 in_progress(L2); rev1 V2 228 OK·check_sdd PASS; V3·독립 검토·원격 CI not_run
+goal/order: rev2 정정(Worker) → Codex 독립 검토(8e44620..정정 커밋) → 최종 V3 → (CI-EVID-001 병합 뒤) TASK-ADAPT-MODEL-001 → BRIEF 1차
+done: ADAPT-001 rev1 승인·규칙·export_session_usage.py; 2026-11-22 rev2 결정 ①~⑤ 기록(TASK-ADAPT-RULES-001 "결정 기록")
+next: 사용자에게 rev2 정정 묶음 일괄 승인(작성 Worker Claude 1·검토 Worker Codex 1·로컬 커밋·V2/check_sdd/V3) 요청
+scope: 각 Task scope; 코디네이터는 Task 기록·current.md·HANDOFF만 직접 씀(결정 ②)
+checks: 각 Task [[verification]]
+pending: rev2 정정·독립 검토·V3·원격 CI·push 미승인; 다른 PC 세션 로그 export(사용자, 절차 docs/measurements/session-usage-transfer.md); hermit branch 원복·전용 worktree(승인 대기)
+inputs: docs/tasks/TASK-ADAPT-RULES-001.md; docs/specs/ADAPT-001.md; docs/tasks/TASK-ADAPT-USAGE-001.md
+usage: unknown
+rules: AGENTS.md; 결정 ②③(코디네이터 직접 구현 금지, Task별 일괄 Worker 승인); 실모델·GMS·스케줄러·전원 금지; force·amend·reset 금지; push·병합은 사용자 승인 범위만
 ```
 
-- 다른 PC 준비: branch를 push했으면 `git fetch origin` → `git switch -c keulreobeu/adapt-001 --track origin/keulreobeu/adapt-001`. push하지 않았으면 `scripts/export_session_usage.py` 파일 하나만 복사해도 된다(표준 라이브러리만 사용).
-- 이전 카드(2026-11-19 CI-VTIER-001)는 Git 이력에 있다. 작업 위치와 스킬: [브랜치별 작업 위치](workspace-recovery-20261106.md), [스킬 목록](development-skills.md), [현재 환경](environment-20261106.md).
+- 다른 환경 복원: 이 branch는 원격에 없다. 인계 패키지의 `adapt-001.bundle`로 가져온다(패키지 README "복원"). push를 승인했다면 `git fetch origin` 뒤 `git switch -c keulreobeu/adapt-001 --track origin/keulreobeu/adapt-001`.
+- 같은 시점 다른 코디네이터 세션(CI-EVID-001·CI-PAR 조율)의 상태는 각 branch 카드와 인계 패키지 README에 있다. 이 카드는 ADAPT만 다룬다.
+- 이전 카드는 Git 이력에 있다. 작업 위치와 스킬: [브랜치별 작업 위치](workspace-recovery-20261106.md), [스킬 목록](development-skills.md), [현재 환경](environment-20261106.md).
 <!-- BATON_RESUME_END -->
 
 ---

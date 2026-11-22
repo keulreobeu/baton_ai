@@ -29,7 +29,7 @@ acs = ["ADAPT-001-AC-04", "ADAPT-001-AC-05", "ADAPT-001-AC-06"]
 ```
 
 계약: [ADAPT-001](../specs/ADAPT-001.md) REQ-02. 절차: [세션 사용량 인계](../measurements/session-usage-transfer.md).
-BATON 실행 경로의 `CodexUsageCollector`(`codex exec --json`, 버전 게이트 0.164.0)는 바꾸지 않는다. 그 갱신은 실제 0.169 exec 출력 확보 뒤 별도 결정이다.
+BATON 실행 경로의 `CodexUsageCollector`(`codex exec --json`)는 바꾸지 않는다. Codex 버전 정책은 2026-11-22 결정 ④(TASK-ADAPT-RULES-001 결정 기록, Spec rev2 AC-06 예정)를 따른다: 최신 버전 사용, 0.164.0은 검증 기준선, export 값은 `cli_version`이 붙은 참고값.
 
 ## Route
 
