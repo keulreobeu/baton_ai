@@ -32,7 +32,7 @@ BASE_FIELDS = {"repository", "base", "head", "current_state", "checkpoint", "aut
                "contract_refs", "git_refs", "next_action", "write_scope", "protected_scope",
                "operations", "blockers", "acs"}
 OBSERVED = BASE_FIELDS | {"candidate_sha", "comparison_ref", "wip_inventory", "preservation", "owner_restore",
-                          "assignment", "bindings", "liveness_ownership", "portable_ref",
+                          "assignment", "assigned_receiver", "prior_assignment", "bindings", "liveness_ownership", "portable_ref",
                           "manifest", "manifest_sha256", "restored_task", "settlement", "portable_receipts",
                           "portability_mode", "portable_expected_sha", "portable_commit",
                           "portable_readback", "portable_unverified"}
@@ -69,6 +69,19 @@ class Evidence:
 
 
 @dataclass(frozen=True)
+class RestoreReadback:
+    """Selected W1 receipt and the separately read managed Task it created."""
+    receipt_source: str
+    checkpoint: str
+    new_task_id: str
+    task_id: str
+    task_state: str
+    commit_sha: str
+    ref: str
+    task_revision: str
+
+
+@dataclass(frozen=True)
 class Observation:
     task: str
     scope: str
@@ -82,6 +95,7 @@ class Observation:
     evidence: tuple[Evidence, ...] = ()
     subjects: Mapping[str, str] = field(default_factory=dict)
     bases: Mapping[str, tuple[str, str, str, str]] = field(default_factory=dict)
+    restore: RestoreReadback | None = None
 
     def __post_init__(self):
         # The caller may keep updating its view after this collection finishes.
@@ -145,11 +159,21 @@ def _instant(value):
 
 
 def template_directory():
-    import sysconfig
+    from importlib.metadata import distribution, PackageNotFoundError
     source = Path(__file__).resolve().parents[2]
     if (source / "src/baton/handoff_flow.py").resolve() == Path(__file__).resolve():
         return source / "docs/templates/handoff-flow"
-    return Path(sysconfig.get_path("data")) / "share/baton/templates/handoff-flow"
+    try:
+        package = distribution("baton-ai")
+    except PackageNotFoundError:
+        raise HarnessError("handoff_flow_missing_template") from None
+    module = Path(__file__).resolve()
+    _require(Path(package.locate_file("baton/handoff_flow.py")).resolve() == module, "foreign_templates")
+    suffix = "share/baton/templates/handoff-flow/common.md"
+    matches = [item for item in package.files or () if item.as_posix().endswith("/" + suffix)
+               or item.as_posix() == suffix]
+    _require(len(matches) == 1, "missing_template")
+    return Path(package.locate_file(matches[0])).resolve().parent
 
 
 def _layout(request):
@@ -179,6 +203,10 @@ def _layout(request):
 
 
 def _observe(obs):
+    _require(obs.restore is None or isinstance(obs.restore, RestoreReadback), "invalid_restore")
+    if obs.restore:
+        for value in asdict(obs.restore).values():
+            _text(value)
     for key in (obs.task, obs.scope, obs.event):
         identifier(key)
     _require(type(obs.sequence) is int and 0 < obs.sequence < 2**63, "invalid_sequence")
@@ -231,15 +259,19 @@ def _binding(obs):
     # and exact evidence inputs must still identify this snapshot.
     return digest([obs.task, obs.scope, obs.event, obs.sequence, obs.fence, dict(obs.fields),
                    dict(obs.checks), dict(obs.references), [asdict(record) for record in obs.evidence],
-                   dict(obs.subjects), dict(obs.bases)])
+                   dict(obs.subjects), dict(obs.bases), asdict(obs.restore) if obs.restore else None])
 
 
 def gate_subject(request, obs, gate):
     """Identity to compare with a gate proof supplied by the authoritative owner."""
-    identity = [gate, obs.task, obs.scope, asdict(request), obs.fields.get("bindings"),
+    authority = obs.fields["authority"]
+    identity = [gate, obs.task, obs.scope, obs.event, obs.sequence, obs.fence, asdict(request), obs.fields.get("bindings"),
                 obs.fields["base"], obs.fields["head"], obs.fields.get("candidate_sha"),
-                obs.fields["authority"], obs.fields["next_action"], obs.fields["operations"],
+                authority, obs.references.get(authority), obs.fields["next_action"], obs.fields["operations"],
                 obs.fields["write_scope"], obs.fields["protected_scope"]]
+    identity.extend(obs.fields.get(key) for key in ("assignment", "assigned_receiver", "prior_assignment",
+                                                    "liveness_ownership", "settlement", "current_state"))
+    identity.extend(obs.references.get(obs.fields.get(key)) for key in ("assignment", "prior_assignment"))
     source = obs.checks.get(gate, ("UNKNOWN", None))[1]
     identity.extend((source, obs.references.get(source)))
     if gate == "wip":
@@ -248,7 +280,10 @@ def gate_subject(request, obs, gate):
         identity.extend(obs.fields.get(key) for key in ("portability_mode", "manifest",
                         "manifest_sha256", "portable_ref", "portable_expected_sha", "portable_commit",
                         "portable_readback", "portable_receipts", "portable_unverified", "restored_task"))
-        identity.append(obs.references.get(obs.fields.get("restored_task")))
+        if obs.restore:
+            identity.extend((asdict(obs.restore), obs.references.get(obs.restore.receipt_source),
+                             obs.references.get("managed-task/" + obs.restore.task_id),
+                             obs.references.get("managed-state/" + obs.restore.task_id)))
     return digest(identity)
 
 
@@ -265,15 +300,48 @@ def _gates(request):
     return gates
 
 
+def _restore_matches(obs, expected):
+    """Compare a typed W1 receipt with the current managed Task read-back."""
+    restored = obs.restore
+    if not isinstance(restored, RestoreReadback):
+        return False
+    fields = obs.fields
+    checkpoint = restored.checkpoint
+    source = "w1-restore/" + checkpoint
+    task = restored.new_task_id
+    expected_receipt = ["restore_verified", checkpoint, checkpoint, True, task, expected, restored.ref]
+    return (HASH.fullmatch(checkpoint) and source == restored.receipt_source == obs.checks.get("portable", (None, None))[1]
+            and obs.references.get(source) == digest(expected_receipt)
+            and fields.get("manifest") == fields.get("manifest_sha256") == checkpoint
+            and fields.get("portable_commit") == restored.commit_sha == expected
+            and fields.get("portable_ref") == restored.ref and fields.get("portable_receipts") == "restore_verified"
+            and fields.get("portable_unverified") == "true" and restored.task_state == "PAUSED"
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,100}", task) and fields.get("restored_task") == restored.task_id == task
+            and "managed-task/" + task in obs.references and HASH.fullmatch(restored.task_revision)
+            and obs.references.get("managed-state/" + task) == restored.task_revision)
+
+
 def _missing(request, obs):
     missing = {key for key in _gates(request) if obs.checks.get(key, ("UNKNOWN",))[0] != "PASS"}
     missing.update(key for key in _gates(request)
                    if obs.subjects.get(key) != gate_subject(request, obs, key))
-    if request.relation != "DELIVER" and obs.fields["current_state"].upper() in {
-            "COMPLETED", "CANCELLED", "MERGED", "UNKNOWN", "STALE"}:
+    if request.relation != "DELIVER" and re.match(
+            r"^(?:COMPLETED|CANCELLED|MERGED|UNKNOWN|STALE|N/A|미확인)(?:$|[\s:(])",
+            obs.fields["current_state"].strip(), re.I):
         missing.add("task_open")
-    if obs.fields["authority"].upper() in STATUSES:
+    if obs.fields["authority"] not in obs.references:
         missing.add("approval")
+    for key, value in (("receiver", request.receiver), ("next_action", obs.fields["next_action"])):
+        if re.match(r"^(?:UNKNOWN|STALE|NOT_RUN|N/A|NONE|UNCONFIRMED|미확인)(?:$|[\s:(])", value.strip(), re.I):
+            missing.add(key)
+    if request.relation != "DELIVER" and (obs.fields.get("assignment") not in obs.references
+            or obs.fields.get("assigned_receiver") != request.receiver
+            or obs.fields.get("liveness_ownership") != "OWNED"):
+        missing.add("ownership")
+    if request.relation == "TRANSFER" and (obs.fields.get("settlement") != "SETTLED"
+            or obs.fields.get("prior_assignment") not in obs.references
+            or obs.fields.get("prior_assignment") == obs.fields.get("assignment")):
+        missing.add("settlement")
     if obs.fields["base"] == "UNKNOWN" and request.relation != "DELIVER":
         missing.add("base")
     if request.kind == "REVIEW":
@@ -288,12 +356,7 @@ def _missing(request, obs):
                     or not SHA.fullmatch(expected) or obs.fields.get("portable_readback") != expected
                     or obs.references.get(obs.fields.get("portable_ref")) != expected):
                 missing.add("portable")
-            if mode == "WIP_RESTORE" and (obs.fields.get("portable_commit") != expected
-                    or obs.fields.get("portable_receipts") != "restore_verified"
-                    or obs.fields.get("portable_unverified") != "true"
-                    or not HASH.fullmatch(obs.fields.get("manifest_sha256", ""))
-                    or obs.fields.get("manifest") != obs.fields.get("manifest_sha256")
-                    or obs.fields.get("restored_task") not in obs.references):
+            if mode == "WIP_RESTORE" and not _restore_matches(obs, expected):
                 missing.add("portable")
     return tuple(sorted(missing))
 
@@ -301,13 +364,14 @@ def _missing(request, obs):
 def _automatic(request, obs, groups, stamp):
     values = dict(obs.fields)
     if request.kind == "REVIEW":
-        _require("candidate_sha" in values and "comparison_ref" in values, "fixed_review_required")
+        _require("candidate_sha" in values and "comparison_ref" in values and SHA.fullmatch(values["base"]),
+                 "fixed_review_required")
     if request.kind == "REPORT":
         if request.report_stage == "checkpoint":
             _require("candidate_sha" not in values, "candidate_already_fixed")
             values["candidate_sha"] = "CHECKPOINT (no fixed candidate)"
         else:
-            _require("candidate_sha" in values, "fixed_report_required")
+            _require("candidate_sha" in values and SHA.fullmatch(values["base"]), "fixed_report_required")
     for key in ("candidate_sha", "comparison_ref"):
         values.setdefault(key, "UNKNOWN (no fixed revision)")
     for key in ("contract_refs", "git_refs"):
@@ -453,8 +517,12 @@ def save(directory, prepared, current):
     """Create an immutable checkpoint inside an existing, trusted local directory."""
     _integrity(prepared.markdown, prepared.receipt)
     _current(current, prepared.receipt)
-    root = Path(directory).absolute()
-    target = saved_path(root, prepared.receipt)
+    target = saved_path(directory, prepared.receipt)
+    return _save_bytes(target, prepared.markdown)
+
+
+def _save_bytes(target, data):
+    root = target.parent
     temp = None
     try:
         _check_directory(root)
@@ -465,15 +533,14 @@ def save(directory, prepared, current):
                  "unsafe_directory")
         with tempfile.NamedTemporaryFile(dir=staging, suffix=".part", delete=False) as stream:
             temp = Path(stream.name)
-            stream.write(prepared.markdown)
+            stream.write(data)
         try:
             # Atomic create-if-absent. Unsupported filesystems fail closed.
             os.link(temp, target)
         except FileExistsError:
             info = target.lstat()
             _require(stat.S_ISREG(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400
-                     and info.st_size == len(prepared.markdown)
-                     and target.read_bytes() == prepared.markdown, "event_conflict")
+                     and info.st_size == len(data) and target.read_bytes() == data, "event_conflict")
     except OSError:
         raise HarnessError("handoff_flow_save_failed") from None
     finally:

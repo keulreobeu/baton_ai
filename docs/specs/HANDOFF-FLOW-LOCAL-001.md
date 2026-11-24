@@ -5,10 +5,10 @@ kind = "spec"
 id = "HANDOFF-FLOW-LOCAL-001"
 status = "approved"
 owner = "Codex W3"
-revision = 2
+revision = 3
 approved_by = "Master Coordinator (위임된 로컬 Phase 2~3)"
 approved_at = "2026-11-25"
-approval_ref = "사용자 W3 신규 개발 및 Q1~16, run_642522584d8a의 msg_76aca9fb9424·msg_fca59ba6ec8e. revision 2는 msg_4af29d61c12b의 독립 지적 반영 및 msg_e0c3959933ff의 정착 REPORT 요구 범위"
+approval_ref = "사용자 W3 Q1~16 및 msg_76aca9fb9424·msg_fca59ba6ec8e·msg_4af29d61c12b·msg_e0c3959933ff. revision 3은 msg_b82ab0c6633a에 따른 권한·복원 Task·계약 base 수정"
 ```
 
 승인 범위는 [v5 제안](HANDOFF-FLOW-001.md)의 Phase 2~3 stdlib 함수와 오프라인 테스트다. 신뢰하는 기존 호출자가 공급한 선별 관측을 사용한다. 공유 CLI/Skill, 실제 BATON·Orca 이벤트 수집, 외부 전달·인수·실행, 운영 전환, 제품 승인 및 게시를 이 구간의 수락으로 승격하지 않는다.
@@ -36,6 +36,10 @@ Revision 2에서 일반 REVIEW/REPORT는 고정 후보를 요구한다. 후보 �
 작성된 로컬 카드만 명시적으로 저장한다. Task·소유 범위·이벤트별로 완성된 바이트만 보이게 한다. 중복은 기존 카드와 일치할 때 멱등, 충돌·저장 실패에는 기존 바이트를 보존한다. 이전 이벤트로 새 체크포인트를 덮어쓸 수 없다. 원격·새 원장·모델 호출 없이 합성 관측과 임시 경로로 경합/실패를 재현한다.
 
 ## 로컬 호출 경계
+
+Revision 3의 수신 확인에서는 현재 승인 원문 참조와 그 revision을 검사 출처와 함께 결속한다. 책임을 맡으려면 할당 참조, 할당받은 수신자 및 `liveness_ownership=OWNED`가 있어야 한다. TRANSFER에는 별도의 이전 할당 참조와 `settlement=SETTLED`가 필요하다. 이 값은 배정·정착을 확인한 소유자가 공급한다. `gate_subject` 계산만으로 근거를 발급할 수 없다. 수신자는 현재 Task, 이벤트, 코드 기준, 할당과 다음 행동에 대해 같은 값을 확인한다.
+
+WIP 복원 뒤 인수할 때 `Observation.restore`는 W1의 같은 영수증에서 읽은 checkpoint·새 Task ID·ref·commit과 관리자가 확인한 실제 Task ID·PAUSED 상태를 연결한다. `w1-restore/<checkpoint>`의 선별 영수증 지문과 `managed-task/<ID>`의 Task 출처, `managed-state/<ID>`의 관측 revision을 대조한다. 참조만 있거나 두 Task가 다르면 복원 인수는 차단된다. 복원된 Task의 수동 PORTABLE은 로컬 W1 영수증을 표시하고 현재 원격 read-back은 UNKNOWN으로 둔다. W1이 확인한 전송 효과와 제품 승인 여부는 원래 소유자에게 남는다. 고정 REVIEW 및 후보 REPORT의 계약 base에는 실제 SHA가 필요하다.
 
 작업 트리에서 `baton.handoff_flow`를 import한다. 현재 호출자는 BATON/Orca 읽기 결과의 소유자다. 자동 이벤트나 사용자 요청을 기존 허용 경계에서 `Request(kind, relation, sender, receiver, modules)`로 정규화할 때 호출자 역할과 수신 대상을 명확히 식별한다. 이 구간에는 실제 이벤트 구독이나 자연어 요청 라우팅이 없다.
 

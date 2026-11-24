@@ -104,3 +104,21 @@ W3 전용 CPython 3.12.16, PYTHONPATH=이 checkout의 src, 임시 BATON_HOME을 
 첫 직접 영향 실행 290건에서 Skill 무결성 검사와 그에 의존한 설치 fixture가 실패했다(실패 4, 오류 3, skip 0). 마스터 배정 `msg_af10ee853a47`에 따라 `skills/baton-flow/references/source-lock.json`의 `adapted_files["SKILL.md"]`, `tooling/pstack-source.json`의 `lock_sha256`만 재계산했다. 실제 Skill SHA-256은 `608032d0d7bfe26cfb6fc606cd198a98abf6804bc462b62850b190f8eedc58fe`, lock SHA-256은 `d8ebca2bddff2f29a6559dbc3ab5f899f8dee27a9d785f8aad7f9fff6d91c77e`이다. 다른 필드와 원격 revision은 같았다. 수정 후 전용·배포 회귀 24건(8.668초, skip 0), 기존 바이트 무결성 및 실제 wheel 설치 레이아웃의 Skill 인벤토리 17파일·템플릿 7개 검사, Task-base SDD 24경로가 통과했다.
 
 같은 12개 직접 영향 모듈과 V1 선택 ID를 중복 제거해 다시 실행했다. 290건이 310.722초에 통과했고 skip·중복·누락·예상 실패 0, 직접 파일 검사 20개와 Task-base SDD PASS였다. 작성자 최종 점검에서 저장된 카드의 시각을 정본 이벤트부터 현재 조회까지로 제한하고 민감 경로 표기 변형을 보강했다. 기존 backup/publish/restore의 예외 처리는 그대로 유지했다. 이 마지막 변경의 직접 회귀와 고정 후보 증거는 별도 Orca 영수증으로 전달한다.
+
+### 두 번째 독립 검토와 직접 회귀
+
+후보 `6db1e989cd801b564cdaef5e230e946a4a3d48a3`의 필수 내부 제품 판정은 FAIL이었다(`msg_cd7bdff6b887`). 독립 회귀 16건과 정적 계약 검사 24경로가 통과했지만 P1 5건과 P2 4건이 남았다. 마스터가 `msg_b82ab0c6633a`, `msg_7a1232574382`, `msg_81b201b52e65`로 수정 경계와 실제 설치 검증을 배정했다.
+
+|지적|정본·시점 및 수정 후 확인|
+|---|---|
+|P1 권한·소유·정착|작성·인수 때 실제 승인 원문 revision, 현재 할당 ID·수신자·소유 상태, 이전 할당 ID·정착 상태와 다음 행동을 결속한다. 소유자가 발급한 증명으로 다른 할당·수신자를 인수할 수 없고 미확인 행동과 같은 전후 할당은 차단된다.|
+|P1 복원 Task|W1 영수증이 지목하는 같은 checkpoint·원격 ref·commit·새 Task와 현재 관리자가 조회한 새 Task ID·PAUSED 상태·revision을 비교한다. Git 참조를 Task 참조로 대체하거나 다른 복원 시점의 Task를 연결하면 차단된다.|
+|P1 계약 base|REVIEW와 후보 REPORT는 DELIVER에서도 실제 base와 candidate SHA가 필요하다. 후보 전 보고는 명시적 checkpoint 경로를 사용한다.|
+|P1 이전 정착 알림|최초 정착은 직전 예약과 DB binding을 읽고 기존 ingest를 한 번 호출한다. 직후 같은 역할·attempt·dispatch의 정착 이벤트가 최신인지 확인한다. 쓰기 실패 후 후보를 등록한 뒤 옛 알림을 주면 새 후보 연결이 차단된다.|
+|P1 리뷰어 결과·HEAD|같은 리뷰 dispatch의 독립 worktree 등록 정보로 실제 Git HEAD를 대조한다. 후보·base에 결속한 당시 verdict, 지적 건수·원래 결과 참조, 별도 Task 상태를 보고한다. FAIL 보고 fixture에서 작성자 HEAD와 지적 원문이 섞이지 않았다.|
+|P2 상태 디렉터리|로컬 Task worktree의 실제 소유 경로, Orca 예약·DB 파일·workspace 귀속, 독립 복원은 W1 영수증의 관리 루트·상태 디렉터리·목적지를 확인한다. 복제 DB/카드는 차단했고 실제 W1 복원 Task에서 읽기 전용 RESUME가 준비됐다.|
+|P2 중복 영수증|최초 카드 digest·실제 시각·관측 및 귀속 지문을 소유자 디렉터리의 카드별 영수증으로 보존한다. 허용 시간 안에서 시각을 바꾼 카드도 차단된다. 부분 저장 후 같은 이벤트·근거로 최초 digest의 바이트를 실제 완성한 경우에만 준비가 끝난다.|
+|P2 RECHECK 기준|실제 CLI에서 명시적 `comparison_sha`가 같은 저장소의 고정 commit인지 확인한다. fixture의 계약 base·현재 후보·이전 비교 후보는 서로 달랐고, 미지정/없는 비교 SHA는 차단됐다.|
+|P2 Windows 사용자 설치|실제 import한 배포본 RECORD의 상대 경로를 사용한다. 같은 wheel을 임시 prefix와 별도 임시 사용자 site에 각각 pip 오프라인 설치하고, 각 위치의 실제 `baton.exe`로 새 fixture Task의 START 카드를 생성했다.|
+
+V1 선택과 6개 직접 모듈의 고유 219건이 232.942초에 통과했다. 이후 마지막 W1 복원 사례에서 실제 로컬 영수증과 새 Task의 상태 revision을 함께 카드에 연결하고 현재 원격 read-back은 UNKNOWN으로 보존했다. 최종 W3·CLI·Skill 31건이 23.575초에 통과했다. skip·실패·오류·실모델 테스트 호출 0. 최종 wheel SHA-256은 `91880f2ddaee2f598685b9137a028c56be7eee3d7f8f71b60390285f05e8715f`였다. 각 설치에서 전체 RECORD와 script·모듈·템플릿 경로가 해당 격리 루트에 속했고, 템플릿 7개·유형 5개·모듈 4개와 Skill 17파일의 무결성을 확인했다. 기존 사용자 site·공유 venv에는 설치하지 않았다. 해당 검사는 고정 후보 독립 판정·공식 V3·원격 CI·게시의 증거와 구별한다.

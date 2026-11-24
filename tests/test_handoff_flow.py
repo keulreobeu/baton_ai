@@ -147,14 +147,14 @@ class LocalHandoffTests(unittest.TestCase):
                     "comparison_ref": self.base,
                     "wip_inventory": "staged 0, unstaged 1, untracked 0",
                     "preservation": "local only", "owner_restore": "writer-one, same PC",
-                    "assignment": "owned workspace / dispatch-1",
-                    "bindings": "attempt-1 / dispatch-1", "liveness_ownership": "observed, owned",
+                    "assignment": "dispatch-1", "assigned_receiver": "receiver", "prior_assignment": "dispatch-0",
+                    "bindings": "attempt-1 / dispatch-1", "liveness_ownership": "OWNED",
                     "portable_ref": "UNKNOWN", "manifest": "local-only",
                     "manifest_sha256": "5" * 64, "restored_task": "N/A",
                     "portable_receipts": "local_saved", "portable_commit": "UNKNOWN",
                     "portable_readback": "NOT_RUN", "portable_unverified": "true",
                     "portability_mode": "WIP_RESTORE", "portable_expected_sha": "UNKNOWN",
-                    "settlement": "original dispatch settled", "next_action": "inspect approved draft",
+                    "settlement": "SETTLED", "next_action": "inspect approved draft",
                     "write_scope": "docs/proposal", "protected_scope": "shared CLI",
                     "blockers": "No other blockers observed", "operations": "read"},
             checks={"approval": ("PASS", "allocation/rev1"), "ownership": ("PASS", "lease-view/1"),
@@ -162,7 +162,7 @@ class LocalHandoffTests(unittest.TestCase):
                     "takeover": ("PASS", "coordinator/2"), "portable": ("PASS", "restore/1"),
                     "task_open": ("PASS", "task/1")},
             references={ref: self.candidate if ref == "example/topic" else "revision-1" for ref in (
-                "SPEC/r1", "example/topic", "allocation/rev1", "lease-view/1", self.basis[0],
+                "SPEC/r1", "example/topic", "allocation/rev1", "lease-view/1", "dispatch-1", "dispatch-0", self.basis[0],
                 "manifest/" + "5" * 64, "attempt/1", "coordinator/2", "restore/1", "review/1", "task/1")},
             bases={"intent": self.basis}, evidence=(flow.Evidence("independent_review", "PASS", "review/1",
                                     self.base, self.candidate, "fixed candidate review"),
@@ -296,19 +296,53 @@ class LocalHandoffTests(unittest.TestCase):
         closed = self.bound(closed, flow.Request("REPORT", "DELIVER", "writer", "receiver"))
         report = self.card("REPORT", "DELIVER", closed)
         self.assertEqual(receive(report, lambda: closed), "accepted")
-        moved = replace(obs, references={**obs.references, "approved mirror / checkpoint": "8" * 40},
+        ref = "approved mirror / checkpoint"
+        source = "w1-restore/" + "5" * 64
+        restore = flow.RestoreReadback(source, "5" * 64, "RESTORE-1", "RESTORE-1", "PAUSED", "8" * 40, ref, "7" * 64)
+        receipt_revision = flow.digest(["restore_verified", "5" * 64, "5" * 64, True, "RESTORE-1", "8" * 40, ref])
+        moved = replace(obs, restore=restore, checks={**obs.checks, "portable": ("PASS", source)},
+                        references={**obs.references, source: receipt_revision, ref: "8" * 40,
+                                    "managed-task/RESTORE-1": "rev-2", "managed-state/RESTORE-1": "7" * 64},
                         fields=dict(obs.fields, manifest="5" * 64, portable_expected_sha="8" * 40,
                         portable_ref="approved mirror / checkpoint", portable_readback="8" * 40,
-                        portable_commit="8" * 40, portable_receipts="restore_verified", restored_task="task/1"))
+                        portable_commit="8" * 40, portable_receipts="restore_verified", restored_task="RESTORE-1"))
         moved = self.bound(moved, flow.Request("RESUME", "CONTINUE", "writer", "receiver", ("PORTABLE",)))
         ready = self.card(observation=moved, modules=("PORTABLE",))
         self.assertEqual(receive(ready, lambda: moved), "accepted")
+        for changed in (None, replace(restore, new_task_id="OTHER"), replace(restore, task_state="RUNNING"),
+                        replace(restore, checkpoint="0" * 64), replace(restore, task_id="example/topic"),
+                        replace(restore, task_revision="4" * 64), replace(restore, receipt_source="git/HEAD")):
+            invalid = self.bound(replace(moved, restore=changed), ready.receipt.request)
+            self.assertIn("portable", self.card(observation=invalid, modules=("PORTABLE",)).receipt.unchecked)
         for field, value in (("portable_readback", self.base), ("portable_receipts", "local_saved"),
                              ("manifest_sha256", "UNKNOWN"), ("manifest", "local-only"), ("restored_task", "UNKNOWN")):
             invalid = replace(moved, fields=dict(moved.fields, **{field: value}))
             blocked = self.card(observation=invalid, modules=("PORTABLE",))
             with self.assertRaisesRegex(HarnessError, "required_fact_unconfirmed"):
                 receive(blocked, lambda: invalid)
+
+    def test_approval_and_ownership_must_name_current_sources(self):
+        obs = self.observation()
+        original = flow.Request("START", "TRANSFER", "writer", "receiver")
+        for kind, key, value in (("START", "assignment", "other"), ("START", "assigned_receiver", "other"),
+                                 ("CONTROL", "liveness_ownership", "RELEASED"), ("RESUME", "prior_assignment", "dispatch-1"),
+                                 ("RESUME", "settlement", "RUNNING")):
+            request = replace(original, kind=kind)
+            bound = self.bound(obs, request)
+            changed = replace(bound, fields=dict(bound.fields, **{key: value}))
+            self.assertTrue(self.card(kind, "TRANSFER", changed).receipt.unchecked)
+            self.assertTrue(self.card(kind, "TRANSFER", self.bound(changed, request)).receipt.unchecked)
+        check = replace(obs, checks={**obs.checks, "approval": ("PASS", "task/1")})
+        check = self.bound(check, original)
+        changed = replace(check, references={**check.references, "allocation/rev1": "rev-2"})
+        self.assertIn("approval", self.card("START", "TRANSFER", changed).receipt.unchecked)
+        unknown = replace(original, receiver="UNKNOWN")
+        facts = replace(obs, fields=dict(obs.fields, next_action="UNKNOWN"))
+        self.assertTrue({"receiver","next_action"} <= set(flow._missing(unknown, self.bound(facts, unknown))))
+        facts = replace(obs, fields=dict(obs.fields, base="UNKNOWN"), evidence=())
+        for kind in ("REPORT", "REVIEW"):
+            with self.assertRaisesRegex(HarnessError, "fixed_"):
+                self.card(kind, "DELIVER", facts)
 
     def test_local_save_is_atomic_and_scoped_to_checkpoint(self):
         obs = self.observation()
