@@ -1,5 +1,6 @@
 """Local CLI acceptance with an isolated managed Task, real Git and fake Orca."""
 from contextlib import closing, redirect_stdout
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -12,10 +13,11 @@ import shutil
 import tempfile
 import tomllib
 import unittest
+from threading import Event, current_thread
 from unittest.mock import patch
 from importlib.metadata import PathDistribution
 
-from baton import handoff_flow, handoff_flow_cli, managed_cli
+from baton import handoff_flow, handoff_flow_cli, managed_cli, runtime
 from baton.contracts import HarnessError
 from baton.runtime import dispatch
 from tests.test_flow_evidence import FlowFixture
@@ -37,10 +39,10 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
     def prepare(self, data, task="FLOW"):
         return self.cli("handoff", "prepare", "--task", task, "--request", self.json_file(data))
 
-    def orca(self):
+    def orca(self, *, attempts=1):
         body = deepcopy(self.body)
         body["task_id"] = "ORCA"
-        body["execution"].update(runtime="orca", preferred_provider="codex",
+        body["execution"].update(runtime="orca", preferred_provider="codex", max_attempts=attempts,
                                  orca={"run_id": "run-1", "repo_id": "repo", "coordinator_id": "coordinator"})
         self.store.create(body)
         client = FakeOrca(self.root)
@@ -142,6 +144,134 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
             code, replay = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
         self.assertEqual((code, replay["handoff"]["status"], client.starts), (0, "blocked", 1))
         self.assertEqual(self.prepare({"kind": "REPORT", "event": event}, task="ORCA")[0], 3)
+
+    def test_previous_attempt_candidate_cannot_be_reported_as_current(self):
+        client = self.orca(attempts=2)
+        with patch.object(runtime, "OrcaCLI", return_value=client):
+            client.settle("dispatch-1")
+            event = {"dispatch_id": "dispatch-1", "event_id": "first", "sequence": 1}
+            self.assertEqual(self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))[0], 0)
+            self.candidate("ORCA")
+            self.store.control("ORCA", "pause")
+            self.store.ready("ORCA")
+            second = dispatch(self.store, "ORCA", client)
+            (Path(second["worktree"]) / "src/value.py").write_text("value = 2\n# revised\n", encoding="utf-8")
+            client.settle("dispatch-2")
+            event.update(dispatch_id="dispatch-2", event_id="second")
+            code, row = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
+        self.assertEqual((code, row["state"], row["attempt"]), (0, "REVIEW_REQUIRED", 2))
+        report = row["handoff"]
+        self.assertEqual(report["receipt"]["request"]["report_stage"], "checkpoint")
+        text = (self.store.directory / "handoff-cards" / report["artifact"]).read_text(encoding="utf-8")
+        self.assertNotIn(self.candidate_sha, text)
+        self.assertEqual(report, self.prepare({"kind": "REPORT", "event": event}, task="ORCA")[1])
+        for kind in ("REVIEW", "REPORT"):
+            self.assertEqual(self.prepare({"kind": kind, "receiver": "Reviewer"}, task="ORCA")[0], 3)
+
+    def test_candidate_owner_readback_keeps_indexes_and_detects_changed_inputs(self):
+        from baton.isolation import git
+        self.author()
+        self.candidate()
+        row = self.store.get("FLOW")
+        source = Path(row["worktree"])
+        candidate = Path(row["result"]["candidate"]["candidate_root"])
+        indexes = [Path(git(tree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+                   for tree in (source, candidate)]
+        before = [(index.read_bytes(), index.stat().st_mtime_ns) for index in indexes]
+        request = {"kind": "REVIEW", "receiver": "Reviewer"}
+        self.assertEqual(self.prepare(request)[0], 0)
+        self.assertEqual([(index.read_bytes(), index.stat().st_mtime_ns) for index in indexes], before)
+        self.assertEqual(self.cli("validate", "--task", "FLOW", "--stage", "checkpoint")[0], 0)
+        self.assertEqual(self.store.get("FLOW")["attempt"], row["attempt"])
+        # The existing validator owns its own Git activity. Measure handoff
+        # read-back from the settled state after that independent operation.
+        before = [(index.read_bytes(), index.stat().st_mtime_ns) for index in indexes]
+        self.assertEqual(self.prepare(request)[0], 0)
+        change = source / "src/value.py"
+        change.write_text("value = 3\n", encoding="utf-8")
+        self.assertEqual(self.prepare(request)[0], 3)
+        self.assertEqual(self.prepare({"kind": "REPORT", "receiver": "Coordinator", "report_stage": "checkpoint"})[0], 3)
+        change.write_text("value = 2\n", encoding="utf-8")
+        # A stat-only change in the candidate normally triggers Git index refresh.
+        clean = candidate / "src/value.py"
+        os.utime(clean, (clean.stat().st_atime, clean.stat().st_mtime + 10))
+        self.prepare(request)
+        extra = source / "outside.txt"
+        extra.write_text("unregistered fixture", encoding="utf-8")
+        self.assertEqual(self.prepare(request)[0], 3)
+        self.assertEqual([(index.read_bytes(), index.stat().st_mtime_ns) for index in indexes], before)
+
+    def test_registered_candidate_supports_git_paths_with_mixed_case(self):
+        client = self.orca()
+        tree = Path(self.store.get("ORCA")["worktree"])
+        (tree / "src/MixedCase.py").write_text("fixture = 1\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        event = {"dispatch_id": "dispatch-1", "event_id": "mixed-case", "sequence": 1}
+        with patch.object(runtime, "OrcaCLI", return_value=client):
+            self.assertEqual(self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))[0], 0)
+        self.candidate("ORCA")
+        self.assertEqual(self.prepare({"kind": "REVIEW", "receiver": "Reviewer"}, task="ORCA")[0], 0)
+
+    def test_optional_projection_exceptions_preserve_product_ingest(self):
+        import builtins
+        original_import = builtins.__import__
+        def missing_projection(name, *args, **kwargs):
+            if name == "handoff_flow_cli":
+                raise ModuleNotFoundError("optional handoff adapter")
+            return original_import(name, *args, **kwargs)
+        for phase, outcome, exit_code in (("import", "succeeded", 0), ("pre", "failed", 3), ("post", "succeeded", 0)):
+            with self.subTest(phase=phase):
+                fixture = HandoffEntryTests()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                client = fixture.orca()
+                client.settle("dispatch-1", outcome)
+                path = fixture.json_file({"dispatch_id": "dispatch-1", "event_id": phase, "sequence": 1})
+                injection = {"import": patch.object(builtins, "__import__", side_effect=missing_projection),
+                             "pre": patch.object(handoff_flow_cli, "before_ingest", side_effect=RuntimeError),
+                             "post": patch.object(handoff_flow, "template_directory", side_effect=RuntimeError)}[phase]
+                with patch.object(runtime, "OrcaCLI", return_value=client), injection, \
+                     patch.object(runtime, "ingest", wraps=runtime.ingest) as product:
+                    code, result = fixture.cli("runtime", "ingest", "--task", "ORCA", "--request", path)
+                self.assertEqual((product.call_count, code, result["handoff"]["status"]), (1, exit_code, "blocked"))
+                self.assertIsNone(fixture.store.get("ORCA")["lease"])
+        with patch.object(runtime, "ingest", side_effect=RuntimeError("product ingest")) as product:
+            with self.assertRaisesRegex(RuntimeError, "product ingest"):
+                self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file({}))
+            product.assert_called_once()
+
+    def test_overlapping_manual_and_settled_requests_return_the_first_receipt(self):
+        request = self.json_file({"kind": "START", "receiver": "Worker"})
+        client = self.orca()
+        event = {"dispatch_id": "dispatch-1", "event_id": "overlap", "sequence": 1}
+        client.settle("dispatch-1")
+        args = self.root, self.store.directory, "ORCA", event
+        reservation = handoff_flow_cli.before_ingest(*args)
+        self.assertIsInstance(reservation, tuple)
+        result = runtime.ingest(self.store, "ORCA", event, client)
+        manual = lambda: handoff_flow_cli.manual(self.root, self.store.directory, "FLOW", request)
+        settled = lambda: handoff_flow_cli.settled_report(*args, result, reservation)
+        for call in (manual, settled):
+            rendered, release = Event(), Event()
+            prepare = handoff_flow.prepare
+            def delay_first(*args, **kwargs):
+                card = prepare(*args, **kwargs)
+                if current_thread().name.startswith("early") and not rendered.is_set():
+                    rendered.set()
+                    self.assertTrue(release.wait(30))
+                return card
+            with ThreadPoolExecutor(1, thread_name_prefix="early") as pool, \
+                 patch.object(handoff_flow, "prepare", side_effect=delay_first):
+                earlier = pool.submit(call)
+                try:
+                    self.assertTrue(rendered.wait(30))
+                    winner = call()
+                finally:
+                    release.set()
+                self.assertEqual(winner["status"], "prepared")
+                self.assertEqual(earlier.result(30), winner)
+            self.assertEqual(call(), winner)
+        self.assertEqual(client.starts, 1)
 
     def test_incomplete_card_can_only_finish_with_original_seal_and_facts(self):
         client = self.orca()

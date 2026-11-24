@@ -6,10 +6,13 @@ from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
 import stat
+import subprocess
+import sys
 from types import SimpleNamespace
 
 from . import handoff_flow as flow
@@ -43,6 +46,43 @@ def _directory(root, state_dir):
     require(".." not in path.parts and path.is_relative_to(root / ".local_runtime"), "unsafe_directory")
     _plain_path(path, directory=True)
     return path
+
+
+def _registration(conn, row):
+    if not row["candidate"]:
+        return "checkpoint", None
+    # The candidate-registration receipt is issued by the evidence owner.
+    # PLANNING also occurs for same-attempt validation, so order alone cannot
+    # distinguish a previous author's candidate from a current one.
+    receipt = conn.execute(
+        "SELECT id, json_extract(body, '$.evidence_hash') FROM managed_events "
+        "WHERE task_id=? AND kind='evidence_recorded' AND json_extract(body, '$.kind')='candidate' "
+        "ORDER BY id DESC LIMIT 1", (row["id"],)).fetchone()
+    if not receipt:
+        return "unknown", None
+    registered_at, proof = receipt
+    item = conn.execute(
+        "SELECT json_extract(result, '$.candidate'), json_extract(result, '$.author_worker'), "
+        "json_extract(result, '$.runtime.dispatch_id'), json_extract(result, '$.runtime.attempt'), "
+        "(SELECT MAX(id) FROM managed_events WHERE task_id=managed_tasks.id AND kind='PLANNING') "
+        "FROM managed_tasks WHERE id=?", (row["id"],)).fetchone()
+    raw_candidate, source_author, dispatch, runtime_attempt, last_claim = item
+    candidate = json.loads(raw_candidate)
+    if not isinstance(candidate, dict) or digest(candidate) != proof or not candidate.get("author_worker"):
+        return "unknown", None
+    if row["provider_runtime"] == "orca":
+        if not dispatch or runtime_attempt != row["attempt"]:
+            return "unknown", None
+        author = "orca:" + dispatch
+    else:
+        author = f"local:{row['id']}:{row['attempt']}"
+    if source_author != author:
+        return "unknown", None
+    if candidate["author_worker"] == author:
+        return "registered", proof
+    if last_claim and registered_at < last_claim:
+        return "checkpoint", None
+    return "unknown", None
 
 
 def _row(directory, task, role, event_id):
@@ -88,12 +128,14 @@ def _row(directory, task, role, event_id):
             "json_extract(body, '$.runtime.dispatch_id') AS dispatch, "
             "(SELECT value FROM json_each(body, '$.runtime.events') WHERE key=?) AS notification "
             "FROM managed_events WHERE task_id=? ORDER BY id DESC LIMIT 1", (event_id, task)).fetchone()
+        candidate_stage, candidate_proof = _registration(conn, row)
     require(event and type(event["id"]) is int and event["id"] > 0 and row["state"] in STATES
             and flow.HASH.fullmatch(row["hash"]) and type(row["attempt"]) is int
             and isinstance(event["at"], (float, int)) and 0 < event["at"] < 253402300800, "invalid_managed_schema")
     after = database.stat()
     require((before.st_dev, before.st_ino) == (after.st_dev, after.st_ino), "collection_changed")
     return dict(row, state_origin=digest([str(directory), before.st_dev, before.st_ino]),
+                candidate_stage=candidate_stage, candidate_proof=candidate_proof,
                 managed_event=event["id"], event_at=event["at"], event_kind=event["kind"],
                 event_role=event["role"], event_attempt=event["attempt"], event_dispatch=event["dispatch"],
                 event_notification=event["notification"])
@@ -220,6 +262,78 @@ def _workspace(root, directory, row, role, notification, reservation):
     return tree, receipt
 
 
+def _candidate_matches(root, owner_row, expected_sha):
+    """Run in the read-only Git environment. Only the evidence owner decides candidate validity."""
+    from .autocommit import eligible_paths
+    from .evidence import _current_candidate
+    from .isolation import interpreter_cache
+
+    candidate = owner_row["result"]["candidate"]
+    manifest = set(eligible_paths(candidate["manifest"]))
+    if any(flow.SENSITIVE_TEXT.search(name) for name in manifest):
+        return False
+    # The owner normally hashes changes across both worktrees. Decline its
+    # query if it would have to open another file to disprove this candidate.
+    for tree in (Path(owner_row["worktree"]), Path(candidate["candidate_root"])):
+        if not tree.is_absolute() or tree.is_symlink() or repository_key(tree) != repository_key(root):
+            return False
+        for name in manifest:
+            path = tree / name
+            if path.exists():
+                _plain_path(path)
+        changed = git(tree, "diff", "--name-only", "--no-renames", "-z", candidate["base_sha"], "--")
+        untracked = git(tree, "ls-files", "--others", "-z")
+        names = set(changed.split("\0") + untracked.split("\0")) - {""}
+        extra = {name for name in names if os.path.normcase(name).replace("\\", "/") not in manifest}
+        if extra:
+            ignored = set(git(tree, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").split("\0"))
+            if any(name not in ignored or not interpreter_cache(name) for name in extra):
+                return False
+    value, _ = _current_candidate(SimpleNamespace(root=root), owner_row)
+    return value["candidate_sha"] == expected_sha
+
+
+def _owner_candidate(root, directory, row):
+    """Ask the existing evidence owner about this Task snapshot, without opening a ManagedStore."""
+    database = directory / "state.sqlite3"
+    _plain_path(database)
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+        item = conn.execute(
+            "SELECT body, json_object('candidate', json_extract(result, '$.candidate'), "
+            "'author_worker', json_extract(result, '$.author_worker'), 'base_commit', json_extract(result, '$.base_commit'), "
+            "'changed_files', json_extract(result, '$.changed_files')), json_type(result, '$.validation_passed') "
+            "FROM managed_tasks WHERE id=? AND attempt=? AND hash=? AND state=? AND worktree=? AND (lease IS NOT NULL)=? "
+            "AND (SELECT MAX(id) FROM managed_events WHERE task_id=managed_tasks.id)=?",
+            (row["id"], row["attempt"], row["hash"], row["state"], row["worktree"], row["busy"],
+             row["managed_event"])).fetchone()
+    if not item:
+        return False
+    result = json.loads(item[1])
+    if digest(result["candidate"]) != row["candidate_proof"]:
+        return False
+    result["validation_passed"] = item[2] == "true"
+    owner_row = dict(task=json.loads(item[0]), result=result, state=row["state"],
+                     lease=row["busy"], worktree=row["worktree"])
+    # Git diff in the owner's source proof can refresh the index even with
+    # GIT_OPTIONAL_LOCKS=0. Scope read-only Git settings to this query.
+    env = {key: os.environ[key] for key in ("PATH", "SystemRoot", "TEMP", "TMP") if key in os.environ}
+    env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, GIT_NO_LAZY_FETCH="1",
+               GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0", GIT_CONFIG_COUNT="2",
+               GIT_CONFIG_KEY_0="diff.autoRefreshIndex", GIT_CONFIG_VALUE_0="false",
+               GIT_CONFIG_KEY_1="core.fsmonitor", GIT_CONFIG_VALUE_1="false")
+    query = ("import json, sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\n"
+             "from baton.handoff_flow_cli import _candidate_matches\n"
+             "sys.exit(0 if _candidate_matches(Path(sys.argv[2]), json.load(sys.stdin), sys.argv[3]) else 1)")
+    try:
+        check = subprocess.run([sys.executable, "-I", "-S", "-B", "-X", "utf8", "-c", query,
+                                str(Path(__file__).resolve().parents[1]), str(root), row["candidate"]],
+                               input=json.dumps(owner_row).encode("ascii"), env=env, timeout=60,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return check.returncode == 0
+
+
 def _capture(root, directory, task, role, kind, notification, reservation=None):
     row = _row(directory, task, role, notification.get("event_id") if notification else None)
     if notification is not None:
@@ -244,10 +358,9 @@ def _capture(root, directory, task, role, kind, notification, reservation=None):
                   write_scope=allowed_text, protected_scope=_strings(scope.get("forbidden_paths", [])),
                   operations="Local handoff preparation", blockers="Execution approval requires read-back.",
                   acs=acs)
-    if row["candidate"]:
-        require(row["candidate_base"] == fields["base"], "stale_candidate")
-        require(isinstance(row["candidate"], str) and flow.SHA.fullmatch(row["candidate"])
-                and git(tree, "cat-file", "-t", row["candidate"]).strip() == "commit", "stale_candidate")
+    if (row["candidate_stage"] == "registered" and row["candidate_base"] == fields["base"]
+            and isinstance(row["candidate"], str) and flow.SHA.fullmatch(row["candidate"])
+            and _owner_candidate(root, directory, row)):
         fields["candidate_sha"] = row["candidate"]
         fields["comparison_ref"] = row["candidate_base"]
     # Cite the owner’s recorded evidence without repeating its checks or granting
@@ -261,7 +374,7 @@ def _capture(root, directory, task, role, kind, notification, reservation=None):
             require(isinstance(target, str) and flow.SHA.fullmatch(target), "invalid_managed_schema")
             source = f"{spec_ref}/{category}"
             refs[source] = digest([base, candidate, target])
-            status = "UNKNOWN" if (base, candidate) == (fields["base"], row["candidate"]) else "STALE"
+            status = "UNKNOWN" if (base, candidate) == (fields["base"], fields.get("candidate_sha")) else "STALE"
             evidence.append(flow.Evidence(category, status, source, base, candidate,
                             f"Registered target {target}. Current validity requires owner read-back."))
     fields.update(assignment=row["dispatch"] or UNKNOWN,
@@ -291,7 +404,9 @@ def _capture(root, directory, task, role, kind, notification, reservation=None):
                       portable_expected_sha=restore.commit_sha, portable_commit=restore.commit_sha,
                       portable_ref=restore.ref, portable_receipts=restored["status"], restored_task=restore.task_id,
                       portable_unverified="true", portable_readback=UNKNOWN)
-    version = digest(row)
+    # Registration is a read-back of the existing candidate. Keep the original
+    # fence format so a genuine receipt for unchanged facts remains replayable.
+    version = digest({k: v for k, v in row.items() if k not in {"candidate_stage", "candidate_proof"}})
     now = datetime.now(timezone.utc)
     require(row["event_at"] <= now.timestamp(), "collection_changed")
     observed = now.isoformat()
@@ -311,11 +426,14 @@ def _write(root, directory, task, body, notification=None, accepted=None, reserv
         require(all(value is not None and row[key] == value for key, value in accepted.items()),
                 "settlement_changed")
     obs = observed
-    default_stage = "checkpoint" if notification and not row["candidate"] else "candidate"
+    before_registration = row["candidate_stage"] == "checkpoint"
+    default_stage = "checkpoint" if notification and role == "author" and before_registration else "candidate"
     modules = body.get("modules", [])
     require(isinstance(modules, list) and all(isinstance(m, str) for m in modules), "invalid_modules")
     request = flow.Request(kind, body.get("relation", "DELIVER"), body.get("sender", "Worker"),
                            body["receiver"], tuple(modules), body.get("report_stage", default_stage))
+    if kind == "REPORT" and request.report_stage == "checkpoint":
+        require(before_registration, "candidate_stage_unconfirmed")
     if "request_id" in body:
         require(notification is None, "invalid_request")
         obs = replace(obs, scope="manual-" + digest([obs.scope, identifier(body["request_id"])]))
@@ -343,7 +461,7 @@ def _write(root, directory, task, body, notification=None, accepted=None, reserv
              "acceptance_and_stop": obs.fields["acs"], "verdict_contract": "Use the existing product review channel.",
              "review_evidence": "Check the registered candidate and evidence records."}
     if notification and role == "reviewer":
-        require(row["binding_base"] == row["candidate"] == obs.fields["head"]
+        require(row["binding_base"] == obs.fields.get("candidate_sha") == obs.fields["head"]
                 and row["verdict"] in {"FAIL", "PASS", "CANCELLED", "PAUSED"}, "unconfirmed_review")
         source = f"dispatch {row['dispatch']} / event {obs.event}"
         known["outcome"] = f"Task {row['state']} / reviewer {row['verdict']} ({source})"
@@ -375,9 +493,10 @@ def _write(root, directory, task, body, notification=None, accepted=None, reserv
     receipts.mkdir(mode=0o700, exist_ok=True)
     _plain_path(receipts, directory=True)
     origin = _origin(row, role)
+    existing_card = path.exists()
     seal = _sealed(directory, path.stem)
     if seal is None:
-        require(not path.exists() and (notification is None or reservation is not None), "unconfirmed_original")
+        require(not existing_card and (notification is None or reservation is not None), "unconfirmed_original")
         claim = dict(version=card.receipt.version, slot=path.stem, document=card.receipt.document_hash, time=obs.observed_at,
                      observations=card.receipt.observed_hash, origin=origin)
         try:
@@ -389,12 +508,17 @@ def _write(root, directory, task, body, notification=None, accepted=None, reserv
     require(seal and seal.get("origin") == origin and seal.get("observations") == card.receipt.observed_hash,
             "event_conflict")
     prior_time = seal["time"]
+    # A concurrent first writer may have observed the event after our second
+    # capture. Re-read its source before accepting that later receipt.
+    if flow._instant(prior_time) > flow._instant(current.observed_at):
+        current, _ = _capture(root, directory, task, role, kind, notification, reservation)
+        require(flow._binding(current) == flow._binding(observed), "collection_changed")
     require(row["event_at"] <= flow._instant(prior_time).timestamp()
-            <= flow._instant(obs.observed_at).timestamp(), "event_conflict")
+            <= flow._instant(current.observed_at).timestamp(), "event_conflict")
     if prior_time != obs.observed_at:
         card = flow.prepare(request, replace(obs, observed_at=prior_time), changes, created_at=prior_time)
     require(seal["document"] == card.receipt.document_hash, "event_conflict")
-    flow.save(cards, card, obs)
+    flow.save(cards, card, replace(obs, observed_at=current.observed_at))
     return {"status": "prepared", "artifact": path.name, "receipt": asdict(card.receipt),
             "unknown_notes": sorted(key for key, value in changes.items() if value == UNKNOWN),
             "model_calls": 0}
