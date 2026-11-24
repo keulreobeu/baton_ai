@@ -1,24 +1,25 @@
 """Local PREPARE entry points. Managed state, Git and notification receipts are inputs."""
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import ExitStack, closing
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sqlite3
 import stat
 import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 
 from . import handoff_flow as flow
 from .cli import read_json
 from .contracts import HarnessError, digest, identifier, safe
-from .isolation import git
+from .isolation import git, interpreter_cache
 from .managed import STATES
 from .runtime import register_workspace, repository_key, workspace_path
 
@@ -49,8 +50,6 @@ def _directory(root, state_dir):
 
 
 def _registration(conn, row):
-    if not row["candidate"]:
-        return "checkpoint", None
     # The candidate-registration receipt is issued by the evidence owner.
     # PLANNING also occurs for same-attempt validation, so order alone cannot
     # distinguish a previous author's candidate from a current one.
@@ -59,6 +58,14 @@ def _registration(conn, row):
         "WHERE task_id=? AND kind='evidence_recorded' AND json_extract(body, '$.kind')='candidate' "
         "ORDER BY id DESC LIMIT 1", (row["id"],)).fetchone()
     if not receipt:
+        records = conn.execute("SELECT json_type(result, '$.candidate'), json_type(result, '$.review_evidence'), "
+                               "json_type(result, '$.integration_evidence') FROM managed_tasks WHERE id=?",
+                               (row["id"],)).fetchone()
+        if all(item is None for item in records):
+            return "checkpoint", None
+        return "unknown", None
+    if not row["candidate"]:
+        # A missing field cannot erase an existing registration.
         return "unknown", None
     registered_at, proof = receipt
     item = conn.execute(
@@ -262,11 +269,34 @@ def _workspace(root, directory, row, role, notification, reservation):
     return tree, receipt
 
 
-def _candidate_matches(root, owner_row, expected_sha):
+def _owner_ignored_caches(root, trees):
+    """Read Git's cache decisions, including an excluded parent that prevents re-inclusion."""
+    common = repository_key(root)
+    observed = {}
+    excluded_dirs = set()
+    for tree in trees:
+        require(tree.is_absolute() and not tree.is_symlink() and repository_key(tree) == common,
+                "foreign_workspace")
+        listing = git(tree, "--no-optional-locks", "-c", "core.fsmonitor=false", "ls-files", "--others",
+                      "--ignored", "--exclude-standard", "-z", "--", "*.pyc", "*.pyo")
+        files = sorted(name for name in listing.split("\0") if interpreter_cache(name))
+        observed[str(tree)] = files
+        parents = sorted({p.as_posix() for name in files for p in PurePosixPath(name).parents if p.parts})
+        if parents:
+            check = subprocess.run(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", str(tree),
+                                    "check-ignore", "--stdin", "-z"], input=("\0".join(parents) + "\0").encode(),
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+            require(check.returncode in {0, 1}, "cache_readback_unavailable")
+            ignored = set(check.stdout.decode("utf-8").split("\0")) - {""}
+            require(ignored.issubset(parents), "cache_readback_unavailable")
+            excluded_dirs.update(name + "/" for name in ignored)
+    return observed, excluded_dirs
+
+
+def _candidate_matches(root, owner_row, expected_sha, owner_caches):
     """Run in the read-only Git environment. Only the evidence owner decides candidate validity."""
     from .autocommit import eligible_paths
     from .evidence import _current_candidate
-    from .isolation import interpreter_cache
 
     candidate = owner_row["result"]["candidate"]
     manifest = set(eligible_paths(candidate["manifest"]))
@@ -283,11 +313,14 @@ def _candidate_matches(root, owner_row, expected_sha):
                 _plain_path(path)
         changed = git(tree, "diff", "--name-only", "--no-renames", "-z", candidate["base_sha"], "--")
         untracked = git(tree, "ls-files", "--others", "-z")
-        names = set(changed.split("\0") + untracked.split("\0")) - {""}
+        tracked = set(changed.split("\0")) - {""}
+        names = tracked.union(untracked.split("\0")) - {""}
         extra = {name for name in names if os.path.normcase(name).replace("\\", "/") not in manifest}
+        if extra.intersection(tracked):
+            return False
         if extra:
             ignored = set(git(tree, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").split("\0"))
-            if any(name not in ignored or not interpreter_cache(name) for name in extra):
+            if not extra.issubset(ignored.intersection(owner_caches[str(tree)])):
                 return False
     value, _ = _current_candidate(SimpleNamespace(root=root), owner_row)
     return value["candidate_sha"] == expected_sha
@@ -323,15 +356,34 @@ def _owner_candidate(root, directory, row):
                GIT_CONFIG_KEY_1="core.fsmonitor", GIT_CONFIG_VALUE_1="false")
     query = ("import json, sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\n"
              "from baton.handoff_flow_cli import _candidate_matches\n"
-             "sys.exit(0 if _candidate_matches(Path(sys.argv[2]), json.load(sys.stdin), sys.argv[3]) else 1)")
+             "row, caches = json.load(sys.stdin)\n"
+             "sys.exit(0 if _candidate_matches(Path(sys.argv[2]), row, sys.argv[3], caches) else 1)")
     try:
-        check = subprocess.run([sys.executable, "-I", "-S", "-B", "-X", "utf8", "-c", query,
-                                str(Path(__file__).resolve().parents[1]), str(root), row["candidate"]],
-                               input=json.dumps(owner_row).encode("ascii"), env=env, timeout=60,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired):
+        trees = (Path(row["worktree"]), Path(result["candidate"]["candidate_root"]))
+        observed, excluded_dirs = _owner_ignored_caches(root, trees)
+        names = sorted(excluded_dirs.union(*observed.values()))
+        with ExitStack() as scratch:
+            if names:
+                if any("\n" in name or "\r" in name for name in names):
+                    return False
+                if any(Path(tempfile.gettempdir()).resolve().is_relative_to(tree.resolve()) for tree in trees):
+                    return False
+                where = Path(scratch.enter_context(tempfile.TemporaryDirectory(prefix="baton-cache-")))
+                excludes = where / "observed-excludes"
+                # Root-anchored literal paths only. The child also requires
+                # separate owner evidence for that exact name in that tree.
+                escape = str.maketrans({ch: "\\" + ch for ch in "\\*?[] "})
+                patterns = ["/" + name.translate(escape) for name in names]
+                excludes.write_text("\n".join(patterns) + "\n", encoding="utf-8", newline="\n")
+                env.update(GIT_CONFIG_COUNT="3", GIT_CONFIG_KEY_2="core.excludesFile",
+                           GIT_CONFIG_VALUE_2=str(excludes))
+            check = subprocess.run([sys.executable, "-I", "-S", "-B", "-X", "utf8", "-c", query,
+                                    str(Path(__file__).resolve().parents[1]), str(root), row["candidate"]],
+                                   input=json.dumps([owner_row, observed]).encode("ascii"), env=env, timeout=60,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return check.returncode == 0 and _owner_ignored_caches(root, trees) == (observed, excluded_dirs)
+    except (HarnessError, OSError, UnicodeError, subprocess.TimeoutExpired):
         return False
-    return check.returncode == 0
 
 
 def _capture(root, directory, task, role, kind, notification, reservation=None):

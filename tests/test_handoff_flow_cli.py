@@ -212,6 +212,78 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
         self.candidate("ORCA")
         self.assertEqual(self.prepare({"kind": "REVIEW", "receiver": "Reviewer"}, task="ORCA")[0], 0)
 
+    def test_current_registration_without_sha_holds_all_fixed_and_checkpoint_requests(self):
+        self.author()
+        self.candidate()
+        client = self.orca()
+        client.settle("dispatch-1")
+        event = {"dispatch_id": "dispatch-1", "event_id": "before-registration", "sequence": 1}
+        with patch.object(runtime, "OrcaCLI", return_value=client):
+            code, row = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
+        self.assertEqual((code, row["handoff"]["receipt"]["request"]["report_stage"]), (0, "checkpoint"))
+        self.candidate("ORCA", "ORCA-CANDIDATE")
+        requests = [{"kind": "REVIEW", "receiver": "Reviewer"}, {"kind": "REPORT", "receiver": "Coordinator"},
+                    {"kind": "REPORT", "receiver": "Coordinator", "report_stage": "checkpoint",
+                     "request_id": "explicit-checkpoint"}]
+        for task in ("FLOW", "ORCA"):
+            with self.subTest(task=task):
+                self.assertEqual([self.prepare(request, task)[0] for request in requests], [0, 0, 3])
+                for missing in ("$.candidate.candidate_sha", "$.candidate"):
+                    with self.store.tx() as db:
+                        db.execute("UPDATE managed_tasks SET result=json_remove(result, ?) WHERE id=?", (missing, task))
+                    self.assertEqual([self.prepare(request, task)[0] for request in requests], [3, 3, 3])
+
+    def test_owner_excluded_cache_is_bound_to_each_real_worktree(self):
+        from baton.evidence import _current_candidate
+        from baton.isolation import git
+
+        # Git does not re-include a child while its parent directory is excluded.
+        (self.root / ".gitignore").write_text(".local_runtime/\n!src/__pycache__/fixture*.pyc\n", encoding="utf-8")
+        git(self.root, "add", ".gitignore")
+        git(self.root, "commit", "-m", "Use a separate fixture ignore file")
+        self.base = git(self.root, "rev-parse", "HEAD").strip()
+        with tempfile.TemporaryDirectory() as where:
+            config, ignores = Path(where) / "gitconfig", Path(where) / "ignore"
+            ignores.write_text("/src/__pycache__/\n", encoding="utf-8")
+            git(self.root, "config", "--file", str(config), "core.excludesFile", ignores.as_posix())
+            with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config)}):
+                self.author()
+                client = self.orca()
+                client.settle("dispatch-1")
+                event = {"dispatch_id": "dispatch-1", "event_id": "cache-fixture", "sequence": 1}
+                with patch.object(runtime, "OrcaCLI", return_value=client):
+                    self.assertEqual(self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))[0], 0)
+                git(self.root, "config", "extensions.worktreeConfig", "true")
+                empty = Path(where) / "empty"
+                empty.write_text("", encoding="utf-8")
+                for task in ("FLOW", "ORCA"):
+                    self.candidate(task, task + "-FIXED")
+                    row = self.store.get(task)
+                    source = Path(row["worktree"])
+                    candidate = Path(row["result"]["candidate"]["candidate_root"])
+                    for tree in (source, candidate):
+                        cache = tree / "src/__pycache__"
+                        cache.mkdir(exist_ok=True)
+                        (cache / "fixture[1].pyc").write_bytes(b"fixture cache")
+                    registered, _ = _current_candidate(self.store, row)
+                    self.assertEqual(registered["candidate_sha"], self.candidate_sha)
+                    indexes = [Path(git(tree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+                               for tree in (self.root, source, candidate)]
+                    original = [(i.read_bytes(), i.stat().st_mtime_ns) for i in indexes]
+                    fixed = [{"kind": "REVIEW", "receiver": "Reviewer"}, {"kind": "REPORT", "receiver": "Coordinator"}]
+                    self.assertEqual([self.prepare(request, task)[0] for request in fixed], [0, 0])
+                    extra = source / "src/__pycache__/source.py"
+                    extra.write_text("unregistered = True\n", encoding="utf-8")
+                    self.assertEqual([self.prepare(request, task)[0] for request in fixed], [3, 3])
+                    extra.unlink()
+                    # The same relative path is ignored in the author worktree only.
+                    # A positive observation in one tree cannot excuse a change in the other.
+                    git(candidate, "config", "--worktree", "core.excludesFile", empty.as_posix())
+                    with self.assertRaises(HarnessError):
+                        _current_candidate(self.store, row)
+                    self.assertEqual([self.prepare(request, task)[0] for request in fixed], [3, 3])
+                    self.assertEqual([(i.read_bytes(), i.stat().st_mtime_ns) for i in indexes], original)
+
     def test_optional_projection_exceptions_preserve_product_ingest(self):
         import builtins
         original_import = builtins.__import__
