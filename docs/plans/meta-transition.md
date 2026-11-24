@@ -14,17 +14,18 @@ specs = ["docs/specs/META-001.md"]
 
 |Phase / 선행|실행 범위·주요 경로|수락 기준·승인|
 |---|---|---|
-|0 조사 / 즉시|refs·worktree·보류·승인 출처 확인, research의 두 JSON 대장|기존 Task의 immutable 원문 재구성, 차이와 미확인의 명시|
+|0 조사 / 즉시|refs·worktree·보류·승인 출처, 현재 managed store의 lease·attempt·control과 동일 dispatch의 Orca worker-show 대조|현재 소유자를 입증할 수 없으면 owner_unknown. 이전 PC lease를 생성하거나 해제하지 않음|
 |1 의도 / 0|Constitution 후보 검토, Task별 결정 포인터와 supersedes 연결|Q1~Q5 및 T1이 범위를 넓히지 않음. 이후 .specify/memory/constitution.md가 단일 원본|
 |2 SDD / 0·1|Spec Kit project override/preset으로 templates/spec-template.md·plan-template.md·tasks-template.md를 감싸고 기존 ID·TOML·ADR·증거를 유지. scripts/check_sdd.py, tests/test_sdd.py, docs/sdd/traceability.json 판독 경로 조정|양방향 REQ/AC/테스트/Task 전수 대조. 레거시 fixture의 실패 코드·상태 동등. L3 Spec/Plan/ADR 상세본과 독립 설계 검토|
 |3 라우팅 / 1|src/baton/managed.py 실행 설정 검증, runtime.py OrcaCLI.start/inspect, 기존 execution.py provider adapter, flow Skill qualification 재사용|실제 승인된 profile과 capability가 교차하는 tuple만 fake dispatch. Gemini 별도 적격성 확인. 모델 기본값 변경으로 기존 Task 의미가 바뀌지 않음|
-|4 검증 / 2|runtime.py의 review dispatch 직전과 evidence.py의 기록/완료 경로, orchestrator.py의 validation/미해결 V3, scripts/ci_plan.py의 필수 회귀 연결|우회 entry point에서도 자체/로컬 PASS 선행. PASS 문자열·stale V3·UNKNOWN은 차단. 누적 계약·공식 V3·CI 증거의 후보 일치|
-|5 마이그레이션 / 2, 3·4와 읽기 대조 병행|snapshot별 status/AC/lease/finding을 옮기고 원본과 비교. docs/tasks/current.md·AGENTS.md·docs/sdd.md·CI 포인터 전환|기존 운영 상태 보존 및 rollback 연습. 실제 작성 중 Task는 소유자 정산 뒤 cutover. G2 ff와 ADAPT 수정은 현재 금지|
-|6 E2E / 3·4·5|tests/test_flow_runtime.py, test_flow_evidence.py와 기존 fake runner/clock 재사용. 합성 Task 2개에 선행 의존성 부여|아래 여섯 경로 재현. 실환경 인증·유료 호출 없이 완료/다음 선택까지 관측|
-|7 무인 안정화 / 6|중복 이벤트, lease 만료/정산, quota 대기, 외부 CI receipt, handoff 복구|불확실 시작 후 중복 실행 0, 승인 누락 0. 운영 등록·실사용·Git 연동은 해당 실행 승인이 있어야 착수|
+|4 검증 / 2·3|runtime.py의 review dispatch 직전과 evidence.py의 기록/완료 경로, orchestrator.py의 validation/미해결 V3, scripts/ci_plan.py의 필수 회귀 연결|우회 entry point에서도 자체/로컬 PASS 선행. PASS 문자열·stale V3·UNKNOWN은 차단. 누적 계약·공식 V3·CI 증거의 후보 일치|
+|5a 이관 대조 / 2, 3·4와 병행|branch tip의 status/AC/finding을 shadow로 대조. lease·attempt·control은 현 원장에 두고 ID로 참조|롤백 연습·동등성·쓰기 동결 검증. 소유 불명 Task는 실행 차단. G2 ff와 ADAPT 수정 보류|
+|6 E2E / 3·4·5a|tests/test_flow_runtime.py, test_flow_evidence.py와 기존 fake runner/clock 재사용. 합성 Task 2개에 선행 의존성 부여|아래 여섯 경로 재현. 실환경 인증·유료 호출 없이 완료/다음 선택까지 관측|
+|5b 운영 전환 / 3·4·5a·6 PASS|고정한 후보와 최신 refs/소유권을 다시 대조한 뒤 AGENTS·SDD·checker·CI 입력 포인터를 한 후보에서 변경|승인 누락·필수 검사 유실 0, 왕복 증거와 독립 검토·필수 V3/CI, 별도 게시/통합 승인. 미전환 Task는 읽기 전용 동결|
+|7 무인 안정화 / 5b|중복 이벤트, lease 만료/정산, quota 대기, 외부 CI receipt, handoff 복구|불확실 시작 후 중복 실행 0, 승인 누락 0. 운영 등록·실사용·Git 연동은 해당 실행 승인이 있어야 착수|
 |8 평가 / 4·6|기존 Task 증거·정제된 usage/metrics만으로 시간 순서 평가|holdout 누수 점검과 분모 기록. 실측 전 모델/전략 우열 결론 보류|
 
-2의 계약 매핑과 3의 가용성 목록은 독립 scope에서 동시에 준비할 수 있다. runtime.py를 만지는 3·4는 한 writer가 순차 반영한다. 새 기능과 G2/ADAPT 기존 finding을 한 후보에 섞지 않는다. 준비되지 않은 Task만 대기시키고 승인된 다른 Task는 진행한다.
+2의 계약 매핑과 3의 가용성 목록은 독립 scope에서 동시에 준비할 수 있다. runtime.py를 만지는 writer는 3의 profile 계약을 먼저 고정한 후 4를 반영한다. 새 기능과 G2/ADAPT 기존 finding을 한 후보에 섞지 않는다. 준비되지 않은 Task만 대기시키고 승인된 다른 Task는 진행한다.
 
 ## 결정적 게이트와 의미 검토
 
@@ -48,6 +49,8 @@ specs = ["docs/specs/META-001.md"]
 일반 기능은 단위·통합/TDD와 회귀, 알고리즘은 경계·속성, 상태는 상태기계·불변식, 동시성은 순서 전환, 복구는 fault injection과 재개를 선택한다. 보안·권한은 부정 입력과 위협 모델, 필요 시 선택적 mutation을 붙인다. 최적화/리팩터링은 동일 입력 차등·변환 관계·실측, 구조 변경은 구조 의존성과 설계 검토, 문서는 의미 및 형식 검사, 에이전트 정책은 regression·holdout 평가를 쓴다. 재현 가능한 결함은 변경 전 FAIL, 수정 후 PASS, 기존 양성 유지의 세 결과를 남긴다.
 
 ## 성과 평가와 중단 기준
+
+5b 사전 fixture에는 Q4-B를 인용한 에이전트 생성 승인행 거부, 필수 effort 미관측 host의 시작 횟수 0, 계측 누락 예약 전액 정산, 중복 receipt 이중 차감 0, 원인명이 달라지는 재설계 상한, owner_unknown 차단, 동결 분기의 tip 변경 재투영, 전환 후 새 기록을 가진 rollback을 포함한다. 안전 지표는 5b 전에 처음 측정한다. 운영 뒤 재발하면 신규 쓰기를 동결하고 복구 절차를 적용한다.
 
 과거 리뷰 기록을 시간 순으로 잘라 당시 available한 spec/diff/test만 입력한다. 이후 발견된 결함·리뷰 정답은 평가자만 본다. 개발 세트는 CI-OPT 입력 지문 및 CI-VTIER 정산 사례, 회귀 세트는 CI-EVID 구조화 기록·G1 동등성·ADAPT R6 두 결함으로 시작한다. 이미 이 문서에 공개한 항목은 holdout으로 쓸 수 없다. 새 Task 단위로 분리한 비공개 사례를 모아 reviewer와 모델 선택 정책을 고정한 뒤 한 번 평가한다.
 

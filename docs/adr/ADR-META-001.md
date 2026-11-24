@@ -15,6 +15,7 @@ Spec Kit는 문서와 단계 정의를 제공한다. Spec Kit 원본 workflow에
 |대상|쓰기 주체|관측·판정|
 |---|---|---|
 |목표·결정|사용자 원문, Q2-B 범위의 Coordinator 결정 기록|헌법과 Task별 출처. Memory는 비신뢰 입력|
+|실행 승인표|사용자 인증이 에이전트와 분리된 승인 채널만 작성·철회. 검증 가능한 채널이 없는 환경은 비활성|원문을 보호된 승인 저장소에서 참조하고 digest·시각·대상·tuple·한도·만료를 대조한다. Task 입력/사용자명 문자열로 생성할 수 없다. Coordinator와 Worker는 읽기 전용|
 |의존성·scope·lease·예산 예약|BATON managed store와 기존 transaction|다음 Task 선택 시 충족된 선행과 현 소유권 재검사|
 |실행/세션|Orca worker-start, worker-show 또는 허용된 로컬 CLI|BATON이 run/task/dispatch/attempt/worktree 식별자로 receipt 매칭|
 |자체 검토·독립 검토|각각 작성 Worker, 별도 Reviewer|Coordinator는 근거·불확실성·해결 경로를 해석. 코드는 객관적 gate를 강제|
@@ -43,4 +44,12 @@ Spec Kit는 문서와 단계 정의를 제공한다. Spec Kit 원본 workflow에
 |CI-EVID·CI-PAR|기존 run record, 결정적 판정, 공식 순차 기본값·병렬 증거 자격|stdout/PASS 문자열로 승격 금지. G2 미통합 및 G3/G3b 제한 유지|
 |Git·handoff·memory|기존 checkpoint, merge-base·candidate 검증, 전 커밋 게시 검사, 독립 수락증, 비신뢰 memory|중단 시 같은 attempt를 대조하여 재개. 이전 PC 상태를 새 lease로 복사 금지|
 
-단순 문서 동시 운영은 탈락시킨다. 비교 기간에는 구 계약만 운영 권위가 있고 새 형식은 읽기 전용 투영이다. 체크포인트에 없는 WIP·작성 중 lease·서로 다른 승인 rev를 발견하면 해당 Task의 실제 전환만 보류한다. 전환 승인 시 한 commit에서 포인터·checker·CI 입력 경로를 함께 바꾸고 옛 문서는 이력 참조로 남긴다. 실패하면 새 commit으로 포인터/판독기를 되돌리고, 전이 로그·미게시 후보·수락증은 보존한다. 중간 실행은 원래 lease가 정산될 때까지 새 dispatcher로 옮기지 않는다.
+## 전환과 복구
+
+5a에서는 구 계약만 운영 권위를 갖고 새 형식은 읽기 전용 투영이다. 5b는 필수 검증과 E2E가 통과한 뒤 한 commit에서 포인터·checker·CI 입력 경로를 함께 바꾼다. 미전환 Task는 ID·branch·고정 blob을 등록해 구 형식 동결로 둔다. checker는 동결 목록의 기존 blob만 읽고 변경 쓰기를 거부한다. 재개 시 원래 branch의 최신 tip을 다시 고정하고 새 증거를 포함해 변환·왕복 비교한 후에만 동결을 해제한다. 미게시 branch에 대해 main snapshot만 보고 덮어쓰지 않는다.
+
+역사적 증거의 결속 키는 (Task/Spec ID, revision, 승인 원문 참조·digest, 원본 blob SHA)와 원래 base/candidate/검증 입력이다. 서식만 바뀌고 원문 복원 및 의미 대조가 통과하면 이 결속을 보존한다. 의미·검증 입력이 바뀌면 새 revision/승인 또는 재검증을 요구한다. 보존한 과거 PASS의 적용 대상은 원래 후보다.
+
+현재 managed store가 lease·attempt·control의 유일한 원천이다. 접근 가능한 store와 Orca의 일치하는 worker-show로 현재 소유자를 대조한다. 관측할 수 없는 Task는 마이그레이션 대장에 BLOCKED(owner_unknown)으로 둔다. 담당자와 현 원장의 정산 증거 또는 명시적인 소유자 확인으로 재개하되 기존 lease를 강제 해제하지 않는다. 이전 PC 보고와 문서 blob으로 live lease를 복제하지 않는다.
+
+전환 후 문제가 생기면 새 dispatch와 계약 쓰기를 먼저 동결한다. cutover 이후 생성된 결정·검증·시도는 원문과 이벤트 ID로 보존하고 구 판독기로 무손실 역변환되는 Task만 재개한다. 새 형식 전용 자료는 손실 없이 해석할 어댑터가 생길 때까지 해당 Task를 동결한다. rollback은 새로운 commit으로 수행한다. 기존 lease 정산과 이벤트 중복 방지 기록은 되돌리지 않는다.

@@ -49,4 +49,8 @@ Orca 상대 경로의 기준은 메인 PC 사용자 폴더 아래 `orca/workspac
 
 ## 설치된 실행 경계
 
+추가 로컬 관측에서 Codex 설정은 gpt-6.2-sol / medium이고, CLI 모델 캐시는 gpt-6.2-sol·gpt-6.2-astra의 low/medium/high/xhigh/max/ultra를 열거한다. 이 목록은 설치 호스트의 캐시다. BATON의 Orca 설정 파서는 ultra를 허용하지 않으며 allow_fallback=true도 orca_implicit_fallback_forbidden으로 거부한다. 이 차이를 문서 기본값으로 덮을 수 없다. 이 PC의 BATON Codex·Claude 등록 경로 양쪽에 baton-flow/SKILL.md와 설치 marker가 있다. 구독 호출로 검증할 때에도 특정 Worker에서 사용 가능한지는 별도 확인 대상이다.
+
+원격 참조 보관본 `3e1ca99:docs/research/BATON-session-isolation-immediate-20261124.md`도 확인했다. 사용자 소통·설계·Task 담당 컨텍스트 분리 제안은 REFERENCE_ONLY다. 세션 역할 L0/L1/L2와 계약 위험 L0~L3, 검증 V1~V3는 서로 다른 축이다.
+
 Codex CLI 0.172.0의 help에서 model/profile/config, Claude Code 2.1.325에서 agent·model·effort(low/medium/high/xhigh/max)·fallback-model을 확인했다. Orca 1.4.273의 worker-start가 model·effort를 받으며 effort에는 model 지정이 필요하다. BATON managed의 로컬 provider 집합은 codex/gms/mock, Orca 집합은 codex/claude/antigravity다. Gemini CLI 및 specify는 이 세션 PATH에서 발견되지 않았다. antigravity가 설치된 Gemini CLI를 대체한다고 가정하지 않는다. 실제 구독 권한·현재 모델 재고·worker-local Skill 로딩·실행 effort 일치·남은 사용량은 확인되지 않았다. help 출력만으로 provider를 활성화할 수 없다.

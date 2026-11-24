@@ -47,3 +47,7 @@ Route A, base 8e4462085237df5e0ab951283dfb3b482ecf24b7. 범위는 별도 조사 
 - [독립 검토, 검증 결과, 남은 결정](../research/meta-architecture-20261124/results.md)
 
 별도 Claude Code 구독 경로의 xhigh 설계 검토 1회를 사용자가 이 세션에서 추가 승인했다. 이 승인은 고정 설계 후보 검토에만 쓴다. G2 및 ADAPT의 결과와 승인 상태는 원래 Task에 유지한다.
+
+## 설계 독립 검토 결과
+
+후보 d51ddc1bca2a761989bde087bed766dbce387ba0에 대해 1회 실행했다. 결과는 FAIL, B1~B6 여섯 건이다. [판정과 각 조치](../research/meta-architecture-20261124/results.md)에 연결했다. 수정본에 대한 로컬 구조·범위 확인과 독립 재검토를 구분한다. 독립 재검토·새 구현·공식 V3·원격 CI는 미실행이며 Task는 in_progress다.
