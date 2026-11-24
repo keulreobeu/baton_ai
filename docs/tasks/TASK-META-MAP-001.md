@@ -22,6 +22,18 @@ failures = 0
 errors = 0
 skipped = 0
 expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 99d2d8f"
+result = "passed"
+candidate_sha = "e82c4902e82f82fc347908f13041484582a4b913"
+evidence = "docs/tasks/TASK-META-MAP-001.md#고정-후보-v3"
+acs = ["META-MAP-001-AC-01", "META-MAP-001-AC-02"]
+tests_run = 782
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
 ```
 
 시작 base 99d2d8f. 사용자가 승인한 Phase 2 매핑·로컬 검증을 이 worktree에서 수행한다. 기존 Task 원본과 managed store는 읽기 전용이다. META-001 전체 구현·운영 전환, G2·ADAPT, 실제 Worker·모델·게시 권한은 별도다.
@@ -46,3 +58,11 @@ $view = Join-Path $env:TEMP ("baton-spec-kit-" + [guid]::NewGuid())
 - 메인 PC에서 이 세션에 연결된 Run 없음, 로컬 모든 Run 범위에서 active Worker 0, 이 checkout의 기본 store 파일 없음. 기존 Task의 lease는 미확인으로 두고 신규 배정은 수행하지 않았다.
 - 후보 검증은 전용 .venv에서 수행한다. 오프라인 패키지 인덱스 캐시에 없는 설치 의존성은 메인 checkout의 설치본에서 이 venv에 복사했고, setup-environment.ps1 -Offline 및 pip check를 통과했다. baton import는 이 checkout의 src를 가리킨다.
 - 구현 독립 검토와 원격 CI 대기. 기존 설계 PASS는 설계 후보 84e5fee에 속한다.
+
+## 고정 후보 V3
+
+구현 후보 `e82c4902e82f82fc347908f13041484582a4b913`, base `99d2d8f82cdbb5b0dbd5cc96c2d3eea943e3461a`. 시작·종료 시 같은 HEAD와 clean 상태를 확인했다. 변경 경로 13개 정적 검사 PASS, 전체 782개를 순차 실행해 752.334초에 PASS했다. 실패·오류·스킵·expected failure 0, 재사용 비활성, 실제 모델 검증 호출 0. 커밋 전 수정 중이던 중간 실행은 종료하고 이 후보에서 처음부터 다시 실행했다.
+
+고정 후보에서 투영 122개 파일을 다시 생성하고 재검사했다. 생성 Markdown을 원 레지스트리와 별도로 대조해 요구→AC 73개, AC→테스트 354개, AC→Task 91개, 계획·ADR 연결 28개 및 각 Task 표시 상태가 일치했다. SDD·인계 관련 테스트는 커밋 직전 69개 통과했다.
+
+현재 사용자가 이 후보의 읽기 전용 구현 검토 1회에 API 키 사용을 세션 한정으로 승인했다. 검토 입력은 base부터 후보까지의 diff 및 관련 계약으로 고정했다. 이전 검토 영수증에는 자격 식별자가 없어 보관함 별칭 또는 ID를 요청했다. 현재 실제 리뷰 호출·비용 발생 0회이며 원격 CI와 Task 승격은 대기한다.
