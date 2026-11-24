@@ -4,8 +4,10 @@
 |---|---|
 |같은 PC / 게시 ref로 이동 / 미게시 WIP 복원|{{portability_mode}}|
 |승인된 repo·ref·예상 SHA·base와 원격 read-back|{{portable_ref}}|
-|checkpoint ID·manifest SHA / 필수·제외 경로|{{manifest}} / {{required_excluded}}|
+|이동 대상의 예상 SHA|{{portable_expected_sha}}|
+|checkpoint ID / manifest SHA-256 / 필수·제외 경로|{{manifest}} / {{manifest_sha256}} / {{required_excluded}}|
 |local_saved / portable_verified / restore_verified의 근거|{{portable_receipts}}|
+|orphan commit / 원격 ref read-back / WIP unverified|{{portable_commit}} / {{portable_readback}} / {{portable_unverified}}|
 |복원 Task·환경 재구성·다음 게이트|{{restored_task}}|
 
 ### RECOVERY

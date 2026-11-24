@@ -38,6 +38,7 @@
 
 |근거|식별자·대상·범위·관측 시각·출처|
 |---|---|
+|소유 범위 / 이벤트 / 범위 내 순번|{{scope_id}} / {{event_id}} / {{event_sequence}}|
 |Task/Spec/ADR/Plan·승인 revision|{{contract_refs}}|
 |변경·대조 기준|{{git_refs}}|
 |검증·검토·통합|{{check_refs}}|

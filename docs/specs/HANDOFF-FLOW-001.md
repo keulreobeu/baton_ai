@@ -8,7 +8,7 @@ owner = "Codex W3"
 revision = 1
 ```
 
-이 카드는 수신자가 작업을 맡기 전에 무엇이 결정됐고 무엇을 다시 확인할지 전달한다. 설계 입력은 2026-11-24 사용자 확정 Q1~Q16, 전달본 §0~14, SHA-256 `40777bcd4c8cf7c907a74697edce8738e8cb874df63c6af4ed129812a7c19317`이다. 현재 승인된 W3 작업은 문서·템플릿·오프라인 사례 대조까지다. 제품 구현 수락에는 아래 AC에 대한 별도 증거가 필요하다. [설계 원문](https://docs.google.com/document/d/1vi8FmM4jHCC-UDNt90oSpD3Lu4qqGsZA99A7GVK1Cwo/edit)
+이 카드는 수신자가 작업을 맡기 전에 무엇이 결정됐고 무엇을 다시 확인할지 전달한다. 설계 입력은 2026-11-24 사용자 확정 Q1~Q16, 전달본 §0~14, SHA-256 `40777bcd4c8cf7c907a74697edce8738e8cb874df63c6af4ed129812a7c19317`이다. Phase 2~3 오프라인 구현의 허용 범위는 별도 로컬 계약에 명시했다. 전체 v5 수락에는 아래 AC에 대한 별도 증거가 필요하다. [설계 원문](https://docs.google.com/document/d/1vi8FmM4jHCC-UDNt90oSpD3Lu4qqGsZA99A7GVK1Cwo/edit) · [로컬 계약](HANDOFF-FLOW-LOCAL-001.md)
 
 ## HANDOFF-FLOW-001-REQ-01 전달할 작업과 책임
 

@@ -6,14 +6,16 @@ id = "TASK-HANDOFF-FLOW-001"
 status = "in_progress"
 owner = "Codex W3"
 level = 3
-specs = ["docs/specs/SDD-001.md"]
-plan = "docs/plans/sdd-adoption.md"
-adr = "docs/adr/ADR-001-policy-ownership.md"
-scope = ["docs/specs/HANDOFF-FLOW-001.md", "docs/plans/handoff-flow-v5.md",
+specs = ["docs/specs/SDD-001.md", "docs/specs/HANDOFF-FLOW-LOCAL-001.md"]
+plan = "docs/plans/handoff-flow-v5.md"
+adr = "docs/adr/ADR-HANDOFF-FLOW-001.md"
+scope = ["docs/specs/HANDOFF-FLOW-001.md", "docs/specs/HANDOFF-FLOW-LOCAL-001.md", "docs/plans/handoff-flow-v5.md",
          "docs/adr/ADR-HANDOFF-FLOW-001.md", "docs/tasks/TASK-HANDOFF-FLOW-001.md",
-         "docs/templates/handoff-flow", "docs/sdd/traceability.json", "tests/test_handoff_flow.py"]
+         "docs/templates/handoff-flow", "docs/sdd/traceability.json", "src/baton/handoff_flow.py", "tests/test_handoff_flow.py"]
 acs = ["SDD-001-AC-01", "SDD-001-AC-02", "SDD-001-AC-03", "SDD-001-AC-05",
-       "SDD-001-AC-06", "SDD-001-AC-07", "SDD-001-AC-08", "SDD-001-AC-10"]
+       "SDD-001-AC-06", "SDD-001-AC-07", "SDD-001-AC-08", "SDD-001-AC-10",
+       "HANDOFF-FLOW-LOCAL-001-AC-01", "HANDOFF-FLOW-LOCAL-001-AC-02",
+       "HANDOFF-FLOW-LOCAL-001-AC-03", "HANDOFF-FLOW-LOCAL-001-AC-04"]
 
 [[verification]]
 command = ".venv/Scripts/python.exe -X utf8 -m unittest tests.test_handoff_flow tests.test_harness_gateway tests.test_run_tests_fast tests.test_sdd tests.test_verify_environment"
@@ -25,11 +27,23 @@ failures = 0
 errors = 0
 skipped = 0
 expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -B -X utf8, ci_plan.plan(stage='checkpoint', event='local', base='6f7cbd85069533e5565f178e565bb9958c7705c1') selected_modules → unittest, direct_checks 및 check_sdd.validate(base=동일 SHA)"
+result = "passed"
+evidence = "docs/tasks/TASK-HANDOFF-FLOW-001.md#로컬-구현과-작성자-검토"
+acs = ["HANDOFF-FLOW-LOCAL-001-AC-01", "HANDOFF-FLOW-LOCAL-001-AC-02",
+       "HANDOFF-FLOW-LOCAL-001-AC-03", "HANDOFF-FLOW-LOCAL-001-AC-04"]
+tests_run = 81
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
 ```
 
 ### 현재 승인과 산출물
 
-이 Task의 현재 단위는 W3 전용 파일의 L3 설계 작성과 Markdown 사례 검사다. 기존 SDD-001의 승인된 문서 작성·범위 검사 절차에 연결했다. 선례는 TASK-META-ASSESS-001의 조사/설계 단위다. 신규 제품 계약은 [HANDOFF-FLOW-001 revision 1 초안](../specs/HANDOFF-FLOW-001.md), [도입·회귀 계획](../plans/handoff-flow-v5.md), [ADR 제안](../adr/ADR-HANDOFF-FLOW-001.md)이다. 제품 AC는 실제 테스트 심볼과 구현 승인이 확보된 단계에 등록한다.
+Phase 0~1 설계 단위는 SDD-001에 따라 커밋 `a2dfa23`에 보존했다. 현재 작업은 [로컬 Phase 2~3 Spec](../specs/HANDOFF-FLOW-LOCAL-001.md)의 AC 4개와 전용 stdlib 함수·오프라인 테스트다. 마스터의 위임 범위 확인은 `msg_76aca9fb9424`와 `msg_fca59ba6ec8e`에 남아 있다. [전체 v5 revision 1](../specs/HANDOFF-FLOW-001.md)은 초안이다. [계획](../plans/handoff-flow-v5.md)과 [ADR](../adr/ADR-HANDOFF-FLOW-001.md)은 로컬 구간에 한해 활성화했다.
 
 작업은 Orca run `run_642522584d8a`, Task `task_de303c7c99bd`, dispatch `ctx_da7bc758fd55`, branch `keulreobeu/handoff-flow-v5`에서 시작했다. 배정 메시지 `msg_b4338c181565`의 고유 문서·템플릿·전용 테스트와 등록 항목만 변경한다. 지정 base, 시작 HEAD와 merge-base가 모두 `6f7cbd85069533e5565f178e565bb9958c7705c1`이며 시작 index와 worktree는 clean이었다. W1/W2/W4, 공유 CLI와 lifecycle/AGENTS/SDD 정책/현재 index/HANDOFF/evidence 파일의 수정은 각 소유자 문제다.
 
@@ -38,8 +52,8 @@ expected_failures = 0
 |원문·결정|전달본 §0~14 및 Q1~16 전체 대조. SHA-256과 결정→AC 대응은 Spec, 원문 사례→검증 설계는 Plan에 있다|
 |입출력|공통 3단·5종 유형·4개 조건부 모듈. 실제 작성과 인수, 정보 전달과 책임 이전, 행위별 현재 권한을 명시|
 |기존 계약|HANDOFF-001 rev 3, BATON Task/evidence, Orca 정착·ID/순번, Git 소유자 회신 대조. 새 DB·실행 승인·제품 판정 없음|
-|실행 환경|현 checkout의 전용 venv가 없었다. 독립 CPython stdlib 문서 검사를 체크포인트에 기록하고 공식 검증과 구분한다|
-|미결|revision 1의 로컬 오프라인 Phase 2~3 구현 승인. 공유 CLI/Skill/lifecycle 소유와 실제 전환은 그 후 별도 결정|
+|실행 환경|전용 CPython 3.12.16 venv를 무설치로 만들어 PYTHONPATH=src와 격리된 BATON_HOME을 사용한다. 공식 V3 환경의 GMS 선택 의존성은 설치하지 않았다|
+|미결|공유 CLI/Skill/lifecycle 소유·운영 연결·실제 전환. 로컬 Phase 2~3 승인과 공용 계약 승인을 구분한다|
 
 ### 검증과 인계
 
@@ -50,3 +64,11 @@ expected_failures = 0
 W3 전용 CPython 3.12.16 venv(`--without-pip`)와 전용 BATON_HOME, PYTHONPATH=src로 위 5개 모듈 전체 76건을 30.170초에 통과했다. 모델 호출 0. Task-base SDD 13개 변경 경로 검사 PASS. `ci_plan.py --stage checkpoint --event local`의 V2 결과는 PARTIAL_IMPACT_SCOPE이며 CBM_WRONG_ROOT로 그래프 결과를 폐기했다. `docs/sdd/traceability.json`의 전이 영향은 미확인이다.
 
 마스터가 `msg_76aca9fb9424`에서 다음 단위의 로컬 stdlib 모듈·오프라인 테스트와 이 전용 환경 생성을 승인했다. 현재 체크포인트는 Phase 0~1 산출물이다. Phase 2~3 오프라인 동작·SDD 연결이 다음 작업이며 운영 연결·공식 독립검토·제품 인수는 별도다.
+
+### 로컬 구현과 작성자 검토
+
+`src/baton/handoff_flow.py`가 고유 템플릿을 읽어 현재 관측과 의미 변경분에서 카드를 만든다. 준비 함수 입출력, 호출자 책임과 실패 처리는 [로컬 계약](../specs/HANDOFF-FLOW-LOCAL-001.md)에 있다. 작성자는 5종 전체 필드, 필수 관측과 의미 입력의 분리, 근거가 바뀐 메모의 갱신, 현재 조회·문서 해시 대조, 저장 경합·실패 시 원본 보존을 확인했다. W1 영수증은 manifest, orphan commit/ref, read-back과 unverified를 분리한다.
+
+초기 행위 테스트는 모듈 부재로 실패했다. 구현 후 작성자 대조에서 Markdown 필드 이스케이프, 관측 시각의 신선도, 필수 참조 결속, 독립검토와 미실행 제품검사 표기 및 이동 영수증 경계를 보강했다. 전용 테스트는 전체 제품 수락을 증명하지 않는다. 독립 제품 Reviewer 배정 조건은 마스터 메시지 `msg_fddcfd2435c3`에 있다.
+
+W3 전용 CPython 3.12.16, PYTHONPATH=이 checkout의 src, 임시 BATON_HOME을 사용했다. 편집 중 V1은 37건/직접 파일 검사 14개 PASS. 보강 후 체크포인트 V2는 5개 모듈 81건(29.577초), 직접 파일 검사 14개 및 Task-base SDD PASS. 실제 실행 ID 누락·중복, skip, expected failure, 실패와 오류가 각각 0이고 대상 내용의 실행 전후 지문이 일치했다. CBM_WRONG_ROOT와 불완전 inventory로 전이 영향 및 traceability 영향은 부분 범위다. 이 단계에서 외부 호출·독립 판정·공식 V3·CI·게시는 미실행이다.

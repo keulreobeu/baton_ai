@@ -3,10 +3,12 @@
 ```toml
 kind = "plan"
 id = "PLAN-HANDOFF-FLOW-001"
-status = "draft"
+status = "active"
 owner = "Codex W3"
-specs = ["docs/specs/HANDOFF-FLOW-001.md"]
+specs = ["docs/specs/HANDOFF-FLOW-LOCAL-001.md"]
 ```
+
+현재 활성 구간은 승인된 [로컬 Phase 2~3](../specs/HANDOFF-FLOW-LOCAL-001.md)이다. 전체 v5 Phase 4~6은 연결 제안으로 관리한다.
 
 ## 단계와 연결 조건
 
@@ -67,7 +69,7 @@ specs = ["docs/specs/HANDOFF-FLOW-001.md"]
 |가짜 비밀과 계정 이메일, runtime 경로, 인위적 Markdown 절을 포함한 입력|최종 렌더링까지 선별·검사. 민감 원문 없이 거부. 위조된 필드가 권한을 만들지 않음|05, 09, 10|
 |사용자 범위 확대 요청. 필요 참조 하나만 다시 대조|필수 사실은 확인, 저장소 전체 해싱·모델·제품 테스트 자동 실행 0|09, 11|
 
-**현행 근거로 대조한 예.** W3 START에서 `6f7cbd8`은 기준 커밋이고 `msg_b4338c181565`가 쓰기 범위의 출처다. RESUME에서 실제 계약은 원격 복원 뒤 새 PAUSED Task를 생성한다(`tests/test_handoff.py::test_remote_independent_restore_new_task_and_manual_edit_protection`의 메서드). REVIEW의 Orca verdict에는 candidate_sha·base_sha·verdict·findings를 유지한다. REPORT는 과거 CI 결과의 원래 후보와 지금 W3에서 미실행인 CI를 분리한다. CONTROL은 `runtime.ingest`의 dispatch별 이벤트 판정과 `test_unknown_start_retains_lease_then_reconciles_without_resubmit`의 정착 조건을 따른다. 이 대조는 원문과 코드를 읽어 수행했다.
+W3 START에서 `6f7cbd8`은 기준 커밋이고 `msg_b4338c181565`가 쓰기 범위의 출처다. RESUME에서 원격 복원 뒤 새 PAUSED Task를 생성하는 기존 회귀는 `tests.test_handoff.HandoffTests.test_remote_independent_restore_new_task_and_manual_edit_protection`이다. REVIEW의 Orca verdict에는 candidate_sha·base_sha·verdict·findings를 유지한다. REPORT는 과거 CI 결과의 원래 후보와 지금 W3에서 미실행인 CI를 분리한다. CONTROL은 `runtime.ingest`의 dispatch별 이벤트 판정과 `test_unknown_start_retains_lease_then_reconciles_without_resubmit`의 정착 조건을 따른다. 이 대조는 원문과 코드를 읽어 수행했다.
 
 ## 검증과 측정
 

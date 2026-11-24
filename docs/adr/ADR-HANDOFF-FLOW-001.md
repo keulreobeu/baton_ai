@@ -3,12 +3,14 @@
 ```toml
 kind = "adr"
 id = "ADR-HANDOFF-FLOW-001"
-status = "proposed"
+status = "accepted"
 owner = "Codex W3"
-specs = ["docs/specs/HANDOFF-FLOW-001.md"]
+specs = ["docs/specs/HANDOFF-FLOW-LOCAL-001.md"]
 ```
 
-### 결정 제안
+Phase 2~3 로컬 입력/출력과 오프라인 보존 방식에 한해 채택했다. 전체 v5 전환·공유 연결은 제안 상태다.
+
+### 로컬 결정과 향후 연결
 
 공통 Markdown에 용도별 본문 하나와 필요한 모듈만 넣는다. BATON Task·승인은 BATON, 실행·생존·workspace 배정은 Orca, 소스와 ref는 Git, 제품 판정은 기존 증거 계약에서 읽는다. Chat의 사용자 결정은 정확한 근거로 연결하고 Dot은 읽기 전용 브리핑에 사용한다. 인계 산출물은 다음 행동을 설명한다. 수신자는 그 행동의 현재 권한과 실제 상태를 원천에서 확인한다.
 
@@ -30,3 +32,5 @@ Task/관리 범위·소유 writer 기준으로 저장 대상을 격리한다. �
 ### Eng Review Amendments
 
 W1 소유자가 확인한 게시 계약에 따라 PORTABLE은 Git 전담 주체가 별도 권한으로 게시하고 원격 read-back한 결과를 소비한다. `local_saved`만으로 PC 이동을 안내하지 않는다. W4 검증·W2 ADAPT의 후속 변경은 승인된 인터페이스를 받은 뒤 비교한다.
+
+Phase 2~3 보존은 같은 경로의 정상 문서를 교체하지 않고 이벤트별 완성된 카드를 한 번만 노출하는 방식으로 구체화했다. 같은 볼륨의 임시 파일에 쓰고 원자적 hard link 생성으로 슬롯을 선점한다. 수신자·유형을 슬롯에 포함해 동일 이벤트의 다른 정당한 전달 대상을 분리한다. 미지원 파일시스템과 다른 내용의 재요청은 차단한다. 정본의 이벤트 순번을 계속 사용하므로 W3는 최신 포인터나 별도 원장을 소유하지 않는다.

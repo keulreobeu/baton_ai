@@ -53,9 +53,53 @@
     "docs/adr/ADR-META-MAP-001.md",
     "docs/tasks/TASK-META-MAP-001.md",
     "docs/tasks/TASK-META-INVENTORY-001.md",
-    "docs/tasks/TASK-HANDOFF-FLOW-001.md"
+    "docs/tasks/TASK-HANDOFF-FLOW-001.md",
+    "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
+    "docs/plans/handoff-flow-v5.md",
+    "docs/adr/ADR-HANDOFF-FLOW-001.md"
   ],
   "features": [
+    {
+      "id": "HANDOFF-FLOW-LOCAL-001",
+      "spec": "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
+      "requirements": [
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-REQ-01",
+          "acs": ["HANDOFF-FLOW-LOCAL-001-AC-01", "HANDOFF-FLOW-LOCAL-001-AC-02"]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-REQ-02",
+          "acs": ["HANDOFF-FLOW-LOCAL-001-AC-03", "HANDOFF-FLOW-LOCAL-001-AC-04"]
+        }
+      ],
+      "acs": [
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-01",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_local_render_and_evidence"},
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_local_rejects_unsafe_or_incomplete_inputs"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-02",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_reuse_requires_current_basis_and_materializes_text"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-03",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_receiver_rechecks_current_facts_and_preserves_reporting"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-04",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_local_save_is_atomic_and_scoped_to_checkpoint"}
+          ]
+        }
+      ]
+    },
     {
       "id": "SDD-001",
       "spec": "docs/specs/SDD-001.md",
