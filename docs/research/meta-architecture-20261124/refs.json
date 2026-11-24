@@ -1,0 +1,173 @@
+{
+  "remote_heads_and_tags": {
+    "refs/heads/claude/beautiful-grothendieck-8bdfb2": "b1a7ab4a21b23499cb2d2e0031d7b508ffa6f760",
+    "refs/heads/claude/memory-merge-record-20261110": "b689a00279e6a17d105b840024e05359391f587a",
+    "refs/heads/claude/memory-pr10-record-20261110": "bac4157ccc7409522095df031a7acd59b948a1a3",
+    "refs/heads/claude/port-review-fixes-20261106": "3a1d6a886711bbc3f7925c1767e100743e88ef1c",
+    "refs/heads/claude/shared-memory-spec-20261110": "084fcaf3e2c7adee5e4181025256de2da5d2f4f7",
+    "refs/heads/codex/baton-flow-20261105": "30b58bd8ea6a4c53591be411fc0ae5dace36fbfb",
+    "refs/heads/codex/ci-opt-001": "b133bded1bd61d7326ce503257a4d98c584e350a",
+    "refs/heads/codex/ci-opt-001-r5": "85f459f0b5c2d6320b8ff97ba61342ff2af29d5a",
+    "refs/heads/codex/gms-credentials-20261106": "5ee3169c0316beb67bd3a250f69538b26eaacb35",
+    "refs/heads/codex/handoff-after-merge-20261106": "82351e4044efb73e58aa1414ff3c8808797ed2ed",
+    "refs/heads/codex/integrate-flow-main-20261106": "f009aa95468ded3ada98094a586cccb773a4b65b",
+    "refs/heads/codex/port-handoff-input-check-20261106": "37b6d6f8cd872fc3e83a9c8e5bb46ec14492c9e5",
+    "refs/heads/codex/report-names-001": "c5e910541372a462a49def0b00e6ec137004e86e",
+    "refs/heads/codex/separation-status-20261106": "8861a6d9580d4841c9a8d00c225190a0f72251be",
+    "refs/heads/codex/test-speed-20261106": "4e8c1057c7ab16132289fe9f9ddde89b2f6ea3db",
+    "refs/heads/codex/workspace-recovery-20261106": "bc08fd085aed33ccb39d0c44156a6acdf7e2bb2c",
+    "refs/heads/docs/baton-research-20261112": "0f3f839d6acf333f4f64ffd08154c0cb3888081c",
+    "refs/heads/docs/reference-baton-final-architecture-20261112": "eae84b5a4dc848878def7d7286634eb934120cfd",
+    "refs/heads/docs/reference-ci-backend-20261119": "0af9e8408f98aa4f1b2b82b2058c4e07e1c6f441",
+    "refs/heads/docs/reference-session-isolation-20261124": "3e1ca99f160693027b1b45e1b581ac0c00836dbf",
+    "refs/heads/exp/ci-engine-poc-20261120": "457b5dff11968603d452793d15d3a88db9ae96cd",
+    "refs/heads/keulreobeu/adapt-001": "f73d70752fa7ff6c88aa453b048f37c047cf750f",
+    "refs/heads/keulreobeu/ci-engine-poc": "a4856e83a3db2741782258a7a9c57ccfb27527c0",
+    "refs/heads/keulreobeu/ci-evid-001": "a505844e9d9c81709e10d2ca575e07d05675d32c",
+    "refs/heads/keulreobeu/ci-par-001": "9d6ebab77d7cdb42cf4c0d76ec6ae063e3b4be16",
+    "refs/heads/keulreobeu/ci-par-002": "4e355dea3caf866ae1d282b7cb90ea23665c9acd",
+    "refs/heads/main": "8e4462085237df5e0ab951283dfb3b482ecf24b7"
+  },
+  "sources": [
+    {
+      "ref": "refs/local/codex/meta-architecture-assessment-20261124",
+      "head": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/keulreobeu/adapt-001",
+      "head": "f73d70752fa7ff6c88aa453b048f37c047cf750f",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/keulreobeu/ci-engine-poc",
+      "head": "a4856e83a3db2741782258a7a9c57ccfb27527c0",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/keulreobeu/ci-evid-001",
+      "head": "a505844e9d9c81709e10d2ca575e07d05675d32c",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/keulreobeu/ci-par-001",
+      "head": "9d6ebab77d7cdb42cf4c0d76ec6ae063e3b4be16",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/keulreobeu/ci-par-002",
+      "head": "4e355dea3caf866ae1d282b7cb90ea23665c9acd",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/keulreobeu/codex-ci-vtier-001",
+      "head": "85337b131ce53432b0c7056a4c044f56772edfb6",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local/main",
+      "head": "5c07aea655f0b4e6f29bebf80cfcb47c2f76fc26",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/local-archive/desktop",
+      "head": "2705fd38be08a009bde922eabfa1044e0a154e76",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/checkpoint/backup/main-pc-20261124/adapt",
+      "head": "c004378dd350fd08cea153fe5a825819f7fb6149",
+      "unpublished": [
+        "c004378dd350fd08cea153fe5a825819f7fb6149",
+        "157e32bad054af6c4b7ee189d55de16461b7f65c",
+        "337f5d869f23365573e2524807909e15c269f8ad",
+        "581b3efc8de087082db25c1fe68fd7303de5bcb6",
+        "87990c6bad04f7b0cb68f9517a438b07d8b72308"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/backup/main-pc-20261124/g2",
+      "head": "0de9e9f7458267fb05359ed80e604615ebb0b3ac",
+      "unpublished": [
+        "0de9e9f7458267fb05359ed80e604615ebb0b3ac",
+        "a99136b6965075ecba58d224f1cd3f7f2184e702",
+        "c3f8107ae39767d785347cd9441a1d8c77e734eb",
+        "6506ca253f492b4e2c81749298ddf9e2f2179b4e",
+        "6aa58bab7dc8ed903308ca8e7264ad2b0cbb5b60",
+        "09357256bfee1a58c2c58ae5c849748534b8b7c8"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/checkpoint-base-20261124",
+      "head": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+      "unpublished": []
+    },
+    {
+      "ref": "refs/checkpoint/keulreobeu/TASK-ADAPT-RULES-001-R3-author",
+      "head": "c004378dd350fd08cea153fe5a825819f7fb6149",
+      "unpublished": [
+        "c004378dd350fd08cea153fe5a825819f7fb6149",
+        "157e32bad054af6c4b7ee189d55de16461b7f65c",
+        "337f5d869f23365573e2524807909e15c269f8ad",
+        "581b3efc8de087082db25c1fe68fd7303de5bcb6",
+        "87990c6bad04f7b0cb68f9517a438b07d8b72308"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/keulreobeu/TASK-CI-PAR-002-G2-author",
+      "head": "0de9e9f7458267fb05359ed80e604615ebb0b3ac",
+      "unpublished": [
+        "0de9e9f7458267fb05359ed80e604615ebb0b3ac",
+        "a99136b6965075ecba58d224f1cd3f7f2184e702",
+        "c3f8107ae39767d785347cd9441a1d8c77e734eb",
+        "6506ca253f492b4e2c81749298ddf9e2f2179b4e",
+        "6aa58bab7dc8ed903308ca8e7264ad2b0cbb5b60",
+        "09357256bfee1a58c2c58ae5c849748534b8b7c8"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/keulreobeu/adapt-001",
+      "head": "53b00e9b4bd5d54135f2d0739db80627d27d8f87",
+      "unpublished": [
+        "53b00e9b4bd5d54135f2d0739db80627d27d8f87",
+        "51b62d75bbbd7056c70de270ebb138040c05032f",
+        "4442bfa760f65785a0b7e16b93055302bb427b48",
+        "87990c6bad04f7b0cb68f9517a438b07d8b72308"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/keulreobeu/ci-evid-001",
+      "head": "e3e8433f9b06bba3755ce31886d29907a6f60d6d",
+      "unpublished": [
+        "e3e8433f9b06bba3755ce31886d29907a6f60d6d",
+        "a0fd072a42301d4d04e46770d8a60d4a161d994c",
+        "49e98aa935e6f86ffca634a103f3bb8ce3577ba0",
+        "9c36c3e11528b71a018b413c779b46b1e0a761bb",
+        "e7fdd6ca923efc7389550bd947d6509af4f89d83",
+        "611ac5e813908bd3af7dbf25e39871b4f15f07f2"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/keulreobeu/ci-par-001",
+      "head": "df9d8e3b0cbfe73f4bd8b9757cd11df72c6bff1c",
+      "unpublished": [
+        "df9d8e3b0cbfe73f4bd8b9757cd11df72c6bff1c",
+        "fd0d00311a3b05b034daec8119d025ba7103c77e",
+        "cd0dd817d3eea9fcfe2ab9be25657cef2ff75ffc",
+        "1a8b76e2192a8476f4a98e5831a08ea2ed22a2b0",
+        "4fa4024beb4493af5a852bff46fc874ec622506a"
+      ]
+    },
+    {
+      "ref": "refs/checkpoint/keulreobeu/ci-par-002",
+      "head": "a99136b6965075ecba58d224f1cd3f7f2184e702",
+      "unpublished": [
+        "a99136b6965075ecba58d224f1cd3f7f2184e702",
+        "c3f8107ae39767d785347cd9441a1d8c77e734eb",
+        "6506ca253f492b4e2c81749298ddf9e2f2179b4e",
+        "6aa58bab7dc8ed903308ca8e7264ad2b0cbb5b60",
+        "09357256bfee1a58c2c58ae5c849748534b8b7c8"
+      ]
+    }
+  ]
+}

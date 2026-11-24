@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -367,3 +368,167 @@ class SddTests(unittest.TestCase):
         self.write(self.spec, original)
         self.set_task(extra=self.verification().replace("docs/evidence.md", "docs/missing.md"))
         self.rejected("MISSING_FILE")
+
+    def map_fixture(self):
+        from scripts import spec_kit_map
+        self.init_git()
+        source = Path(__file__).resolve().parents[1] / ".specify/templates/overrides"
+        shutil.copytree(source, self.root / ".specify/templates/overrides")
+        self.set_task(extra=self.verification())
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        view = Path(outside.name) / "view"
+        spec_kit_map.create(self.root, view)
+        return spec_kit_map, view
+
+    def test_spec_kit_round_trip(self):
+        spec_kit_map, view = self.map_fixture()
+        checked = spec_kit_map.verify(self.root, view)
+        self.assertEqual(checked["acs"], 1)
+        for name in self.registry["documents"] + ["docs/sdd/traceability.json"]:
+            self.assertEqual((view / name).read_bytes(), (self.root / name).read_bytes())
+        feature = view / "specs/F-001"
+        self.assertEqual(sdd.document(view, "specs/F-001/spec.md")[0], sdd.document(self.root, self.spec)[0])
+        self.assertIn("T.test_ok", (feature / "spec.md").read_text(encoding="utf-8"))
+        self.assertIn("TASK-F-001", (feature / "tasks.md").read_text(encoding="utf-8"))
+        self.assertIn("in_progress", (feature / "tasks.md").read_text(encoding="utf-8"))
+        self.assertTrue((feature / "plan.md").is_file())
+        with self.assertRaisesRegex(sdd.SddError, "OUTPUT_EXISTS"):
+            spec_kit_map.create(self.root, view)
+        with self.assertRaisesRegex(sdd.SddError, "OUTPUT_LOCATION"):
+            spec_kit_map.create(self.root, self.root / "nested")
+
+    def test_spec_kit_shared_contracts(self):
+        second = "docs/specs/G-001.md"
+        self.write(second, (self.root / self.spec).read_text().replace("F-001", "G-001"))
+        feature = json.loads(json.dumps(self.registry["features"][0]).replace("F-001", "G-001"))
+        plan = "docs/plans/P-001.md"
+        self.write(plan, '```toml\nkind="plan"\nid="PLAN-FG-001"\nstatus="active"\nowner="fixture"\n'
+                         f'specs=["{self.spec}", "{second}"]\n```\n')
+        self.registry["documents"].extend([second, plan])
+        self.registry["features"].append(feature)
+        self.task_text = self.task_text.replace(f'specs=["{self.spec}"]', f'specs=["{self.spec}","{second}"]')
+        self.task_text = self.task_text.replace('acs=["F-001-AC-01"]', 'acs=["F-001-AC-01","G-001-AC-01"]')
+        self.save_registry()
+        spec_kit_map, view = self.map_fixture()
+        for feature_id in ("F-001", "G-001"):
+            folder = view / "specs" / feature_id
+            self.assertIn("PLAN-FG-001", (folder / "plan.md").read_text(encoding="utf-8"))
+            tasks = (folder / "tasks.md").read_text(encoding="utf-8")
+            self.assertIn("TASK-F-001", tasks)
+            self.assertIn(feature_id + "-AC-01", tasks)
+        render = spec_kit_map.feature_views
+
+        def omit_plan(*args):
+            for name, content in render(*args):
+                if name.endswith("/plan.md"):
+                    content = b"\n".join(line for line in content.split(b"\n") if b"PLAN-FG-001" not in line)
+                yield name, content
+
+        with patch.object(spec_kit_map, "feature_views", side_effect=omit_plan):
+            with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+                spec_kit_map.create(self.root, view.with_name("missing-shared-plan"))
+        (view / plan).unlink()
+        with self.assertRaisesRegex(sdd.SddError, "MISSING_FILE"):
+            spec_kit_map.verify(self.root, view)
+        self.assertEqual(spec_kit_map.create(self.root, view.with_name("retry"))["status"], "PASS")
+
+    def test_spec_kit_rejects_drift(self):
+        spec_kit_map, view = self.map_fixture()
+        for name, before, after in [
+            (self.task, b"in_progress", b"verified"),
+            (self.spec, b'synthetic', b'expanded'),
+            (self.task, b"TASK-F-001", b"F-001"),
+            (self.task, b'acs=["F-001-AC-01"]', b'acs=[]'),
+            ("specs/F-001/tasks.md", b"in_progress", b"verified"),
+        ]:
+            with self.subTest(name=name, edit=after):
+                target = view / name
+                original = target.read_bytes()
+                self.assertIn(before, original)
+                target.write_bytes(original.replace(before, after))
+                with self.assertRaises(sdd.SddError):
+                    spec_kit_map.verify(self.root, view)
+                target.write_bytes(original)
+        unexpected = view / "specs/unregistered"
+        unexpected.mkdir()
+        with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+            spec_kit_map.verify(self.root, view)
+        unexpected.rmdir()
+        self.write("docs/evidence.md", "substituted proof")
+        with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+            spec_kit_map.verify(self.root, view)
+        self.write("docs/evidence.md", "Synthetic local evidence; no provider execution.\n")
+        self.git("commit", "--allow-empty", "-m", "new candidate")
+        with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+            spec_kit_map.verify(self.root, view)
+
+    def test_spec_kit_override_requires_task_rows(self):
+        spec_kit_map, view = self.map_fixture()
+        self.write(".specify/templates/overrides/tasks-template.md", "# {{feature}}\n")
+        with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_TEMPLATE"):
+            spec_kit_map.create(self.root, view.with_name("incomplete"))
+
+    def test_spec_kit_legacy_verdicts(self):
+        _, view = self.map_fixture()
+        for text, code in [
+            (self.task_text.replace("{extra}", ""), None),
+            ("bad", "MISSING_TOML"),
+            (self.task_text.replace("{extra}", "").replace("in_progress", "verified"), "UNVERIFIED_AC"),
+            (self.task_text.replace("{extra}", "").replace("F-001-AC-01", "F-001-AC-99"), "UNKNOWN_AC"),
+        ]:
+            for contracts in (self.root, view):
+                (contracts / self.task).write_text(text, encoding="utf-8")
+                if code:
+                    with self.assertRaisesRegex(sdd.SddError, "^" + code + "$"):
+                        sdd.validate(self.root, changed=[], contract_root=contracts if contracts == view else None)
+                else:
+                    self.assertEqual(sdd.validate(self.root, changed=[], contract_root=contracts if contracts == view else None)["status"], "PASS")
+
+    def test_projected_spec_cannot_hide_invalid_source_headings(self):
+        _, view = self.map_fixture()
+        for base, shadow in ((self.root, None), (view, view)):
+            source = base / self.spec
+            original = source.read_text(encoding="utf-8")
+            for edit, code in [
+                (original.replace("## F-001-AC-01", ""), "MISSING_AC_HEADING"),
+                (original + "\n## F-001-REQ-99\n", "UNREGISTERED_REQUIREMENT_OR_AC"),
+                (original + "\n## F-001-AC-01\n", "DUPLICATE_HEADING"),
+            ]:
+                with self.subTest(shadow=shadow, code=code):
+                    source.write_text(edit, encoding="utf-8")
+                    with self.assertRaisesRegex(sdd.SddError, "^" + code + "$"):
+                        sdd.validate(self.root, changed=[], contract_root=shadow)
+            source.write_text(original, encoding="utf-8")
+
+    def test_projection_reads_back_rendered_relationships(self):
+        mapping, view = self.map_fixture()
+        render = mapping.feature_views
+        for filename, term in [("spec.md", b"T.test_ok"), ("tasks.md", b"in_progress")]:
+            with self.subTest(filename=filename):
+                def omit(*args):
+                    for name, content in render(*args):
+                        if name.endswith("/" + filename):
+                            content = b"\n".join(line for line in content.split(b"\n") if term not in line)
+                        yield name, content
+                with patch.object(mapping, "feature_views", side_effect=omit):
+                    with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+                        mapping.create(self.root, view.with_name("broken-" + filename))
+
+    def test_projection_receipt_identifies_worktree_content(self):
+        mapping, before = self.map_fixture()
+        first = json.loads((before / mapping.RECEIPT).read_bytes())
+        self.write("docs/evidence.md", "new uncommitted evidence")
+        after = before.with_name("new-content")
+        mapping.create(self.root, after)
+        second = json.loads((after / mapping.RECEIPT).read_bytes())
+        self.assertEqual(first["checkout_head"], second["checkout_head"])
+        self.assertNotEqual(first.get("content_sha256"), second.get("content_sha256"))
+        self.assertTrue(second["git_status_dirty"])
+        self.assertEqual(second["content_basis"], "working_tree")
+
+    def test_projection_uses_legacy_review_evidence_condition(self):
+        mapping, before = self.map_fixture()
+        self.set_task(extra='independent_review = {result="pending", evidence="docs/future.md"}\n')
+        self.assertEqual(self.check()["status"], "PASS")
+        self.assertEqual(mapping.create(self.root, before.with_name("pending-review"))["status"], "PASS")

@@ -1,0 +1,1179 @@
+{
+  "format": 1,
+  "snapshots": {
+    "integration-base": {
+      "commit": "8e4462085237df5e0ab951283dfb3b482ecf24b7",
+      "files": {
+        ".github/workflows/verify.yml": "53e38619f795d1af3eb1b87f6e014f41217370ee",
+        "AGENTS.md": "2c41ddea1bf71e31377744587c882c9c54a0323c",
+        "docs/HANDOFF.md": "685b3cd4a2a73bf7080a7ae9fadd62924cbd39f9",
+        "docs/adr/ADR-001-policy-ownership.md": "36bce5ca4a1f71e470a755e166c0118a99788b59",
+        "docs/adr/ADR-CI-OPT-001.md": "fdd66448df3203b8a7783cdf54d4571fb4d99a8a",
+        "docs/adr/ADR-CI-TIME-001.md": "0760744408f1b5ee9186c38c1320bdc4216e355a",
+        "docs/adr/ADR-CI-VTIER-001.md": "851d3de4c0c153f514ce80f8b34eb3059a0ee75f",
+        "docs/adr/ADR-FLOW-001.md": "3792a3063c83c62f840da34a10b03edfc0e2e6e8",
+        "docs/adr/ADR-GMS-001.md": "5c467b230c7e56133df410a7d06dcd9542ddb56f",
+        "docs/adr/ADR-MEMORY-001.md": "cc792316feba20a3acf3b65af146ffe1294d04c2",
+        "docs/adr/ADR-PORT-001.md": "d6b0d4fa900ca14ae246e95c9e7c0f9bf128b86a",
+        "docs/adr/ADR-QW-STATUS-001.md": "1ffbada21089e08fef377dd4f5434637662aecd7",
+        "docs/adr/ADR-SCOPE-PATH-001.md": "1cf781d76bc9ad1f1eb6a87664bb3ec69ac80bc7",
+        "docs/plans/ci-optimization.md": "223a68f9cee515954fa828cd7bfb8edc6fdb7ddb",
+        "docs/plans/ci-vtier.md": "db96a4e9874bfd9f1dde1144abb87df2f2c7c43c",
+        "docs/plans/ci-windows-time.md": "e14faeca35169fee1feb6892380ebae46c33830e",
+        "docs/plans/gms-credentials.md": "b3da2fe1b5b8f5ae978d3cf45a76281a675d0544",
+        "docs/plans/handoff-lean-port.md": "d0fa3ea1f7acb1c180b1bc12668bd59c1afdebc4",
+        "docs/plans/multi-agent-flow.md": "464da696621d04736e31271bc95aa939da9d7388",
+        "docs/plans/qw-status.md": "cb35091a9f2e86b8bb721e9f925b54f3bac04cd2",
+        "docs/plans/scope-path.md": "4f9da70abb6f9bef26b7f4f68a874ebe5fef0fbc",
+        "docs/plans/sdd-adoption.md": "5c05607d22e8d32ccc80a249587e37d05fe44d49",
+        "docs/plans/shared-memory.md": "c6f72e2de81b0115540eb0c019acd8baf9913df0",
+        "docs/sdd.md": "d3bec5f5de010e6fb88c5320e9fdff472c7c8f58",
+        "docs/sdd/traceability.json": "b814404da1bc288dd2e8b1f92cf96525ce361398",
+        "docs/specs/CI-OPT-001.md": "6a8909bf237ffd6b635211d3d59b1f291203bf0c",
+        "docs/specs/CI-VTIER-001.md": "d96c99e64b0e0f4cf1bc19379e2cbe453b5dbe33",
+        "docs/specs/FLOW-001.md": "1dec50a3c5c904e4ffe3faef0d81a2f4c91246fb",
+        "docs/specs/GMS-001.md": "95e6ddbda3bc6398d08ecdeee070aa9e2abf0977",
+        "docs/specs/HANDOFF-001.md": "cba20a4148a85b44e4e2907eb1edade3d06f2549",
+        "docs/specs/LEAN-CORE-001.md": "c99516c384fd7908aeab6af71237ebc18be85864",
+        "docs/specs/MEMORY-001.md": "7fef1924a2275664eda2cd14afebbb9eb01eda2f",
+        "docs/specs/QW-STATUS-001.md": "5bb274b4358db32d13acca4a2dd152ed62c79bb2",
+        "docs/specs/SCOPE-PATH-001.md": "f3e98e64bd8e93652489f18420a37d4e89f7b1a0",
+        "docs/specs/SDD-001.md": "e3c64bb2fc1b0aad2c1bc05d38cad825cfe42709",
+        "docs/tasks/TASK-CI-OPT-001.md": "a2d608cd765ccb80bfa976ab650150d0c04194b4",
+        "docs/tasks/TASK-CI-TIME-001.md": "cbfe7b8b8a1086aba29556a272ca33938ad89c9d",
+        "docs/tasks/TASK-CI-VTIER-001.md": "e72c2078dfb19149b2b338639553e15802ba85c5",
+        "docs/tasks/TASK-ENV-20261106.md": "9f39b378010b2513b15453ae573e1b7d7f700ea3",
+        "docs/tasks/TASK-FLOW-001.md": "86714d9b74c7ae21d9645c0fa2968db0cc92c712",
+        "docs/tasks/TASK-GMS-001.md": "eda5d46f4fb2bd3beb699133943213a59e3cf291",
+        "docs/tasks/TASK-JIPDAM-SKIP-001.md": "4a82098590e4b6e50adc9e2880e1c790a91f8065",
+        "docs/tasks/TASK-MEMORY-001.md": "84f943ebb781fbd12ae187d609b3a327016d6250",
+        "docs/tasks/TASK-PORT-001.md": "e787a81556ecbb0143fd262499d1e24e376666ed",
+        "docs/tasks/TASK-QW-STATUS-001.md": "9806a2bc6540932362b5049cf0e4fec88dcc3764",
+        "docs/tasks/TASK-RECOVERY-20261106.md": "370ee48e13affd7936ce9e11ef8d9b27601cb8e2",
+        "docs/tasks/TASK-SCOPE-PATH-001.md": "731e261187083c028ac5764b2cf1920f168875d2",
+        "docs/tasks/TASK-SDD-001.md": "1c74ce1cc9423b8c816b8326d0914c0f49cc5334",
+        "docs/tasks/TASK-SETTLE-RECOVERY-001.md": "752998945ebf2634bcfc1a802485eb3a2484e177",
+        "docs/tasks/TASK-STORE-BUSY-001.md": "678293ba23195adb5421e0e186ae4c76f9da00ad",
+        "docs/tasks/TASK-TEST-SPEED-001.md": "53803113a743d7bfaa984cb0914985aeb8f89214",
+        "docs/tasks/current.md": "d51339c72b9880b486e6bf6fadbbbf25fa456c82",
+        "docs/tasks/p0-quota-window.md": "aa3c4164f8928ca2b4b390c34f5c7035f505d461",
+        "docs/templates/adr.md": "28e4eb39a230cb50a056d66f90a1014e5e3e8bba",
+        "docs/templates/handoff.md": "40a0ba37543d8ffd20c83088d9a8c209dcc48459",
+        "docs/templates/plan.md": "560875702cfe9d774ed0ef9ed29d9c79af3d1470",
+        "docs/templates/spec.md": "80230c5903311330a8192887a465185c8368de62",
+        "docs/templates/task.md": "5f71182e8ae44c85cff558d4da398c126767840c"
+      }
+    },
+    "evidence": {
+      "commit": "e3e8433f9b06bba3755ce31886d29907a6f60d6d",
+      "changed_files": {
+        "docs/HANDOFF.md": "df04c17b306ff86085424e5695ca8ecc68fee970",
+        "docs/adr/ADR-CI-EVID-001.md": "89b6c538951f17165397dba52d514dee3427bbff",
+        "docs/plans/ci-evid.md": "b6ee69e8d7578a1d8f3a284fa68efe19f4e68e02",
+        "docs/sdd/traceability.json": "c0b975121a91860ee2c8907f2d6bceda52424a5f",
+        "docs/specs/CI-EVID-001.md": "dd9d253b1013892b2c8d975be1747c80119a8eb7",
+        "docs/tasks/TASK-CI-EVID-001.md": "f9468bd308de26a7084fd7e052d2c1d8eb57b7bc",
+        "docs/tasks/current.md": "f8a196f019245d3068fc506b02a7a5df8c311bee"
+      },
+      "removed_files": []
+    },
+    "g1": {
+      "commit": "df9d8e3b0cbfe73f4bd8b9757cd11df72c6bff1c",
+      "changed_files": {
+        "docs/HANDOFF.md": "23965ea81edaeafb4b1adaa6fff0802f1b91b643",
+        "docs/adr/ADR-CI-PAR-001.md": "ca1a5fc340007e72480b062c3e9b994a0a22f408",
+        "docs/plans/ci-par.md": "7bf41fffc10a2549a3e4cfa53b018fe6403afa1f",
+        "docs/sdd/traceability.json": "51fb21c2205afa371d5d91e5d6f92ac8fdf40cd8",
+        "docs/specs/CI-PAR-001.md": "a57a0ed100e691976af4ace1deb49b50e7674380",
+        "docs/tasks/TASK-CI-PAR-001.md": "8d2db0c8d8013286b0b33f737c099215eca01d8f",
+        "docs/tasks/current.md": "13bf582986e6f681e9561867cebd0d42b28af8b4"
+      },
+      "removed_files": []
+    },
+    "g2-integration": {
+      "commit": "a99136b6965075ecba58d224f1cd3f7f2184e702",
+      "changed_files": {
+        "docs/HANDOFF.md": "9b4108d37adb7ed0a395dcbc518815c141ed0ffa",
+        "docs/adr/ADR-CI-PAR-001.md": "ca1a5fc340007e72480b062c3e9b994a0a22f408",
+        "docs/adr/ADR-CI-PAR-002.md": "9994ac6c4820cbb764cb0319b1c03b1d1d12a26e",
+        "docs/plans/ci-par-contract.md": "e2f821633d22a7361e48b028687562bac6a2c1f0",
+        "docs/plans/ci-par.md": "7bf41fffc10a2549a3e4cfa53b018fe6403afa1f",
+        "docs/sdd/traceability.json": "51fb21c2205afa371d5d91e5d6f92ac8fdf40cd8",
+        "docs/specs/CI-PAR-001.md": "a57a0ed100e691976af4ace1deb49b50e7674380",
+        "docs/specs/CI-PAR-002.md": "3e2648c36a7256815e8c102ff48b7bf8bd86fbc1",
+        "docs/tasks/TASK-CI-PAR-001.md": "c6c2fc6dd25edd6729395411b64d30949eeff403",
+        "docs/tasks/TASK-CI-PAR-002.md": "8becf66786b74af66b33fef38c593fea8e5ef99a",
+        "docs/tasks/current.md": "13bf582986e6f681e9561867cebd0d42b28af8b4"
+      },
+      "removed_files": []
+    },
+    "g2-candidate": {
+      "commit": "0de9e9f7458267fb05359ed80e604615ebb0b3ac",
+      "changed_files": {
+        "AGENTS.md": "fffc012a94bd2d64f80b13b81916386d374b5e87",
+        "docs/HANDOFF.md": "9b4108d37adb7ed0a395dcbc518815c141ed0ffa",
+        "docs/adr/ADR-CI-PAR-001.md": "ca1a5fc340007e72480b062c3e9b994a0a22f408",
+        "docs/adr/ADR-CI-PAR-002.md": "6a3ccc6a5cbffff01f5d077abab5faf2e0546582",
+        "docs/plans/ci-par-contract.md": "5ebc64f9dbb745f46922e07fb4ed05087f125543",
+        "docs/plans/ci-par.md": "7bf41fffc10a2549a3e4cfa53b018fe6403afa1f",
+        "docs/sdd.md": "e3540da8fc2dc63bde91021b4dea2522426bc9f5",
+        "docs/sdd/traceability.json": "10a09376c7452f7c3b3521ed24f1c746fc3f92dd",
+        "docs/specs/CI-OPT-001.md": "3dfe74bf84a8a85412704d6d6bc173af9e5c3399",
+        "docs/specs/CI-PAR-001.md": "a57a0ed100e691976af4ace1deb49b50e7674380",
+        "docs/specs/CI-PAR-002.md": "8bb7aae776c9b02093119737bb31c6dad7a45515",
+        "docs/specs/CI-VTIER-001.md": "bb1cd3fe0b71d500ae90b5212c946bf3470abe6c",
+        "docs/tasks/TASK-CI-PAR-001.md": "c6c2fc6dd25edd6729395411b64d30949eeff403",
+        "docs/tasks/TASK-CI-PAR-002.md": "1ccfd247946a4d90aea0fb9e1b065fa41fde5922",
+        "docs/tasks/current.md": "363f4e8a1537601a98c5ae0e387219bedff0cd0b"
+      },
+      "removed_files": []
+    },
+    "adapt-integration": {
+      "commit": "53b00e9b4bd5d54135f2d0739db80627d27d8f87",
+      "changed_files": {
+        "AGENTS.md": "5fd32bdc47e5dd773a9ef95e8233965399b04d45",
+        "docs/HANDOFF.md": "29ea9fe44da1b01703b57ee477ac09eb89f5dff2",
+        "docs/sdd.md": "3dd409843aceb419973399534acb5a42d8964ed6",
+        "docs/sdd/traceability.json": "e6b66116b5abb14a083c394cb011d057f42171d4",
+        "docs/specs/ADAPT-001.md": "ed2159559404e01280126f29088a4dcd7445ad05",
+        "docs/tasks/TASK-ADAPT-RULES-001.md": "96c5accb721413c0b105d8f7055843a5ca1cef38",
+        "docs/tasks/TASK-ADAPT-USAGE-001.md": "5fec733c2708aba7c3cf0e54b00d3976e7c5a9f1",
+        "docs/tasks/current.md": "09f6f580b9a035ca2cb8bb3dad3c79f735e2bf93",
+        "docs/templates/task.md": "b7d5ed3ef828204bc8aba7bc8b53d1fc58b81d3e"
+      },
+      "removed_files": []
+    },
+    "adapt-candidate": {
+      "commit": "c004378dd350fd08cea153fe5a825819f7fb6149",
+      "changed_files": {
+        "AGENTS.md": "6b75091a43b5e2e78a844e7152e7d0ee6bc940e7",
+        "docs/HANDOFF.md": "e06aa2d69c0ae2538df4b276afd86943fda5e84c",
+        "docs/sdd.md": "47f08df87e9cc41f8ed35a81f41259c72f9dea49",
+        "docs/sdd/traceability.json": "a3b31fe007d37552fdaeceee21d1cf6fe97f5c19",
+        "docs/specs/ADAPT-001.md": "18f867c2f7b0ba2906b37e5d0050041efdbae356",
+        "docs/tasks/TASK-ADAPT-RULES-001.md": "05bdccec23667773884f48a7b40f269630cfe15f",
+        "docs/tasks/TASK-ADAPT-USAGE-001.md": "5fec733c2708aba7c3cf0e54b00d3976e7c5a9f1",
+        "docs/tasks/current.md": "09f6f580b9a035ca2cb8bb3dad3c79f735e2bf93",
+        "docs/templates/task.md": "b7d5ed3ef828204bc8aba7bc8b53d1fc58b81d3e"
+      },
+      "removed_files": []
+    },
+    "poc": {
+      "commit": "a4856e83a3db2741782258a7a9c57ccfb27527c0",
+      "changed_files": {
+        ".github/workflows/poc-ci-engine.yml": "57100a722264dc032b9417ed80cfd1d3649e6e9a",
+        "docs/adr/ADR-CI-ENGINE-POC-001.md": "7d9f50e12cf14d8e70649042784bbc0a6823d0b6",
+        "docs/plans/ci-engine-poc.md": "81f06e2c019e1b6411488973037efb74c7fc0cab",
+        "docs/sdd/traceability.json": "4471df0c907ccb6b306b33eddb0c1da523aa527e",
+        "docs/specs/CI-ENGINE-POC-001.md": "83189e0b9c289a579409e9cd9f9ccec3ab67c976",
+        "docs/tasks/TASK-CI-ENGINE-POC-001.md": "4e78d0aeea6acb1ed5ce4ff28dfa9b0036b68b40"
+      },
+      "removed_files": []
+    }
+  },
+  "details": {
+    "fdd66448df3203b8a7783cdf54d4571fb4d99a8a": {
+      "kind": "adr",
+      "id": "ADR-CI-OPT-001",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/CI-OPT-001.md"
+      ]
+    },
+    "851d3de4c0c153f514ce80f8b34eb3059a0ee75f": {
+      "kind": "adr",
+      "id": "ADR-CI-VTIER-001",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/CI-VTIER-001.md"
+      ]
+    },
+    "3792a3063c83c62f840da34a10b03edfc0e2e6e8": {
+      "kind": "adr",
+      "id": "ADR-FLOW-001",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/FLOW-001.md"
+      ]
+    },
+    "cc792316feba20a3acf3b65af146ffe1294d04c2": {
+      "kind": "adr",
+      "id": "ADR-MEMORY-001",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/MEMORY-001.md"
+      ]
+    },
+    "223a68f9cee515954fa828cd7bfb8edc6fdb7ddb": {
+      "kind": "plan",
+      "id": "PLAN-CI-OPT-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/CI-OPT-001.md"
+      ]
+    },
+    "db96a4e9874bfd9f1dde1144abb87df2f2c7c43c": {
+      "kind": "plan",
+      "id": "PLAN-CI-VTIER-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/CI-VTIER-001.md"
+      ]
+    },
+    "464da696621d04736e31271bc95aa939da9d7388": {
+      "kind": "plan",
+      "id": "PLAN-FLOW-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/FLOW-001.md"
+      ]
+    },
+    "5c05607d22e8d32ccc80a249587e37d05fe44d49": {
+      "kind": "plan",
+      "id": "PLAN-SDD-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/SDD-001.md"
+      ]
+    },
+    "c6f72e2de81b0115540eb0c019acd8baf9913df0": {
+      "kind": "plan",
+      "id": "PLAN-MEMORY-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/MEMORY-001.md"
+      ]
+    },
+    "6a8909bf237ffd6b635211d3d59b1f291203bf0c": {
+      "kind": "spec",
+      "id": "CI-OPT-001",
+      "status": "approved",
+      "revision": 5,
+      "ac_headings": [
+        "CI-OPT-001-AC-01",
+        "CI-OPT-001-AC-02",
+        "CI-OPT-001-AC-03",
+        "CI-OPT-001-AC-04",
+        "CI-OPT-001-AC-05",
+        "CI-OPT-001-AC-06",
+        "CI-OPT-001-AC-07",
+        "CI-OPT-001-AC-08",
+        "CI-OPT-001-AC-09",
+        "CI-OPT-001-AC-10",
+        "CI-OPT-001-AC-11",
+        "CI-OPT-001-AC-12",
+        "CI-OPT-001-AC-13"
+      ]
+    },
+    "d96c99e64b0e0f4cf1bc19379e2cbe453b5dbe33": {
+      "kind": "spec",
+      "id": "CI-VTIER-001",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "CI-VTIER-001-AC-01",
+        "CI-VTIER-001-AC-02",
+        "CI-VTIER-001-AC-03",
+        "CI-VTIER-001-AC-04",
+        "CI-VTIER-001-AC-05",
+        "CI-VTIER-001-AC-06"
+      ]
+    },
+    "1dec50a3c5c904e4ffe3faef0d81a2f4c91246fb": {
+      "kind": "spec",
+      "id": "FLOW-001",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "FLOW-001-AC-01",
+        "FLOW-001-AC-02",
+        "FLOW-001-AC-03",
+        "FLOW-001-AC-04",
+        "FLOW-001-AC-05",
+        "FLOW-001-AC-06",
+        "FLOW-001-AC-07",
+        "FLOW-001-AC-08"
+      ]
+    },
+    "7fef1924a2275664eda2cd14afebbb9eb01eda2f": {
+      "kind": "spec",
+      "id": "MEMORY-001",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "MEMORY-001-AC-01",
+        "MEMORY-001-AC-02",
+        "MEMORY-001-AC-03",
+        "MEMORY-001-AC-04"
+      ]
+    },
+    "e3c64bb2fc1b0aad2c1bc05d38cad825cfe42709": {
+      "kind": "spec",
+      "id": "SDD-001",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "SDD-001-AC-01",
+        "SDD-001-AC-02",
+        "SDD-001-AC-03",
+        "SDD-001-AC-04",
+        "SDD-001-AC-05",
+        "SDD-001-AC-06",
+        "SDD-001-AC-07",
+        "SDD-001-AC-08",
+        "SDD-001-AC-09",
+        "SDD-001-AC-10"
+      ]
+    },
+    "a2d608cd765ccb80bfa976ab650150d0c04194b4": {
+      "kind": "task",
+      "id": "TASK-CI-OPT-001",
+      "status": "verified",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-OPT-001.md",
+        "docs/specs/SDD-001.md"
+      ],
+      "plan": "docs/plans/ci-optimization.md",
+      "adr": "docs/adr/ADR-CI-OPT-001.md",
+      "acs": [
+        "CI-OPT-001-AC-01",
+        "CI-OPT-001-AC-02",
+        "CI-OPT-001-AC-03",
+        "CI-OPT-001-AC-04",
+        "CI-OPT-001-AC-05",
+        "CI-OPT-001-AC-06",
+        "CI-OPT-001-AC-07",
+        "CI-OPT-001-AC-08",
+        "CI-OPT-001-AC-09",
+        "CI-OPT-001-AC-10",
+        "CI-OPT-001-AC-11",
+        "CI-OPT-001-AC-12",
+        "CI-OPT-001-AC-13"
+      ],
+      "scope": [
+        "docs/specs/CI-OPT-001.md",
+        "docs/plans/ci-optimization.md",
+        "docs/adr/ADR-CI-OPT-001.md",
+        "docs/tasks/TASK-CI-OPT-001.md",
+        "docs/proposals/T1-contract-revisions.md",
+        "docs/sdd/traceability.json",
+        "docs/tasks/current.md",
+        "AGENTS.md",
+        "README.md",
+        "docs/sdd.md",
+        ".github/workflows/verify.yml",
+        "scripts/check_sdd.py",
+        "tests/test_sdd.py",
+        "scripts/ci_plan.py",
+        "tests/test_ci_plan.py",
+        "tests/test_ci_workflow.py",
+        ".gitignore",
+        "src/baton/observability.py",
+        "tests/test_observability.py",
+        "src/baton/orchestrator.py",
+        "src/baton/managed_cli.py",
+        "tests/test_managed_harness.py",
+        "scripts/readset.py",
+        "scripts/readset_site/sitecustomize.py",
+        "scripts/verify_environment.py",
+        "scripts/suite_reuse.py",
+        "tests/test_readset.py",
+        "tests/test_verify_environment.py"
+      ],
+      "verification_results": [
+        "passed",
+        "passed"
+      ]
+    },
+    "e72c2078dfb19149b2b338639553e15802ba85c5": {
+      "kind": "task",
+      "id": "TASK-CI-VTIER-001",
+      "status": "verified",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-VTIER-001.md",
+        "docs/specs/CI-OPT-001.md"
+      ],
+      "plan": "docs/plans/ci-vtier.md",
+      "adr": "docs/adr/ADR-CI-VTIER-001.md",
+      "acs": [
+        "CI-VTIER-001-AC-01",
+        "CI-VTIER-001-AC-02",
+        "CI-VTIER-001-AC-03",
+        "CI-VTIER-001-AC-04",
+        "CI-VTIER-001-AC-05",
+        "CI-VTIER-001-AC-06"
+      ],
+      "scope": [
+        "scripts/ci_plan.py",
+        "src/baton/managed_cli.py",
+        "src/baton/orchestrator.py",
+        "src/baton/runtime.py",
+        "src/baton/managed.py",
+        "src/baton/evidence.py",
+        "tests/test_ci_plan.py",
+        "tests/test_managed_harness.py",
+        "tests/test_ci_workflow.py",
+        "tests/test_flow_runtime.py",
+        "AGENTS.md",
+        "docs/sdd.md",
+        "README.md",
+        "docs/plans/ci-optimization.md",
+        "docs/specs/CI-VTIER-001.md",
+        "docs/specs/CI-OPT-001.md",
+        "docs/plans/ci-vtier.md",
+        "docs/adr/ADR-CI-VTIER-001.md",
+        "docs/tasks/TASK-CI-VTIER-001.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/tasks/TASK-SETTLE-RECOVERY-001.md",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed",
+        "not_run",
+        "not_run",
+        "passed",
+        "passed"
+      ]
+    },
+    "86714d9b74c7ae21d9645c0fa2968db0cc92c712": {
+      "kind": "task",
+      "id": "TASK-FLOW-001",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/FLOW-001.md"
+      ],
+      "plan": "docs/plans/multi-agent-flow.md",
+      "adr": "docs/adr/ADR-FLOW-001.md",
+      "acs": [
+        "FLOW-001-AC-01",
+        "FLOW-001-AC-02",
+        "FLOW-001-AC-03",
+        "FLOW-001-AC-04",
+        "FLOW-001-AC-05",
+        "FLOW-001-AC-06",
+        "FLOW-001-AC-07",
+        "FLOW-001-AC-08"
+      ],
+      "scope": [
+        "src/baton",
+        "tests/test_flow_runtime.py",
+        "tests/test_flow_evidence.py",
+        "tests/test_flow_skill.py",
+        "tests/test_managed_harness.py",
+        "tests/test_managed_providers.py",
+        "tests/test_git_lifecycle.py",
+        "tests/test_observability.py",
+        "tests/test_harness_operations.py",
+        "tests/test_wiki_lifecycle.py",
+        "docs/specs/FLOW-001.md",
+        "docs/plans/multi-agent-flow.md",
+        "docs/adr/ADR-FLOW-001.md",
+        "docs/tasks/TASK-FLOW-001.md",
+        "docs/tasks/current.md",
+        "docs/HANDOFF.md",
+        "docs/validation/multi-agent-flow.md",
+        "docs/sdd/traceability.json",
+        "skills/baton-flow",
+        "tooling/pstack-source.json",
+        ".gitattributes",
+        "scripts/install_flow_skill.py",
+        "scripts/qualify_flow_package.py",
+        "README.md",
+        "pyproject.toml",
+        "docs/designs/baton-p0-quota-window.md",
+        "docs/tasks/p0-quota-window.md",
+        "tests/test_quota_window.py"
+      ],
+      "verification_results": [
+        "passed",
+        "passed"
+      ]
+    },
+    "84f943ebb781fbd12ae187d609b3a327016d6250": {
+      "kind": "task",
+      "id": "TASK-MEMORY-001",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/MEMORY-001.md"
+      ],
+      "plan": "docs/plans/shared-memory.md",
+      "adr": "docs/adr/ADR-MEMORY-001.md",
+      "acs": [
+        "MEMORY-001-AC-01",
+        "MEMORY-001-AC-02",
+        "MEMORY-001-AC-03",
+        "MEMORY-001-AC-04"
+      ],
+      "scope": [
+        "src/baton/memory.py",
+        "src/baton/memory_cli.py",
+        "src/baton/memory_mcp.py",
+        "src/baton/managed_cli.py",
+        "tests/test_memory.py",
+        "tests/test_memory_mcp.py",
+        "docs/specs/MEMORY-001.md",
+        "docs/tasks/TASK-MEMORY-001.md",
+        "docs/plans/shared-memory.md",
+        "docs/adr/ADR-MEMORY-001.md",
+        "docs/validation/memory.md",
+        "docs/sdd/traceability.json",
+        "docs/tasks/current.md",
+        "docs/HANDOFF.md",
+        "README.md"
+      ],
+      "verification_results": [
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "passed",
+        "failed",
+        "passed",
+        "passed",
+        "failed",
+        "passed",
+        "passed",
+        "passed",
+        "failed",
+        "passed"
+      ]
+    },
+    "1c74ce1cc9423b8c816b8326d0914c0f49cc5334": {
+      "kind": "task",
+      "id": "TASK-SDD-001",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/SDD-001.md"
+      ],
+      "plan": "docs/plans/sdd-adoption.md",
+      "adr": "docs/adr/ADR-001-policy-ownership.md",
+      "acs": [
+        "SDD-001-AC-01",
+        "SDD-001-AC-02",
+        "SDD-001-AC-03",
+        "SDD-001-AC-04",
+        "SDD-001-AC-05",
+        "SDD-001-AC-06",
+        "SDD-001-AC-07",
+        "SDD-001-AC-08",
+        "SDD-001-AC-09",
+        "SDD-001-AC-10"
+      ],
+      "scope": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "docs/HANDOFF.md",
+        "docs/sdd.md",
+        "docs/specs/SDD-001.md",
+        "docs/tasks/TASK-SDD-001.md",
+        "docs/tasks/current.md",
+        "docs/plans/sdd-adoption.md",
+        "docs/adr/ADR-001-policy-ownership.md",
+        "docs/templates/spec.md",
+        "docs/templates/task.md",
+        "docs/templates/plan.md",
+        "docs/templates/adr.md",
+        "docs/sdd/traceability.json",
+        "docs/sdd/validation.md",
+        "scripts/check_sdd.py",
+        "scripts/verify_environment.py",
+        "tests/test_sdd.py",
+        ".github/workflows/verify.yml",
+        "docs/measurements/token-resume-baseline-20261104.md",
+        "docs/templates/handoff.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed",
+        "passed",
+        "not_run"
+      ]
+    },
+    "89b6c538951f17165397dba52d514dee3427bbff": {
+      "kind": "adr",
+      "id": "ADR-CI-EVID-001",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/CI-EVID-001.md"
+      ]
+    },
+    "b6ee69e8d7578a1d8f3a284fa68efe19f4e68e02": {
+      "kind": "plan",
+      "id": "PLAN-CI-EVID-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/CI-EVID-001.md"
+      ]
+    },
+    "dd9d253b1013892b2c8d975be1747c80119a8eb7": {
+      "kind": "spec",
+      "id": "CI-EVID-001",
+      "status": "approved",
+      "revision": 5,
+      "ac_headings": [
+        "CI-EVID-001-AC-01",
+        "CI-EVID-001-AC-02",
+        "CI-EVID-001-AC-03",
+        "CI-EVID-001-AC-04",
+        "CI-EVID-001-AC-05",
+        "CI-EVID-001-AC-06",
+        "CI-EVID-001-AC-07",
+        "CI-EVID-001-AC-08",
+        "CI-EVID-001-AC-09"
+      ]
+    },
+    "f9468bd308de26a7084fd7e052d2c1d8eb57b7bc": {
+      "kind": "task",
+      "id": "TASK-CI-EVID-001",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-EVID-001.md"
+      ],
+      "plan": "docs/plans/ci-evid.md",
+      "adr": "docs/adr/ADR-CI-EVID-001.md",
+      "acs": [
+        "CI-EVID-001-AC-01",
+        "CI-EVID-001-AC-02",
+        "CI-EVID-001-AC-03",
+        "CI-EVID-001-AC-04",
+        "CI-EVID-001-AC-05",
+        "CI-EVID-001-AC-06",
+        "CI-EVID-001-AC-07",
+        "CI-EVID-001-AC-08",
+        "CI-EVID-001-AC-09"
+      ],
+      "scope": [
+        "tests/test_evidence_records.py",
+        "src/baton/run_record.py",
+        "src/baton/pytest_record.py",
+        "scripts/verify_environment.py",
+        "src/baton/orchestrator.py",
+        "src/baton/evidence.py",
+        "src/baton/managed.py",
+        "scripts/ci_plan.py",
+        "tests/test_verify_environment.py",
+        "tests/test_managed_harness.py",
+        "tests/test_ci_plan.py",
+        "tests/test_run_record.py",
+        "docs/specs/CI-EVID-001.md",
+        "docs/plans/ci-evid.md",
+        "docs/adr/ADR-CI-EVID-001.md",
+        "docs/tasks/TASK-CI-EVID-001.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "failed",
+        "passed",
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "passed",
+        "failed",
+        "passed",
+        "failed",
+        "passed",
+        "passed",
+        "failed",
+        "passed",
+        "not_run"
+      ]
+    },
+    "ca1a5fc340007e72480b062c3e9b994a0a22f408": {
+      "kind": "adr",
+      "id": "ADR-CI-PAR-001",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/CI-PAR-001.md"
+      ]
+    },
+    "7bf41fffc10a2549a3e4cfa53b018fe6403afa1f": {
+      "kind": "plan",
+      "id": "PLAN-CI-PAR-001",
+      "status": "active",
+      "specs": [
+        "docs/specs/CI-PAR-001.md"
+      ]
+    },
+    "a57a0ed100e691976af4ace1deb49b50e7674380": {
+      "kind": "spec",
+      "id": "CI-PAR-001",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "CI-PAR-001-AC-01",
+        "CI-PAR-001-AC-02",
+        "CI-PAR-001-AC-03",
+        "CI-PAR-001-AC-04",
+        "CI-PAR-001-AC-05",
+        "CI-PAR-001-AC-06",
+        "CI-PAR-001-AC-07",
+        "CI-PAR-001-AC-08",
+        "CI-PAR-001-AC-09",
+        "CI-PAR-001-AC-10",
+        "CI-PAR-001-AC-11",
+        "CI-PAR-001-AC-12",
+        "CI-PAR-001-AC-13",
+        "CI-PAR-001-AC-14",
+        "CI-PAR-001-AC-15",
+        "CI-PAR-001-AC-16"
+      ]
+    },
+    "8d2db0c8d8013286b0b33f737c099215eca01d8f": {
+      "kind": "task",
+      "id": "TASK-CI-PAR-001",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-PAR-001.md"
+      ],
+      "plan": "docs/plans/ci-par.md",
+      "adr": "docs/adr/ADR-CI-PAR-001.md",
+      "acs": [
+        "CI-PAR-001-AC-01",
+        "CI-PAR-001-AC-02",
+        "CI-PAR-001-AC-03",
+        "CI-PAR-001-AC-04",
+        "CI-PAR-001-AC-05",
+        "CI-PAR-001-AC-06",
+        "CI-PAR-001-AC-07",
+        "CI-PAR-001-AC-08",
+        "CI-PAR-001-AC-09",
+        "CI-PAR-001-AC-10",
+        "CI-PAR-001-AC-11",
+        "CI-PAR-001-AC-12",
+        "CI-PAR-001-AC-13",
+        "CI-PAR-001-AC-14",
+        "CI-PAR-001-AC-15",
+        "CI-PAR-001-AC-16"
+      ],
+      "scope": [
+        "scripts/suite_backend.py",
+        "scripts/suite_backend.ini",
+        "src/baton/run_record.py",
+        "src/baton/pytest_record.py",
+        "tests/test_suite_backend.py",
+        "tests/test_run_record.py",
+        "tooling/ci_par_selftest",
+        "pyproject.toml",
+        "requirements/ci.lock",
+        ".gitignore",
+        "docs/specs/CI-PAR-001.md",
+        "docs/plans/ci-par.md",
+        "docs/adr/ADR-CI-PAR-001.md",
+        "docs/tasks/TASK-CI-PAR-001.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "blocked",
+        "blocked",
+        "blocked",
+        "passed",
+        "passed",
+        "not_run"
+      ]
+    },
+    "9994ac6c4820cbb764cb0319b1c03b1d1d12a26e": {
+      "kind": "adr",
+      "id": "ADR-CI-PAR-002",
+      "status": "proposed",
+      "specs": [
+        "docs/specs/CI-PAR-002.md"
+      ]
+    },
+    "e2f821633d22a7361e48b028687562bac6a2c1f0": {
+      "kind": "plan",
+      "id": "PLAN-CI-PAR-002",
+      "status": "draft",
+      "specs": [
+        "docs/specs/CI-PAR-002.md"
+      ]
+    },
+    "3e2648c36a7256815e8c102ff48b7bf8bd86fbc1": {
+      "kind": "spec",
+      "id": "CI-PAR-002",
+      "status": "draft",
+      "revision": 1,
+      "ac_headings": [
+        "CI-PAR-002-AC-01",
+        "CI-PAR-002-AC-02",
+        "CI-PAR-002-AC-03",
+        "CI-PAR-002-AC-04",
+        "CI-PAR-002-AC-05",
+        "CI-PAR-002-AC-06",
+        "CI-PAR-002-AC-07",
+        "CI-PAR-002-AC-08",
+        "CI-PAR-002-AC-09",
+        "CI-PAR-002-AC-10",
+        "CI-PAR-002-AC-11",
+        "CI-PAR-002-AC-12",
+        "CI-PAR-002-AC-13"
+      ]
+    },
+    "c6c2fc6dd25edd6729395411b64d30949eeff403": {
+      "kind": "task",
+      "id": "TASK-CI-PAR-001",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-PAR-001.md"
+      ],
+      "plan": "docs/plans/ci-par.md",
+      "adr": "docs/adr/ADR-CI-PAR-001.md",
+      "acs": [
+        "CI-PAR-001-AC-01",
+        "CI-PAR-001-AC-02",
+        "CI-PAR-001-AC-03",
+        "CI-PAR-001-AC-04",
+        "CI-PAR-001-AC-05",
+        "CI-PAR-001-AC-06",
+        "CI-PAR-001-AC-07",
+        "CI-PAR-001-AC-08",
+        "CI-PAR-001-AC-09",
+        "CI-PAR-001-AC-10",
+        "CI-PAR-001-AC-11",
+        "CI-PAR-001-AC-12",
+        "CI-PAR-001-AC-13",
+        "CI-PAR-001-AC-14",
+        "CI-PAR-001-AC-15",
+        "CI-PAR-001-AC-16"
+      ],
+      "scope": [
+        "scripts/suite_backend.py",
+        "scripts/suite_backend.ini",
+        "src/baton/run_record.py",
+        "src/baton/pytest_record.py",
+        "tests/test_suite_backend.py",
+        "tests/test_run_record.py",
+        "tooling/ci_par_selftest",
+        "pyproject.toml",
+        "requirements/ci.lock",
+        ".gitignore",
+        "docs/specs/CI-PAR-001.md",
+        "docs/plans/ci-par.md",
+        "docs/adr/ADR-CI-PAR-001.md",
+        "docs/tasks/TASK-CI-PAR-001.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "blocked",
+        "blocked",
+        "blocked",
+        "passed",
+        "passed",
+        "not_run"
+      ]
+    },
+    "8becf66786b74af66b33fef38c593fea8e5ef99a": {
+      "kind": "task",
+      "id": "TASK-CI-PAR-002",
+      "status": "draft",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-PAR-002.md"
+      ],
+      "plan": "docs/plans/ci-par-contract.md",
+      "adr": "docs/adr/ADR-CI-PAR-002.md",
+      "acs": [
+        "CI-PAR-002-AC-01",
+        "CI-PAR-002-AC-02",
+        "CI-PAR-002-AC-03",
+        "CI-PAR-002-AC-04",
+        "CI-PAR-002-AC-05",
+        "CI-PAR-002-AC-06",
+        "CI-PAR-002-AC-07",
+        "CI-PAR-002-AC-08",
+        "CI-PAR-002-AC-09",
+        "CI-PAR-002-AC-10",
+        "CI-PAR-002-AC-11",
+        "CI-PAR-002-AC-12",
+        "CI-PAR-002-AC-13"
+      ],
+      "scope": [
+        "AGENTS.md",
+        "README.md",
+        "docs/sdd.md",
+        "docs/specs/CI-OPT-001.md",
+        "docs/specs/CI-VTIER-001.md",
+        "tests/test_ci_workflow.py",
+        "docs/specs/CI-PAR-002.md",
+        "docs/tasks/TASK-CI-PAR-002.md",
+        "docs/adr/ADR-CI-PAR-002.md",
+        "docs/plans/ci-par-contract.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "not_run",
+        "not_run"
+      ]
+    },
+    "6a3ccc6a5cbffff01f5d077abab5faf2e0546582": {
+      "kind": "adr",
+      "id": "ADR-CI-PAR-002",
+      "status": "accepted",
+      "specs": [
+        "docs/specs/CI-PAR-002.md"
+      ]
+    },
+    "5ebc64f9dbb745f46922e07fb4ed05087f125543": {
+      "kind": "plan",
+      "id": "PLAN-CI-PAR-002",
+      "status": "active",
+      "specs": [
+        "docs/specs/CI-PAR-002.md"
+      ]
+    },
+    "3dfe74bf84a8a85412704d6d6bc173af9e5c3399": {
+      "kind": "spec",
+      "id": "CI-OPT-001",
+      "status": "approved",
+      "revision": 6,
+      "ac_headings": [
+        "CI-OPT-001-AC-01",
+        "CI-OPT-001-AC-02",
+        "CI-OPT-001-AC-03",
+        "CI-OPT-001-AC-04",
+        "CI-OPT-001-AC-05",
+        "CI-OPT-001-AC-06",
+        "CI-OPT-001-AC-07",
+        "CI-OPT-001-AC-08",
+        "CI-OPT-001-AC-09",
+        "CI-OPT-001-AC-10",
+        "CI-OPT-001-AC-11",
+        "CI-OPT-001-AC-12",
+        "CI-OPT-001-AC-13"
+      ]
+    },
+    "8bb7aae776c9b02093119737bb31c6dad7a45515": {
+      "kind": "spec",
+      "id": "CI-PAR-002",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "CI-PAR-002-AC-01",
+        "CI-PAR-002-AC-02",
+        "CI-PAR-002-AC-03",
+        "CI-PAR-002-AC-04",
+        "CI-PAR-002-AC-05",
+        "CI-PAR-002-AC-06",
+        "CI-PAR-002-AC-07",
+        "CI-PAR-002-AC-08",
+        "CI-PAR-002-AC-09",
+        "CI-PAR-002-AC-10",
+        "CI-PAR-002-AC-11",
+        "CI-PAR-002-AC-12",
+        "CI-PAR-002-AC-13"
+      ]
+    },
+    "bb1cd3fe0b71d500ae90b5212c946bf3470abe6c": {
+      "kind": "spec",
+      "id": "CI-VTIER-001",
+      "status": "approved",
+      "revision": 2,
+      "ac_headings": [
+        "CI-VTIER-001-AC-01",
+        "CI-VTIER-001-AC-02",
+        "CI-VTIER-001-AC-03",
+        "CI-VTIER-001-AC-04",
+        "CI-VTIER-001-AC-05",
+        "CI-VTIER-001-AC-06"
+      ]
+    },
+    "1ccfd247946a4d90aea0fb9e1b065fa41fde5922": {
+      "kind": "task",
+      "id": "TASK-CI-PAR-002",
+      "status": "in_progress",
+      "level": 3,
+      "specs": [
+        "docs/specs/CI-PAR-002.md"
+      ],
+      "plan": "docs/plans/ci-par-contract.md",
+      "adr": "docs/adr/ADR-CI-PAR-002.md",
+      "acs": [
+        "CI-PAR-002-AC-01",
+        "CI-PAR-002-AC-02",
+        "CI-PAR-002-AC-03",
+        "CI-PAR-002-AC-04",
+        "CI-PAR-002-AC-05",
+        "CI-PAR-002-AC-06",
+        "CI-PAR-002-AC-07",
+        "CI-PAR-002-AC-08",
+        "CI-PAR-002-AC-09",
+        "CI-PAR-002-AC-10",
+        "CI-PAR-002-AC-11",
+        "CI-PAR-002-AC-12",
+        "CI-PAR-002-AC-13"
+      ],
+      "scope": [
+        "AGENTS.md",
+        "README.md",
+        "docs/sdd.md",
+        "docs/specs/CI-OPT-001.md",
+        "docs/specs/CI-VTIER-001.md",
+        "tests/test_ci_workflow.py",
+        "docs/specs/CI-PAR-002.md",
+        "docs/tasks/TASK-CI-PAR-002.md",
+        "docs/adr/ADR-CI-PAR-002.md",
+        "docs/plans/ci-par-contract.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "not_run",
+        "not_run"
+      ]
+    },
+    "ed2159559404e01280126f29088a4dcd7445ad05": {
+      "kind": "spec",
+      "id": "ADAPT-001",
+      "status": "approved",
+      "revision": 1,
+      "ac_headings": [
+        "ADAPT-001-AC-01",
+        "ADAPT-001-AC-02",
+        "ADAPT-001-AC-03",
+        "ADAPT-001-AC-04",
+        "ADAPT-001-AC-05",
+        "ADAPT-001-AC-06"
+      ]
+    },
+    "96c5accb721413c0b105d8f7055843a5ca1cef38": {
+      "kind": "task",
+      "id": "TASK-ADAPT-RULES-001",
+      "status": "in_progress",
+      "level": 2,
+      "specs": [
+        "docs/specs/ADAPT-001.md"
+      ],
+      "acs": [
+        "ADAPT-001-AC-01",
+        "ADAPT-001-AC-02",
+        "ADAPT-001-AC-03"
+      ],
+      "scope": [
+        "AGENTS.md",
+        "docs/sdd.md",
+        "docs/templates/task.md",
+        "docs/development-skills.md",
+        "tests/test_adapt_docs.py",
+        "docs/specs/ADAPT-001.md",
+        "docs/tasks/TASK-ADAPT-RULES-001.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed"
+      ]
+    },
+    "5fec733c2708aba7c3cf0e54b00d3976e7c5a9f1": {
+      "kind": "task",
+      "id": "TASK-ADAPT-USAGE-001",
+      "status": "in_progress",
+      "level": 2,
+      "specs": [
+        "docs/specs/ADAPT-001.md"
+      ],
+      "acs": [
+        "ADAPT-001-AC-04",
+        "ADAPT-001-AC-05",
+        "ADAPT-001-AC-06"
+      ],
+      "scope": [
+        "scripts/export_session_usage.py",
+        "tests/test_export_session_usage.py",
+        "docs/measurements/session-usage-transfer.md",
+        "docs/tasks/TASK-ADAPT-USAGE-001.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed"
+      ]
+    },
+    "18f867c2f7b0ba2906b37e5d0050041efdbae356": {
+      "kind": "spec",
+      "id": "ADAPT-001",
+      "status": "draft",
+      "revision": 2,
+      "ac_headings": [
+        "ADAPT-001-AC-01",
+        "ADAPT-001-AC-02",
+        "ADAPT-001-AC-03",
+        "ADAPT-001-AC-04",
+        "ADAPT-001-AC-05",
+        "ADAPT-001-AC-06",
+        "ADAPT-001-AC-07",
+        "ADAPT-001-AC-08",
+        "ADAPT-001-AC-09"
+      ]
+    },
+    "05bdccec23667773884f48a7b40f269630cfe15f": {
+      "kind": "task",
+      "id": "TASK-ADAPT-RULES-001",
+      "status": "in_progress",
+      "level": 2,
+      "specs": [
+        "docs/specs/ADAPT-001.md"
+      ],
+      "acs": [
+        "ADAPT-001-AC-01",
+        "ADAPT-001-AC-02",
+        "ADAPT-001-AC-03"
+      ],
+      "scope": [
+        "AGENTS.md",
+        "docs/sdd.md",
+        "docs/templates/task.md",
+        "docs/development-skills.md",
+        "tests/test_adapt_docs.py",
+        "docs/specs/ADAPT-001.md",
+        "docs/tasks/TASK-ADAPT-RULES-001.md",
+        "docs/tasks/current.md",
+        "docs/sdd/traceability.json",
+        "docs/HANDOFF.md"
+      ],
+      "verification_results": [
+        "passed",
+        "passed"
+      ]
+    }
+  }
+}

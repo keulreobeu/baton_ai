@@ -4,6 +4,7 @@
   "documents": [
     "docs/specs/SDD-001.md",
     "docs/tasks/TASK-SDD-001.md",
+    "docs/tasks/TASK-META-ASSESS-001.md",
     "docs/plans/sdd-adoption.md",
     "docs/adr/ADR-001-policy-ownership.md",
     "docs/specs/QW-STATUS-001.md",
@@ -46,7 +47,12 @@
     "docs/specs/CI-VTIER-001.md",
     "docs/plans/ci-vtier.md",
     "docs/adr/ADR-CI-VTIER-001.md",
-    "docs/tasks/TASK-CI-VTIER-001.md"
+    "docs/tasks/TASK-CI-VTIER-001.md",
+    "docs/specs/META-MAP-001.md",
+    "docs/plans/meta-contract-map.md",
+    "docs/adr/ADR-META-MAP-001.md",
+    "docs/tasks/TASK-META-MAP-001.md",
+    "docs/tasks/TASK-META-INVENTORY-001.md"
   ],
   "features": [
     {
@@ -1790,6 +1796,67 @@
             {
               "file": "tests/test_ci_plan.py",
               "symbol": "PolicyTests.test_risk_paths_raise_final_and_remote_but_not_local_v1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "META-MAP-001",
+      "spec": "docs/specs/META-MAP-001.md",
+      "requirements": [
+        {
+          "id": "META-MAP-001-REQ-01",
+          "acs": [
+            "META-MAP-001-AC-01",
+            "META-MAP-001-AC-02"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "META-MAP-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_spec_kit_round_trip"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_spec_kit_shared_contracts"
+            }
+          ]
+        },
+        {
+          "id": "META-MAP-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_spec_kit_rejects_drift"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_spec_kit_legacy_verdicts"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_spec_kit_override_requires_task_rows"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projected_spec_cannot_hide_invalid_source_headings"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projection_reads_back_rendered_relationships"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projection_receipt_identifies_worktree_content"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projection_uses_legacy_review_evidence_condition"
             }
           ]
         }
