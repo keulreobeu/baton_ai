@@ -71,3 +71,7 @@ Phase 5b fixture 착수 전에 남은 비차단 문구는 N1(구 형식 읽기 �
 재현 명령은 checkout의 src를 PYTHONPATH로 지정한 뒤 `python -B -X utf8 -m unittest discover -s docs/research/meta-architecture-20261124 -p test_cutover_rehearsal.py -v`다. 1개 OK. REQ/AC ID 13개 보존, Phase 6 양쪽 수락 조건, snapshot 8개·객체 109개·투영 43개·ref 18개의 원문 일치를 별도로 확인했다.
 
 66c54ed에서 Fable은 N1~N3 CLOSED, 설계 문면 PASS 및 fixture와 결과 기록 일치를 확인했다. 추가로 지적한 비차단 해석 차이에 대해 소유자 확인 조건을 Spec·Plan·ADR에서 맞추고, 증거 수집 기준을 동결 시점으로 통일했으며, 나머지 5b 진입 검사도 같은 Phase 6 필수 검사라고 명시했다. 재현의 원 branch와 증거 커밋은 테스트가 생성한다. 이 테스트의 PASS는 5b 운영 진입 증거로 인정하지 않는다. 회차 비용 US$0.579622, 세션 누적 US$6.058504. [Fable 판정](fable-review-3.md)
+
+마지막 설계 후보 84e5fee6afe1976e199fc3374f0432b22a06be4e에 대한 [Fable 한정 재검토](fable-review-4.md)는 PASS다. 소유자 확인, 동결 이후 증거 범위와 정산 후 대조 시점, Phase 6의 모든 5b 진입 검사 귀속을 확인했다. 소유자의 명시적 확인만 있고 실제 Worker 관측이 없을 때 Plan 문구가 넓게 읽힐 수 있다는 비차단 주석이 남았다. AC-03의 두 관측이 충족될 때까지 동결을 유지하는 기준으로 해석한다. Reviewer가 본 범위는 고정 설계 파일의 diff이며 직접 테스트를 수행하지 않았다. 로컬에서는 SDD 검사 PASS·관련 30개 OK·합성 lease 재현 1개 OK 및 8개 snapshot 대조 PASS를 확인했다. 이 판정은 구현이나 실제 cutover 승인을 포함하지 않는다.
+
+최종 회차 CLI 보고액은 US$0.787562, 이번 두 검토 합계 US$1.367184, 세션 누적 US$6.846066 / US$100이다. 실제 모델은 claude-fable-5-2로 관측됐다. 요청 effort는 xhigh이며 실제 적용값과 조직 최종 청구액은 미확인이다.

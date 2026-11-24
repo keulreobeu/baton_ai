@@ -61,3 +61,5 @@ Route A, base 8e4462085237df5e0ab951283dfb3b482ecf24b7. 범위는 별도 조사 
 사용자의 후속 진행 지시에 따라 META-001-AC-03과 Plan의 Phase 5b·6에 N1~N3을 반영했다. 합성 worktree에서 기존 attempt가 계속 쓰고 정산한 결과를 새 tip에서 회수했다. 연구 범위의 재현과 새 운영 전환기의 검증을 [결과 기록](../research/meta-architecture-20261124/results.md)에 구분했다.
 
 후보 66c54ed의 [독립 검토](../research/meta-architecture-20261124/fable-review-3.md)에서 N1~N3 CLOSED 및 설계 문면 PASS를 확인했다. 후속 비차단 문구는 소유자가 확인된 기존 attempt에만 쓰기·정산 허용, 동결 뒤부터 수집한 증거를 정산 후 대조, Phase 6의 나머지 5b 진입 검사도 필수로 명시하는 범위에서 보완했다. 연구 fixture를 운영 cutover 통과 근거로 사용하지 않는다.
+
+84e5fee의 [마지막 설계 재검토](../research/meta-architecture-20261124/fable-review-4.md)는 PASS, 새 차단 회귀 0건이다. 사용자가 이번 범위를 설계 보완·검증까지로 지정했다. 신규 구현 Worker 배정과 운영 전환은 보류하고, META-001은 draft로 유지한다.
