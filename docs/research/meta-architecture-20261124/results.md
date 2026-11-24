@@ -51,3 +51,11 @@ Q1~Q5는 확정이다. 선택한 checkout·문서 배치·조사 기준·기존 
 후보 b930dc9의 첫 호출은 출력 토큰 한도 초과로 판정 없음, CLI 보고 US$2.313728이었다. 수정 diff와 기존 지적을 전달한 다음 호출은 US$2.126632였고 B1~B6를 닫았으나 활성 lease 회귀 R1로 FAIL이었다. 두 호출의 누적 보고액은 US$4.440360이다. 비용은 CLI 추정이며 조직의 최종 청구액은 미확인이다. [Fable 검토 원문](fable-review-1.md)
 
 R1에 따라 소유자가 확인된 활성 lease도 동결 사유로 명시했다. 기존 attempt는 원 경로에서 정산하며 T1 증거를 포함해 재대조한 뒤에만 변환한다. R2의 불변 원문 대조를 Phase 0에, R3의 승인 채널을 Phase 3에, 채널 양성·음성과 활성 lease 수락 조건을 Phase 6에 연결했다.
+
+## Fable 최종 판정
+
+후보 ef1eac31104fc68a06343e11f28918bbdeb9e54d의 설계 문면은 PASS다. Fable은 활성 lease가 있는 Task의 원 attempt 정산과 원 branch 최신 tip 재대조를 추적해 R1을 닫았으며 R2·R3도 CLOSED로 판정했다. 차단 지적 0건, B1~B6 재개방 0건이다. 고정 후보의 Spec·Plan·ADR·헌법 전체와 직전 검토를 전달했다. 검토 직전 SDD 검사 PASS, tests.test_sdd 30개 OK였다. [최종 응답](fable-review-2.md)
+
+Phase 5b fixture 착수 전에 남은 비차단 문구는 N1(구 형식 읽기 전용의 주체를 새 checker·전환기로 한정), N2(Plan의 시점 T1과 헌법 결정 T1 구분), N3(Phase 6 표에 5b 진입 검사 명시)다. 구 attempt 카운터·자체 PASS 처리 및 잠금의 실제 수명은 구현 검증 대상으로 남긴다. 이 기록 commit은 검토한 설계 파일을 변경하지 않는다.
+
+마지막 호출의 CLI 보고 비용은 US$1.038522다. 세션 내 Fable 호출 3건(판정 없음 1건 포함) 누적 US$5.478882 / 승인 US$100, 보고액 기준 잔여 US$94.521118이다. 실제 모델은 세 호출 모두 claude-fable-5-2로 관측됐고 요청 effort xhigh의 실제 적용값은 미관측이다. 이 결과는 설계 검토 증거이며 신규 E2E, 공식 V3, 필수 원격 CI 및 운영 전환은 아직 미실행이다.
