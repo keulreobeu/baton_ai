@@ -9,7 +9,7 @@ level = 3
 specs = ["docs/specs/SDD-001.md"]
 plan = "docs/plans/sdd-adoption.md"
 adr = "docs/adr/ADR-001-policy-ownership.md"
-scope = ["docs/tasks/TASK-META-ASSESS-001.md", "docs/tasks/current.md", "docs/sdd/traceability.json",
+scope = ["docs/tasks/TASK-META-ASSESS-001.md", "docs/tasks/current.md", "docs/HANDOFF.md", "docs/sdd/traceability.json",
          "docs/specs/META-001.md", "docs/plans/meta-transition.md", "docs/adr/ADR-META-001.md",
          "docs/research/meta-architecture-20261124"]
 acs = ["SDD-001-AC-01", "SDD-001-AC-02", "SDD-001-AC-03", "SDD-001-AC-04", "SDD-001-AC-05",
@@ -63,3 +63,5 @@ Route A, base 8e4462085237df5e0ab951283dfb3b482ecf24b7. 범위는 별도 조사 
 후보 66c54ed의 [독립 검토](../research/meta-architecture-20261124/fable-review-3.md)에서 N1~N3 CLOSED 및 설계 문면 PASS를 확인했다. 후속 비차단 문구는 소유자가 확인된 기존 attempt에만 쓰기·정산 허용, 동결 뒤부터 수집한 증거를 정산 후 대조, Phase 6의 나머지 5b 진입 검사도 필수로 명시하는 범위에서 보완했다. 연구 fixture를 운영 cutover 통과 근거로 사용하지 않는다.
 
 84e5fee의 [마지막 설계 재검토](../research/meta-architecture-20261124/fable-review-4.md)는 PASS, 새 차단 회귀 0건이다. 사용자가 이번 범위를 설계 보완·검증까지로 지정했다. 신규 구현 Worker 배정과 운영 전환은 보류하고, META-001은 draft로 유지한다.
+
+다음 세션의 시작점은 [브랜치 재개 카드](../HANDOFF.md)다. 사용자의 인계 파일 작성 요청으로 이 Task의 scope에 재개 카드 경로를 추가했다. 첫 오프라인 구현은 사용자 승인 대기다.
