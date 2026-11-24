@@ -26,7 +26,7 @@ tasks.md의 실행 상태는 BATON에서 생성하는 읽기 전용 표시다. W
 
 모든 대상의 원래 ID·revision·승인 범위/출처·base·candidate·소유 scope·AC별 증거·open finding·중지 조건·선행 관계를 보존한다. 누락·충돌·상태 상승·후보 불일치 시 해당 Task 전환을 중단하고 기존 snapshot으로 차이를 진단하고 재개 시 원 branch의 최신 tip에서 다시 대조한다.
 
-snapshot은 비교의 출발점이다. 실제 쓰기 직전 해당 branch tip·blob·lease를 다시 읽는다. 동결된 Task는 구 형식을 읽을 수만 있다. 형식 변환은 원래 승인·의미·이력의 왕복 동등성이 입증된 경우에만 같은 revision으로 표시한다. 의미 변경에는 새 revision과 필요한 승인이 따른다.
+snapshot은 비교의 출발점이다. 실제 쓰기 직전 해당 branch tip·blob·lease를 다시 읽는다. 활성 lease가 있는 Task는 동결 목록에 둔다. 새 checker와 전환기는 동결된 원본을 읽기 전용으로 대조하고 신규 배정·변환을 보류한다. 기존 attempt는 원래 worktree에 결과를 쓰고 원래 원장에서 정산할 수 있다. 정산 후 원 branch에 추가된 증거까지 포함해 다시 대조한다. 형식 변환은 원래 승인·의미·이력의 왕복 동등성이 입증된 경우에만 같은 revision으로 표시한다. 의미 변경에는 새 revision과 필요한 승인이 따른다.
 
 ## META-001-REQ-02 실행과 자율 판단
 

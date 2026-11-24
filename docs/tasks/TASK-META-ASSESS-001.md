@@ -55,3 +55,7 @@ Route A, base 8e4462085237df5e0ab951283dfb3b482ecf24b7. 범위는 별도 조사 
 2026-11-24 사용자가 이번 세션의 설계 교차검토에 한해 집담 보관함의 Anthropic 직접 API 자격과 Fable 모델을 허용했다. 사용자 응답 100은 직전 질문의 USD 단위로 세션 누적 US$100이다. 저장된 전역 실행 권한으로 이월하지 않는다. b930dc9에 대한 [Fable 재검토](../research/meta-architecture-20261124/fable-review-1.md)는 B1~B6 CLOSED, R1 차단으로 FAIL이었다. 활성 lease Task의 신규 배정·변환 보류와 원 attempt 정산 후 tip 재대조를 설계에 복원했다.
 
 수정 후보 ef1eac31104fc68a06343e11f28918bbdeb9e54d에 대한 [Fable 최종 재검토](../research/meta-architecture-20261124/fable-review-2.md)는 설계 문면 PASS다. B1~B6와 R1~R3은 CLOSED, 차단 지적 0건이다. Phase 5b fixture 작성 전에 확인할 비차단 N1~N3은 결과표에서 추적한다. 이 기록으로 구현 Spec 승인이나 Task verified 승격이 발생하지 않는다.
+
+## N1~N3 보완 및 오프라인 재현
+
+사용자의 후속 진행 지시에 따라 META-001-AC-03과 Plan의 Phase 5b·6에 N1~N3을 반영했다. 합성 worktree에서 기존 attempt가 계속 쓰고 정산한 결과를 새 tip에서 회수했다. 연구 범위의 재현과 새 운영 전환기의 검증을 [결과 기록](../research/meta-architecture-20261124/results.md)에 구분했다.

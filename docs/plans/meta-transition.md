@@ -20,8 +20,8 @@ specs = ["docs/specs/META-001.md"]
 |3 라우팅 / 1|src/baton/managed.py 실행 설정 검증, runtime.py OrcaCLI.start/inspect, 기존 execution.py provider adapter, flow Skill qualification 재사용. 사용자 승인 채널과 읽기 전용 실행 승인표 연결|실제 승인된 profile과 capability가 교차하는 tuple만 fake dispatch. Gemini 별도 적격성 확인. 모델 기본값 변경으로 기존 Task 의미가 바뀌지 않음|
 |4 검증 / 2·3|runtime.py의 review dispatch 직전과 evidence.py의 기록/완료 경로, orchestrator.py의 validation/미해결 V3, scripts/ci_plan.py의 필수 회귀 연결|우회 entry point에서도 자체/로컬 PASS 선행. PASS 문자열·stale V3·UNKNOWN은 차단. 누적 계약·공식 V3·CI 증거의 후보 일치|
 |5a 이관 대조 / 2, 3·4와 병행|branch tip의 status/AC/finding을 shadow로 대조. lease·attempt·control은 현 원장에 두고 ID로 참조|롤백 연습·동등성·쓰기 동결 검증. 소유 불명 Task는 실행 차단. G2 ff와 ADAPT 수정 보류|
-|6 E2E / 3·4·5a|tests/test_flow_runtime.py, test_flow_evidence.py와 기존 fake runner/clock 재사용. 합성 Task 2개에 선행 의존성 부여|아래 여섯 경로 재현. 실환경 인증·유료 호출 없이 완료/다음 선택까지 관측|
-|5b 운영 전환 / 3·4·5a·6 PASS|고정한 후보와 최신 refs/소유권을 다시 대조한 뒤 AGENTS·SDD·checker·CI 입력 포인터를 한 후보에서 변경|활성 lease·체크포인트 밖 WIP·적용 승인 revision 충돌·owner_unknown Task는 사유를 기록해 동결하고 새 배정·변환 0. 기존 attempt 정산 및 사유 해소 뒤 원 branch tip부터 재대조. 승인 누락·필수 검사 유실 0, 왕복 증거와 독립 검토·필수 V3/CI, 별도 게시/통합 승인. 미전환 Task는 읽기 전용 동결|
+|6 E2E / 3·4·5a|tests/test_flow_runtime.py, test_flow_evidence.py와 기존 fake runner/clock 재사용. 합성 Task 2개에 선행 의존성 부여|여섯 E2E 경로와 아래 5b 진입 검사 전체 PASS. 실환경 인증·유료 호출 없이 완료/다음 선택까지 관측|
+|5b 운영 전환 / 3·4·5a·6 PASS|고정한 후보와 최신 refs/소유권을 다시 대조한 뒤 AGENTS·SDD·checker·CI 입력 포인터를 한 후보에서 변경|활성 lease·체크포인트 밖 WIP·적용 승인 revision 충돌·owner_unknown Task는 사유를 기록해 동결하고 새 배정·변환 0. 기존 attempt 정산 및 사유 해소 뒤 원 branch tip부터 재대조. 승인 누락·필수 검사 유실 0, 왕복 증거와 독립 검토·필수 V3/CI, 별도 게시/통합 승인. 새 checker·전환기는 미전환 Task 원본을 읽기 전용으로 대조. 기존 attempt의 원 worktree 쓰기·정산 경로 보존|
 |7 무인 안정화 / 5b|중복 이벤트, lease 만료/정산, quota 대기, 외부 CI receipt, handoff 복구|불확실 시작 후 중복 실행 0, 승인 누락 0. 운영 등록·실사용·Git 연동은 해당 실행 승인이 있어야 착수|
 |8 평가 / 4·6|기존 Task 증거·정제된 usage/metrics만으로 시간 순서 평가|holdout 누수 점검과 분모 기록. 실측 전 모델/전략 우열 결론 보류|
 
@@ -50,7 +50,7 @@ specs = ["docs/specs/META-001.md"]
 
 ## 성과 평가와 중단 기준
 
-Phase 6 담당자는 여섯 E2E 경로 외에 5b 진입 검사도 수행한다. 소유자와 일치하는 활성 lease에서 변환·새 dispatch 0, 원 attempt 정산 뒤 T1 증거를 포함한 왕복 대조, 정상 사용자 승인행으로 mock dispatch 1회 및 채널 부재 시 새 실모델 dispatch 0을 확인한다. 나머지 5b 사전 fixture에는 Q4-B를 인용한 에이전트 생성 승인행 거부, 필수 effort 미관측 host의 시작 횟수 0, 계측 누락 예약 전액 정산, 중복 receipt 이중 차감 0, 원인명이 달라지는 재설계 상한, owner_unknown 차단, 동결 분기의 tip 변경 재투영, 전환 후 새 기록을 가진 rollback을 포함한다. 안전 지표는 5b 전에 처음 측정한다. 운영 뒤 재발하면 신규 쓰기를 동결하고 복구 절차를 적용한다.
+Phase 6 담당자는 여섯 E2E 경로 외에 5b 진입 검사도 수행한다. 소유자와 일치하는 활성 lease에서 변환·새 dispatch 0, 원 attempt 정산 후 동결 시점 이후 원 branch에 추가된 증거를 포함한 왕복 대조, 정상 사용자 승인행으로 mock dispatch 1회 및 채널 부재 시 새 실모델 dispatch 0을 확인한다. 나머지 5b 사전 fixture에는 Q4-B를 인용한 에이전트 생성 승인행 거부, 필수 effort 미관측 host의 시작 횟수 0, 계측 누락 예약 전액 정산, 중복 receipt 이중 차감 0, 원인명이 달라지는 재설계 상한, owner_unknown 차단, 동결 분기의 tip 변경 재투영, 전환 후 새 기록을 가진 rollback을 포함한다. 안전 지표는 5b 전에 처음 측정한다. 운영 뒤 재발하면 신규 쓰기를 동결하고 복구 절차를 적용한다.
 
 과거 리뷰 기록을 시간 순으로 잘라 당시 available한 spec/diff/test만 입력한다. 이후 발견된 결함·리뷰 정답은 평가자만 본다. 개발 세트는 CI-OPT 입력 지문 및 CI-VTIER 정산 사례, 회귀 세트는 CI-EVID 구조화 기록·G1 동등성·ADAPT R6 두 결함으로 시작한다. 이미 이 문서에 공개한 항목은 holdout으로 쓸 수 없다. 새 Task 단위로 분리한 비공개 사례를 모아 reviewer와 모델 선택 정책을 고정한 뒤 한 번 평가한다.
 

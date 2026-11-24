@@ -59,3 +59,13 @@ R1에 따라 소유자가 확인된 활성 lease도 동결 사유로 명시했�
 Phase 5b fixture 착수 전에 남은 비차단 문구는 N1(구 형식 읽기 전용의 주체를 새 checker·전환기로 한정), N2(Plan의 시점 T1과 헌법 결정 T1 구분), N3(Phase 6 표에 5b 진입 검사 명시)다. 구 attempt 카운터·자체 PASS 처리 및 잠금의 실제 수명은 구현 검증 대상으로 남긴다. 이 기록 commit은 검토한 설계 파일을 변경하지 않는다.
 
 마지막 호출의 CLI 보고 비용은 US$1.038522다. 세션 내 Fable 호출 3건(판정 없음 1건 포함) 누적 US$5.478882 / 승인 US$100, 보고액 기준 잔여 US$94.521118이다. 실제 모델은 세 호출 모두 claude-fable-5-2로 관측됐고 요청 effort xhigh의 실제 적용값은 미관측이다. 이 결과는 설계 검토 증거이며 신규 E2E, 공식 V3, 필수 원격 CI 및 운영 전환은 아직 미실행이다.
+
+## N1~N3 후속 확인
+
+- N1. META-001-AC-03과 Phase 5b에서 읽기 전용 주체를 새 checker와 전환기로 한정했다. 활성 lease가 있으면 배정·변환을 보류하며 원래 attempt는 결과를 쓰고 정산할 수 있다.
+- N2. Phase 6 시나리오에는 동결 뒤 원 branch에 추가된 증거라고 명시했다. 헌법 결정 ID T1은 그대로다.
+- N3. Phase 6 표에 여섯 E2E 경로 및 모든 5b 진입 검사 PASS를 함께 명시했다. 두 묶음 중 한쪽만 통과한 상태로 운영 전환할 수 없다.
+
+[오프라인 재현](test_cutover_rehearsal.py)은 임시 Git 저장소·실제 ManagedStore/dispatch/ingest·FakeOrca를 사용한다. 소유자가 확인된 활성 lease에서 같은 Task를 다시 dispatch해도 기존 lease가 유지되고 실제 fake start가 1회였다. 원래 worktree에 변경을 쓴 뒤 같은 attempt가 REVIEW_REQUIRED로 정산되며 lease가 해제됐다. 정산 결과의 사본을 원 branch에 커밋하자 이전 tip에는 없던 증거를 최신 tip에서 동일하게 읽었다. 테스트 자체가 연구용 증거 사본을 기록한다. 새 전환기의 동결·변환·쓰기 잠금이나 실제 운영 기록의 자동 반영을 검증한 결과로 사용하지 않는다.
+
+재현 명령은 checkout의 src를 PYTHONPATH로 지정한 뒤 `python -B -X utf8 -m unittest discover -s docs/research/meta-architecture-20261124 -p test_cutover_rehearsal.py -v`다. 1개 OK. REQ/AC ID 13개 보존, Phase 6 양쪽 수락 조건, snapshot 8개·객체 109개·투영 43개·ref 18개의 원문 일치를 별도로 확인했다.
