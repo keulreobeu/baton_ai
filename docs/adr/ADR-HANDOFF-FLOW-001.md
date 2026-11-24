@@ -5,10 +5,10 @@ kind = "adr"
 id = "ADR-HANDOFF-FLOW-001"
 status = "accepted"
 owner = "Codex W3"
-specs = ["docs/specs/HANDOFF-FLOW-LOCAL-001.md"]
+specs = ["docs/specs/HANDOFF-FLOW-LOCAL-001.md", "docs/specs/HANDOFF-FLOW-ENTRY-001.md"]
 ```
 
-Phase 2~3 로컬 입력/출력과 오프라인 보존 방식에 한해 채택했다. 전체 v5 전환·공유 연결은 제안 상태다.
+Phase 2~3 로컬 입출력·보존 및 Phase 4~5 수동 PREPARE·기존 정착 REPORT 연결을 채택했다. 전체 v5 운영 전환은 제안 상태다.
 
 ### 로컬 결정과 향후 연결
 
@@ -30,6 +30,10 @@ Task/관리 범위·소유 writer 기준으로 저장 대상을 격리한다. �
 이 설계는 별도 Core·상태 머신·DB·정책 엔진·오케스트레이터·adapter 프레임워크나 인계 검증 Agent를 요구하지 않는다. 중앙 HANDOFF 문서에 동시 쓰는 방식은 writer 격리를 보장하지 못한다. 매번 전체 문서를 모델로 재작성하면 유효한 결정이 유실되거나 비용이 늘 수 있다. Provider 종료 Hook만 쓰면 비정상 종료 또는 미지원 호스트의 체크포인트를 놓친다. 기존 Markdown 진입점과 HANDOFF-001을 유지하고 안정성이 확인된 이벤트부터 연결한다.
 
 ### Eng Review Amendments
+
+독립 검토에서 확인한 권한·근거 결속 오류를 반영한다. 승인과 소유권은 수신자·행위·현재 근거에, 이동 증거는 동일한 manifest·ref·복원 Task에 묶는다. 이전 문서에서 의미 필드를 가져올 때는 현재 필드 기준과 당시 결정 revision을 확인한다. 최종 파일만 영수증으로 열 수 있으며 미완성 파일은 별도 작업 디렉터리에 둔다.
+
+기존 관리 DB에 읽기 전용 연결을 열어 한 Task의 선택 열과 마지막 이벤트 순번을 대조한다. 정착 투영은 원래 ingest의 반환 뒤에 실행한다. 보존·읽기 실패 시 기존 정착 상태와 종료 코드를 그대로 반환하고 카드 결과만 차단으로 기록한다.
 
 W1 소유자가 확인한 게시 계약에 따라 PORTABLE은 Git 전담 주체가 별도 권한으로 게시하고 원격 read-back한 결과를 소비한다. `local_saved`만으로 PC 이동을 안내하지 않는다. W4 검증·W2 ADAPT의 후속 변경은 승인된 인터페이스를 받은 뒤 비교한다.
 

@@ -5,13 +5,15 @@ kind = "spec"
 id = "HANDOFF-FLOW-LOCAL-001"
 status = "approved"
 owner = "Codex W3"
-revision = 1
+revision = 2
 approved_by = "Master Coordinator (위임된 로컬 Phase 2~3)"
 approved_at = "2026-11-25"
-approval_ref = "사용자 W3 신규 개발 및 Q1~16, run_642522584d8a의 msg_76aca9fb9424 로컬 구현 허용·msg_fca59ba6ec8e 제한 범위 확인"
+approval_ref = "사용자 W3 신규 개발 및 Q1~16, run_642522584d8a의 msg_76aca9fb9424·msg_fca59ba6ec8e. revision 2는 msg_4af29d61c12b의 독립 지적 반영 및 msg_e0c3959933ff의 정착 REPORT 요구 범위"
 ```
 
 승인 범위는 [v5 제안](HANDOFF-FLOW-001.md)의 Phase 2~3 stdlib 함수와 오프라인 테스트다. 신뢰하는 기존 호출자가 공급한 선별 관측을 사용한다. 공유 CLI/Skill, 실제 BATON·Orca 이벤트 수집, 외부 전달·인수·실행, 운영 전환, 제품 승인 및 게시를 이 구간의 수락으로 승격하지 않는다.
+
+Revision 2에서 일반 REVIEW/REPORT는 고정 후보를 요구한다. 후보 전 상태보고만 `report_stage="checkpoint"`인 REPORT/DELIVER를 사용한다. 이 카드는 후보가 없는 상태를 표시한다. 승인·소유권 확인은 수신자·책임·다음 행동·범위 및 근거 revision에 결속한다. 복원은 동일 checkpoint/manifest SHA·승인 ref read-back·복원 Task의 관측에 결속한다. 메모 재사용은 현재 관측의 필드별 지문과 결정 근거 revision까지 일치해야 한다. 최종 슬롯 조회는 영수증의 해시를 확인하는 `read_saved`를 사용한다. 중단된 임시 파일은 `.pending`의 작업 파일로 남을 수 있다.
 
 ## HANDOFF-FLOW-LOCAL-001-REQ-01 완성본 작성과 재사용
 

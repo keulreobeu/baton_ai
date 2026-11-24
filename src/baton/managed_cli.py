@@ -159,7 +159,12 @@ def main(argv=None, *, workspace=None):
         if args.command == "runtime":
             from .runtime import ingest, dispatch, reconcile
             if args.runtime_command == "review": result = dispatch(store, args.task, review=True)
-            else: result = (ingest if args.runtime_command == "ingest" else reconcile)(store, args.task, read_json(args.request))
+            elif args.runtime_command == "ingest":
+                notification = read_json(args.request)
+                result = ingest(store, args.task, notification)
+                from .handoff_flow_cli import settled_report
+                result = {**result, "handoff": settled_report(root, directory, args.task, notification, result)}
+            else: result = reconcile(store, args.task, read_json(args.request))
         elif args.command == "evidence":
             from .evidence import record
             result = record(store, args.task, read_json(args.request))

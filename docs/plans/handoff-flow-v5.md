@@ -5,10 +5,10 @@ kind = "plan"
 id = "PLAN-HANDOFF-FLOW-001"
 status = "active"
 owner = "Codex W3"
-specs = ["docs/specs/HANDOFF-FLOW-LOCAL-001.md"]
+specs = ["docs/specs/HANDOFF-FLOW-LOCAL-001.md", "docs/specs/HANDOFF-FLOW-ENTRY-001.md"]
 ```
 
-현재 활성 구간은 승인된 [로컬 Phase 2~3](../specs/HANDOFF-FLOW-LOCAL-001.md)이다. 전체 v5 Phase 4~6은 연결 제안으로 관리한다.
+현재 활성 구간은 [로컬 카드](../specs/HANDOFF-FLOW-LOCAL-001.md)와 [수동 PREPARE 및 정착 REPORT](../specs/HANDOFF-FLOW-ENTRY-001.md)다. 마스터의 배정 `msg_e0c3959933ff`에 따라 기존 CLI·Skill·패키지에 이 진입점을 연결한다. 다른 자동 이벤트와 운영 전환은 후속이다.
 
 ## 단계와 연결 조건
 

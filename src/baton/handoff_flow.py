@@ -2,11 +2,11 @@
 
 Callers supply a coherent, selective read-back and an independently trusted writer
 receipt. These functions never acquire ownership, deliver mail, or run a task.
-The Phase 2–3 source checkout provides the approved templates.
+Templates are distributed with the checkout and the installed package.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import html
@@ -23,7 +23,6 @@ from .autocommit import scan_content
 from .contracts import HarnessError, digest, identifier
 
 
-TEMPLATES = Path(__file__).resolve().parents[2] / "docs/templates/handoff-flow"
 KINDS = {"START", "RESUME", "REVIEW", "REPORT", "CONTROL"}
 MODULES = ("PORTABLE", "RECOVERY", "PARALLEL", "ENVIRONMENT")
 STATUSES = {"PASS", "FAIL", "NOT_RUN", "UNKNOWN", "STALE", "N/A"}
@@ -31,20 +30,22 @@ RESULTS = ("product_checks", "independent_review", "integration", "local_commit"
            "publication", "pr", "ci", "merge", "approval")
 BASE_FIELDS = {"repository", "base", "head", "current_state", "checkpoint", "authority",
                "contract_refs", "git_refs", "next_action", "write_scope", "protected_scope",
-               "operations", "blockers"}
+               "operations", "blockers", "acs"}
 OBSERVED = BASE_FIELDS | {"candidate_sha", "comparison_ref", "wip_inventory", "preservation", "owner_restore",
                           "assignment", "bindings", "liveness_ownership", "portable_ref",
                           "manifest", "manifest_sha256", "restored_task", "settlement", "portable_receipts",
                           "portability_mode", "portable_expected_sha", "portable_commit",
                           "portable_readback", "portable_unverified"}
 GATES = {"approval", "ownership", "task_open", "wip", "settlement", "takeover", "portable"}
-SHA = re.compile(r"[0-9a-f]{40}\Z")
+SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 FIELD = re.compile(r"\{\{([a-z][a-z_0-9]*)\}\}")
 SENSITIVE_TEXT = re.compile(
     r"[\w.%+\-]+@[\w.\-]+\.[\w\-]+|"
-    r"(?:^|[\s/\\:`(])(?:\.local_runtime|raw|runtime|logs|vault|keys|credentials|secrets|\.env(?:\.\w+)?|\.aws|\.ssh|\.git)"
-    r"(?:[/\\]|$)|\.(?:db|sqlite3?|pem|key|log)(?=$|[^\w])", re.I)
+    r"(?<![\w.])(?:\.local_runtime|\.env(?:[._-][\w-]+)*|\.aws|\.ssh|\.git)(?![\w-])|"
+    r"(?<![\w.-])(?:auth|credentials?|secrets?|tokens?)\.json(?![\w-])|"
+    r"(?<![\w.])(?:raw|runtime|logs|vault|keys|credentials|secrets)[/\\]|"
+    r"\.(?:db|sqlite3?|pem|key|log)(?=$|[^\w])", re.I)
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class Request:
     sender: str
     receiver: str
     modules: tuple[str, ...] = ()
+    report_stage: str = "candidate"
 
 
 @dataclass(frozen=True)
@@ -78,12 +80,16 @@ class Observation:
     checks: Mapping[str, tuple[str, str]]  # Disposition and source for this next action.
     references: Mapping[str, str]  # Source → revision read back by the owning caller.
     evidence: tuple[Evidence, ...] = ()
+    subjects: Mapping[str, str] = field(default_factory=dict)
+    bases: Mapping[str, tuple[str, str, str, str]] = field(default_factory=dict)
 
     def __post_init__(self):
         # The caller may keep updating its view after this collection finishes.
         object.__setattr__(self, "fields", MappingProxyType(dict(self.fields)))
         object.__setattr__(self, "checks", MappingProxyType(dict(self.checks)))
         object.__setattr__(self, "references", MappingProxyType(dict(self.references)))
+        object.__setattr__(self, "subjects", MappingProxyType(dict(self.subjects)))
+        object.__setattr__(self, "bases", MappingProxyType(dict(self.bases)))
 
 
 @dataclass(frozen=True)
@@ -108,7 +114,7 @@ class Prepared:
     markdown: bytes
     receipt: Receipt
     # Semantic fields with current decision revision, code SHA, inputs and scope hashes.
-    reusable: tuple[tuple[str, str, tuple[str, str, str, str]], ...]
+    reusable: tuple[tuple[str, str, tuple[str, str, str, str], str], ...]
 
 
 def _require(ok, code):
@@ -129,11 +135,21 @@ def _text(value):
 
 def _instant(value):
     try:
+        _require(isinstance(value, str) and re.fullmatch(
+            r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)", value), "invalid_time")
         stamp = datetime.fromisoformat(value)
         _require(stamp.utcoffset() is not None, "missing_timezone")
         return stamp
     except (TypeError, ValueError):
         raise HarnessError("handoff_flow_invalid_time") from None
+
+
+def template_directory():
+    import sysconfig
+    source = Path(__file__).resolve().parents[2]
+    if (source / "src/baton/handoff_flow.py").resolve() == Path(__file__).resolve():
+        return source / "docs/templates/handoff-flow"
+    return Path(sysconfig.get_path("data")) / "share/baton/templates/handoff-flow"
 
 
 def _layout(request):
@@ -144,9 +160,17 @@ def _layout(request):
              and len(set(request.modules)) == len(request.modules), "invalid_modules")
     _text(request.sender)
     _text(request.receiver)
-    common = (TEMPLATES / "common.md").read_text(encoding="utf-8")
-    role = (TEMPLATES / (request.kind.lower() + ".md")).read_text(encoding="utf-8")
-    modules = re.split(r"(?m)^### (\w+)\n", (TEMPLATES / "modules.md").read_text(encoding="utf-8"))
+    _require(request.report_stage == "candidate" or (request.report_stage == "checkpoint"
+             and request.kind == "REPORT" and request.relation == "DELIVER"), "invalid_report_stage")
+    templates = template_directory()
+    common = (templates / "common.md").read_text(encoding="utf-8")
+    role = (templates / (request.kind.lower() + ".md")).read_text(encoding="utf-8")
+    _require(re.findall(r"(?m)^## (.+)$", common) == ["Quick Resume", "Execution Context", "Evidence"]
+             and common.count("{{type_body}}") == common.count("{{module_bodies}}") == 1
+             and role.startswith(f"### {request.kind} · ")
+             and {"task_or_scope", "kind", "relation", "receiver_role", "next_action", "check_refs", "gate_refs"}
+                 <= set(FIELD.findall(common)), "missing_template")
+    modules = re.split(r"(?m)^### (\w+)\n", (templates / "modules.md").read_text(encoding="utf-8"))
     chosen = ["### " + name + "\n" + body.rstrip()
               for name, body in zip(modules[1::2], modules[2::2], strict=True)
               if name in request.modules]
@@ -160,20 +184,23 @@ def _observe(obs):
     _require(type(obs.sequence) is int and 0 < obs.sequence < 2**63, "invalid_sequence")
     _instant(obs.observed_at)
     _require(isinstance(obs.fence, tuple) and len(obs.fence) == 2
-             and _text(obs.fence[0]) == obs.fence[1], "collection_changed")
+             and _text(obs.fence[0]) == obs.fence[1] and obs.fence[0].strip().upper() not in STATUSES,
+             "collection_changed")
     _require(BASE_FIELDS <= obs.fields.keys() <= OBSERVED, "invalid_observed_fields")
     for value in obs.fields.values():
         _text(value)
     for key in ("base", "head", "candidate_sha", "comparison_ref"):
-        if key in obs.fields:
+        if key in obs.fields and not (key == "base" and obs.fields[key] == "UNKNOWN"):
             _require(SHA.fullmatch(obs.fields[key]), "invalid_sha")
     _require(len(obs.references) <= 100, "reference_limit")
     for source, revision in obs.references.items():
         _text(source)
         _text(revision)
-        _require(revision.upper() not in STATUSES, "unconfirmed_reference")
+        _require(not any(re.match(r"^(?:UNKNOWN|STALE|NOT_RUN|N/A|FAIL|PASS)(?:$|[\s:(])", v.strip(), re.I)
+                         for v in (source, revision)), "unconfirmed_reference")
     for key in ("contract_refs", "git_refs"):
         _require(obs.fields[key] in obs.references, "unconfirmed_reference")
+    _require(obs.references[obs.fields["git_refs"]] == obs.fields["head"], "git_reference_mismatch")
     _require(obs.checks.keys() <= GATES, "invalid_checks")
     for pair in obs.checks.values():
         _require(isinstance(pair, tuple) and len(pair) == 2 and pair[0] in STATUSES,
@@ -203,7 +230,26 @@ def _binding(obs):
     # Re-observation at a different time is expected. The event, fence, facts
     # and exact evidence inputs must still identify this snapshot.
     return digest([obs.task, obs.scope, obs.event, obs.sequence, obs.fence, dict(obs.fields),
-                   dict(obs.checks), dict(obs.references), [asdict(record) for record in obs.evidence]])
+                   dict(obs.checks), dict(obs.references), [asdict(record) for record in obs.evidence],
+                   dict(obs.subjects), dict(obs.bases)])
+
+
+def gate_subject(request, obs, gate):
+    """Identity to compare with a gate proof supplied by the authoritative owner."""
+    identity = [gate, obs.task, obs.scope, asdict(request), obs.fields.get("bindings"),
+                obs.fields["base"], obs.fields["head"], obs.fields.get("candidate_sha"),
+                obs.fields["authority"], obs.fields["next_action"], obs.fields["operations"],
+                obs.fields["write_scope"], obs.fields["protected_scope"]]
+    source = obs.checks.get(gate, ("UNKNOWN", None))[1]
+    identity.extend((source, obs.references.get(source)))
+    if gate == "wip":
+        identity.extend(obs.fields.get(key) for key in ("wip_inventory", "preservation", "owner_restore"))
+    if gate == "portable":
+        identity.extend(obs.fields.get(key) for key in ("portability_mode", "manifest",
+                        "manifest_sha256", "portable_ref", "portable_expected_sha", "portable_commit",
+                        "portable_readback", "portable_receipts", "portable_unverified", "restored_task"))
+        identity.append(obs.references.get(obs.fields.get("restored_task")))
+    return digest(identity)
 
 
 def _gates(request):
@@ -221,11 +267,15 @@ def _gates(request):
 
 def _missing(request, obs):
     missing = {key for key in _gates(request) if obs.checks.get(key, ("UNKNOWN",))[0] != "PASS"}
+    missing.update(key for key in _gates(request)
+                   if obs.subjects.get(key) != gate_subject(request, obs, key))
     if request.relation != "DELIVER" and obs.fields["current_state"].upper() in {
             "COMPLETED", "CANCELLED", "MERGED", "UNKNOWN", "STALE"}:
         missing.add("task_open")
     if obs.fields["authority"].upper() in STATUSES:
         missing.add("approval")
+    if obs.fields["base"] == "UNKNOWN" and request.relation != "DELIVER":
+        missing.add("base")
     if request.kind == "REVIEW":
         missing.update(key for key in ("candidate_sha", "comparison_ref") if key not in obs.fields)
     if "PORTABLE" in request.modules:
@@ -234,12 +284,15 @@ def _missing(request, obs):
         if request.relation != "DELIVER" and mode != "SAME_PC":
             expected = obs.fields.get("portable_expected_sha", "")
             if (obs.checks.get("portable", ("UNKNOWN",))[0] != "PASS"
-                    or not SHA.fullmatch(expected) or obs.fields.get("portable_readback") != expected):
+                    or obs.subjects.get("portable") != gate_subject(request, obs, "portable")
+                    or not SHA.fullmatch(expected) or obs.fields.get("portable_readback") != expected
+                    or obs.references.get(obs.fields.get("portable_ref")) != expected):
                 missing.add("portable")
             if mode == "WIP_RESTORE" and (obs.fields.get("portable_commit") != expected
                     or obs.fields.get("portable_receipts") != "restore_verified"
                     or obs.fields.get("portable_unverified") != "true"
                     or not HASH.fullmatch(obs.fields.get("manifest_sha256", ""))
+                    or obs.fields.get("manifest") != obs.fields.get("manifest_sha256")
                     or obs.fields.get("restored_task") not in obs.references):
                 missing.add("portable")
     return tuple(sorted(missing))
@@ -247,6 +300,14 @@ def _missing(request, obs):
 
 def _automatic(request, obs, groups, stamp):
     values = dict(obs.fields)
+    if request.kind == "REVIEW":
+        _require("candidate_sha" in values and "comparison_ref" in values, "fixed_review_required")
+    if request.kind == "REPORT":
+        if request.report_stage == "checkpoint":
+            _require("candidate_sha" not in values, "candidate_already_fixed")
+            values["candidate_sha"] = "CHECKPOINT (no fixed candidate)"
+        else:
+            _require("candidate_sha" in values, "fixed_report_required")
     for key in ("candidate_sha", "comparison_ref"):
         values.setdefault(key, "UNKNOWN (no fixed revision)")
     for key in ("contract_refs", "git_refs"):
@@ -259,6 +320,9 @@ def _automatic(request, obs, groups, stamp):
                   sender_role=request.sender, receiver_role=request.receiver, created_at=stamp,
                   observed_at=obs.observed_at, contract_base=obs.fields["base"],
                   scope_id=obs.scope, event_id=obs.event, event_sequence=str(obs.sequence))
+    values.update(assignment_authority_acs=values["authority"] + " / " + values["acs"],
+                  assigned_files=values["write_scope"], protected_files=values["protected_scope"],
+                  first_unfinished=values["next_action"])
     for key in RESULTS:
         values[key] = groups.get(key, "UNKNOWN (no observation)")
     checks = [f"{key} {groups[key]}" for key in RESULTS[:3] if key in groups]
@@ -301,7 +365,7 @@ def prepare(request, observation, changes, *, created_at, bases=None, previous=N
         _integrity(previous.markdown, previous.receipt)
         _require(previous.receipt.task == observation.task and previous.receipt.scope == observation.scope
                  and digest(previous.reusable) == previous.receipt.reuse_hash, "invalid_reuse")
-        prior = {key: (value, basis) for key, value, basis in previous.reusable}
+        prior = {key: (value, basis, revision) for key, value, basis, revision in previous.reusable}
     reusable = []
     for key in sorted(writable):
         basis = bases.get(key)
@@ -310,16 +374,20 @@ def prepare(request, observation, changes, *, created_at, bases=None, previous=N
                      and all(isinstance(part, str) for part in basis)
                      and SHA.fullmatch(basis[1]) and all(HASH.fullmatch(part) for part in basis[2:]),
                      "invalid_basis")
+            _require(observation.bases.get(key) == basis and basis[0] in observation.references,
+                     "unconfirmed_basis")
         if key in changes:
             values[key] = _text(changes[key])
         else:
-            _require(basis and key in prior and prior[key][1] == basis, "missing_current_input")
+            _require(basis and key in prior and prior[key][1:] == (basis, observation.references[basis[0]]),
+                     "missing_current_input")
             values[key] = prior[key][0]
         if basis:
-            reusable.append((key, values[key], basis))
+            reusable.append((key, values[key], basis, observation.references[basis[0]]))
     if request.kind == "REVIEW":
         _require(values["review_mode"] in {"FULL", "FOCUSED", "RECHECK", "INTEGRATION"}, "review_mode")
     markdown = FIELD.sub(lambda field: _escape(values[field.group(1)]), layout)
+    markdown += f"\n<!-- handoff-flow/1 {observation.observed_at} {stamp} {_binding(observation)} -->\n"
     data = markdown.encode("utf-8")
     _require(len(data) <= 128_000 and "{{" not in markdown and "}}" not in markdown, "invalid_card")
     scan_content(data, "card.md")
@@ -357,21 +425,45 @@ def receive(markdown, trusted_receipt, observe, *, clock=lambda: datetime.now(ti
     return "accepted"
 
 
+def saved_path(directory, receipt):
+    slot = digest([receipt.task, receipt.scope, receipt.sequence, receipt.request.kind, receipt.request.receiver])
+    return Path(directory).absolute() / (slot + ".md")
+
+
+def _check_directory(directory):
+    for part in (directory, *directory.parents):
+        info = part.lstat()
+        _require(stat.S_ISDIR(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400,
+                 "unsafe_directory")
+
+
+def read_saved(directory, trusted_receipt):
+    """Read only the final immutable slot named by this separately trusted receipt."""
+    target = saved_path(directory, trusted_receipt)
+    _check_directory(target.parent)
+    info = target.lstat()
+    _require(stat.S_ISREG(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400
+             and info.st_size <= 128_000, "invalid_card")
+    data = target.read_bytes()
+    _integrity(data, trusted_receipt)
+    return data
+
+
 def save(directory, prepared, current):
     """Create an immutable checkpoint inside an existing, trusted local directory."""
     _integrity(prepared.markdown, prepared.receipt)
     _current(current, prepared.receipt)
     root = Path(directory).absolute()
-    request = prepared.receipt.request
-    slot = digest([current.task, current.scope, current.sequence, request.kind, request.receiver])
-    target = root / (slot + ".md")
+    target = saved_path(root, prepared.receipt)
     temp = None
     try:
-        for part in (root, *root.parents):
-            info = part.lstat()
-            _require(stat.S_ISDIR(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400,
-                     "unsafe_directory")
-        with tempfile.NamedTemporaryFile(dir=root, delete=False) as stream:
+        _check_directory(root)
+        staging = root / ".pending"
+        staging.mkdir(mode=0o700, exist_ok=True)
+        info = staging.lstat()
+        _require(stat.S_ISDIR(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400,
+                 "unsafe_directory")
+        with tempfile.NamedTemporaryFile(dir=staging, suffix=".part", delete=False) as stream:
             temp = Path(stream.name)
             stream.write(prepared.markdown)
         try:

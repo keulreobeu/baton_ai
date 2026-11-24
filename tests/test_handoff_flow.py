@@ -141,7 +141,7 @@ class LocalHandoffTests(unittest.TestCase):
             task="TASK-EXAMPLE", scope="writer-one", event="EVENT-1", sequence=1,
             observed_at="2026-11-24T21:00:00+09:00", fence=("row-1", "row-1"),
             fields={"repository": "example", "base": self.base, "head": self.candidate,
-                    "current_state": "RUNNING", "checkpoint": "local draft",
+                    "current_state": "RUNNING", "checkpoint": "local draft", "acs": "AC-01",
                     "authority": "allocation/rev1", "contract_refs": "SPEC/r1",
                     "git_refs": "example/topic", "candidate_sha": self.candidate,
                     "comparison_ref": self.base,
@@ -161,18 +161,23 @@ class LocalHandoffTests(unittest.TestCase):
                     "wip": ("PASS", "manifest/" + "5" * 64), "settlement": ("PASS", "attempt/1"),
                     "takeover": ("PASS", "coordinator/2"), "portable": ("PASS", "restore/1"),
                     "task_open": ("PASS", "task/1")},
-            references={ref: "revision-1" for ref in (
-                "SPEC/r1", "example/topic", "allocation/rev1", "lease-view/1",
+            references={ref: self.candidate if ref == "example/topic" else "revision-1" for ref in (
+                "SPEC/r1", "example/topic", "allocation/rev1", "lease-view/1", self.basis[0],
                 "manifest/" + "5" * 64, "attempt/1", "coordinator/2", "restore/1", "review/1", "task/1")},
-            evidence=(flow.Evidence("independent_review", "PASS", "review/1",
+            bases={"intent": self.basis}, evidence=(flow.Evidence("independent_review", "PASS", "review/1",
                                     self.base, self.candidate, "fixed candidate review"),
                       flow.Evidence("product_checks", "NOT_RUN", "task/1",
                                     self.base, self.candidate, "V3 not run")))
-        return replace(observation, **overrides)
+        observation = replace(observation, **overrides)
+        return self.bound(observation, flow.Request("RESUME", "CONTINUE", "writer", "receiver"))
+
+    def bound(self, obs, request):
+        return replace(obs, subjects={key: flow.gate_subject(request, obs, key) for key in obs.checks})
 
     def card(self, kind="RESUME", relation="CONTINUE", observation=None, modules=(), **kwargs):
         observation = observation or self.observation()
-        request = flow.Request(kind, relation, "writer", "receiver", modules)
+        request = flow.Request(kind, relation, "writer", "receiver", modules,
+                               kwargs.pop("report_stage", "candidate"))
         # Fill the template's semantic inputs. Observations and receipt fields
         # must come from the independently supplied snapshot.
         values = dict.fromkeys(flow.semantic_fields(request, observation), "case detail")
@@ -200,17 +205,29 @@ class LocalHandoffTests(unittest.TestCase):
                                                        None, None, "awaiting candidate"),))
         fields = dict(obs.fields)
         del fields["candidate_sha"]
-        self.assertIn(b"UNKNOWN", self.card("REPORT", observation=replace(obs, fields=fields)).markdown)
+        unfixed = replace(obs, fields=fields)
+        for kind in ("REPORT", "REVIEW"):
+            with self.assertRaisesRegex(HarnessError, "fixed_"):
+                self.card(kind, observation=unfixed)
+        self.assertIn(b"CHECKPOINT", self.card("REPORT", "DELIVER", unfixed, report_stage="checkpoint").markdown)
 
     def test_local_rejects_unsafe_or_incomplete_inputs(self):
         for value in ("{{unknown}}", "synthetic" + "@example.invalid", "x/.local_runtime/state.db",
-                      "API_" + "KEY=synthetic-only", "hidden\u202evalue"):
+                      "API_" + "KEY=synthetic-only", "hidden\u202evalue", 'See ".env" here.', "Avoid .env.",
+                      "Avoid .env-prod.", "Do not transfer auth.json."):
             with self.subTest(value_type=type(value)), self.assertRaises(HarnessError):
                 self.card(changes={"intent": value})
         with self.assertRaises(HarnessError):
             self.card(changes={"head": self.base})
+        for kind, key in (("START", "assigned_files"), ("START", "assignment_authority_acs"),
+                          ("RESUME", "first_unfinished")):
+            with self.assertRaisesRegex(HarnessError, "invalid_changes"):
+                self.card(kind, changes={key: "new scope"})
         with self.assertRaises(HarnessError):
             self.card(observation=self.observation(fence=("row-1", "row-2")))
+        with self.assertRaisesRegex(HarnessError, "git_reference_mismatch"):
+            refs = dict(self.observation().references, **{"example/topic": self.base})
+            self.card(observation=self.observation(references=refs))
         with self.assertRaises(HarnessError):
             self.card("BAD")
         escaped = self.card(changes={"intent": "|bar|\n## Evidence\n<img src=x>"})
@@ -235,6 +252,11 @@ class LocalHandoffTests(unittest.TestCase):
                            created_at=obs.observed_at, previous=previous)
         self.assertNotIn(b"keep this decision", new.markdown)
         self.assertFalse(new.reusable)
+        for changed in (replace(obs, bases={}), replace(obs, references={k: v for k, v in obs.references.items()
+                        if k != self.basis[0]}), replace(obs, references=dict(obs.references, **{self.basis[0]: "r2"}))):
+            with self.assertRaises(HarnessError):
+                flow.prepare(request, changed, fields, created_at=obs.observed_at, bases={"intent": self.basis},
+                             previous=previous)
 
     def test_receiver_rechecks_current_facts_and_preserves_reporting(self):
         obs = self.observation()
@@ -244,6 +266,10 @@ class LocalHandoffTests(unittest.TestCase):
                                 clock=lambda: datetime.fromisoformat(obs.observed_at))
         outcome = receive(card, lambda: obs)
         self.assertEqual(outcome, "accepted")
+        for key, value in (("next_action", "unapproved action"), ("authority", "different grant")):
+            different = replace(obs, fields=dict(obs.fields, **{key: value}))
+            with self.assertRaisesRegex(HarnessError, "required_fact_unconfirmed"):
+                receive(self.card(observation=different), lambda: different)
         with self.assertRaisesRegex(HarnessError, "readback_not_current"):
             flow.receive(card.markdown, card.receipt, lambda: obs,
                          clock=lambda: datetime.fromisoformat("2026-11-25T21:00:00+09:00"))
@@ -263,19 +289,22 @@ class LocalHandoffTests(unittest.TestCase):
         ):
             unknown = replace(obs, checks=dict(obs.checks, **{gate: ("UNKNOWN", "await read-back")}))
             prepared = self.card(kind, relation, unknown, modules=modules)
-            self.assertIn(("unconfirmed: " + gate).encode(), prepared.markdown)
+            self.assertIn(gate, prepared.receipt.unchecked)
             with self.assertRaises(HarnessError):
                 receive(prepared, lambda: unknown)
         closed = replace(obs, fields=dict(obs.fields, current_state="COMPLETED"))
+        closed = self.bound(closed, flow.Request("REPORT", "DELIVER", "writer", "receiver"))
         report = self.card("REPORT", "DELIVER", closed)
         self.assertEqual(receive(report, lambda: closed), "accepted")
-        moved = replace(obs, fields=dict(obs.fields, portable_expected_sha="8" * 40,
+        moved = replace(obs, references={**obs.references, "approved mirror / checkpoint": "8" * 40},
+                        fields=dict(obs.fields, manifest="5" * 64, portable_expected_sha="8" * 40,
                         portable_ref="approved mirror / checkpoint", portable_readback="8" * 40,
                         portable_commit="8" * 40, portable_receipts="restore_verified", restored_task="task/1"))
+        moved = self.bound(moved, flow.Request("RESUME", "CONTINUE", "writer", "receiver", ("PORTABLE",)))
         ready = self.card(observation=moved, modules=("PORTABLE",))
         self.assertEqual(receive(ready, lambda: moved), "accepted")
         for field, value in (("portable_readback", self.base), ("portable_receipts", "local_saved"),
-                             ("manifest_sha256", "UNKNOWN"), ("restored_task", "UNKNOWN")):
+                             ("manifest_sha256", "UNKNOWN"), ("manifest", "local-only"), ("restored_task", "UNKNOWN")):
             invalid = replace(moved, fields=dict(moved.fields, **{field: value}))
             blocked = self.card(observation=invalid, modules=("PORTABLE",))
             with self.assertRaisesRegex(HarnessError, "required_fact_unconfirmed"):
@@ -302,4 +331,9 @@ class LocalHandoffTests(unittest.TestCase):
             third = replace(obs, event="EVENT-3", sequence=3)
             with patch("baton.handoff_flow.os.link", side_effect=OSError), self.assertRaises(HarnessError):
                 flow.save(root, self.card(observation=third), third)
-            self.assertCountEqual(root.iterdir(), [paths[0], next_path])
+            self.assertCountEqual(root.glob("*.md"), [paths[0], next_path])
+            (root / ".pending" / "interrupted.part").write_bytes(b"partial")
+            self.assertEqual(flow.read_saved(root, first.receipt), first.markdown)
+            with patch.object(Path, "unlink", side_effect=OSError), self.assertRaisesRegex(HarnessError, "cleanup"):
+                flow.save(root, first, obs)
+            self.assertEqual(flow.read_saved(root, first.receipt), first.markdown)

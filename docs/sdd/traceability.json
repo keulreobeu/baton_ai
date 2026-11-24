@@ -55,10 +55,52 @@
     "docs/tasks/TASK-META-INVENTORY-001.md",
     "docs/tasks/TASK-HANDOFF-FLOW-001.md",
     "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
+    "docs/specs/HANDOFF-FLOW-ENTRY-001.md",
     "docs/plans/handoff-flow-v5.md",
     "docs/adr/ADR-HANDOFF-FLOW-001.md"
   ],
   "features": [
+    {
+      "id": "HANDOFF-FLOW-ENTRY-001",
+      "spec": "docs/specs/HANDOFF-FLOW-ENTRY-001.md",
+      "requirements": [
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-REQ-01",
+          "acs": ["HANDOFF-FLOW-ENTRY-001-AC-01", "HANDOFF-FLOW-ENTRY-001-AC-02"]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-REQ-02",
+          "acs": ["HANDOFF-FLOW-ENTRY-001-AC-03", "HANDOFF-FLOW-ENTRY-001-AC-04"]
+        }
+      ],
+      "acs": [
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-01",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_manual_prepare_reads_task_and_preserves_authority"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-02",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_unknown_schema_and_missing_database_fail_without_creating_state"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_installed_data_scheme_has_all_templates"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-03",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_accepted_settlement_and_manual_event_replay_share_one_card"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-04",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_projection_failure_preserves_settlement_and_exit"}
+          ]
+        }
+      ]
+    },
     {
       "id": "HANDOFF-FLOW-LOCAL-001",
       "spec": "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
