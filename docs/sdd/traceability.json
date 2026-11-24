@@ -4,6 +4,7 @@
   "documents": [
     "docs/specs/SDD-001.md",
     "docs/tasks/TASK-SDD-001.md",
+    "docs/tasks/TASK-META-ASSESS-001.md",
     "docs/plans/sdd-adoption.md",
     "docs/adr/ADR-001-policy-ownership.md",
     "docs/specs/QW-STATUS-001.md",
