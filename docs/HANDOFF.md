@@ -8,10 +8,10 @@ task/status: TASK-META-MAP-001 in_progress. Phase 2 계약 매핑과 로컬 검�
 goal/order: BATON이 승인·Task·완료, Orca가 실행·관측을 담당. 기존 계약을 보존하며 통합 자동화를 구현한다.
 done: 프로젝트 override 3개, Spec Kit 보기 생성·재검사. 50개 문서·11개 feature·17개 Task·73개 AC 대조.
 checks: 후보 3e405cb 공식 V3 786개 PASS·스킵 0, SDD 39개 PASS. Fable 재검토 PASS, P1~P3·관계 누락 CLOSED.
-next: 원격 CI를 실행할 게시 대상과 범위 결정. 승인 시 미게시 커밋 전수 점검부터 진행.
+next: 기존 SDD 이관 대조 완료. git-r1 d19900f의 draft rev2 별도 대조. 게시·CI 대상 결정 및 Phase 5b 선행 gate 확인.
 scope: META-MAP-001 로컬 매핑. 상위 META-001·Plan draft, ADR proposed. G2 fast-forward·ADAPT 수정 보류.
 pending: 원격 CI·통합, 실환경 Spec Kit CLI·E2E. 기존 Task 소유권 불명 시 원장과 Worker 대조 전 동결.
-inputs: docs/tasks/TASK-META-MAP-001.md → docs/specs/META-MAP-001.md → docs/plans/meta-transition.md
+inputs: docs/tasks/TASK-META-INVENTORY-001.md → docs/tasks/TASK-META-MAP-001.md → docs/plans/meta-transition.md
 usage: 이번 세션 Fable 검토 4회, CLI 보고 US$6.0134244 / US$95. 잔여 US$88.9865756, 세션 한정.
 rules: AGENTS.md 적용. 설계 후보 84e5fee의 Fable PASS는 구현 검토와 구분한다.
 ```

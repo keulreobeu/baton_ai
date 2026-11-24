@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 기존 SDD 이관 대조
+
+[TASK-META-INVENTORY-001](TASK-META-INVENTORY-001.md)에서 등록 외 문서와 분기별 차이를 확인한다. git-r1 계약은 d19900f에서 다시 대조했으며 별도 draft 보기로 보존한다.
+
 ## Spec Kit 오프라인 계약 매핑
 
 [TASK-META-MAP-001](TASK-META-MAP-001.md) in_progress. Phase 2 계약 매핑과 로컬 검증 착수 승인.
