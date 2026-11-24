@@ -417,6 +417,17 @@ class SddTests(unittest.TestCase):
             tasks = (folder / "tasks.md").read_text(encoding="utf-8")
             self.assertIn("TASK-F-001", tasks)
             self.assertIn(feature_id + "-AC-01", tasks)
+        render = spec_kit_map.feature_views
+
+        def omit_plan(*args):
+            for name, content in render(*args):
+                if name.endswith("/plan.md"):
+                    content = b"\n".join(line for line in content.split(b"\n") if b"PLAN-FG-001" not in line)
+                yield name, content
+
+        with patch.object(spec_kit_map, "feature_views", side_effect=omit_plan):
+            with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+                spec_kit_map.create(self.root, view.with_name("missing-shared-plan"))
         (view / plan).unlink()
         with self.assertRaisesRegex(sdd.SddError, "MISSING_FILE"):
             spec_kit_map.verify(self.root, view)
@@ -473,3 +484,51 @@ class SddTests(unittest.TestCase):
                         sdd.validate(self.root, changed=[], contract_root=contracts if contracts == view else None)
                 else:
                     self.assertEqual(sdd.validate(self.root, changed=[], contract_root=contracts if contracts == view else None)["status"], "PASS")
+
+    def test_projected_spec_cannot_hide_invalid_source_headings(self):
+        _, view = self.map_fixture()
+        for base, shadow in ((self.root, None), (view, view)):
+            source = base / self.spec
+            original = source.read_text(encoding="utf-8")
+            for edit, code in [
+                (original.replace("## F-001-AC-01", ""), "MISSING_AC_HEADING"),
+                (original + "\n## F-001-REQ-99\n", "UNREGISTERED_REQUIREMENT_OR_AC"),
+                (original + "\n## F-001-AC-01\n", "DUPLICATE_HEADING"),
+            ]:
+                with self.subTest(shadow=shadow, code=code):
+                    source.write_text(edit, encoding="utf-8")
+                    with self.assertRaisesRegex(sdd.SddError, "^" + code + "$"):
+                        sdd.validate(self.root, changed=[], contract_root=shadow)
+            source.write_text(original, encoding="utf-8")
+
+    def test_projection_reads_back_rendered_relationships(self):
+        mapping, view = self.map_fixture()
+        render = mapping.feature_views
+        for filename, term in [("spec.md", b"T.test_ok"), ("tasks.md", b"in_progress")]:
+            with self.subTest(filename=filename):
+                def omit(*args):
+                    for name, content in render(*args):
+                        if name.endswith("/" + filename):
+                            content = b"\n".join(line for line in content.split(b"\n") if term not in line)
+                        yield name, content
+                with patch.object(mapping, "feature_views", side_effect=omit):
+                    with self.assertRaisesRegex(sdd.SddError, "SPEC_KIT_DRIFT"):
+                        mapping.create(self.root, view.with_name("broken-" + filename))
+
+    def test_projection_receipt_identifies_worktree_content(self):
+        mapping, before = self.map_fixture()
+        first = json.loads((before / mapping.RECEIPT).read_bytes())
+        self.write("docs/evidence.md", "new uncommitted evidence")
+        after = before.with_name("new-content")
+        mapping.create(self.root, after)
+        second = json.loads((after / mapping.RECEIPT).read_bytes())
+        self.assertEqual(first["checkout_head"], second["checkout_head"])
+        self.assertNotEqual(first.get("content_sha256"), second.get("content_sha256"))
+        self.assertTrue(second["git_status_dirty"])
+        self.assertEqual(second["content_basis"], "working_tree")
+
+    def test_projection_uses_legacy_review_evidence_condition(self):
+        mapping, before = self.map_fixture()
+        self.set_task(extra='independent_review = {result="pending", evidence="docs/future.md"}\n')
+        self.assertEqual(self.check()["status"], "PASS")
+        self.assertEqual(mapping.create(self.root, before.with_name("pending-review"))["status"], "PASS")

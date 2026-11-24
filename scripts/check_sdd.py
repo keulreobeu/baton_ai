@@ -258,9 +258,6 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False,
         require(feature["spec"] in documents, "MISSING_SPEC")
         spec, text = documents[feature["spec"]]
         require(spec["kind"] == "spec" and spec["id"] == feature["id"], "SPEC_ID_MISMATCH")
-        if contract_root is not None:
-            rendered, text = document(contracts, f"specs/{spec['id']}/spec.md")
-            require(rendered == spec, "SPEC_KIT_DRIFT")
         headings = requirement_headings(text)
         require(isinstance(feature["acs"], list) and 1 <= len(feature["acs"]) <= 100, "INVALID_ACS")
         local = set()
@@ -340,6 +337,12 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False,
     else:
         for item in changed:
             require(bool(eligible_tasks(item, tasks, changed)), "CHANGE_WITHOUT_UPDATED_TASK")
+    if contract_root is not None:
+        for feature in features:
+            spec, original = documents[feature["spec"]]
+            rendered, view = document(contracts, f"specs/{spec['id']}/spec.md")
+            require(rendered == spec and requirement_headings(view) == requirement_headings(original),
+                    "SPEC_KIT_DRIFT")
     return {"status": "PASS", "documents": len(documents), "features": len(features), "acs": len(all_acs),
             "tasks": len(tasks), "changed_paths": len(changed), "basis": basis,
             "provider_calls": 0, "meaning": "static_contract_check_only"}

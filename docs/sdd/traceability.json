@@ -1840,6 +1840,22 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_spec_kit_override_requires_task_rows"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projected_spec_cannot_hide_invalid_source_headings"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projection_reads_back_rendered_relationships"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projection_receipt_identifies_worktree_content"
+            },
+            {
+              "file": "tests/test_sdd.py",
+              "symbol": "SddTests.test_projection_uses_legacy_review_evidence_condition"
             }
           ]
         }
