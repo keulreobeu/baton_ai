@@ -69,3 +69,5 @@ Phase 5b fixture 착수 전에 남은 비차단 문구는 N1(구 형식 읽기 �
 [오프라인 재현](test_cutover_rehearsal.py)은 임시 Git 저장소·실제 ManagedStore/dispatch/ingest·FakeOrca를 사용한다. 소유자가 확인된 활성 lease에서 같은 Task를 다시 dispatch해도 기존 lease가 유지되고 실제 fake start가 1회였다. 원래 worktree에 변경을 쓴 뒤 같은 attempt가 REVIEW_REQUIRED로 정산되며 lease가 해제됐다. 정산 결과의 사본을 원 branch에 커밋하자 이전 tip에는 없던 증거를 최신 tip에서 동일하게 읽었다. 테스트 자체가 연구용 증거 사본을 기록한다. 새 전환기의 동결·변환·쓰기 잠금이나 실제 운영 기록의 자동 반영을 검증한 결과로 사용하지 않는다.
 
 재현 명령은 checkout의 src를 PYTHONPATH로 지정한 뒤 `python -B -X utf8 -m unittest discover -s docs/research/meta-architecture-20261124 -p test_cutover_rehearsal.py -v`다. 1개 OK. REQ/AC ID 13개 보존, Phase 6 양쪽 수락 조건, snapshot 8개·객체 109개·투영 43개·ref 18개의 원문 일치를 별도로 확인했다.
+
+66c54ed에서 Fable은 N1~N3 CLOSED, 설계 문면 PASS 및 fixture와 결과 기록 일치를 확인했다. 추가로 지적한 비차단 해석 차이에 대해 소유자 확인 조건을 Spec·Plan·ADR에서 맞추고, 증거 수집 기준을 동결 시점으로 통일했으며, 나머지 5b 진입 검사도 같은 Phase 6 필수 검사라고 명시했다. 재현의 원 branch와 증거 커밋은 테스트가 생성한다. 이 테스트의 PASS는 5b 운영 진입 증거로 인정하지 않는다. 회차 비용 US$0.579622, 세션 누적 US$6.058504. [Fable 판정](fable-review-3.md)

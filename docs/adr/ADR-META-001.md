@@ -46,7 +46,7 @@ Spec Kit는 문서와 단계 정의를 제공한다. Spec Kit 원본 workflow에
 
 ## 전환과 복구
 
-5a에서는 구 계약만 운영 권위를 갖고 새 형식은 읽기 전용 투영이다. 5b는 필수 검증과 E2E가 통과한 뒤 한 commit에서 포인터·checker·CI 입력 경로를 함께 바꾼다. 5b 직전 각 Task의 claim과 같은 소유권 잠금 아래 lease·attempt·branch tip·WIP·승인 revision을 재대조한다. 활성 lease(소유자가 확인된 경우 포함), 체크포인트 밖 WIP, 적용 revision 충돌, owner_unknown 중 하나라도 있으면 사유·ID·원 branch·관측 blob과 attempt를 동결 목록에 기록한다. tip이나 상태가 달라지면 변환을 중단한다. 동결은 새 배정과 전환 대상 쓰기를 막는다. 기존 attempt는 원래 계약·소유 worktree·원장 경로에서 정산하며 새 dispatcher로 옮기지 않는다. 새 checker는 동결된 blob을 읽기 전용으로 본다. 정산 뒤 결과를 포함한 최신 tip, WIP 보존, 유효 revision을 확인할 때까지 변환하지 않는다. 재개 시 원래 branch의 최신 tip을 다시 고정하고 새 증거를 포함해 변환·왕복 비교한 후에만 동결을 해제한다. 미게시 branch에 대해 main snapshot만 보고 덮어쓰지 않는다.
+5a에서는 구 계약만 운영 권위를 갖고 새 형식은 읽기 전용 투영이다. 5b는 필수 검증과 E2E가 통과한 뒤 한 commit에서 포인터·checker·CI 입력 경로를 함께 바꾼다. 5b 직전 각 Task의 claim과 같은 소유권 잠금 아래 lease·attempt·branch tip·WIP·승인 revision을 재대조한다. 활성 lease(소유자가 확인된 경우 포함), 체크포인트 밖 WIP, 적용 revision 충돌, owner_unknown 중 하나라도 있으면 사유·ID·원 branch·관측 blob과 attempt를 동결 목록에 기록한다. tip이나 상태가 달라지면 변환을 중단한다. 동결은 새 배정과 전환 대상 쓰기를 막는다. 현 원장과 Worker 관측이 일치한 기존 attempt만 원래 계약·소유 worktree·원장 경로에서 정산하며 새 dispatcher로 옮기지 않는다. 새 checker는 동결된 blob을 읽기 전용으로 본다. 정산 뒤 결과를 포함한 최신 tip, WIP 보존, 유효 revision을 확인할 때까지 변환하지 않는다. 재개 시 원래 branch의 최신 tip을 다시 고정하고 새 증거를 포함해 변환·왕복 비교한 후에만 동결을 해제한다. 미게시 branch에 대해 main snapshot만 보고 덮어쓰지 않는다.
 
 역사적 증거의 결속 키는 (Task/Spec ID, revision, 승인 원문 참조·digest, 원본 blob SHA)와 원래 base/candidate/검증 입력이다. 서식만 바뀌고 원문 복원 및 의미 대조가 통과하면 이 결속을 보존한다. 의미·검증 입력이 바뀌면 새 revision/승인 또는 재검증을 요구한다. 보존한 과거 PASS의 적용 대상은 원래 후보다.
 
