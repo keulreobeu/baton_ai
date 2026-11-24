@@ -52,7 +52,8 @@
     "docs/plans/meta-contract-map.md",
     "docs/adr/ADR-META-MAP-001.md",
     "docs/tasks/TASK-META-MAP-001.md",
-    "docs/tasks/TASK-META-INVENTORY-001.md"
+    "docs/tasks/TASK-META-INVENTORY-001.md",
+    "docs/tasks/TASK-HANDOFF-FLOW-001.md"
   ],
   "features": [
     {
