@@ -15,7 +15,7 @@ Spec Kit는 문서와 단계 정의를 제공한다. Spec Kit 원본 workflow에
 |대상|쓰기 주체|관측·판정|
 |---|---|---|
 |목표·결정|사용자 원문, Q2-B 범위의 Coordinator 결정 기록|헌법과 Task별 출처. Memory는 비신뢰 입력|
-|실행 승인표|사용자 인증이 에이전트와 분리된 승인 채널만 작성·철회. 검증 가능한 채널이 없는 환경은 비활성|원문을 보호된 승인 저장소에서 참조하고 digest·시각·대상·tuple·한도·만료를 대조한다. Task 입력/사용자명 문자열로 생성할 수 없다. Coordinator와 Worker는 읽기 전용|
+|실행 승인표|사용자 인증이 에이전트와 분리된 승인 채널만 작성·철회. 검증 가능한 채널이 없으면 새 정책의 실모델 dispatch·자동 전환은 비활성|원문을 보호된 승인 저장소에서 참조하고 digest·시각·대상·tuple·한도·만료를 대조한다. Task 입력/사용자명 문자열로 생성할 수 없다. Coordinator와 Worker는 읽기 전용|
 |의존성·scope·lease·예산 예약|BATON managed store와 기존 transaction|다음 Task 선택 시 충족된 선행과 현 소유권 재검사|
 |실행/세션|Orca worker-start, worker-show 또는 허용된 로컬 CLI|BATON이 run/task/dispatch/attempt/worktree 식별자로 receipt 매칭|
 |자체 검토·독립 검토|각각 작성 Worker, 별도 Reviewer|Coordinator는 근거·불확실성·해결 경로를 해석. 코드는 객관적 gate를 강제|
@@ -46,7 +46,7 @@ Spec Kit는 문서와 단계 정의를 제공한다. Spec Kit 원본 workflow에
 
 ## 전환과 복구
 
-5a에서는 구 계약만 운영 권위를 갖고 새 형식은 읽기 전용 투영이다. 5b는 필수 검증과 E2E가 통과한 뒤 한 commit에서 포인터·checker·CI 입력 경로를 함께 바꾼다. 미전환 Task는 ID·branch·고정 blob을 등록해 구 형식 동결로 둔다. checker는 동결 목록의 기존 blob만 읽고 변경 쓰기를 거부한다. 재개 시 원래 branch의 최신 tip을 다시 고정하고 새 증거를 포함해 변환·왕복 비교한 후에만 동결을 해제한다. 미게시 branch에 대해 main snapshot만 보고 덮어쓰지 않는다.
+5a에서는 구 계약만 운영 권위를 갖고 새 형식은 읽기 전용 투영이다. 5b는 필수 검증과 E2E가 통과한 뒤 한 commit에서 포인터·checker·CI 입력 경로를 함께 바꾼다. 5b 직전 각 Task의 claim과 같은 소유권 잠금 아래 lease·attempt·branch tip·WIP·승인 revision을 재대조한다. 활성 lease(소유자가 확인된 경우 포함), 체크포인트 밖 WIP, 적용 revision 충돌, owner_unknown 중 하나라도 있으면 사유·ID·원 branch·관측 blob과 attempt를 동결 목록에 기록한다. tip이나 상태가 달라지면 변환을 중단한다. 동결은 새 배정과 전환 대상 쓰기를 막는다. 기존 attempt는 원래 계약·소유 worktree·원장 경로에서 정산하며 새 dispatcher로 옮기지 않는다. 새 checker는 동결된 blob을 읽기 전용으로 본다. 정산 뒤 결과를 포함한 최신 tip, WIP 보존, 유효 revision을 확인할 때까지 변환하지 않는다. 재개 시 원래 branch의 최신 tip을 다시 고정하고 새 증거를 포함해 변환·왕복 비교한 후에만 동결을 해제한다. 미게시 branch에 대해 main snapshot만 보고 덮어쓰지 않는다.
 
 역사적 증거의 결속 키는 (Task/Spec ID, revision, 승인 원문 참조·digest, 원본 blob SHA)와 원래 base/candidate/검증 입력이다. 서식만 바뀌고 원문 복원 및 의미 대조가 통과하면 이 결속을 보존한다. 의미·검증 입력이 바뀌면 새 revision/승인 또는 재검증을 요구한다. 보존한 과거 PASS의 적용 대상은 원래 후보다.
 
