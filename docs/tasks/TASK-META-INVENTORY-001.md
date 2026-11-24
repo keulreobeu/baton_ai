@@ -62,3 +62,26 @@ expected_failures = 0
 - 이 대조는 Phase 5a의 오프라인 자료다. 실제 소유권 해소·rollback 및 Phase 3·4·5a·6의 수락 근거, 독립 검토·필수 V3/CI·게시/통합 승인은 Phase 5b 진입 때 각각 확인한다. 그때 branch tip·blob·lease를 다시 읽고 마지막 snapshot 이후의 변경을 반영한다. 운영 포인터 전환은 대기다.
 
 조사 기록 등록 후 현재 레지스트리는 51개 문서·18개 Task다. SDD 회귀 39개 PASS, base 54a7dc0 기준 정적 검사 PASS. 이 checkout에서 이전에 실행된 786개 V3는 구현 후보 3e405cb의 증거다.
+
+## main 병합 전 게시 점검
+
+사용자가 현재 브랜치를 main 병합 직전까지 진행하도록 승인했다. 대상은 origin의 codex/meta-architecture-assessment-20261124 → main PR이다. origin/main 기준 8e4462085237df5e0ab951283dfb3b482ecf24b7이며 게시 전 대상 branch는 없었다. 실제 원격 refs 52개와 대조한 미게시 이력은 아래와 같다. 각 커밋의 변경 경로, 추가 내용과 파일 유형을 검사했다. 변경은 등록된 조사·매핑·대조 Task scope에 포함되며 키·토큰·계정 이메일·원장·raw/runtime 파일 감지 0건이다.
+
+|커밋|변경 경로 수|작업|
+|---|---:|---|
+|d51ddc1|13|docs: assess adaptive automation against pinned BATON contracts|
+|b930dc9|8|docs: address six independent design findings and retain review verdict|
+|ef1eac3|7|docs: preserve active task ownership during methodology cutover|
+|5b50b38|3|docs: record Fable design re-review pass and session spend|
+|66c54ed|5|docs: clarify cutover gates and rehearse late worker evidence|
+|84e5fee|6|docs: bind legacy settlement to observed ownership|
+|4c76e8f|3|docs: record final cutover clarification review and checks|
+|99d2d8f|2|docs: hand off the reviewed automation design|
+|e82c490|13|feat: project BATON contracts into an offline Spec Kit view|
+|0fac4b6|2|docs: record offline contract mapping candidate verification|
+|1c6abcd|2|docs: record inconclusive API review of mapping candidate|
+|3e405cb|6|fix: validate projected contracts against their original meaning and inputs|
+|54a7dc0|2|docs: record passing Phase 2 candidate review and verification|
+|75b1574|5|docs: reconcile existing SDD files and branch-specific contract revisions|
+
+이 표를 추가하는 기록 커밋도 게시 직전 전체 이력 점검에 포함한다. 다른 로컬 branch의 단독 미게시 커밋은 codex/git-r1-design의 d19900f, 36e389d이며 이번 head의 조상이 아니다. G2·ADAPT 별도 후보는 제외한다. 3e405cb의 구현·테스트·템플릿은 게시 후보와 동일하다. 고정된 게시 후보에서 원격 main을 base로 공식 로컬 V3, 누적 변경과 독립 검토 증거의 정합성, 원격 refs와 최종 SHA를 재확인한 뒤 게시한다. main의 필수 gate와 미해결 리뷰 스레드 여부를 최종 PR에서 확인한다.
