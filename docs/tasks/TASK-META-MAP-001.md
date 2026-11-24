@@ -12,6 +12,8 @@ adr = "docs/adr/ADR-META-MAP-001.md"
 scope = ["docs/specs/META-MAP-001.md", "docs/tasks/TASK-META-MAP-001.md", "docs/plans/meta-contract-map.md", "docs/adr/ADR-META-MAP-001.md", "docs/tasks/current.md", "docs/HANDOFF.md", "docs/sdd/traceability.json", ".specify/templates/overrides", "scripts/spec_kit_map.py", "scripts/check_sdd.py", "tests/test_sdd.py"]
 acs = ["META-MAP-001-AC-01", "META-MAP-001-AC-02"]
 
+independent_review = {result = "passed", candidate_sha = "3e405cb8e91036595f54883934fb5d16a11bfd1f", evidence = "docs/tasks/TASK-META-MAP-001.md#수정-후보-독립-검토"}
+
 [[verification]]
 command = ".venv/Scripts/python.exe -X utf8 -m unittest tests.test_sdd"
 result = "passed"
@@ -30,6 +32,30 @@ candidate_sha = "e82c4902e82f82fc347908f13041484582a4b913"
 evidence = "docs/tasks/TASK-META-MAP-001.md#고정-후보-v3"
 acs = ["META-MAP-001-AC-01", "META-MAP-001-AC-02"]
 tests_run = 782
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest tests.test_sdd"
+result = "passed"
+candidate_sha = "3e405cb8e91036595f54883934fb5d16a11bfd1f"
+evidence = "docs/tasks/TASK-META-MAP-001.md#수정-후보-로컬-검증"
+acs = ["META-MAP-001-AC-01", "META-MAP-001-AC-02"]
+tests_run = 39
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base 99d2d8f"
+result = "passed"
+candidate_sha = "3e405cb8e91036595f54883934fb5d16a11bfd1f"
+evidence = "docs/tasks/TASK-META-MAP-001.md#수정-후보-로컬-검증"
+acs = ["META-MAP-001-AC-01", "META-MAP-001-AC-02"]
+tests_run = 786
 failures = 0
 errors = 0
 skipped = 0
@@ -53,7 +79,7 @@ $view = Join-Path $env:TEMP ("baton-spec-kit-" + [guid]::NewGuid())
 ## 로컬 검증
 
 - 양방향 대조 대상은 실제 레지스트리 문서 50개, feature 11개, Task 17개, AC 73개다. 생성·재검사 각각 PASS. 연결된 근거와 보기까지 파일 122개다.
-- SDD 35개 통과. 미등록 feature, 상태 상승, 승인 원문 변경, ID 충돌, AC 누락, 근거 교체, 오래된 HEAD 및 표시 행 누락을 검사했다. 공유 Plan/Task의 다중 연결, 부분 출력에서 새 경로로 재생성, 기존 경로 덮어쓰기 거부를 포함한다.
+- 최초 후보 e82c490의 SDD 35개 통과. 수정 후보 결과는 아래에 기록한다. 미등록 feature, 상태 상승, 승인 원문 변경, ID 충돌, AC 누락, 근거 교체, 오래된 HEAD 및 표시 행 누락을 검사했다. 공유 Plan/Task의 다중 연결, 부분 출력에서 새 경로로 재생성, 기존 경로 덮어쓰기 거부를 포함한다.
 - base 99d2d8f의 변경 전 SDD fixture 30개를 원 검사기와 현재 검사기에서 각각 실행해 같은 기대 판정·실패 코드가 통과했다. 별도 투영에 대해서도 PASS와 MISSING_TOML·UNVERIFIED_AC·UNKNOWN_AC를 대조했다.
 - 메인 PC에서 이 세션에 연결된 Run 없음, 로컬 모든 Run 범위에서 active Worker 0, 이 checkout의 기본 store 파일 없음. 기존 Task의 lease는 미확인으로 두고 신규 배정은 수행하지 않았다.
 - 후보 검증은 전용 .venv에서 수행한다. 오프라인 패키지 인덱스 캐시에 없는 설치 의존성은 메인 checkout의 설치본에서 이 venv에 복사했고, setup-environment.ps1 -Offline 및 pip check를 통과했다. baton import는 이 checkout의 src를 가리킨다.
@@ -85,3 +111,25 @@ $view = Join-Path $env:TEMP ("baton-spec-kit-" + [guid]::NewGuid())
 |생성기 자체의 관계 누락|생성기에서 테스트·Task 표시 행을 빼자 이전 재검사가 통과했다. 출력 Markdown의 요구/AC/테스트/Task 및 계획·ADR 행을 독립적으로 읽어 원래 관계·상태·중복 수와 대조한다. 공유 계획 행 누락도 거부한다.|
 
 이 수정의 로컬 SDD 회귀는 39개다. e82c490의 기존 V3와 FAIL 판정은 그 후보에 귀속된다. 수정 후보의 공식 V3와 독립 검토 결과는 다음 증거에 기록한다.
+
+## 수정 후보 로컬 검증
+
+base 99d2d8f82cdbb5b0dbd5cc96c2d3eea943e3461a, 후보 3e405cb8e91036595f54883934fb5d16a11bfd1f. 고정 HEAD에서 SDD 회귀 39개 PASS. 공식 V3는 576.897초에 786개를 모두 실행했고 실패·오류·스킵·expected failure 0, 재사용 비활성이었다. 실행 전후 HEAD와 clean 상태가 일치했다. base의 원래 SDD 테스트 30개도 base와 수정 검사기에서 각각 통과했다.
+
+실제 문서 50개, feature 11개, Task 17개, AC 73개를 반영한 122개 파일의 create·check PASS. 원문 바이트 전수 일치, AC→테스트 연결 358개 별도 판독. clean 체크아웃에서 receipt v2의 git_status_dirty=false를 확인했고 내용 SHA-256은 048c15ca037b83689cdc112f1583ac5b1a3a00cd0c63afc79841d6637ea0402d였다.
+
+## 수정 후보 독립 검토
+
+Fable 5.2 판정은 **PASS (로컬 오프라인 후보 3e405cb 한정)**. 검토 입력에는 base부터 후보까지의 누적 diff, 관련 원문, 이전 지적과 로컬 검증 결과가 들어갔다. 입력 SHA-256은 8ac4a4417b168597e40a691ccecf8451737d1fa98eeaeff1021e505b7e997cd8이다. 실제 보고 모델 claude-fable-5-2, 요청 effort high, CLI exit 0·1턴. 검토자는 도구 없이 코드를 읽었고 테스트 실행은 작성 측에서 수행했다.
+
+P1 원문 헤딩, P2 내용 식별, P3 증거 조건, 생성기 자체의 행 누락이 모두 CLOSED다. 재검토의 승격 전 필수 지적 N1은 현재 후보의 SDD·V3·독립 검토를 위 TOML에 기록해 처리했다. N2는 투영 경로 실패 코드 대조가 표본이라는 제한이다. N3의 Git 변경 표시는 gitignore 입력을 포함하지 않으며 내용 해시가 그 바이트를 구분한다. N4의 원문 링크는 전체 바이트 비교 범위에 있고 별도의 관계 판독은 하지 않는다. N5에 대해, 전용 ADR의 accepted는 사용자가 승인한 Phase 2 오프라인 매핑 범위 안에서 작성자가 내린 구현 결정이다. 상위 ADR과 운영 전환 승인은 별도다.
+
+|이번 세션 API 검토|CLI 보고액(US$)|
+|---|---:|
+|최초 후보, 출력 한도 초과|2.235808|
+|최초 후보, 응답 일부 수신|2.1681824|
+|최초 후보, FAIL 지적 확인|0.710652|
+|수정 후보, PASS|0.898782|
+|누적 / 세션 한도|6.0134244 / 95|
+
+CLI 보고 기준 잔여 US$88.9865756. 공급자의 최종 청구액은 미확인이다. 사용자가 승인한 로컬 작업 범위를 마쳤고 원격 CI·통합 검증 대기로 Task는 in_progress다. 실환경 Spec Kit CLI와 운영 전환은 미실행이다.
