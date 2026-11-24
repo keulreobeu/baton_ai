@@ -1,20 +1,19 @@
 <!-- BATON_RESUME_START -->
-# BATON 재개 카드 · 통합 자동화 설계 · 2026-11-24
+# BATON 재개 카드 · Spec Kit 오프라인 계약 매핑
 
 ```text
-repo: 메인 PC E:/BATON-meta-design
-ref: codex/meta-architecture-assessment-20261124 · 작성 기준 4c76e8f · 11-24 21:00 KST clean · 로컬 커밋
-handoff: 메인 PC Codex → 다음 세션. 해당 경로에서 git status -sb와 git log -3로 현재 HEAD 확인.
-task/status: TASK-META-ASSESS-001 in_progress. 설계 검토 PASS. META-001·Plan draft, ADR proposed.
-goal/order: 자동화 완성 우선. Q1~Q5 확정. BATON이 Task·승인·완료, Orca가 실행·관측을 담당.
-done: 설계 후보 84e5fee에서 Fable PASS, 차단 0건. B1~B6·R1~R3·N1~N3 조치. 4c76e8f는 결과 기록.
-next: 다음 결정은 META-001의 첫 오프라인 구현 착수 여부다. 승인되면 Plan Phase 2에서 Spec Kit 형식에 기존 ID·승인·AC·증거를 보존하는 작업부터 별도 Task와 scope를 확정한다.
-scope: 이번 승인 범위는 설계 보완·검증까지. 메인 PC 현재 Run 미바인딩, 활성 Worker 0. 재개 시 소유권·lease 재확인.
-checks: check_sdd --base 8e44620 PASS, SDD 테스트 30개·합성 lease 재현 1개 OK. snapshot 8개 원문 일치.
-pending: 신규 구현·E2E·공식 V3·원격 CI 미실행. 원장과 Worker 관측이 일치할 때까지 소유 불명 Task 동결.
-inputs: docs/tasks/TASK-META-ASSESS-001.md → docs/specs/META-001.md → docs/plans/meta-transition.md. 검토·비용은 docs/research/meta-architecture-20261124/results.md.
-usage: 이번 세션 Fable CLI 보고 US$6.846066 / US$100. 새 세션에는 API 키 사용 및 비용 승인이 이월되지 않는다.
-rules: AGENTS.md 적용. G2(0de9e9f) fast-forward·ADAPT(c004378) R6-01/02 수정 보류. Worker 기동·실모델·게시·병합·운영 전환은 각각 승인 범위 확인.
+repo: E:/BATON-meta-design · codex/meta-architecture-assessment-20261124 · 착수 base 99d2d8f
+handoff: git status -sb와 git log -3로 현재 HEAD 확인.
+task/status: TASK-META-MAP-001 in_progress. Phase 2 계약 매핑과 로컬 검증에 한해 사용자 착수 승인.
+goal/order: BATON이 승인·Task·완료, Orca가 실행·관측을 담당. 기존 계약을 보존하며 통합 자동화를 구현한다.
+done: 프로젝트 override 3개, Spec Kit 보기 생성·재검사. 50개 문서·11개 feature·17개 Task·73개 AC 대조.
+checks: SDD 35개 PASS, base의 legacy fixture 30개를 두 검사기에서 대조. 전체 후보 검증은 Task 증거 참조.
+next: 고정된 구현 후보에 대한 독립 검토 권한 결정. 게시·원격 CI·운영 전환은 별도 단계.
+scope: META-MAP-001 로컬 매핑. 상위 META-001·Plan draft, ADR proposed. G2 fast-forward·ADAPT 수정 보류.
+pending: 실환경 Spec Kit CLI·공식 교차검토·원격 CI·E2E. 기존 Task 소유권 불명 시 원장과 Worker 대조 전 동결.
+inputs: docs/tasks/TASK-META-MAP-001.md → docs/specs/META-MAP-001.md → docs/plans/meta-transition.md
+usage: 과거 Fable API 사용·비용 승인은 종료. 이번 세션의 모델 검증 호출 0.
+rules: AGENTS.md 적용. 설계 후보 84e5fee의 Fable PASS는 구현 검토와 구분한다.
 ```
 <!-- BATON_RESUME_END -->
 

@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## Spec Kit 오프라인 계약 매핑
+
+[TASK-META-MAP-001](TASK-META-MAP-001.md) in_progress. Phase 2 계약 매핑과 로컬 검증 착수 승인.
+
 ## 2026-11-24 통합 자동화 전환 조사
 
 [TASK-META-ASSESS-001](TASK-META-ASSESS-001.md) in_progress. 고정된 기준점의 기존 계약·후보 대조와 신규 설계 초안을 관리한다. G2 fast-forward·ADAPT 수정은 계속 보류다.

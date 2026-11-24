@@ -58,12 +58,17 @@ def path(root, name, *, exists=True):
     return target
 
 
-def read(root, name):
+def read_bytes(root, name):
     target = path(root, name)
     require(target.stat().st_size <= LIMIT, "FILE_TOO_LARGE")
     with target.open("rb") as stream:
         data = stream.read(LIMIT + 1)
     require(len(data) <= LIMIT, "FILE_TOO_LARGE")
+    return data
+
+
+def read(root, name):
+    data = read_bytes(root, name)
     try:
         return data.decode("utf-8-sig")
     except UnicodeError:
@@ -86,12 +91,16 @@ def json_object(text):
     return value
 
 
-def document(root, name):
-    text = read(root, name)
+def metadata_block(text):
     match = re.search(r"^```toml\s*\n(.*?)^```\s*$", text, re.M | re.S)
     require(match is not None, "MISSING_TOML")
+    return match
+
+
+def document(root, name):
+    text = read(root, name)
     try:
-        meta = tomllib.loads(match.group(1))
+        meta = tomllib.loads(metadata_block(text).group(1))
     except (tomllib.TOMLDecodeError, RecursionError):
         raise SddError("INVALID_TOML") from None
     kind = meta.get("kind")
@@ -225,15 +234,18 @@ def eligible_tasks(item, tasks, changed):
             and any(item == p or item.startswith(p + "/") for p in task["scope"])]
 
 
-def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False):
+def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False, contract_root=None):
     root = Path(root).resolve()
-    registry = json_object(read(root, "docs/sdd/traceability.json"))
+    # The offline projection stores documents, evidence and test sources together.
+    # Git history and changed-path ownership always belong to the source checkout.
+    contracts = root if contract_root is None else Path(contract_root).resolve()
+    registry = json_object(read(contracts, "docs/sdd/traceability.json"))
     require(set(registry) == {"schema_version", "baseline_commit", "documents", "features"} and type(registry["schema_version"]) is int and registry["schema_version"] == 1, "INVALID_REGISTRY")
     require(isinstance(registry["baseline_commit"], str) and re.fullmatch(r"[0-9a-f]{40}", registry["baseline_commit"]), "INVALID_BASELINE")
     names = values(registry["documents"], "INVALID_DOCUMENTS")
     documents, ids = {}, set()
     for name in names:
-        meta, text = document(root, name)
+        meta, text = document(contracts, name)
         require(meta["id"] not in ids, "DUPLICATE_ID")
         ids.add(meta["id"]); documents[name] = (meta, text)
     features = registry["features"]
@@ -246,6 +258,9 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
         require(feature["spec"] in documents, "MISSING_SPEC")
         spec, text = documents[feature["spec"]]
         require(spec["kind"] == "spec" and spec["id"] == feature["id"], "SPEC_ID_MISMATCH")
+        if contract_root is not None:
+            rendered, text = document(contracts, f"specs/{spec['id']}/spec.md")
+            require(rendered == spec, "SPEC_KIT_DRIFT")
         headings = requirement_headings(text)
         require(isinstance(feature["acs"], list) and 1 <= len(feature["acs"]) <= 100, "INVALID_ACS")
         local = set()
@@ -256,7 +271,7 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
             require(key not in ids, "DUPLICATE_ID"); ids.add(key); local.add(key)
             require(key in headings, "MISSING_AC_HEADING")
             require(isinstance(ac["tests"], list) and 1 <= len(ac["tests"]) <= 30, "MISSING_TEST_REFERENCE")
-            effective = [test_reference(root, ref) for ref in ac["tests"]]
+            effective = [test_reference(contracts, ref) for ref in ac["tests"]]
             test_effective[key] = all(effective)
         require(isinstance(feature["requirements"], list) and 1 <= len(feature["requirements"]) <= 100, "INVALID_REQUIREMENTS")
         covered, requirement_ids = set(), set()
@@ -299,7 +314,7 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
             require(isinstance(record, dict) and isinstance(record.get("command"), str) and record["command"].strip() and record.get("result") in RESULTS, "INVALID_VERIFICATION")
             evidence = record.get("evidence")
             require(isinstance(evidence, str), "MISSING_EVIDENCE")
-            read(root, evidence.split("#", 1)[0])
+            read(contracts, evidence.split("#", 1)[0])
             refs = set(values(record.get("acs"), "INVALID_VERIFICATION_ACS"))
             require(refs <= acs, "UNKNOWN_AC")
             for key in refs: latest[key] = record
@@ -307,7 +322,7 @@ def validate(root, *, changed=None, base=None, ci_event=None, readme_only=False)
             if level == 3:
                 review = task.get("independent_review", {})
                 require(isinstance(review, dict) and review.get("result") == "passed" and isinstance(review.get("evidence"), str), "L3_REVIEW_REQUIRED")
-                read(root, review["evidence"].split("#", 1)[0])
+                read(contracts, review["evidence"].split("#", 1)[0])
             for key in acs:
                 record = latest.get(key, {})
                 require(record.get("result") == "passed" and test_effective[key], "UNVERIFIED_AC")
