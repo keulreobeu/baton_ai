@@ -137,3 +137,9 @@ author ignored 파일 0개를 확인했다. 공식 순차 검증은 검토 후 �
 대상 검사·Task base SDD·기존 fast runner 통과 후 별도 Git worker가 후보를 고정한다.
 독립 검토, 정확한 최종 후보의 공식 순차 verify_environment.py 1회와 원격 CI는 아직 pending이다.
 부모 TASK-CI-OPT-001과 이 Task는 in_progress이며 verified로 승격하지 않는다.
+
+## 2026-11-25 offline job budget supersession
+
+The 2026-11-25 follow-up removes the offline matrix job limit because both full Windows suites must be able to finish. This changes only the offline timeout directive. Plan and gate retain 25 minutes, and the existing static contract test asserts both retained limits and absence in offline. The prior 15-to-25 measurements remain historical. This is a standalone CI timing change.
+
+Focused workflow, verifier, and SDD regressions: 75/75 in 43.771 s. The new guard rejected the old workflow. Main-base static SDD: 5 paths, 79 ACs, PASS. The frozen candidate will receive separate independent, full local and remote validation.
