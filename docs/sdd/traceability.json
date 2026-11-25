@@ -112,6 +112,10 @@
             {
               "file": "tests/test_verification_shadow.py",
               "symbol": "ShadowTests.test_external_dependency_must_remain_complete"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_shadow_snapshot_preserves_case_setting"
             }
           ]
         },

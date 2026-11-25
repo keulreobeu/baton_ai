@@ -124,6 +124,22 @@ class ShadowTests(FlowFixture, unittest.TestCase):
         self.assertEqual(manifest, self.store.get("FLOW")["result"]["changed_files"])
         self.assertEqual(before, [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched])
 
+    def test_shadow_snapshot_preserves_case_setting(self):
+        self.prepare()
+        tree = Path(self.candidate_root)
+        source = tree / "src/value.py"
+        index = Path(git(tree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+        before = index.read_bytes(), index.stat().st_mtime_ns
+        self.assertEqual(shadow_snapshot(tree), {})
+        intermediate = source.with_name("rename-fixture.py")
+        source.rename(intermediate)
+        intermediate.rename(source.with_name("Value.py"))
+        for value in ("false", "true"):
+            with self.subTest(ignorecase=value):
+                git(tree, "config", "core.ignoreCase", value)
+                self.assertEqual(shadow_snapshot(tree), snapshot(tree))
+                self.assertEqual((index.read_bytes(), index.stat().st_mtime_ns), before)
+
     def test_content_filter_preflight_covers_reviewer_and_stored_integration(self):
         self.prepare()
         row = self.store.get("FLOW")

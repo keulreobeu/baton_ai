@@ -196,6 +196,10 @@ def shadow_snapshot(tree, base="HEAD"):
             source = git(tree, "config", "--path", "--default=", "--get", key).strip()
             if source:
                 private_git(scratch, "config", "--local", key, str((tree / source).resolve()))
+        ignore_case = git(tree, "config", "--type=bool", "--default=false",
+                          "--get", "core.ignoreCase").strip()
+        require(ignore_case in {"true", "false"}, "UNKNOWN", "content_inspection_unavailable")
+        private_git(scratch, "config", "--local", "core.ignoreCase", ignore_case)
         # Keep Git's built-in CRLF behavior without importing any drivers.
         for key, default, allowed in (
             ("core.autocrlf", "false", {"true", "false", "input", "yes", "no", "on", "off", "0", "1"}),
