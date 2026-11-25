@@ -87,6 +87,14 @@
             {
               "file": "tests/test_verification_shadow.py",
               "symbol": "ShadowTests.test_cli_compares_stored_state_without_mutation_or_creating_missing_store"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_content_filter_attributes_block_before_conversion"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_content_filter_preflight_covers_reviewer_and_stored_integration"
             }
           ]
         },

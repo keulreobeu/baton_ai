@@ -82,12 +82,12 @@ class StoreView(ManagedStore):
 
     def current_proof(self, row):
         candidate = row["result"]["candidate"]
-        check_layout(candidate["candidate_root"])
+        check_layout(candidate["candidate_root"], snapshot_base=candidate["base_sha"])
         if row["state"] != "COMPLETED":
-            check_layout(row["worktree"])
+            check_layout(row["worktree"], snapshot_base=candidate["base_sha"])
             if row["task"]["execution"].get("runtime") == "orca":
                 binding = row["result"].get("review_runtime") or {}
-                check_layout(workspace_path(binding.get("workspace_id")))
+                check_layout(workspace_path(binding.get("workspace_id")), snapshot_base="HEAD")
         candidate, tree = evidence._current_candidate(self, row, allow_completed=True)
         check_index(tree)
         review = evidence._review_proof(self, row, candidate)
@@ -96,7 +96,7 @@ class StoreView(ManagedStore):
         return candidate, tree, review
 
 
-def check_layout(tree):
+def check_layout(tree, *, snapshot_base=None):
     # rev-parse resolves metadata paths without loading the index. Git
     # freshens a split index's shared file even during otherwise read-only
     # queries, so perform this check before snapshot or ls-files.
@@ -114,11 +114,40 @@ def check_layout(tree):
     head = git(tree, "ls-tree", "-r", "-z", "HEAD")
     require(not any(entry.startswith("160000 ") for entry in head.split("\0")), "UNKNOWN", "gitlink_not_supported")
     indexed = git(tree, "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "ls-files", "-v", "--stage", "-z")
+    paths = set()
     for entry in indexed.split("\0"):
         if entry:
             tag, mode, _, stage = entry.split("\t", 1)[0].split()
             require(mode != "160000", "UNKNOWN", "gitlink_not_supported")
             require(tag == "H" and stage == "0", "UNKNOWN", "unsupported_index_entry")
+            paths.add(entry.split("\t", 1)[1])
+    if snapshot_base is not None:
+        for ref in {"HEAD", snapshot_base}:
+            entries = head if ref == "HEAD" else git(tree, "ls-tree", "-r", "-z", ref)
+            paths.update(entry.split("\t", 1)[1] for entry in entries.split("\0") if entry)
+        check_content_filters(tree, paths)
+
+
+def check_content_filters(tree, paths):
+    # Attribute lookup does not run clean, smudge, or process drivers.
+    # --all distinguishes an absent attribute from a driver literally
+    # named "unspecified". Any reported filter is held conservatively.
+    reason = "content_filter_unconfirmed"
+    require(not any("\ufffd" in name for name in paths), "UNKNOWN", reason)
+    if not paths:
+        return
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(tree), "check-attr", "--all", "-z", "--stdin"],
+            input=("\0".join(sorted(paths)) + "\0").encode("utf-8"),
+            capture_output=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise Observation("UNKNOWN", reason) from None
+    fields = result.stdout.split(b"\0")
+    require(result.returncode == 0 and not result.stderr and fields[-1] == b""
+            and (len(fields) - 1) % 3 == 0 and b"filter" not in fields[1::3],
+            "UNKNOWN", reason)
 
 
 def check_index(tree):
@@ -482,7 +511,7 @@ def integration_observation(store, args, official):
             store.recheck()
             unit_pins(store, args)
             if record is not None:
-                check_layout(record["integration_root"])
+                check_layout(record["integration_root"], snapshot_base="HEAD")
                 tree = evidence._tree(store, record["integration_root"], args.integration)
                 check_index(tree)
         except Observation as exc:

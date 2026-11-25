@@ -20,7 +20,7 @@ from baton.execution import ExecutionResult
 from baton.isolation import git, snapshot
 from baton.managed import ManagedStore
 from baton.orchestrator import BATON_MARKERS, Orchestrator, baton_development_root
-from baton.verification_shadow import StoreView, generic_base, windows_tree_name
+from baton.verification_shadow import Observation, StoreView, generic_base, windows_tree_name
 from tests.test_flow_evidence import FlowFixture
 
 
@@ -60,6 +60,76 @@ class ShadowTests(FlowFixture, unittest.TestCase):
         absent = self.call(state_dir=".local_runtime/absent")
         self.assertEqual(absent["task_acceptance"]["status"], "UNKNOWN")
         self.assertFalse((self.root / ".local_runtime/absent").exists())
+
+    def test_content_filter_attributes_block_before_conversion(self):
+        self.prepare()
+        row = self.store.get("FLOW")
+        author = Path(row["worktree"])
+        candidate = Path(self.candidate_root)
+        git(self.root, "config", "filter.fixture.required", "false")
+        unused = self.call()
+        self.assertEqual(unused["task_acceptance"]["status"], "PASS")
+        self.assertEqual(unused["official"]["task_state"], "REVIEW_REQUIRED")
+        self.assertEqual(unused["official"]["task_v3"], "NOT_RUN")
+
+        for tree in (author, candidate):
+            with self.subTest(tree=tree):
+                attrs = tree / ".gitattributes"
+                original = attrs.read_bytes()
+                attrs.write_bytes(original + b"\n*.py filter=fixture\n")
+                index = Path(git(tree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+                watched = (self.store.path, index, attrs, tree / "src/value.py")
+                before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched]
+                try:
+                    with patch("baton.evidence.snapshot") as snapshot_probe:
+                        held = self.call()
+                    snapshot_probe.assert_not_called()
+                    self.assertEqual(held["task_acceptance"], {
+                        "status": "UNKNOWN", "reason": "content_filter_unconfirmed",
+                    })
+                    self.assertEqual(held["official"], unused["official"])
+                    self.assertEqual(before, [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched])
+                finally:
+                    attrs.write_bytes(original)
+
+    def test_content_filter_preflight_covers_reviewer_and_stored_integration(self):
+        self.prepare()
+        row = self.store.get("FLOW")
+        integration = self.root / ".local_runtime/filtered-integration"
+        git(self.root, "worktree", "add", "--detach", str(integration), self.candidate_sha)
+        with self.official_run():
+            record(self.store, "FLOW", self.proof("integration", integration_root=str(integration)))
+        git(self.root, "branch", "single", self.candidate_sha)
+        args = ("--members", "FLOW", "--head-ref", "refs/heads/single",
+                "--head", self.candidate_sha, "--integration", self.candidate_sha,
+                "--tree", row["result"]["candidate"]["tree_sha"])
+        original = self.call(*args)
+        self.assertEqual(original["integration_v4"]["status"], "PASS")
+
+        attrs = integration / ".gitattributes"
+        attrs.write_bytes(attrs.read_bytes() + b"\n*.py filter=unspecified\n")
+        index = Path(git(integration, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+        watched = (self.store.path, index, attrs, integration / "src/value.py")
+        before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched]
+        with patch("baton.evidence.snapshot", wraps=snapshot) as snapshot_probe:
+            held = self.call(*args)
+        self.assertTrue(snapshot_probe.called)
+        self.assertNotIn(integration, [Path(call.args[0]) for call in snapshot_probe.call_args_list])
+        self.assertEqual(held["integration_v4"], {
+            "status": "UNKNOWN", "reason": "content_filter_unconfirmed",
+        })
+        self.assertEqual(held["official"]["integration_receipt_v3"], original["official"]["integration_v3"])
+        self.assertEqual(held["official"]["task_state"], original["official"]["task_state"])
+
+        row["task"]["execution"]["runtime"] = "orca"
+        with patch("baton.verification_shadow.workspace_path", return_value=integration), \
+                patch("baton.evidence.snapshot") as snapshot_probe:
+            with self.assertRaises(Observation) as observed:
+                StoreView(self.root, self.store.directory).current_proof(row)
+        snapshot_probe.assert_not_called()
+        self.assertEqual((observed.exception.status, observed.exception.reason),
+                         ("UNKNOWN", "content_filter_unconfirmed"))
+        self.assertEqual(before, [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched])
 
     def test_task_stale_failed_uncertain_and_missing_coverage(self):
         self.prepare()
