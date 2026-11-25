@@ -107,7 +107,11 @@ def interpreter_cache(name):
 
 
 def snapshot(root, base="HEAD"):
-    names = set(git(root, "diff", "--name-only", "--no-renames", "-z", base).split("\0"))
+    # numstat compares content even when only the stat cache changed. Its
+    # two counts precede the literal pathname, which may itself contain tabs.
+    stats = git(root, "-c", "diff.autoRefreshIndex=false", "diff", "--numstat",
+                "--no-renames", "--no-ext-diff", "--no-textconv", "-z", base)
+    names = {record.split("\t", 2)[2] for record in stats.split("\0") if record}
     # Include ignored files: an ignored data/raw write must still block fallback/scope checks.
     untracked = set(git(root, "ls-files", "--others", "-z").split("\0"))
     # Only an ignored interpreter cache is not a worker change; every other ignored file still counts.

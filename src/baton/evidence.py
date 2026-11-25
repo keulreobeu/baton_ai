@@ -218,13 +218,13 @@ def validate_member_records(connection, members):
             raise HarnessError("integration_member_evidence_changed")
 
 
-def _union_tree(store, bindings):
+def _union_tree(store, bindings, *, scratch=None):
     """Structural three-tree union in a private index; never run merge drivers."""
     base = next(iter(bindings.values()))["base_sha"]
     environment = dict(os.environ)
     for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
         environment.pop(name, None)
-    with tempfile.TemporaryDirectory(prefix="integration-index-", dir=store.directory) as temporary:
+    with tempfile.TemporaryDirectory(prefix="integration-index-", dir=scratch or store.directory) as temporary:
         environment["GIT_INDEX_FILE"] = str(Path(temporary) / "index")
 
         def index_git(*arguments):
@@ -237,8 +237,18 @@ def _union_tree(store, bindings):
                 raise HarnessError("integration_conflict_requires_owner_resolution")
             return result.stdout.decode("utf-8", errors="replace").strip()
 
-        # Only common Git object/index metadata work is serialized, not tests.
-        with repository_lock(store.root, wait_seconds=10):
+        with ExitStack() as stack:
+            if scratch is None:
+                stack.enter_context(repository_lock(store.root, wait_seconds=10))
+            else:
+                # A private bare repository reads original objects as alternates.
+                # Its refs, temporary index, generated trees and locks are private.
+                objects = git(store.root, "rev-parse", "--path-format=absolute", "--git-path", "objects").strip()
+                object_format = git(store.root, "rev-parse", "--show-object-format").strip()
+                private = str(Path(temporary) / "objects.git")
+                index_git("init", "--bare", "--template=", "--object-format=" + object_format, private)
+                environment["GIT_DIR"] = private
+                environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = json.dumps(objects, ensure_ascii=False)
             accumulated = base
             index_git("read-tree", base)
             for proof in bindings.values():

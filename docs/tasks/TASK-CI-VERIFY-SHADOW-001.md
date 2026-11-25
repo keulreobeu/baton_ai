@@ -1,0 +1,199 @@
+# TASK-CI-VERIFY-SHADOW-001 · W4 로컬 shadow 판정
+
+```toml
+kind = "task"
+id = "TASK-CI-VERIFY-SHADOW-001"
+status = "in_progress"
+owner = "Codex W4"
+level = 3
+specs = ["docs/specs/CI-VERIFY-SHADOW-001.md"]
+plan = "docs/plans/ci-verification-shadow.md"
+adr = "docs/adr/ADR-CI-VERIFY-SHADOW-001.md"
+scope = ["docs/specs/CI-VERIFY-SHADOW-001.md", "docs/plans/ci-verification-shadow.md",
+         "docs/adr/ADR-CI-VERIFY-SHADOW-001.md", "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md",
+         "src/baton/verification_shadow.py", "src/baton/__main__.py", "src/baton/evidence.py", "src/baton/isolation.py",
+         "tests/test_verification_shadow.py", "docs/sdd/traceability.json"]
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_sdd tests.test_verification_shadow"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#후보-체크포인트"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+tests_run = 45
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_verification_shadow 및 .venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_managed_harness tests.test_sdd tests.test_flow_evidence"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#수정-후-영향-검사"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+tests_run = 122
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_managed_harness tests.test_sdd tests.test_verification_shadow"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#한정-재검토-후보-검사"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+tests_run = 113
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_managed_harness tests.test_sdd tests.test_verification_shadow"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#마지막-두-항목의-후보-검사"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+tests_run = 116
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_managed_harness tests.test_sdd tests.test_verification_shadow 및 .venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_verification_shadow.ShadowTests.test_shadow_reports_unsupported_base_alongside_official_receipt"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#고정-tree-식별의-후보-검사"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+tests_run = 118
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 -m unittest -q tests.test_managed_harness tests.test_sdd tests.test_verification_shadow"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#예약명-수정-후-후보-검사"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+tests_run = 120
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base a8b5fc1d57825df3afde2218ad39b63d1399902b"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#로컬-검증-영수증"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+candidate_sha = "e2e5e40428d210d49a716c2ceb1a76cd88d861b0"
+tests_run = 809
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[independent_review]
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#로컬-검증-영수증"
+candidate_sha = "e2e5e40428d210d49a716c2ceb1a76cd88d861b0"
+```
+
+착수 base `a8b5fc1d57825df3afde2218ad39b63d1399902b`, branch `keulreobeu/ci-verification-rev3`. 선행 문서 검토는 `TASK-CI-VERIFY-ASSESS-001`에 귀속된다. 이 Task는 오프라인 shadow 제품 동작만 소유한다. 검토·회귀·공식 V3·원격 CI·게시 상태는 후보별로 기록한다.
+
+## 후보 체크포인트
+
+작성자 검토에서 의존성 차단 시 공식 관측이 사라지는 문제와 B의 동시 변경이 독립 A까지 무효화하는 문제를 각각 실패 시험으로 재현했다. 분리된 읽기 집합과 후보별 원장 조회를 적용했다. 임시 저장소에서 `python -m baton verification-shadow`를 별도 프로세스로 호출해 현행 `REVIEW_REQUIRED`·공식 `NOT_RUN`과 Task shadow `PASS`를 함께 확인했다. 기능과 두 부모 PR 시험은 실 Git 및 기존 managed 증거 기록을 사용하며, 전체 suite 결과만 컨트롤러 경계에서 fixture로 공급한다.
+
+| 검사 | 실제 결과 |
+|---|---|
+| V1 직접 검사 | Task-base 기준 7개 AST/UTF-8 검사 성공. 선택된 시험 ID 6개는 아래 V2에 포함됐다. |
+| V2 checkpoint | 선택한 `tests.test_sdd` 및 `tests.test_verification_shadow` 전체 45개, 72.386초, 실패·오류·skip 0. CBM root 불일치로 `PARTIAL_IMPACT_SCOPE`; `docs/sdd/traceability.json`와 전이 영향 범위가 미확인으로 보고됐다. |
+| Task-base SDD | `scripts/check_sdd.py --base a8b5fc1d57825df3afde2218ad39b63d1399902b` 성공. 변경 경로 8개, 문서 56개, AC 77개. 원장에는 새 문서 4개와 단일 feature만 추가했다. |
+| 로컬 환경 | W4 전용 Python 3.12.16. 마스터 승인 로컬 wheel로 cryptography 50.0.2, cffi 2.1.1, pycparser 3.12를 설치하고 `uv pip check` 및 패키지 경로를 확인했다. |
+
+이 체크포인트는 내부 독립 검토와 공식 순차 V3를 실행할 제품 후보다. 모델·유료 API·원격 CI·게시는 실행하지 않았다.
+
+## 첫 독립 검토와 수정 범위
+
+`8a7cea6d600562e0f61dfeb41d15961983d9bc46`에 대한 내부 검토 `ctx_c902e4c16770`의 결과는 FAIL이었다. 보고 `msg_d9009d215f07`에서 실규모 저장 한도, BATON 식별 파일 변경, 부분 통합, 실패 대상 귀속, 중단된 리뷰, 조회 시 쓰기, 후보 인덱스, 대기 중 head 변경의 8개 반례를 확인했다. 첫 후보에서 공식 V3는 실행하지 않았다.
+
+마스터 배정 `msg_ff1c3cb31a9e`는 기존 `evidence._union_tree`에 격리 scratch 옵션만 추가하도록 했다. `msg_e255a353f591`는 `isolation.snapshot`의 tracked diff가 원본 인덱스를 갱신하지 않도록 범위를 정했다. 기존 producer의 128,000바이트 제한과 저장 형식은 유지한다. 새 observer는 결합 Task의 독립 검토 및 전체 V3에 원래 멤버별 검사까지 결속할 수 있을 때 그 실제 영수증을 읽는다.
+
+## 수정 후 영향 검사
+
+Task-base V2가 선택한 managed harness 58개, SDD 39개, shadow 12개를 실행했다. 공용 union/snapshot 호출자의 Flow evidence 13개를 더해 총 122개를 확인했다. 기존 회귀 110개는 120.624초, shadow 12개는 117.362초에 통과했고 실패·오류·skip은 0이었다. V2의 CBM 전이 영향 범위는 부분이다. 착수 기준 SDD 정적 검사는 변경 경로 10개에서 통과했다.
+
+실제 inventory 798개를 포함한 원장 시험은 단일 멤버·A+B에서 기존 producer의 한도 거절을 재현한 후 별도 결합 Task의 기록을 읽었다. 정상 결합과 잘못된 tree·누락된 멤버 검사, 실 PR 부모, 부분 scope, 대기 도중 H 변경을 구분했다. 격리 union은 두 동시 호출과 충돌 실패 후 원본 Git 객체 목록·refs·index·DB 바이트 및 빈 scratch를 대조했다. 인덱스 차이 시험은 내용 동일 mtime, staged/unstaged, 추가·삭제·binary·실행 모드·Git tree의 탭 포함 이름에 대해 기존 결과와 비교했다.
+
+## 두 번째 독립 검토와 한정 재계획
+
+`72db417b9246ce7b181546096ba5e0d7fcea2316`의 내부 재검토 `ctx_fd7a0a66a7db`는 28개 회귀 성공 후 여섯 반례로 FAIL을 반환했다. 첫 보고의 3번(부분·누락 범위)과 8번(대기 중 H 변경)은 해소됐다. 공식 V3는 이 후보에서도 미실행이다. 마스터 결정 `msg_2bca31cdf0a1`에 따라 앞선 두 회차를 보존하고 남은 여섯 건과 수정 영향만 재검토한다.
+
+| 지적 | 원인과 수정 | 회귀 |
+|---|---|---|
+| 1 | 멤버 안의 중복 argv가 집합으로 합쳐졌다. 결합 영수증에서 멤버별 선언 순서대로 각 실행을 한 번씩 소비한다. | 같은 검사 2회를 선언한 멤버에서 1회 영수증 거부·2회 수용 |
+| 2 | 기준 checkout의 mtime과 작업 중인 메타데이터가 식별에 섞였다. 고정 B의 tree 및 pyproject blob으로 식별한다. | 일반 프로젝트 mtime·버전 변경, BATON marker 이동 |
+| 4 | 오래된 결합 영수증이 현재 실패 플래그를 가렸다. 보관된 영수증과 현재 판정을 나누고 대상 미상 실패에서 현재 V3를 UNKNOWN으로 둔다. | 실제 integration producer 실패 후 영수증 제공·미제공 비교 |
+| 5 | 종료 상태 failed가 명시한 FAIL 보고서까지 불명으로 처리했다. settled 상태와 후보·base·verdict에 결속된 실제 보고서를 함께 확인한다. | succeeded/failed의 명시 보고서, stopped·중첩 timeout |
+| 6 | split index를 읽는 Git이 sharedindex 시각을 갱신했다. 각 원본 인덱스의 경로와 메타데이터를 먼저 검사해 불명 상태를 보류한다. | split index에서 실제 index/sharedindex의 바이트·mtime 동일 |
+| 7 | 기본 cached diff가 intent-to-add 엔트리를 숨겼다. 해당 엔트리를 표시하는 cached diff로 후보를 대조한다. | 작업 파일을 지운 intent-to-add가 STALE |
+
+## 한정 재검토 후보 검사
+
+Task-base V2의 선택 모듈 managed harness·SDD·shadow 전체 113개가 226.749초에 통과했다. 실패·오류·skip 0, 미확인 범위는 원장 및 CBM 전이 영향이다. 마스터가 지정한 여섯 반례의 직접 관련 시험 6개도 48.511초에 통과했다. 별도 로컬 Git fixture에서 중첩 gitlink의 split-index도 원본 파일 바이트와 수정 시각을 보존하며 UNKNOWN으로 반환함을 확인했다. 개별 fixture의 PASS는 이 제품 후보의 공식 순차 V3 영수증과 구분한다.
+
+## 세 번째 독립 검토와 남은 두 건
+
+`92c1839be30815e05a3e845ea5f49ee81febd278` 내부 검토 `ctx_3fb7d22d6f89`는 22개 회귀 통과 후 ②·⑥의 실제 반례로 FAIL을 반환했다. 앞선 두 회차와 함께 누적 세 번의 FAIL을 보존한다. ①·④·⑤·⑦은 이번 회차에 해소됐으며 ③·⑧은 앞선 판정을 유지한다. 이 세 후보에서 공식 순차 V3는 실행하지 않았다.
+
+마스터 `msg_7ed57224fb87`는 ②·⑥의 새 접근에 한 차례의 내부 재검토만 배정했다. 수정 전 Windows Git의 `Scripts/` 표기는 필수 V3가 없는 BATON 후보를 PASS시켰고, 부모 diff는 일반 하위 모듈의 인덱스를 수정했다. 수정본은 B의 불변 Git tree에서 플랫폼상 같은 경로·충돌·링크·패키지 식별값을 대조한다. HEAD/index에 gitlink가 있으면 하위 저장소를 열기 전에 보류한다. 전체 하위 저장소 복제와 공용 snapshot 재설계는 이 후보에 포함하지 않았다.
+
+## 마지막 두 항목의 후보 검사
+
+Windows에서 같은 경로로 열리는 `Scripts/`·`scripts/`를 고정 B에서 읽고, BATON marker를 옮긴 후보에 전체 V3 영수증이 없으면 UNKNOWN, 실제 형식에 맞는 전체 영수증이 있으면 PASS임을 확인했다. Git 객체에서 직접 만든 대소문자 충돌·링크는 식별 불명으로 처리한다. 식별이 불명일 때는 과거 전체 영수증이 있어도 Task shadow가 UNKNOWN이다.
+
+표준 `git submodule absorbgitdirs`가 만든 하위 모듈에 내용 변경 없이 파일 수정 시각만 바꿨다. 하위 모듈이 staged 상태에만 있는 경우와 HEAD에 기록된 경우 모두 실제 `baton verification-shadow`가 `UNKNOWN / gitlink_not_supported`를 반환했다. 부모·후보·하위 모듈의 인덱스와 관리 DB의 바이트 및 수정 시각이 전후 동일했다.
+
+최종 소스에서 Task-base V2가 지정한 managed harness, SDD, shadow 전체 116개를 264.793초에 실행했다. 실패·오류·skip·expected failure는 0이다. CBM 전이 영향과 원장 파일은 V2가 미확인으로 표시했다. Task-base SDD 정적 검사는 변경 경로 10개에서 통과했다.
+
+## 네 번째 독립 검토와 Windows 지원 범위
+
+고정 제품 `8e99ad6e85d449107d72fed60e8f7bb0d8ecbffd`의 독립 검토 `ctx_03d82f0ea0b0`, 종료 이벤트 `msg_40e5b5f46ca5`의 결과는 FAIL이다. 보고서 SHA-256은 `f0349624594b00645a0156dd7c0a81824fa0b3bc94d80441a46a1a0395bb875d`다. 직접 회귀 4개가 통과했고, ⑥은 표준 하위 모듈을 사용한 5개 CLI 대조 모두에서 원본 DB 및 인덱스의 바이트·수정 시각을 보존했다. ①·④·⑤·⑦은 세 번째, ③·⑧은 두 번째 검토에서 해소됐다. 이로써 초기 8건 중 7건의 해소 근거와 네 후보의 FAIL을 보존한다.
+
+②에서는 보통 이름과 Windows 기본 데이터 스트림 표기가 같은 파일을 가리켜도, 서로 다른 프로젝트 이름을 담은 고정 Git tree를 일반 프로젝트로 판정했다. 기본 Windows Git이 그 tree를 인덱스에 적재하는 과정은 거부했고, 실제 Task에서 잘못된 PASS는 관측되지 않았다. `msg_aa0ff2d0433f`는 ②만 수정하고 새 SHA에서 한 차례 독립 검토하도록 배정했다. 기존 4개 후보의 공식 순차 V3 실행은 0회다.
+
+## 고정 tree 식별의 후보 검사
+
+4차의 고정 tree와 로컬 객체가 누락된 tree는 각각 수정 전 `True`, 수정 후 `None`이었다. 정상 BATON과 일반 프로젝트의 이전 결과는 유지됐다. 기준점의 모든 디렉터리에서 지원하는 이름과 Git 객체 종류를 확인한다. Git 대체 객체를 설정한 경우에도 실제 B의 원래 프로젝트 식별값을 읽었다. Task 시작점인 이 저장소에서 직접 확인한 `generic_base`의 결과는 `False`였다.
+
+Task-base V2의 managed harness, SDD, shadow 전체 117개가 246.410초에 통과했다. 실행 중 추가한 실제 CLI 시험은 별도 프로세스에서 5.013초에 통과해 서로 다른 시험 총 118개, 실패·오류·skip·expected failure 0이다. 이 시험의 B에는 Windows가 실제로 열 수 있는 공백 이름 파일이 있다. 기존 컨트롤러가 기록한 시험용 전체 영수증은 PASS, 원장 상태는 REVIEW_REQUIRED, Task shadow는 UNKNOWN이었다. V2 계획의 미확인 범위는 원장 및 CBM 전이 영향이다.
+
+## 다섯 번째 독립 검토와 일반 파일의 판정
+
+제품 `bf4ad4c860ca2339e779b67c0793cc4053195995`에서 R5 독립 검토 `ctx_77b31d1b143f`가 ②의 안전한 보류는 확인했지만, 일반 파일 `COM10.txt`의 실제 CLI 결과가 UNKNOWN인 점을 찾아 FAIL을 반환했다. 동일 내용의 `report10.txt`는 PASS였고, 두 시험용 공식 영수증은 PASS였다. R5 종료 이벤트는 `msg_5a6c2cffa1bb`, 보고서 SHA-256은 `2f5db18c17625a2fb48f2e644f6d0bf03921954cfa1f5207f97a6a561315e396`이다. R1~R5는 모두 내부 FAIL이며 이 다섯 후보에서 공식 순차 V3는 미실행이다. 앞서 해소된 7건의 검토 근거는 위에 기록했다.
+
+별도 배정 `task_0f96c408b95e`는 R5 제품을 시작점으로 한다. Microsoft의 표에서 ASCII COM·LPT 번호 예약명은 한 자리 1~9이고, 확장자가 여러 개여도 첫 점 앞의 이름을 기준으로 한다. 위첨자 예약명은 기존 ASCII 지원 범위에서 이미 보류된다. Git for Windows 2.56.0의 기본 보호 인덱스가 `LPT0.txt`의 원래 tree 적재를 거부하는 점도 임시 저장소에서 확인했다. 같은 명령으로 `COM0.txt`와 `LPT10.txt`는 적재·체크아웃됐고 바이트도 읽을 수 있었다. [Microsoft Win32 파일명 규약](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions) · [Git for Windows 경로 검사](https://github.com/git-for-windows/git/blob/v2.56.0.windows.4/compat/mingw.c#L3898-L3929)
+
+## 예약명 수정 후 후보 검사
+
+수정 전 새 경계 시험과 실제 CLI 시험에서 7개 assertion이 실패했다. 수정 후 예약명·일반명·지원 밖 이름과 CLI 직접 회귀 4개는 12.300초에 통과했다. R5의 독립 대조 스크립트를 같은 입력으로 다시 실행했을 때 `report10.txt`와 `COM10.txt` 모두 정상 파일이었고 실제 CLI가 Task shadow PASS, 원장 REVIEW_REQUIRED, 시험용 공식 영수증 PASS를 출력했다. 두 호출의 `authoritative`는 false였다. 이 대조 출력의 SHA-256은 `d302fdf06a8ed1e42f2ad24024aca94814f8e1d584c82e8c46847a4a8ef484a4`다.
+
+배정 시작점의 V2는 shadow 모듈을, 누적 제품 Task 시작점의 V2는 managed harness·SDD·shadow를 선택했다. 세 모듈 전체 120개가 287.264초에 통과했고 실패·오류·skip·expected failure는 0이었다. 정적 SDD는 각 기준점에서 변경 3개·10개 경로를 확인하고 통과했다. V2의 미확인 범위는 전이 영향이며, 누적 계획에는 원장도 포함된다. 제품 수정은 `windows_tree_name` 한 함수다.
+
+## 로컬 검증 영수증
+
+검증한 제품 커밋은 `e2e5e40428d210d49a716c2ceb1a76cd88d861b0`, tree는 `c3f44f81e38568399efaef56f2f6083a31ee7bf5`, Task 시작 base는 `a8b5fc1d57825df3afde2218ad39b63d1399902b`다. 이 세 값은 내부 검토와 공식 순차 V3의 기준이다.
+
+| 단계 | 관측 결과 |
+|---|---|
+| 내부 독립 검토 | `ctx_79a048a1e042`가 이 제품 SHA에서 이번 배정의 Windows 예약명 경계와 일반 파일의 실제 CLI를 확인하고 PASS를 반환했다. 이름 62개, 직접 회귀 4개와 실제 CLI 5회에서 확인했다. 종료 이벤트 `msg_759c1cf85e76`, 보고서 SHA-256 `18afaa95260aafb3152f4ed06f238ec43f1b4a7fd606967202c6bc4f28a105a5`. 앞선 다섯 후보의 FAIL은 각 후보의 기존 기록에 남아 있다. |
+| 공식 순차 V3 | `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base a8b5fc1d57825df3afde2218ad39b63d1399902b`. Windows W4 전용 Python 3.12.16 환경에서 809개 전체 검사를 794.462초에 실행했다. 종료 0, 실패·오류·skip·expected failure 모두 0, `verified_evidence_eligible=true`. |
+| SDD와 suite | Task base 정적 검사 PASS, 변경 경로 10개. `suite_execution=executed`, `reuse_decision=not_configured`, `reused_test_count=null`. |
+| 로그 SHA-256 | stdout `990854aa1dbb5c69dc99c0d139d9337e63cf01dc947580dbcbdb24c0126b7ec2` · stderr `0f13bcc6d8f8e4b6840efef0092fa692d5411885fc40adbec36eeb66ce2ff4bc`. |
+
+이번 수정의 시작 SHA는 `bf4ad4c860ca2339e779b67c0793cc4053195995`다. 제품 브랜치 `keulreobeu/ci-verification-rev3`는 검토·검증한 SHA를 가리킨다. 별도 로컬 영수증 ref `refs/heads/keulreobeu/w4-shadow-evidence-e2e5e40428d2`는 그 커밋의 바로 다음 자식으로 이 Task 파일만 저장한다. 제품 PASS는 위에서 검증한 커밋에 귀속된다. Task 상태는 `in_progress`다. 원격 Windows 두 조합 CI, 게시·PR·병합과 공식 판정 전환은 별도로 남는다. 실모델 시험·유료 호출·원격 작업 횟수는 0이다.
+
+## Standalone PR scope
+
+The public candidate starts at main 6f7cbd85069533e5565f178e565bb9958c7705c1 and contains the ten shadow paths. The prior receipts are historical evidence for e2e5e404. This branch requires candidate-specific verification.

@@ -52,9 +52,91 @@
     "docs/plans/meta-contract-map.md",
     "docs/adr/ADR-META-MAP-001.md",
     "docs/tasks/TASK-META-MAP-001.md",
-    "docs/tasks/TASK-META-INVENTORY-001.md"
+    "docs/tasks/TASK-META-INVENTORY-001.md",
+    "docs/specs/CI-VERIFY-SHADOW-001.md",
+    "docs/plans/ci-verification-shadow.md",
+    "docs/adr/ADR-CI-VERIFY-SHADOW-001.md",
+    "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md"
   ],
   "features": [
+    {
+      "id": "CI-VERIFY-SHADOW-001",
+      "spec": "docs/specs/CI-VERIFY-SHADOW-001.md",
+      "requirements": [
+        {
+          "id": "CI-VERIFY-SHADOW-001-REQ-01",
+          "acs": [
+            "CI-VERIFY-SHADOW-001-AC-01",
+            "CI-VERIFY-SHADOW-001-AC-02"
+          ]
+        },
+        {
+          "id": "CI-VERIFY-SHADOW-001-REQ-02",
+          "acs": [
+            "CI-VERIFY-SHADOW-001-AC-03",
+            "CI-VERIFY-SHADOW-001-AC-04"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "CI-VERIFY-SHADOW-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_cli_compares_stored_state_without_mutation_or_creating_missing_store"
+            }
+          ]
+        },
+        {
+          "id": "CI-VERIFY-SHADOW-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_task_stale_failed_uncertain_and_missing_coverage"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_external_dependency_must_remain_complete"
+            }
+          ]
+        },
+        {
+          "id": "CI-VERIFY-SHADOW-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_feature_checks_only_members_and_binds_combined_review"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_missing_member_evidence_and_official_suite_cannot_pass"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_external_dependency_must_remain_complete"
+            }
+          ]
+        },
+        {
+          "id": "CI-VERIFY-SHADOW-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_feature_checks_only_members_and_binds_combined_review"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_pr_requires_ordered_parents_and_reports_official_fail_or_uncertain"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_missing_member_evidence_and_official_suite_cannot_pass"
+            }
+          ]
+        }
+      ]
+    },
     {
       "id": "SDD-001",
       "spec": "docs/specs/SDD-001.md",
