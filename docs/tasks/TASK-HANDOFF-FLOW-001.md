@@ -209,3 +209,13 @@ V1 선택과 6개 직접 모듈의 고유 219건이 232.942초에 통과했다. 
 저장소 회귀 `test_markdown_publication_rechecks_after_seal_and_rerender`는 수정 전 최초 경계에서 실패했고, 수정 후 중단 발급 재시도 및 수동·자동 경합 대조군과 함께 3건 PASS(15.668초, 실패·오류·skip 0)했다.
 
 W1 제품 `24cce5585c8caa007fbba88c9ef91cef75bd6162`의 Git blob과 W3 코드·템플릿으로 만든 격리 작업 디렉터리에서 기존 복원 영수증 소비 테스트 1건이 PASS했다(10.989초, 실패·오류·skip 0). W3가 소비하는 영수증의 위치, 복원 Task 결속, manifest digest, commit SHA와 ref, `unverified` 표기를 검사했다. 원문은 `.local_runtime/w3-r5-recovery/w1-product-compatibility.txt`에 있다. W1 실환경 최종 증거는 대기 중이다.
+
+## PR #22 Windows 임시 경로 fixture 수정
+
+[기존 draft CI](https://github.com/keulreobeu/baton_ai/actions/runs/45526577250)는 제품 `3752d6bb70d9a20b4ba216f5fb772cbed2c0dbc3`에서 plan PASS, Windows Python 3.11 fixture 4건 FAIL, Windows Python 3.12 제한 시간에 취소, gate FAIL이었다. Python 3.12는 실행 집계가 없으므로 별도로 기록한다.
+
+GitHub runner의 TEMP가 8.3 별칭을 사용했다. 구체적으로 직접 호출한 fixture의 저장소 root는 짧은 경로였고 ManagedStore가 보유한 state directory는 정규 경로였다. 설치 fixture도 정규 경로를 반환하는 템플릿 조회 결과를 정규화하지 않은 경로와 비교했다. 실제 관리 CLI와 수동 PREPARE는 저장소 root를 정규화한다. W3 테스트에서만 ManagedStore의 root와 정규화한 설치 prefix를 쓰며 제품 경로·소유권 검사와 workflow·timeout·gate는 유지한다.
+
+이전 CI 실패는 새 독립 검토의 finding에 합산하지 않는다. 이 수정 후보의 독립 검토, 순차 V3와 PR CI의 실제 결과는 각각 해당 SHA에 귀속한다. Task는 `in_progress`다.
+
+로컬 Windows에서 Win32 GetShortPathNameW로 생성한 8.3 TEMP와 정규 TEMP가 같은 디렉터리임을 확인했다. 수정 전 짧은 경로에서 GitHub와 동일한 테스트 4건 FAIL(25.130초)이며, 수정 후 실별칭 4/4 PASS(33.153초), 정규 경로 4/4 PASS(33.023초)다. 실패·오류·skip은 수정 후 두 실행 모두 0이다. Task-base 정적 SDD 25경로·81 AC PASS. 모델 호출 0.

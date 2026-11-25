@@ -27,6 +27,10 @@ from tests.test_flow_runtime import FakeOrca
 
 
 class HandoffEntryTests(FlowFixture, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.root = self.store.root
+
     def cli(self, *argv):
         output = io.StringIO()
         with redirect_stdout(output):
@@ -638,7 +642,7 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
         with (project / "pyproject.toml").open("rb") as stream:
             data_files = tomllib.load(stream)["tool"]["setuptools"]["data-files"]
         with tempfile.TemporaryDirectory() as name:
-            prefix = Path(name)
+            prefix = Path(name).resolve()
             destination = prefix / "share/baton/templates/handoff-flow"
             destination.mkdir(parents=True)
             for pattern in data_files["share/baton/templates/handoff-flow"]:
