@@ -129,10 +129,22 @@ errors = 0
 skipped = 0
 expected_failures = 0
 
+[[verification]]
+command = ".venv/Scripts/python.exe -u -X utf8 scripts/verify_environment.py --base 6bfe64b699edd23f8dea3adac8b3ff2f0f175dcc"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#ac-01-isolation-final-local-evidence"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+candidate_sha = "7eebe272ca46b5ef26a8185676877a1315eeea84"
+tests_run = 842
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
 result = "passed"
-evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#m2-integration-candidate-evidence"
-candidate_sha = "186f4fc6e0cd15afb25eb54b89f259f0541c9427"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#ac-01-isolation-final-local-evidence"
+candidate_sha = "7eebe272ca46b5ef26a8185676877a1315eeea84"
 ```
 
 착수 base `a8b5fc1d57825df3afde2218ad39b63d1399902b`, branch `keulreobeu/ci-verification-rev3`. 선행 문서 검토는 `TASK-CI-VERIFY-ASSESS-001`에 귀속된다. 이 Task는 오프라인 shadow 제품 동작만 소유한다. 검토·회귀·공식 V3·원격 CI·게시 상태는 후보별로 기록한다.
@@ -272,3 +284,10 @@ The corrective observation uses Git with a private repository, copied index, pin
 Corrected-candidate focused regressions: 5/5 in 96.306 s, including inert applied and unused cases, private config/index instrumentation, reviewer and integration, ordinary immutability, and gitlink isolation. No executable filters were used.
 
 Independent A round 5 on 778c2c9 rejected a distinct AC-02 case-only rename manifest mismatch and found zero recurrence of the original AC-01 filter concern. UTC review 2026-11-25T05:56:31.4786891Z to 05:57:58.9489890Z, verdict msg_cf9e4a029ded. The next candidate carries only the validated built-in core.ignoreCase boolean into private Git. The inert manifest parity regression failed before this correction with false and then passed with both values; the isolation regression also passed, 2/2 in 23.307 s. No full V3 or publication for 778c2c9.
+
+## AC-01 isolation final local evidence
+
+- Exact local product `7eebe272ca46b5ef26a8185676877a1315eeea84`, tree `bbc029d1bc9a6ca12835338e0d765d58b8ff3ffe`, actual main `6bfe64b699edd23f8dea3adac8b3ff2f0f175dcc`. Prior green CI is historical. The corrective scope is restricted to existing AC-01/02 evidence and shadow observation; workflow, verifier and required check configuration are unchanged.
+- Same W4 A sample, round 6 independent coordinator PASS, 2026-11-25T06:00:16.8208474Z to 06:00:53.9510312Z (37.130 s). Isolated actual reads and ordinary/default/true/false/off/on case parity verified; earlier AC-01 and AC-02 findings resolved, zero new or recurrent findings. No separate review dispatch; request `msg_e88db6de4542`, verdict `msg_dd30663bfbb8`, report SHA-256 `fe204979d3b57fcdc8ed5f9a218edeb6deb70a34f25dcc2a8699b85f51f57403`. Request, approval and rework interval starts or ends not observed.
+- Official sequential V3: 842 tests in 2489.336 s; total 2497.512 s, 2026-11-25T06:30:32.1304873+00:00 to 2026-11-25T07:12:09.6429851+00:00; exit 0, no failures, errors, skips or expected failures; no provider calls or reuse. Main-base static SDD: 15 paths, 83 ACs.
+- Pre-publication audit: current remote refs, the published topic history and all new corrective commits checked for exact scope, provenance and sensitive content. This Task receipt is documentation-only. No other workstream, local logs or checkpoint files are in the topic change; the current PR merge ref will be verified separately.
