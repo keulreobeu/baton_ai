@@ -12,6 +12,9 @@
 | 승인된 BATON 병렬 작업·증거·인계 | `baton-flow` |
 | 집담 전용 계약과 과거 하네스 | `jipdam-workflow`, `jipdam-harness` (집담 전용) |
 
+Route별 호출(ADAPT-001, 정본은 [SDD](sdd.md) "작업 준비 Route와 재계획" 절): A는 승인된 Plan/ADR이 설계를 덮지 못하거나 재계획이 발동했을 때만 `gstack-plan-eng-review`(약 52KB, 대화형이라 코디네이터 세션)를 쓴다. B·C는 대형 계획 스킬을 로드하지 않는다. 버그는 Route와 관계없이 `gstack-investigate`를 쓴다.
+등록 위치는 원래 checkout(`E:/baton_ai/.claude/skills`, `.agents/skills`)이며 Orca Worker worktree에는 등록이 없다. 파일 존재는 실행 가능을 뜻하지 않으며 Worker 세션에서의 노출은 미검증이다.
+
 기본 개발 스킬은 gstack이다. 전체 host-native 묶음 56개를 각 도구에 등록하되 요청에 맞는 스킬만 읽는다. `baton-flow`는 pstack 0.15.36의 필요한 규칙을 포팅한 기존 스킬이며 pstack 전체를 추가 설치하지 않는다.
 
 ## 실제 등록 경로

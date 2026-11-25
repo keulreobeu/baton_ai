@@ -53,6 +53,8 @@
     "docs/adr/ADR-META-MAP-001.md",
     "docs/tasks/TASK-META-MAP-001.md",
     "docs/tasks/TASK-META-INVENTORY-001.md",
+    "docs/specs/ADAPT-001.md",
+    "docs/tasks/TASK-ADAPT-RULES-001.md",
     "docs/specs/CI-VERIFY-SHADOW-001.md",
     "docs/plans/ci-verification-shadow.md",
     "docs/adr/ADR-CI-VERIFY-SHADOW-001.md",
@@ -1939,6 +1941,199 @@
             {
               "file": "tests/test_sdd.py",
               "symbol": "SddTests.test_projection_uses_legacy_review_evidence_condition"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADAPT-001",
+      "spec": "docs/specs/ADAPT-001.md",
+      "requirements": [
+        {
+          "id": "ADAPT-001-REQ-01",
+          "acs": [
+            "ADAPT-001-AC-01",
+            "ADAPT-001-AC-02",
+            "ADAPT-001-AC-03",
+            "ADAPT-001-AC-07",
+            "ADAPT-001-AC-08",
+            "ADAPT-001-AC-09"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "ADAPT-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptRouteDocsTests.test_route_terms_present_in_sdd"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptRouteDocsTests.test_agents_points_to_the_single_rule_location"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_spec_routes_never_let_the_coordinator_implement"
+            }
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptReplanDocsTests.test_replan_terms_present_in_sdd"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_removed_coordinator_implementation_wording_is_absent"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_no_sentence_lets_the_coordinator_implement"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_detector_fails_on_copies_with_an_inserted_permission_sentence"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_worker_exception_needs_an_explicit_assignment"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_comma_joined_coordinator_act_is_detected_in_rule_texts"
+            }
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorDocsTests.test_coordinator_model_and_loading_terms_present_in_sdd"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorDocsTests.test_skill_guide_limits_large_planning_skill"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_removed_coordinator_implementation_wording_is_absent"
+            }
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-07",
+          "tests": [
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorRoleTests.test_role_boundary_in_sdd_and_spec"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorRoleTests.test_agents_pointer_names_role_scope"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorRoleTests.test_check_fails_without_the_ac_item"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorRoleTests.test_check_fails_when_the_whole_item_moves_to_an_appendix"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorRoleTests.test_check_fails_when_the_item_moves_into_a_code_block"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_indented_backtick_and_tilde_fences_hide_the_item"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_shorter_or_annotated_inner_fence_does_not_close_the_block"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_fence_closing_rules"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_no_sentence_lets_the_coordinator_implement"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptCoordinatorNoImplementationTests.test_detector_fails_on_copies_with_an_inserted_permission_sentence"
+            }
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-08",
+          "tests": [
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptBatchApprovalTests.test_batch_approval_in_sdd_and_spec"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptBatchApprovalTests.test_check_fails_without_the_ac_item"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptBatchApprovalTests.test_check_fails_when_the_whole_item_moves_to_an_appendix"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptBatchApprovalTests.test_check_fails_when_the_item_moves_into_a_code_block"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_indented_backtick_and_tilde_fences_hide_the_item"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_shorter_or_annotated_inner_fence_does_not_close_the_block"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_fence_closing_rules"
+            }
+          ]
+        },
+        {
+          "id": "ADAPT-001-AC-09",
+          "tests": [
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptModelMismatchTests.test_mismatch_rule_in_sdd_and_spec"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptModelMismatchTests.test_check_fails_without_the_ac_item"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptModelMismatchTests.test_check_fails_when_the_whole_item_moves_to_an_appendix"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptModelMismatchTests.test_check_fails_when_the_item_moves_into_a_code_block"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_indented_backtick_and_tilde_fences_hide_the_item"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_shorter_or_annotated_inner_fence_does_not_close_the_block"
+            },
+            {
+              "file": "tests/test_adapt_docs.py",
+              "symbol": "AdaptFenceVariantTests.test_fence_closing_rules"
             }
           ]
         }
