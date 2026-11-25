@@ -438,6 +438,10 @@ def record(store, task_id, request):
             return _write(store, row, "review_evidence" if kind == "review" else "integration_evidence", value)
 
 
+def completion_evidence_proof(candidate, review, integration):
+    return digest({"candidate": candidate, "review": review, "integration": integration})
+
+
 def approval_proof(store, row, approver):
     candidate, _ = _current_candidate(store, row)
     # Approver IDs cannot hold ":", so compare against the bare worker ID as well.
@@ -465,4 +469,4 @@ def approval_proof(store, row, approver):
         from .wiki import Wiki
         if Wiki(store.root).decision(documentation["event_id"]).get("blocking"):
             raise HarnessError("wiki_review_required_before_completion")
-    return digest({"candidate": candidate, "review": row["result"]["review_evidence"], "integration": integration})
+    return completion_evidence_proof(candidate, row["result"]["review_evidence"], integration)

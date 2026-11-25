@@ -81,6 +81,8 @@
           "tests": [
             {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_manual_prepare_reads_task_and_preserves_authority"},
             {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_current_registration_without_sha_holds_all_fixed_and_checkpoint_requests"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_registered_candidate_supports_git_paths_with_mixed_case"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_completed_report_uses_approved_candidate_and_rejects_stale_evidence"},
             {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_owner_excluded_cache_under_tracked_ancestor"},
             {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_owner_excluded_cache_is_bound_to_each_real_worktree"}
           ]

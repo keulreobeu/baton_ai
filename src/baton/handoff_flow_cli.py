@@ -255,44 +255,65 @@ def _owner_ignored_caches(root, trees):
     return observed, excluded_dirs
 
 
-def _candidate_matches(root, owner_row, expected_sha, owner_caches):
+def _candidate_trees(owner_row, historical):
+    candidate = Path(owner_row["result"]["candidate"]["candidate_root"])
+    return (candidate,) if historical else (Path(owner_row["worktree"]), candidate)
+
+
+def _git_path_identity(name):
+    return os.path.normcase(name).replace("\\", "/")
+
+
+def _candidate_matches(root, owner_row, expected_sha, owner_caches, historical):
     """Run in the read-only Git environment. Only the evidence owner decides candidate validity."""
     from .autocommit import eligible_paths
     from .evidence import _current_candidate
 
     candidate = owner_row["result"]["candidate"]
-    manifest = set(eligible_paths(candidate["manifest"]))
+    manifest = eligible_paths(candidate["manifest"])
+    identities = {_git_path_identity(name) for name in manifest}
+    if len(identities) != len(manifest):
+        return False
     if any(flow.SENSITIVE_TEXT.search(name) for name in manifest):
         return False
     # The owner normally hashes changes across both worktrees. Decline its
     # query if it would have to open another file to disprove this candidate.
-    for tree in (Path(owner_row["worktree"]), Path(candidate["candidate_root"])):
+    for tree in _candidate_trees(owner_row, historical):
         if not tree.is_absolute() or tree.is_symlink() or repository_key(tree) != repository_key(root):
             return False
-        for name in manifest:
-            path = tree / name
-            if path.exists():
-                _plain_path(path)
         changed = git(tree, "diff", "--name-only", "--no-renames", "-z", candidate["base_sha"], "--")
-        untracked = git(tree, "ls-files", "--others", "-z")
+        # Ask Git for raw spellings: its Windows case-insensitive index lookup
+        # can otherwise hide a worktree name that aliases a different index entry.
+        untracked = git(tree, "-c", "core.ignorecase=false", "ls-files", "--others", "-z")
         tracked = set(changed.split("\0")) - {""}
         names = tracked.union(untracked.split("\0")) - {""}
-        extra = {name for name in names if os.path.normcase(name).replace("\\", "/") not in manifest}
+        indexed = set(git(tree, "ls-files", "-z").split("\0")) - {""}
+        spellings = {}
+        for name in names | indexed:
+            key = _git_path_identity(name)
+            if key in identities and spellings.setdefault(key, name) != name:
+                return False
+        extra = {name for name in names if _git_path_identity(name) not in identities}
         if extra.intersection(tracked):
             return False
         if extra:
             ignored = set(git(tree, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").split("\0"))
             if not extra.issubset(ignored.intersection(owner_caches[str(tree)])):
                 return False
-    value, _ = _current_candidate(SimpleNamespace(root=root), owner_row)
+        for name in names - extra:
+            path = tree / name
+            if path.exists():
+                _plain_path(path)
+    value, _ = _current_candidate(SimpleNamespace(root=root), owner_row, allow_completed=historical)
     return value["candidate_sha"] == expected_sha
 
 
-def _owner_candidate(root, directory, row):
+def _owner_candidate(root, directory, row, *, historical):
     """Ask the existing evidence owner about this Task snapshot, without opening a ManagedStore."""
     database = directory / "state.sqlite3"
     _plain_path(database)
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+        conn.execute("BEGIN")
         item = conn.execute(
             "SELECT body, json_object('candidate', json_extract(result, '$.candidate'), "
             "'author_worker', json_extract(result, '$.author_worker'), 'base_commit', json_extract(result, '$.base_commit'), "
@@ -301,11 +322,26 @@ def _owner_candidate(root, directory, row):
             "AND (SELECT MAX(id) FROM managed_events WHERE task_id=managed_tasks.id)=?",
             (row["id"], row["attempt"], row["hash"], row["state"], row["worktree"], row["busy"],
              row["managed_event"])).fetchone()
+        approved = None
+        if item and historical:
+            approved = conn.execute(
+                "SELECT json_extract(result, '$.review_evidence'), json_extract(result, '$.integration_evidence'), "
+                "(SELECT json_extract(body, '$.proof') FROM managed_events WHERE task_id=managed_tasks.id "
+                "AND kind='COMPLETED' ORDER BY id DESC LIMIT 1) FROM managed_tasks WHERE id=?",
+                (row["id"],)).fetchone()
     if not item:
         return False
     result = json.loads(item[1])
     if digest(result["candidate"]) != row["candidate_proof"]:
         return False
+    if historical:
+        from .evidence import completion_evidence_proof
+        if not approved or not all(approved):
+            return False
+        review, integration = (json.loads(value) for value in approved[:2])
+        if (not isinstance(review, dict) or not isinstance(integration, dict)
+                or completion_evidence_proof(result["candidate"], review, integration) != approved[2]):
+            return False
     result["validation_passed"] = item[2] == "true"
     owner_row = dict(task=json.loads(item[0]), result=result, state=row["state"],
                      lease=row["busy"], worktree=row["worktree"])
@@ -318,10 +354,10 @@ def _owner_candidate(root, directory, row):
                GIT_CONFIG_KEY_1="core.fsmonitor", GIT_CONFIG_VALUE_1="false")
     query = ("import json, sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\n"
              "from baton.handoff_flow_cli import _candidate_matches\n"
-             "row, caches = json.load(sys.stdin)\n"
-             "sys.exit(0 if _candidate_matches(Path(sys.argv[2]), row, sys.argv[3], caches) else 1)")
+             "row, caches, historical = json.load(sys.stdin)\n"
+             "sys.exit(0 if _candidate_matches(Path(sys.argv[2]), row, sys.argv[3], caches, historical) else 1)")
     try:
-        trees = (Path(row["worktree"]), Path(result["candidate"]["candidate_root"]))
+        trees = _candidate_trees(owner_row, historical)
         observed, excluded_dirs = _owner_ignored_caches(root, trees)
         names = sorted(excluded_dirs.union(*observed.values()))
         with ExitStack() as scratch:
@@ -341,7 +377,7 @@ def _owner_candidate(root, directory, row):
                            GIT_CONFIG_VALUE_2=str(excludes))
             check = subprocess.run([sys.executable, "-I", "-S", "-B", "-X", "utf8", "-c", query,
                                     str(Path(__file__).resolve().parents[1]), str(root), row["candidate"]],
-                                   input=json.dumps([owner_row, observed]).encode("ascii"), env=env, timeout=60,
+                                    input=json.dumps([owner_row, observed, historical]).encode("ascii"), env=env, timeout=60,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return check.returncode == 0 and _owner_ignored_caches(root, trees) == (observed, excluded_dirs)
     except (HarnessError, OSError, UnicodeError, subprocess.TimeoutExpired):
@@ -372,9 +408,10 @@ def _capture(root, directory, task, role, kind, notification, reservation=None):
                   write_scope=allowed_text, protected_scope=_strings(scope.get("forbidden_paths", [])),
                   operations="Local handoff preparation", blockers="Execution approval requires read-back.",
                   acs=acs)
+    historical = kind == "REPORT" and notification is None and row["state"] == "COMPLETED"
     if (row["candidate_stage"] == "registered" and row["candidate_base"] == fields["base"]
             and row["candidate_authority"].sha == row["candidate"]
-            and _owner_candidate(root, directory, row)):
+            and _owner_candidate(root, directory, row, historical=historical)):
         fields["candidate_sha"] = row["candidate"]
         fields["comparison_ref"] = row["candidate_base"]
     # Cite the owner’s recorded evidence without repeating its checks or granting

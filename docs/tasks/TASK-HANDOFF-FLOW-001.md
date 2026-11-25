@@ -219,3 +219,11 @@ GitHub runner의 TEMP가 8.3 별칭을 사용했다. 구체적으로 직접 호�
 이전 CI 실패는 새 독립 검토의 finding에 합산하지 않는다. 이 수정 후보의 독립 검토, 순차 V3와 PR CI의 실제 결과는 각각 해당 SHA에 귀속한다. Task는 `in_progress`다.
 
 로컬 Windows에서 Win32 GetShortPathNameW로 생성한 8.3 TEMP와 정규 TEMP가 같은 디렉터리임을 확인했다. 수정 전 짧은 경로에서 GitHub와 동일한 테스트 4건 FAIL(25.130초)이며, 수정 후 실별칭 4/4 PASS(33.153초), 정규 경로 4/4 PASS(33.023초)다. 실패·오류·skip은 수정 후 두 실행 모두 0이다. Task-base 정적 SDD 25경로·81 AC PASS. 모델 호출 0.
+
+## PR #22 공개 리뷰 P2 대응
+
+공개 리뷰의 새 지적 두 건은 [Git 경로 대조](https://github.com/keulreobeu/baton_ai/pull/22#discussion_r4690219590)와 [완료 Task REPORT](https://github.com/keulreobeu/baton_ai/pull/22#discussion_r4690219595)다. 이전 독립 PASS·CI의 판정과 별개다. Windows의 정상 mixed-case 후보는 기준 코드에서도 관측됐고, 동일 경로로 해석되는 두 번째 Git index 항목을 추가하자 기준 코드가 REVIEW/REPORT를 잘못 준비했다. 별도의 정상 후보 등록·리뷰·통합·승인으로 COMPLETED에 도달한 수동 REPORT는 기준 코드에서 차단됐다.
+
+어댑터는 manifest와 Git 경로의 비교 규칙을 일치시키고 실제 Git 이름 충돌을 차단한다. COMPLETED 수동 REPORT의 후보·리뷰·통합은 기존 승인 영수증의 지문과 대조하고, 증거 소유자의 기존 역사 후보 검사를 사용한다. 완료 이후 바뀔 수 있는 작성자 소스는 후보 내용의 증거로 사용하지 않는다. 등록·worktree 소유권, 실제 후보 SHA·tree·manifest·스코프·제외 검사와 발급 직전 재관측은 유지한다. REVIEW에는 완료 REPORT 경로를 적용하지 않는다. Task는 `in_progress`다.
+
+집중 회귀 최종 3/3 PASS(100.700초, 실패·오류·skip 0). 원시 Git 모드가 Windows의 일반 ls-files가 숨긴 별칭 철자를 노출하는 것을 임시 Git control에서 확인했다. 완료 REPORT는 작성자 작업 트리가 바뀐 뒤에도 승인된 후보를 보고하고, 정합하지 않은 후보 HEAD나 리뷰 근거를 차단했다. 캐시와 재포함 대조군도 통과했다. 로컬 checkpoint planner는 CBM_WRONG_ROOT와 REGRESSION_UNMAPPED로 V3를 선택했으며 공식 V3는 별도 슬롯에서 실행한다.

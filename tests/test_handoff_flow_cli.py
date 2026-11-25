@@ -208,6 +208,8 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
         self.assertEqual([(index.read_bytes(), index.stat().st_mtime_ns) for index in indexes], before)
 
     def test_registered_candidate_supports_git_paths_with_mixed_case(self):
+        from baton.isolation import git
+
         client = self.orca()
         tree = Path(self.store.get("ORCA")["worktree"])
         (tree / "src/MixedCase.py").write_text("fixture = 1\n", encoding="utf-8")
@@ -216,7 +218,43 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
         with patch.object(runtime, "OrcaCLI", return_value=client):
             self.assertEqual(self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))[0], 0)
         self.candidate("ORCA")
-        self.assertEqual(self.prepare({"kind": "REVIEW", "receiver": "Reviewer"}, task="ORCA")[0], 0)
+        review = {"kind": "REVIEW", "receiver": "Reviewer"}
+        report = {"kind": "REPORT", "receiver": "Coordinator"}
+        self.assertEqual([self.prepare(request, task="ORCA")[0] for request in (review, report)], [0, 0])
+        # Stage a distinct Git name with the same content and Windows identity.
+        # The author's original candidate remains registered throughout.
+        blob = git(tree, "hash-object", "-w", "src/MixedCase.py").strip()
+        git(tree, "-c", "core.ignorecase=false", "update-index", "--add", "--cacheinfo",
+            f"100644,{blob},src/MIXEDCASE.py")
+        self.assertEqual([self.prepare(request, task="ORCA")[0] for request in (review, report)], [3, 3])
+
+    def test_completed_report_uses_approved_candidate_and_rejects_stale_evidence(self):
+        from baton.evidence import record
+        from baton.isolation import git
+
+        self.author()
+        self.candidate()
+        record(self.store, "FLOW", self.proof("review"))
+        record(self.store, "FLOW", self.proof("integration"))
+        self.assertEqual(self.store.approve("FLOW", "operator")["state"], "COMPLETED")
+        request = {"kind": "REPORT", "receiver": "Coordinator"}
+        self.assertEqual(self.prepare(request)[0], 0)
+        source = Path(self.store.get("FLOW")["worktree"])
+        (source / "src/value.py").write_text("value = 3\n", encoding="utf-8")
+        self.assertEqual(self.prepare(request)[0], 0)
+        self.assertEqual(self.prepare({"kind": "REVIEW", "receiver": "Reviewer"})[0], 3)
+        candidate = self.store.get("FLOW")["result"]["candidate"]
+        tree = Path(candidate["candidate_root"])
+        git(tree, "update-ref", "HEAD", candidate["base_sha"], candidate["candidate_sha"])
+        try:
+            self.assertEqual(self.prepare(request)[0], 3)
+        finally:
+            git(tree, "update-ref", "HEAD", candidate["candidate_sha"], candidate["base_sha"])
+        self.assertEqual(self.prepare(request)[0], 0)
+        with self.store.tx() as db:
+            db.execute("UPDATE managed_tasks SET result=json_set(result, '$.review_evidence.candidate_sha', ?) WHERE id='FLOW'",
+                       (candidate["base_sha"],))
+        self.assertEqual(self.prepare(request)[0], 3)
 
     def test_current_registration_without_sha_holds_all_fixed_and_checkpoint_requests(self):
         from baton.isolation import git
