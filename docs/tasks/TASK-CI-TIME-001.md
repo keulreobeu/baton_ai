@@ -137,3 +137,7 @@ author ignored 파일 0개를 확인했다. 공식 순차 검증은 검토 후 �
 대상 검사·Task base SDD·기존 fast runner 통과 후 별도 Git worker가 후보를 고정한다.
 독립 검토, 정확한 최종 후보의 공식 순차 verify_environment.py 1회와 원격 CI는 아직 pending이다.
 부모 TASK-CI-OPT-001과 이 Task는 in_progress이며 verified로 승격하지 않는다.
+
+## 2026-11-25 W4 job timeout supersession
+
+The 2026-11-25 user decision supersedes the 25-minute workflow limit for W4 PR #23. Run 45528701200 reached that limit in both Windows jobs before the shadow regressions finished. Remove the three job keys and retain the existing workflow test symbol with an absence assertion. Candidate-specific verification is recorded in TASK-CI-VERIFY-SHADOW-001.

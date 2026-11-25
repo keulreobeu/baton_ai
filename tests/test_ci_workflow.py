@@ -189,13 +189,14 @@ class PrMainWorkflowTests(unittest.TestCase):
         text = read(".github/workflows/verify.yml")
         offline = text.split("  offline:\n", 1)[1].split("  gate:\n", 1)[0]
         for term in ("fail-fast: false", "os: [windows-latest]",
-                     "python: ['3.11', '3.12']", "timeout-minutes: 25", "fetch-depth: 0",
+                     "python: ['3.11', '3.12']", "fetch-depth: 0",
                      "PYTHONPATH: src", "PYTHONDONTWRITEBYTECODE: '1'",
                      "python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers",
                      'python -m pip install "cryptography>=42"', "scripts/ci_plan.py --remote run",
                      "BATON_CI_PLAN: ${{ needs.plan.outputs.plan }}",
                      "BATON_CI_DIGEST: ${{ needs.plan.outputs.digest }}"):
             self.assertIn(term, offline)
+        self.assertNotIn("timeout-minutes", text)
         self.assertEqual(text.count("matrix:\n"), 1)
         self.assertEqual(text.count("fetch-depth: 0"), 3)
         self.assertEqual(text.count("contents: read"), 1)
