@@ -5,10 +5,10 @@ kind = "spec"
 id = "HANDOFF-FLOW-ENTRY-001"
 status = "approved"
 owner = "Codex W3"
-revision = 2
+revision = 3
 approved_by = "Master Coordinator (위임된 Phase 4~5 로컬 진입점)"
 approved_at = "2026-11-25"
-approval_ref = "W3 사용자 지시 Q4/Q7/Q8/Q9와 msg_e0c3959933ff. revision 2는 msg_b82ab0c6633a·msg_7a1232574382·msg_81b201b52e65의 정착 읽기, 카드별 영수증과 설치 검증 범위"
+approval_ref = "W3 사용자 지시 Q4/Q7/Q8/Q9와 msg_e0c3959933ff. revision 2는 msg_b82ab0c6633a·msg_7a1232574382·msg_81b201b52e65의 정착 읽기, 카드별 영수증과 설치 검증 범위. revision 3은 복구 작업 task_01abfe309421의 사용자 승인에 따른 R5 두 계약 한정 재설계"
 ```
 
 ## HANDOFF-FLOW-ENTRY-001-REQ-01 기존 Task에서 로컬 카드 준비
@@ -44,3 +44,7 @@ BATON의 기존 runtime.ingest가 반환한 정착 결과와 현재 DB binding�
 2026-11-25 독립 검토 후 기존 AC-01·03·04의 관측 근거를 보완했다(`msg_eb249b065b37`). 고정 후보에는 현재 시도의 기존 후보 등록 이벤트와 영수증 지문, 같은 Task에서 기존 evidence 소유자가 읽기 전용으로 확인한 후보가 필요하다. 같은 base의 이전 시도 후보가 남아 있고 새 작성자의 정착 시점에는 등록이 없으면 해당 정착 사실을 checkpoint로 보고한다. 현재 시도의 후보를 확인할 수 없으면 고정 REVIEW·REPORT는 보류한다.
 
 선택적 카드 모듈의 로딩과 정착 전후 관측에서 예외가 나도 제품 ingest는 한 번 호출되고 원래 결과 또는 예외를 유지한다. 같은 요청이 겹치면 먼저 저장된 영수증의 시각과 digest를 사용한다. 그 영수증이 자신의 마지막 관측보다 늦으면 동일한 출처와 사실을 다시 조회한 후 저장한다.
+
+R5 한정 재설계는 기존 증거 모듈의 읽기 전용 조회로 현재 등록 SHA와 작성자 귀속을 판단한다. 등록 이벤트가 없고 후보·리뷰·통합 필드가 미기록 또는 JSON null이면 미등록 checkpoint를 허용한다. 이전 시도 등록이 남은 경우 현재 작성자와 새 시도 근거를 확인한다. 현재 등록의 SHA나 귀속을 확인할 수 없으면 v5 준비를 차단한다.
+
+저장 직전 작성 권한과 두 worktree의 Git 상태를 다시 관측한다. 제외된 상위 디렉터리가 하위 재포함을 막는지 확인하며 실제 캐시 파일은 원래 worktree의 추적 여부와 제외 판정을 따른다. 판정 불일치 시 v5 영수증과 문서를 발급하지 않으며 기존 인계 및 정착 결과를 유지한다.

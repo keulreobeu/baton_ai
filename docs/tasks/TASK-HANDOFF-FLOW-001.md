@@ -12,7 +12,7 @@ adr = "docs/adr/ADR-HANDOFF-FLOW-001.md"
 scope = ["docs/specs/HANDOFF-FLOW-001.md", "docs/specs/HANDOFF-FLOW-LOCAL-001.md", "docs/plans/handoff-flow-v5.md",
          "docs/adr/ADR-HANDOFF-FLOW-001.md", "docs/tasks/TASK-HANDOFF-FLOW-001.md",
          "docs/templates/handoff-flow", "docs/sdd/traceability.json", "src/baton/handoff_flow.py", "tests/test_handoff_flow.py",
-         "docs/specs/HANDOFF-FLOW-ENTRY-001.md", "src/baton/handoff_flow_cli.py", "tests/test_handoff_flow_cli.py",
+         "docs/specs/HANDOFF-FLOW-ENTRY-001.md", "src/baton/handoff_flow_cli.py", "src/baton/evidence.py", "tests/test_handoff_flow_cli.py",
          "src/baton/handoff_cli.py", "src/baton/managed_cli.py", "skills/baton-flow/SKILL.md", "pyproject.toml",
          "skills/baton-flow/references/source-lock.json", "tooling/pstack-source.json"]
 acs = ["SDD-001-AC-01", "SDD-001-AC-02", "SDD-001-AC-03", "SDD-001-AC-05",
@@ -53,6 +53,18 @@ acs = ["HANDOFF-FLOW-ENTRY-001-AC-01", "HANDOFF-FLOW-ENTRY-001-AC-02", "HANDOFF-
        "HANDOFF-FLOW-ENTRY-001-AC-04", "HANDOFF-FLOW-LOCAL-001-AC-01", "HANDOFF-FLOW-LOCAL-001-AC-02",
        "HANDOFF-FLOW-LOCAL-001-AC-03", "HANDOFF-FLOW-LOCAL-001-AC-04"]
 tests_run = 24
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -B -X utf8 -m unittest -v tests.test_handoff_flow_cli"
+result = "passed"
+evidence = "docs/tasks/TASK-HANDOFF-FLOW-001.md#r5-한정-재설계-증거"
+acs = ["HANDOFF-FLOW-ENTRY-001-AC-01", "HANDOFF-FLOW-ENTRY-001-AC-02",
+       "HANDOFF-FLOW-ENTRY-001-AC-03", "HANDOFF-FLOW-ENTRY-001-AC-04"]
+tests_run = 22
 failures = 0
 errors = 0
 skipped = 0
@@ -155,3 +167,24 @@ V1 선택과 6개 직접 모듈의 고유 219건이 232.942초에 통과했다. 
 부모 SHA의 코드를 임시 위치에 재현한 직접 시험에서 로컬·Orca checkpoint가 각각 잘못 발급됐고 소유자가 확인한 캐시만 있는 후보도 보류됐다. 쿼리에 사용한 Git 설정과 캐시는 테스트 전용이다. 최종 영향 검사·고정 SHA·내부 검토는 `run_642522584d8a`의 해당 후보 원문 영수증으로 추적한다. 같은 근본 차단이 다섯 번째 독립 판정에 남으면 자동 수정을 끝내고 복구 상태를 제출한다.
 
 작성자가 이전 독립 fixture의 실패 ID 3개를 재실행해 모두 통과했다. 별도의 대조군 5개에서는 산출물이 같은 경우와 다른 경우의 A→B 귀속, 이전 정상 카드 재사용, 이전 오귀속 카드 보류, 등록 지문 불일치 보류를 확인했다. 직접 회귀 2건은 로컬·Orca의 정상/누락 등록과 서로 다른 worktree의 제외 규칙을 검사했다. 이 작성자 검사는 다음 SHA의 독립 판정을 대신하지 않는다.
+
+## R5 한정 재설계 증거
+
+- 복구점 `7e10d85c55aa67b7d5409733910dca7e95dec2cb`, Task base `6f7cbd85069533e5565f178e565bb9958c7705c1`.
+- 승인 범위는 기존 증거 담당자의 읽기 전용 등록·귀속 판정과 v5 저장 직전 재관측이다. 기존 정착 결과와 레거시 인계 경로를 유지한다.
+- `HANDOFF-FLOW-ENTRY-001-AC-01/03/04`의 R5 원본 ID는 복구 자료의 `w3-evidence/reviewer/test-tally.json`에 있다. 복구 자료에 원본 fixture 소스가 없어 아래 저장소 회귀에서 같은 두 런타임으로 사례를 재현한다.
+- Task는 `in_progress`이며 독립 검토와 공식 순차 V3, W1 최종 후보 연결, 원격 CI는 별도 증거를 요구한다.
+
+| R5 ID | W3 저장소 회귀 (`tests.test_handoff_flow_cli.HandoffEntryTests`) |
+|---|---|
+| `reg5.Registration.test_local_never_registered_after_compaction`, `reg5.Registration.test_orca_never_registered_after_compaction` | `test_never_registered_with_compacted_result` |
+| `reg5.Registration.test_manual_checkpoint_second_observation_ambiguous`, `reg5.Registration.test_orca_checkpoint_second_observation_ambiguous` | `test_checkpoint_reobserves_previous_candidate_authority` |
+| `cache5.Cache.test_local_tracked_ancestor`, `cache5.Cache.test_orca_tracked_ancestor` | `test_owner_excluded_cache_under_tracked_ancestor` |
+
+정상 후보 저장·등록 SHA 유실·후보 worktree HEAD 변경·worktree별 제외 철회는
+`test_current_registration_without_sha_holds_all_fixed_and_checkpoint_requests`와
+`test_owner_excluded_cache_is_bound_to_each_real_worktree`에서 확인한다.
+
+- 전용 venv에서 위 5개 저장소 테스트 PASS(199.780초, 실패·오류·skip 0). 세 R5 사례는 각각 로컬·fake Orca에서 실행했다. 실행 원문은 `.local_runtime/w3-r5-recovery/r5-matrix.txt`에 있다.
+- 동일 코드로 진입점 모듈 전체 22건 PASS(341.045초, 실패·오류·skip 0). 실행 원문은 `.local_runtime/w3-r5-recovery/entry-regression.txt`에 있다.
+- Task base 정적 SDD는 25개 변경 경로에서 PASS했다. 로컬 checkpoint planner는 `CBM_WRONG_ROOT` 및 `REGRESSION_UNMAPPED`로 V3를 선택했다. 작성자 직접 회귀를 기록하고 V2 판정은 미실행으로 둔다. 공식 V3은 고정 후보의 독립 검토 PASS가 선행 조건이다.

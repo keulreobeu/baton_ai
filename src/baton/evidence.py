@@ -7,6 +7,7 @@ the complete checked result and task fingerprint before accepting new evidence.
 from __future__ import annotations
 
 from contextlib import ExitStack
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,68 @@ def _sha(value):
     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", value):
         raise HarnessError("invalid_candidate_sha")
     return value
+
+
+@dataclass(frozen=True)
+class CandidateRegistration:
+    stage: str
+    sha: str | None = None
+    proof: str | None = None
+    author: str | None = None
+
+
+def observe_candidate_registration(conn, task_id):
+    """Read the evidence owner's registration and attribution in the caller's snapshot.
+
+    Checkpoint means no registration or a superseded registration. Unknown
+    means the existing facts cannot establish either case. A registered SHA
+    still needs the same Git and source proof as every other evidence consumer.
+    """
+    receipt = conn.execute(
+        "SELECT id, json_extract(body, '$.evidence_hash') FROM managed_events "
+        "WHERE task_id=? AND kind='evidence_recorded' AND json_extract(body, '$.kind')='candidate' "
+        "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    item = conn.execute(
+        "SELECT attempt, json_extract(body, '$.execution.runtime'), "
+        "json_extract(result, '$.candidate'), json_extract(result, '$.author_worker'), "
+        "json_extract(result, '$.runtime.dispatch_id'), json_extract(result, '$.runtime.attempt'), "
+        "json_extract(result, '$.validation_passed'), json_type(result, '$.candidate'), "
+        "json_type(result, '$.review_evidence'), json_type(result, '$.integration_evidence'), "
+        "(SELECT MAX(id) FROM managed_events WHERE task_id=managed_tasks.id AND kind='PLANNING') "
+        "FROM managed_tasks WHERE id=?", (task_id,)).fetchone()
+    (attempt, runtime, raw_candidate, author, dispatch, binding_attempt, validated,
+     candidate_type, review_type, integration_type, last_claim) = item
+    if runtime == "orca":
+        has_binding = isinstance(dispatch, str) and bool(dispatch) and binding_attempt == attempt
+        expected_author = f"orca:{dispatch}" if has_binding else None
+    else:
+        expected_author = f"local:{task_id}:{attempt}"
+    unknown = CandidateRegistration("unknown")
+    if not receipt:
+        records = (candidate_type, review_type, integration_type)
+        if any(value not in {None, "null"} for value in records):
+            return unknown
+        if (validated == 1 or author is not None) and (not expected_author or author != expected_author):
+            return unknown
+        return CandidateRegistration("checkpoint", author=author)
+    if candidate_type != "object" or not expected_author or author != expected_author:
+        return unknown
+    registered_at, proof = receipt
+    candidate = json.loads(raw_candidate)
+    candidate_author = candidate.get("author_worker")
+    if not isinstance(candidate_author, str) or not candidate_author or digest(candidate) != proof:
+        return unknown
+    try:
+        sha = _sha(candidate.get("candidate_sha"))
+    except HarnessError:
+        return unknown
+    if candidate_author == author:
+        return CandidateRegistration("registered", sha, proof, author)
+    # PLANNING may also be emitted when the same attempt validates again.
+    # Use event order only after observing a different author.
+    if last_claim and registered_at < last_claim:
+        return CandidateRegistration("checkpoint", proof=proof, author=author)
+    return unknown
 
 
 def _tree(store, path, sha):

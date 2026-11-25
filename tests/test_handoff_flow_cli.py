@@ -18,7 +18,9 @@ from unittest.mock import patch
 from importlib.metadata import PathDistribution
 
 from baton import handoff_flow, handoff_flow_cli, managed_cli, runtime
-from baton.contracts import HarnessError
+from baton.contracts import HarnessError, digest, encode
+from baton.managed import PAYLOAD_LIMIT
+from baton.orchestrator import Orchestrator
 from baton.runtime import dispatch
 from tests.test_flow_evidence import FlowFixture
 from tests.test_flow_runtime import FakeOrca
@@ -213,6 +215,8 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
         self.assertEqual(self.prepare({"kind": "REVIEW", "receiver": "Reviewer"}, task="ORCA")[0], 0)
 
     def test_current_registration_without_sha_holds_all_fixed_and_checkpoint_requests(self):
+        from baton.isolation import git
+
         self.author()
         self.candidate()
         client = self.orca()
@@ -228,23 +232,120 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
         for task in ("FLOW", "ORCA"):
             with self.subTest(task=task):
                 self.assertEqual([self.prepare(request, task)[0] for request in requests], [0, 0, 3])
+                registered = self.store.get(task)["result"]["candidate"]
+                tree = Path(registered["candidate_root"])
+                git(tree, "update-ref", "HEAD", registered["base_sha"], registered["candidate_sha"])
+                try:
+                    self.assertEqual([self.prepare(request, task)[0] for request in requests], [3, 3, 3])
+                finally:
+                    git(tree, "update-ref", "HEAD", registered["candidate_sha"], registered["base_sha"])
+                self.assertEqual([self.prepare(request, task)[0] for request in requests], [0, 0, 3])
                 for missing in ("$.candidate.candidate_sha", "$.candidate"):
                     with self.store.tx() as db:
                         db.execute("UPDATE managed_tasks SET result=json_remove(result, ?) WHERE id=?", (missing, task))
                     self.assertEqual([self.prepare(request, task)[0] for request in requests], [3, 3, 3])
 
+    def allow_local_retry(self):
+        task = self.store.get("FLOW")["task"]
+        task["execution"]["max_attempts"] = 2
+        with self.store.tx() as db:
+            db.execute("UPDATE managed_tasks SET body=?, hash=? WHERE id='FLOW'", (encode(task), digest(task)))
+
+    def test_never_registered_with_compacted_result(self):
+        self.allow_local_retry()
+        client = self.orca(attempts=2)
+        first = Path(self.store.get("ORCA")["worktree"])
+        (first / "src/value.py").write_text("value = 1\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        event = {"dispatch_id": "dispatch-1", "event_id": "compacted", "sequence": 1}
+        checks = [{"argv": ["python", "-m", "unittest"], "acs": ["AC1"], "exit_code": 0,
+                   "test_count": 1, "output": "o" * PAYLOAD_LIMIT}]
+        with patch.object(Orchestrator, "validate", return_value=checks), \
+             patch.object(runtime, "OrcaCLI", return_value=client):
+            self.assertEqual(self.author()["result"]["reason"], "result_unrecordable")
+            _, compacted = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
+            self.assertEqual(compacted["result"]["reason"], "result_unrecordable")
+        for task in ("FLOW", "ORCA"):
+            self.store.ready(task)
+        self.assertEqual(self.author()["state"], "REVIEW_REQUIRED")
+        second = dispatch(self.store, "ORCA", client)
+        (Path(second["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-2")
+        event.update(dispatch_id="dispatch-2", event_id="compacted-retry")
+        with patch.object(runtime, "OrcaCLI", return_value=client):
+            code, row = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
+        self.assertEqual((code, row["state"], row["handoff"]["status"]), (0, "REVIEW_REQUIRED", "prepared"))
+        for task in ("FLOW", "ORCA"):
+            with self.subTest(task=task):
+                result = self.store.get(task)["result"]
+                for record in ("candidate", "review_evidence", "integration_evidence"):
+                    self.assertIsNone(result[record])
+                requests = [{"kind": "REVIEW", "receiver": "Reviewer"},
+                            {"kind": "REPORT", "receiver": "Coordinator"},
+                            {"kind": "REPORT", "receiver": "Coordinator", "report_stage": "checkpoint"}]
+                self.assertEqual([self.prepare(request, task)[0] for request in requests], [3, 3, 0])
+
+    def test_checkpoint_reobserves_previous_candidate_authority(self):
+        self.allow_local_retry()
+        self.author()
+        self.candidate()
+        client = self.orca(attempts=2)
+        event = {"dispatch_id": "dispatch-1", "event_id": "first-owner", "sequence": 1}
+        client.settle("dispatch-1")
+        with patch.object(runtime, "OrcaCLI", return_value=client):
+            self.assertEqual(self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))[0], 0)
+        self.candidate("ORCA", "ORCA-OWNER")
+        for task in ("FLOW", "ORCA"):
+            self.store.control(task, "pause")
+            self.store.ready(task)
+        self.author()
+        second = dispatch(self.store, "ORCA", client)
+        (Path(second["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-2")
+        event.update(dispatch_id="dispatch-2", event_id="second-owner")
+        cards = self.store.directory / "handoff-cards"
+        before = sorted(p.relative_to(cards) for p in cards.rglob("*"))
+        original = handoff_flow.prepare
+
+        def remove_author(task):
+            def render(*args, **kwargs):
+                card = original(*args, **kwargs)
+                with self.store.tx() as db:
+                    db.execute("UPDATE managed_tasks SET result=json_remove(result, '$.author_worker') WHERE id=?",
+                               (task,))
+                return card
+            return render
+
+        with patch.object(handoff_flow, "prepare", side_effect=remove_author("FLOW")):
+            self.assertEqual(self.prepare({"kind": "REPORT", "receiver": "Coordinator",
+                                           "report_stage": "checkpoint"})[0], 3)
+        with patch.object(runtime, "OrcaCLI", return_value=client), \
+             patch.object(handoff_flow, "prepare", side_effect=remove_author("ORCA")):
+            code, row = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
+        self.assertEqual((code, row["state"], row["handoff"]["status"]), (0, "REVIEW_REQUIRED", "blocked"))
+        self.assertEqual(sorted(p.relative_to(cards) for p in cards.rglob("*")), before)
+
     def test_owner_excluded_cache_is_bound_to_each_real_worktree(self):
+        self._owner_excluded_cache("src", "src/__pycache__", "src/__pycache__/fixture*.pyc")
+
+    def test_owner_excluded_cache_under_tracked_ancestor(self):
+        generated = self.root / "src/generated"
+        generated.mkdir()
+        (generated / "seed.py").write_text("value = 1\n", encoding="utf-8")
+        self._owner_excluded_cache("src/generated", "src/generated", "src/generated/**")
+
+    def _owner_excluded_cache(self, directory, excluded_dir, reincluded):
         from baton.evidence import _current_candidate
         from baton.isolation import git
 
         # Git does not re-include a child while its parent directory is excluded.
-        (self.root / ".gitignore").write_text(".local_runtime/\n!src/__pycache__/fixture*.pyc\n", encoding="utf-8")
-        git(self.root, "add", ".gitignore")
+        (self.root / ".gitignore").write_text(f".local_runtime/\n!{reincluded}\n", encoding="utf-8")
+        git(self.root, "add", ".gitignore", "src")
         git(self.root, "commit", "-m", "Use a separate fixture ignore file")
         self.base = git(self.root, "rev-parse", "HEAD").strip()
         with tempfile.TemporaryDirectory() as where:
             config, ignores = Path(where) / "gitconfig", Path(where) / "ignore"
-            ignores.write_text("/src/__pycache__/\n", encoding="utf-8")
+            ignores.write_text(f"/{excluded_dir}/\n", encoding="utf-8")
             git(self.root, "config", "--file", str(config), "core.excludesFile", ignores.as_posix())
             with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config)}):
                 self.author()
@@ -262,7 +363,7 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
                     source = Path(row["worktree"])
                     candidate = Path(row["result"]["candidate"]["candidate_root"])
                     for tree in (source, candidate):
-                        cache = tree / "src/__pycache__"
+                        cache = tree / directory / "__pycache__"
                         cache.mkdir(exist_ok=True)
                         (cache / "fixture[1].pyc").write_bytes(b"fixture cache")
                     registered, _ = _current_candidate(self.store, row)
@@ -272,7 +373,20 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
                     original = [(i.read_bytes(), i.stat().st_mtime_ns) for i in indexes]
                     fixed = [{"kind": "REVIEW", "receiver": "Reviewer"}, {"kind": "REPORT", "receiver": "Coordinator"}]
                     self.assertEqual([self.prepare(request, task)[0] for request in fixed], [0, 0])
-                    extra = source / "src/__pycache__/source.py"
+                    original_prepare = handoff_flow.prepare
+
+                    def withdraw_exclusion(*args, **kwargs):
+                        card = original_prepare(*args, **kwargs)
+                        ignores.write_text("", encoding="utf-8")
+                        return card
+
+                    cards = self.store.directory / "handoff-cards"
+                    artifacts = sorted(p.relative_to(cards) for p in cards.rglob("*"))
+                    with patch.object(handoff_flow, "prepare", side_effect=withdraw_exclusion):
+                        self.assertEqual(self.prepare(dict(fixed[0], request_id="rules-changed"), task)[0], 3)
+                    self.assertEqual(sorted(p.relative_to(cards) for p in cards.rglob("*")), artifacts)
+                    ignores.write_text(f"/{excluded_dir}/\n", encoding="utf-8")
+                    extra = source / directory / "__pycache__/source.py"
                     extra.write_text("unregistered = True\n", encoding="utf-8")
                     self.assertEqual([self.prepare(request, task)[0] for request in fixed], [3, 3])
                     extra.unlink()
