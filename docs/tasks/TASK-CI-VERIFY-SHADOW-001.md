@@ -93,10 +93,22 @@ errors = 0
 skipped = 0
 expected_failures = 0
 
+[[verification]]
+command = ".venv/Scripts/python.exe -u -X utf8 scripts/verify_environment.py --base 6f7cbd85069533e5565f178e565bb9958c7705c1"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#public-candidate-evidence"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+candidate_sha = "156ffea9172fd5bec286844f984b4e9f658a1f57"
+tests_run = 809
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
 result = "passed"
-evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#로컬-검증-영수증"
-candidate_sha = "e2e5e40428d210d49a716c2ceb1a76cd88d861b0"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#public-candidate-evidence"
+candidate_sha = "156ffea9172fd5bec286844f984b4e9f658a1f57"
 ```
 
 착수 base `a8b5fc1d57825df3afde2218ad39b63d1399902b`, branch `keulreobeu/ci-verification-rev3`. 선행 문서 검토는 `TASK-CI-VERIFY-ASSESS-001`에 귀속된다. 이 Task는 오프라인 shadow 제품 동작만 소유한다. 검토·회귀·공식 V3·원격 CI·게시 상태는 후보별로 기록한다.
@@ -197,3 +209,10 @@ Task-base V2의 managed harness, SDD, shadow 전체 117개가 246.410초에 통�
 ## Standalone PR scope
 
 The public candidate starts at main 6f7cbd85069533e5565f178e565bb9958c7705c1 and contains the ten shadow paths. The prior receipts are historical evidence for e2e5e404. This branch requires candidate-specific verification.
+
+## Public candidate evidence
+
+- Product `156ffea9172fd5bec286844f984b4e9f658a1f57`, tree `a25188f118d8eb4c61f4e4839cf04280062b1411`, base `6f7cbd85069533e5565f178e565bb9958c7705c1`. This receipt commit records evidence for that product; the PR checks will cover the actual published head and merge ref.
+- Independent internal review, first prospective public-candidate round: coordinator PASS, 4/4 focused tests in 205.492 s, 0 blocking findings and 0 observed same-cause recurrences. Report SHA-256 `ce2db7b5711901edacbb2e6623e631f14bf7a6c73ce2936a9f9c100663a9014a`; request `msg_699b1c5dca59`; verdict receipt `msg_8828bffebc2b`. Reviewer start 2026-11-25T10:18:49.0798586+09:00; verdict 2026-11-25T10:22:46.2202319+09:00. Request time, assignment dispatch/interval and approval interval unknown. Post-review rework not applicable. Earlier R1-R6 remain historical.
+- Official sequential V3: 809 tests, suite 1863.926 s; full invocation 1869.879 s (2026-11-25T10:18:22.4574012+09:00 to 2026-11-25T10:49:32.3364933+09:00). Exit 0, zero failures, errors, skips and expected failures; SDD PASS on 10 paths and 77 ACs. Full suite executed, reuse not configured, provider calls 0.
+- Publication audit before the receipt: public main read back at `6f7cbd85069533e5565f178e565bb9958c7705c1`; topic absent. The only candidate commit above public main was `156ffea9172fd5bec286844f984b4e9f658a1f57`, with ten approved shadow paths and no protected workflow or policy changes. Reviewed the entire candidate patch, registry and commit metadata, checked content for credentials, machine paths, personal addresses and runtime data, and identified two fixture-only addresses. No checkpoint file or local logs are included. The receipt adds only this Task's evidence. Other local workstreams are excluded.
