@@ -36,3 +36,7 @@ PR13 run42992036949 Windows 3.11 취소는 timeout을 강하게 시사하며 ann
 선택한 설치의 bin/cmd git.exe에만 적용하고, direct/custom/missing/비Windows PATH는 보존한다.
 진행은 기존 unittest result를 관찰하며 stderr 점 출력과 줄을 분리하고 monotonic 경과와 완료 수를 flush한다.
 최종 공식 순차 검증·독립 검토·원격 CI는 pending이다. 위 역사적 측정은 새 검증 증거가 아니다.
+
+## 2026-11-25 offline job budget supersession
+
+The 2026-11-25 decision supersedes the explicit limit for the offline Windows matrix only. Offline uses GitHub-hosted job defaults; plan and gate retain their 25-minute limits. Commands, accepted evidence, required checks and per-operation safety timeouts stay in effect.

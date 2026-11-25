@@ -187,9 +187,14 @@ class PrMainWorkflowTests(unittest.TestCase):
 
     def test_fixed_matrix_timeout_and_verification_steps_unchanged(self):
         text = read(".github/workflows/verify.yml")
-        offline = text.split("  offline:\n", 1)[1].split("  gate:\n", 1)[0]
+        plan, remaining = text.split("  offline:\n", 1)
+        offline, gate = remaining.split("  gate:\n", 1)
+        self.assertNotIn("timeout-minutes", offline)
+        for job in (plan, gate):
+            self.assertEqual(job.count("timeout-minutes"), 1)
+            self.assertIn("    timeout-minutes: 25\n", job)
         for term in ("fail-fast: false", "os: [windows-latest]",
-                     "python: ['3.11', '3.12']", "timeout-minutes: 25", "fetch-depth: 0",
+                     "python: ['3.11', '3.12']", "fetch-depth: 0",
                      "PYTHONPATH: src", "PYTHONDONTWRITEBYTECODE: '1'",
                      "python -X utf8 -m unittest tests.test_gms_optional tests.test_managed_providers",
                      'python -m pip install "cryptography>=42"', "scripts/ci_plan.py --remote run",
@@ -204,7 +209,6 @@ class PrMainWorkflowTests(unittest.TestCase):
         self.assertEqual(text.count("runs-on: windows-latest"), 2)
         actions = [line.strip() for line in text.splitlines() if "uses:" in line]
         self.assertEqual(set(actions), {"- uses: actions/checkout@v4", "- uses: actions/setup-python@v5"})
-        gate = text.split("  gate:\n", 1)[1]
         for term in ("if: always()", "needs: [plan, offline]", "BATON_CI_NEEDS: ${{ toJSON(needs) }}",
                      "scripts/ci_plan.py --remote gate"):
             self.assertIn(term, gate)
