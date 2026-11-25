@@ -8,6 +8,9 @@ from .contracts import HarnessError
 def parser(sub):
     p = sub.add_parser("handoff", help="Model-free WIP backup, delegated publish, verified restore")
     commands = p.add_subparsers(dest="handoff_command", required=True)
+    prepare = commands.add_parser("prepare", help="Prepare a local Markdown handoff for an existing Task")
+    prepare.add_argument("--task", required=True)
+    prepare.add_argument("--request", required=True, help="JSON with kind, receiver and optional semantic notes")
     backup = commands.add_parser("backup")
     backup.add_argument("--task", required=True)
     backup.add_argument("--include", action="append", default=[])
@@ -22,8 +25,11 @@ def parser(sub):
 
 
 def run(args, root):
-    from .handoff import Handoff
     try:
+        if args.handoff_command == "prepare":
+            from .handoff_flow_cli import manual
+            return manual(root, args.state_dir, args.task, args.request)
+        from .handoff import Handoff
         handoff = Handoff(root, Path(root) / args.state_dir)
         if args.handoff_command == "backup":
             return handoff.backup(args.task, include=args.include, required=args.required_path, wait_seconds=args.wait_seconds)

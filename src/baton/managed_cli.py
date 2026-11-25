@@ -159,7 +159,24 @@ def main(argv=None, *, workspace=None):
         if args.command == "runtime":
             from .runtime import ingest, dispatch, reconcile
             if args.runtime_command == "review": result = dispatch(store, args.task, review=True)
-            else: result = (ingest if args.runtime_command == "ingest" else reconcile)(store, args.task, read_json(args.request))
+            elif args.runtime_command == "ingest":
+                notification = read_json(args.request)
+                try:
+                    from .handoff_flow_cli import before_ingest, settled_report
+                    reservation = before_ingest(root, directory, args.task, notification)
+                except Exception:
+                    reservation = False
+                result = ingest(store, args.task, notification)
+                # Only the optional card adapter is isolated. Product ingest above
+                # runs once and keeps its original result or exception.
+                handoff = {"status": "blocked", "reason": "local_handoff_preparation_failed"}
+                if reservation is not False:
+                    try:
+                        handoff = settled_report(root, directory, args.task, notification, result, reservation)
+                    except Exception:
+                        pass
+                result = {**result, "handoff": handoff}
+            else: result = reconcile(store, args.task, read_json(args.request))
         elif args.command == "evidence":
             from .evidence import record
             result = record(store, args.task, read_json(args.request))

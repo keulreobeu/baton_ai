@@ -54,9 +54,104 @@
     "docs/tasks/TASK-META-MAP-001.md",
     "docs/tasks/TASK-META-INVENTORY-001.md",
     "docs/specs/ADAPT-001.md",
-    "docs/tasks/TASK-ADAPT-RULES-001.md"
+    "docs/tasks/TASK-ADAPT-RULES-001.md",
+    "docs/tasks/TASK-HANDOFF-FLOW-001.md",
+    "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
+    "docs/specs/HANDOFF-FLOW-ENTRY-001.md",
+    "docs/plans/handoff-flow-v5.md",
+    "docs/adr/ADR-HANDOFF-FLOW-001.md"
   ],
   "features": [
+    {
+      "id": "HANDOFF-FLOW-ENTRY-001",
+      "spec": "docs/specs/HANDOFF-FLOW-ENTRY-001.md",
+      "requirements": [
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-REQ-01",
+          "acs": ["HANDOFF-FLOW-ENTRY-001-AC-01", "HANDOFF-FLOW-ENTRY-001-AC-02"]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-REQ-02",
+          "acs": ["HANDOFF-FLOW-ENTRY-001-AC-03", "HANDOFF-FLOW-ENTRY-001-AC-04"]
+        }
+      ],
+      "acs": [
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-01",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_manual_prepare_reads_task_and_preserves_authority"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_current_registration_without_sha_holds_all_fixed_and_checkpoint_requests"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_registered_candidate_supports_git_paths_with_mixed_case"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_completed_report_uses_approved_candidate_and_rejects_stale_evidence"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_owner_excluded_cache_under_tracked_ancestor"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_owner_excluded_cache_is_bound_to_each_real_worktree"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-02",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_unknown_schema_and_missing_database_fail_without_creating_state"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_installed_data_scheme_has_all_templates"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-03",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_accepted_settlement_and_manual_event_replay_share_one_card"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_never_registered_with_compacted_result"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-ENTRY-001-AC-04",
+          "tests": [
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_projection_failure_preserves_settlement_and_exit"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_checkpoint_reobserves_previous_candidate_authority"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_markdown_publication_rechecks_after_seal_and_rerender"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HANDOFF-FLOW-LOCAL-001",
+      "spec": "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
+      "requirements": [
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-REQ-01",
+          "acs": ["HANDOFF-FLOW-LOCAL-001-AC-01", "HANDOFF-FLOW-LOCAL-001-AC-02"]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-REQ-02",
+          "acs": ["HANDOFF-FLOW-LOCAL-001-AC-03", "HANDOFF-FLOW-LOCAL-001-AC-04"]
+        }
+      ],
+      "acs": [
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-01",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_local_render_and_evidence"},
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_local_rejects_unsafe_or_incomplete_inputs"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-02",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_reuse_requires_current_basis_and_materializes_text"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-03",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_receiver_rechecks_current_facts_and_preserves_reporting"}
+          ]
+        },
+        {
+          "id": "HANDOFF-FLOW-LOCAL-001-AC-04",
+          "tests": [
+            {"file": "tests/test_handoff_flow.py", "symbol": "LocalHandoffTests.test_local_save_is_atomic_and_scoped_to_checkpoint"}
+          ]
+        }
+      ]
+    },
     {
       "id": "SDD-001",
       "spec": "docs/specs/SDD-001.md",

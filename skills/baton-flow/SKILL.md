@@ -16,6 +16,24 @@ BATON owns the task, dependency and completion decisions. Orca owns dispatch and
 
 ## Receive and verify
 
+When a user asks to prepare a handoff, resume card, review brief or PC-move note, use
+`baton handoff prepare --task <existing-task> --request <json-file>`. Choose START,
+RESUME, REVIEW, REPORT or CONTROL for the user's purpose. A minimal request is
+`{"kind":"RESUME","relation":"CONTINUE","receiver":"assigned-worker"}`. Put the
+writer's new information in `notes`, for example `{"investigation":"The parser already validates the base."}`.
+For PC movement include `"modules":["PORTABLE"]` and `"portability_mode":"WIP_RESTORE"`
+or `"PUBLISHED_REF"`. A pre-candidate status report uses REPORT, DELIVER and
+`"report_stage":"checkpoint"`. The returned artifact name identifies a local Markdown
+file in the selected managed state directory's `handoff-cards` folder. Read the
+`unknown_notes` and receipt's `unchecked` fields before deciding the next action.
+Creating a card preserves existing execution and transfer approvals.
+
+After a successful settled `runtime ingest`, read its local `handoff` result. Use a
+returned failure to diagnose card preparation while leaving the settled dispatch in
+place. To request the identical local REPORT again, supply `{"kind":"REPORT","event":...}`
+with the original notification object. A new manual amendment can use its own
+`request_id`. Ordinary status questions and saves do not produce a card.
+
 On an Orca wake, use `baton runtime ingest --task <id> --request <file>` with the exact dispatch notification. The notification is a hint; BATON reads the run/task/dispatch/worktree, ownership and settlement back from Orca. A raw `PASS`, a green check, or a startup `ready` receipt is not task completion. Never treat a missing observation as an empty result. Use `baton runtime reconcile --task <id> --request <file>` only for explicit adoption of an unknown start, as described in [recovery](references/recovery.md).
 
 After the owning validator passes, ask the Git owner to create a local-only publisher with `baton git start --local-only --request <git-request-file>`, supplying the exact validated source worktree, scope and checks. Then run `baton git snapshot --task <id> --stage candidate` and `baton git local-candidate --task <id> --snapshot <snapshot-id>`. These are not publish requests. Preserve the source/index and other workers' changes. Register the fixed candidate through `baton evidence record --task <id> --request <file>` with `kind=candidate`.

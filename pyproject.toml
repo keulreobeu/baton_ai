@@ -22,6 +22,7 @@ where = ["src"]
 baton = ["static/*"]
 
 [tool.setuptools.data-files]
+"share/baton/templates/handoff-flow" = ["docs/templates/handoff-flow/*.md"]
 "share/baton/scripts" = ["scripts/install_flow_skill.py"]
 "share/baton/skills/baton-flow" = ["skills/baton-flow/SKILL.md", "skills/baton-flow/LICENSE.pstack"]
 "share/baton/skills/baton-flow/references" = ["skills/baton-flow/references/*.md", "skills/baton-flow/references/source-lock.json"]
