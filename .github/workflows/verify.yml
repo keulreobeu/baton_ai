@@ -24,6 +24,7 @@ permissions:
 jobs:
   plan:
     runs-on: windows-latest
+    timeout-minutes: 25
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       digest: ${{ steps.plan.outputs.digest }}
@@ -72,6 +73,7 @@ jobs:
     if: always()
     needs: [plan, offline]
     runs-on: windows-latest
+    timeout-minutes: 25
     env:
       PYTHONPATH: src
       PYTHONDONTWRITEBYTECODE: '1'

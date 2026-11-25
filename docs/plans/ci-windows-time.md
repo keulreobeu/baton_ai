@@ -17,6 +17,6 @@ specs = ["docs/specs/SDD-001.md"]
 5. 새 SHA 게시는 최종 검토 범위의 별도 승인 후 진행한다. 실제 Windows CI 시간을 다시 기록한다.
    공식 검증·독립 검토·CI 전에는 부모 Task와 이 Task를 verified로 올리지 않는다.
 
-## 2026-11-25 W4 job timeout supersession
+## 2026-11-25 offline job budget supersession
 
-For W4 PR #23, the 2026-11-25 user decision replaces the 25-minute project limit in step 2 with the hosted default for plan, offline, and gate. The existing workflow contract test requires absence of an explicit timeout-minutes; the normal PR event verifies both Windows versions and the gate. Earlier execution records remain historical.
+For the 2026-11-25 standalone CI-TIME follow-up, remove only the offline job limit. Preserve plan and gate limits and run the existing full Windows matrix and required gate through a ready PR. Keep prior measurements as historical evidence.
