@@ -105,10 +105,22 @@ errors = 0
 skipped = 0
 expected_failures = 0
 
+[[verification]]
+command = ".venv/Scripts/python.exe -u -X utf8 scripts/verify_environment.py --base 6f7cbd85069533e5565f178e565bb9958c7705c1"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#timeout-supersession-candidate-evidence"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+candidate_sha = "a46aee6fe588adc704e7fa43fe514f3f1bf21c6b"
+tests_run = 809
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
 result = "passed"
-evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#public-candidate-evidence"
-candidate_sha = "156ffea9172fd5bec286844f984b4e9f658a1f57"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#timeout-supersession-candidate-evidence"
+candidate_sha = "a46aee6fe588adc704e7fa43fe514f3f1bf21c6b"
 ```
 
 착수 base `a8b5fc1d57825df3afde2218ad39b63d1399902b`, branch `keulreobeu/ci-verification-rev3`. 선행 문서 검토는 `TASK-CI-VERIFY-ASSESS-001`에 귀속된다. 이 Task는 오프라인 shadow 제품 동작만 소유한다. 검토·회귀·공식 V3·원격 CI·게시 상태는 후보별로 기록한다.
@@ -220,3 +232,10 @@ The public candidate starts at main 6f7cbd85069533e5565f178e565bb9958c7705c1 and
 ## 2026-11-25 W4 job timeout supersession
 
 The 2026-11-25 user decision for PR #23 removes the project-imposed 25-minute limits from plan, both offline matrix jobs, and gate. Run 45528701200 timed out in both Windows jobs and remains historical. Hosted job defaults apply. This change belongs to the existing CI-TIME scope; shadow code and tests, workflow commands, sequential V3 and required-check rules remain unchanged. The candidate requires fresh independent review and verification.
+
+## Timeout supersession candidate evidence
+
+- Frozen product `a46aee6fe588adc704e7fa43fe514f3f1bf21c6b`, tree `347c455c569d7b131ea035106a9077228d0f4278`, main base `6f7cbd85069533e5565f178e565bb9958c7705c1`, prior PR head `59a454085dd63f16c2a752a426dcfdfbab68c700`. Workflow bytes differ from the parent by exactly the three explicit job-limit lines. Shadow source, shadow tests, registry, and verifier are unchanged.
+- A observation, same W4 task and round 2: independent coordinator PASS, four focused tests and three negative controls; zero new findings, zero observed same-cause independent recurrences. Start 2026-11-25T11:52:52.6254805+09:00; verdict 2026-11-25T11:53:31.9482671+09:00, 39.323 s. Request `msg_03714c48c790`, verdict `msg_2fd9d9766b7d`, report SHA-256 `bac996488f1c53db55cf2026f8246ac80daa1df37466a06971bdb9cd415b05dd`. Separate reviewer dispatch not applicable; request time and approval interval unknown. Rework for the CI budget decision was not timed; post-review rework not applicable. Prior run 45528701200 is separate CI evidence.
+- Writer focused workflow/SDD regressions: 75/75 in 40.738 s. Official sequential V3 on this exact frozen product: 809 tests in 1895.236 s, full invocation 1901.270 s (2026-11-25T11:54:22.8036145+09:00 to 2026-11-25T12:26:04.0735466+09:00), exit 0, no failures, errors, skips or expected failures, no provider calls, no reuse. Main-base SDD PASS with 15 paths and 77 ACs.
+- Pre-publication range check: read back main and PR #23 head; candidate has one commit above the prior published topic head, touching six scoped CI-TIME/W4 paths. The following evidence commit is Task-document-only. Verified the full main-to-topic history, scope and metadata; no logs, private checkpoint material, or other workstreams are included. This receipt covers the frozen product; remote CI must attest the new published head and merge ref.
