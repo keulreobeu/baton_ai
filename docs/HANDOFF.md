@@ -17,6 +17,10 @@ rules: AGENTS.md 적용. 설계 후보 84e5fee의 Fable PASS는 구현 검토와
 ```
 <!-- BATON_RESUME_END -->
 
+## ADAPT-001 RULES 통합 준비
+
+[RULES Task](tasks/TASK-ADAPT-RULES-001.md)의 승인과 검증을 확인한다.
+
 이전 CI-VTIER 재개 카드는 `4c76e8f:docs/HANDOFF.md`에 보존되어 있다. 아래는 과거 인계 기록이다.
 
 ---
