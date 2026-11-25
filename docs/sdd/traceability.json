@@ -95,6 +95,10 @@
             {
               "file": "tests/test_verification_shadow.py",
               "symbol": "ShadowTests.test_content_filter_preflight_covers_reviewer_and_stored_integration"
+            },
+            {
+              "file": "tests/test_verification_shadow.py",
+              "symbol": "ShadowTests.test_shadow_snapshot_uses_private_git_configuration_and_index"
             }
           ]
         },

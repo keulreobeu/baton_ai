@@ -1,9 +1,11 @@
 """Read-only comparison of controller evidence. No result from this module authorizes an action."""
 import argparse
+import json
 from contextlib import closing, contextmanager
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -11,7 +13,7 @@ import tomllib
 
 from . import evidence
 from .contracts import HarnessError, digest, encode, identifier
-from .isolation import git
+from .isolation import git, snapshot
 from .managed import ManagedStore, legacy_official_v3_failed
 from .orchestrator import BATON_MARKERS, baton_development_root, official_suite, official_v3_fields, validation_stop_reason
 from .planning import build_plan
@@ -88,9 +90,9 @@ class StoreView(ManagedStore):
             if row["task"]["execution"].get("runtime") == "orca":
                 binding = row["result"].get("review_runtime") or {}
                 check_layout(workspace_path(binding.get("workspace_id")), snapshot_base="HEAD")
-        candidate, tree = evidence._current_candidate(self, row, allow_completed=True)
+        candidate, tree = evidence._current_candidate(self, row, allow_completed=True, inspect_snapshot=shadow_snapshot)
         check_index(tree)
-        review = evidence._review_proof(self, row, candidate)
+        review = evidence._review_proof(self, row, candidate, inspect_snapshot=shadow_snapshot)
         if row["task"]["execution"].get("runtime") == "orca" and row["state"] != "COMPLETED":
             check_index(workspace_path(row["result"]["review_runtime"]["workspace_id"]))
         return candidate, tree, review
@@ -123,7 +125,7 @@ def check_layout(tree, *, snapshot_base=None):
             paths.add(entry.split("\t", 1)[1])
     if snapshot_base is not None:
         for ref in {"HEAD", snapshot_base}:
-            entries = head if ref == "HEAD" else git(tree, "ls-tree", "-r", "-z", ref)
+            entries = head if ref == "HEAD" else git(tree, *PINNED_OBJECT_OPTIONS, "ls-tree", "-r", "-z", ref)
             paths.update(entry.split("\t", 1)[1] for entry in entries.split("\0") if entry)
         check_content_filters(tree, paths)
 
@@ -138,7 +140,7 @@ def check_content_filters(tree, paths):
         return
     try:
         result = subprocess.run(
-            ["git", "-C", str(tree), "check-attr", "--all", "-z", "--stdin"],
+            ["git", "-C", str(tree), "-c", "core.fsmonitor=false", "check-attr", "--all", "-z", "--stdin"],
             input=("\0".join(sorted(paths)) + "\0").encode("utf-8"),
             capture_output=True, timeout=60,
         )
@@ -148,6 +150,62 @@ def check_content_filters(tree, paths):
     require(result.returncode == 0 and not result.stderr and fields[-1] == b""
             and (len(fields) - 1) % 3 == 0 and b"filter" not in fields[1::3],
             "UNKNOWN", reason)
+
+
+def shadow_snapshot(tree, base="HEAD"):
+    # The attribute preflight can race with changes to the original checkout.
+    # The worktree reads themselves use a private repository, with no original
+    # Git configuration, no inherited Git overrides, and a copied index.
+    tree = Path(tree).resolve()
+    env = {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
+    env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_OPTIONAL_LOCKS="0", GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1")
+    objects = git(tree, "rev-parse", "--path-format=absolute", "--git-path", "objects").strip()
+    index = Path(git(tree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+    head = evidence._sha(git(tree, "rev-parse", "HEAD").strip())
+    object_format = git(tree, "rev-parse", "--show-object-format").strip()
+    require(object_format in {"sha1", "sha256"}, "UNKNOWN", "content_inspection_unavailable")
+
+    def private_git(root, *args):
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), "-c", "submodule.recurse=false",
+                 "-c", "diff.ignoreSubmodules=all", *args], env=env, capture_output=True, timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            raise Observation("UNKNOWN", "content_inspection_unavailable") from None
+        require(result.returncode == 0, "UNKNOWN", "content_inspection_unavailable")
+        return result.stdout.decode("utf-8", errors="strict")
+
+    with tempfile.TemporaryDirectory(prefix="shadow-inspection-") as scratch:
+        private_git(scratch, "init", "--bare", "--template=", "--object-format=" + object_format)
+        private = Path(scratch)
+        shutil.copy2(index, private / "index")
+        env.update(GIT_DIR=scratch, GIT_WORK_TREE=str(tree), GIT_INDEX_FILE=str(private / "index"),
+                   GIT_ALTERNATE_OBJECT_DIRECTORIES=json.dumps(objects, ensure_ascii=False))
+        private_git(scratch, "config", "--local", "core.bare", "false")
+        private_git(scratch, "update-ref", "--no-deref", "HEAD", head)
+        # Carry metadata files and only explicitly allowed configuration;
+        # attribute files can name a driver but cannot register a command.
+        (private / "info").mkdir(exist_ok=True)
+        for name in ("attributes", "exclude"):
+            source = Path(git(tree, "rev-parse", "--path-format=absolute", "--git-path", "info/" + name).strip())
+            if source.is_file():
+                shutil.copyfile(source, private / "info" / name)
+        for key in ("core.attributesFile", "core.excludesFile"):
+            source = git(tree, "config", "--path", "--default=", "--get", key).strip()
+            if source:
+                private_git(scratch, "config", "--local", key, str((tree / source).resolve()))
+        # Keep Git's built-in CRLF behavior without importing any drivers.
+        for key, default, allowed in (
+            ("core.autocrlf", "false", {"true", "false", "input", "yes", "no", "on", "off", "0", "1"}),
+            ("core.eol", "native", {"native", "lf", "crlf"}),
+            ("core.safecrlf", "false", {"true", "false", "warn", "yes", "no", "on", "off", "0", "1"}),
+        ):
+            value = git(tree, "config", "--default=" + default, "--get", key).strip().lower()
+            require(value in allowed, "UNKNOWN", "content_inspection_unavailable")
+            private_git(scratch, "config", "--local", key, value)
+        return snapshot(tree, base=base, git_runner=private_git)
 
 
 def check_index(tree):
@@ -512,7 +570,8 @@ def integration_observation(store, args, official):
             unit_pins(store, args)
             if record is not None:
                 check_layout(record["integration_root"], snapshot_base="HEAD")
-                tree = evidence._tree(store, record["integration_root"], args.integration)
+                tree = evidence._tree(store, record["integration_root"], args.integration,
+                                      inspect_snapshot=shadow_snapshot)
                 check_index(tree)
         except Observation as exc:
             official["integration_v3"] = exc.status

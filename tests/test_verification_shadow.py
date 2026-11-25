@@ -20,7 +20,7 @@ from baton.execution import ExecutionResult
 from baton.isolation import git, snapshot
 from baton.managed import ManagedStore
 from baton.orchestrator import BATON_MARKERS, Orchestrator, baton_development_root
-from baton.verification_shadow import Observation, StoreView, generic_base, windows_tree_name
+from baton.verification_shadow import Observation, StoreView, generic_base, shadow_snapshot, windows_tree_name
 from tests.test_flow_evidence import FlowFixture
 
 
@@ -81,7 +81,7 @@ class ShadowTests(FlowFixture, unittest.TestCase):
                 watched = (self.store.path, index, attrs, tree / "src/value.py")
                 before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched]
                 try:
-                    with patch("baton.evidence.snapshot") as snapshot_probe:
+                    with patch("baton.verification_shadow.shadow_snapshot") as snapshot_probe:
                         held = self.call()
                     snapshot_probe.assert_not_called()
                     self.assertEqual(held["task_acceptance"], {
@@ -91,6 +91,38 @@ class ShadowTests(FlowFixture, unittest.TestCase):
                     self.assertEqual(before, [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched])
                 finally:
                     attrs.write_bytes(original)
+
+    def test_shadow_snapshot_uses_private_git_configuration_and_index(self):
+        self.prepare()
+        author = Path(self.store.get("FLOW")["worktree"]).resolve()
+        git(self.root, "config", "filter.fixture.required", "false")
+        index = Path(git(author, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
+        watched = (self.store.path, index, author / "src/value.py")
+        before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched]
+        real_run = subprocess.run
+        observations = []
+
+        def observe(command, **kwargs):
+            if "--numstat" in command:
+                environment = kwargs["env"]
+                self.assertEqual(environment["GIT_WORK_TREE"], str(author))
+                self.assertNotEqual(Path(environment["GIT_INDEX_FILE"]), index)
+                self.assertEqual(environment["GIT_CONFIG_NOSYSTEM"], "1")
+                self.assertEqual(environment["GIT_CONFIG_GLOBAL"], os.devnull)
+                self.assertNotIn("GIT_CONFIG_COUNT", environment)
+                result = real_run(
+                    ["git", "config", "--get", "filter.fixture.required"],
+                    env=environment, capture_output=True, cwd=author,
+                )
+                self.assertEqual(result.returncode, 1)
+                observations.append(True)
+            return real_run(command, **kwargs)
+
+        with patch("baton.verification_shadow.subprocess.run", side_effect=observe):
+            manifest = shadow_snapshot(author, self.base)
+        self.assertEqual(observations, [True])
+        self.assertEqual(manifest, self.store.get("FLOW")["result"]["changed_files"])
+        self.assertEqual(before, [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched])
 
     def test_content_filter_preflight_covers_reviewer_and_stored_integration(self):
         self.prepare()
@@ -111,7 +143,7 @@ class ShadowTests(FlowFixture, unittest.TestCase):
         index = Path(git(integration, "rev-parse", "--path-format=absolute", "--git-path", "index").strip())
         watched = (self.store.path, index, attrs, integration / "src/value.py")
         before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in watched]
-        with patch("baton.evidence.snapshot", wraps=snapshot) as snapshot_probe:
+        with patch("baton.verification_shadow.shadow_snapshot", wraps=shadow_snapshot) as snapshot_probe:
             held = self.call(*args)
         self.assertTrue(snapshot_probe.called)
         self.assertNotIn(integration, [Path(call.args[0]) for call in snapshot_probe.call_args_list])
@@ -123,7 +155,7 @@ class ShadowTests(FlowFixture, unittest.TestCase):
 
         row["task"]["execution"]["runtime"] = "orca"
         with patch("baton.verification_shadow.workspace_path", return_value=integration), \
-                patch("baton.evidence.snapshot") as snapshot_probe:
+                patch("baton.verification_shadow.shadow_snapshot") as snapshot_probe:
             with self.assertRaises(Observation) as observed:
                 StoreView(self.root, self.store.directory).current_proof(row)
         snapshot_probe.assert_not_called()

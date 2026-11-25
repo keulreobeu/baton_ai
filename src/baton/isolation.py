@@ -106,18 +106,18 @@ def interpreter_cache(name):
     return "__pycache__" in path.parts[:-1] and path.suffix in {".pyc", ".pyo"}
 
 
-def snapshot(root, base="HEAD"):
+def snapshot(root, base="HEAD", *, git_runner=git):
     # numstat compares content even when only the stat cache changed. Its
     # two counts precede the literal pathname, which may itself contain tabs.
-    stats = git(root, "-c", "diff.autoRefreshIndex=false", "diff", "--numstat",
+    stats = git_runner(root, "-c", "diff.autoRefreshIndex=false", "diff", "--numstat",
                 "--no-renames", "--no-ext-diff", "--no-textconv", "-z", base)
     names = {record.split("\t", 2)[2] for record in stats.split("\0") if record}
     # Include ignored files: an ignored data/raw write must still block fallback/scope checks.
-    untracked = set(git(root, "ls-files", "--others", "-z").split("\0"))
+    untracked = set(git_runner(root, "ls-files", "--others", "-z").split("\0"))
     # Only an ignored interpreter cache is not a worker change; every other ignored file still counts.
     # The exclusion applies to the untracked contribution only: every path the tracked diff reports
     # (modify, delete, staged removal, add) stays in the snapshot.
-    ignored = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").split("\0")
+    ignored = git_runner(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").split("\0")
     untracked.difference_update(name for name in ignored if interpreter_cache(name))
     names.update(untracked)
     result = {}

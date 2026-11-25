@@ -25,25 +25,25 @@ def _sha(value):
     return value
 
 
-def _tree(store, path, sha):
+def _tree(store, path, sha, *, inspect_snapshot=snapshot):
     if not isinstance(path, str): raise HarnessError("candidate_unavailable")
     tree = Path(path)
     if tree.is_symlink() or not tree.is_dir(): raise HarnessError("candidate_unavailable")
     tree = tree.resolve()
     if repository_key(tree) != repository_key(store.root): raise HarnessError("foreign_candidate_repository")
     if git(tree, "rev-parse", "HEAD").strip() != _sha(sha): raise HarnessError("candidate_head_changed")
-    if snapshot(tree): raise HarnessError("candidate_not_clean")
+    if inspect_snapshot(tree): raise HarnessError("candidate_not_clean")
     return tree
 
 
-def source_proof(row):
+def source_proof(row, *, inspect_snapshot=snapshot):
     result = row["result"]
     if row["state"] != "REVIEW_REQUIRED" or row["lease"] or result.get("validation_passed") is not True:
         raise HarnessError("approval_requires_validated_result")
     if not row["worktree"]: raise HarnessError("approval_requires_validated_result")
     source = Path(row["worktree"])
     base = result.get("base_commit")
-    if snapshot(source, base=base or "HEAD") != result.get("changed_files"):
+    if inspect_snapshot(source, base=base or "HEAD") != result.get("changed_files"):
         raise HarnessError("changes_since_validation")
     if git(source, "rev-parse", "HEAD").strip() != base:
         raise HarnessError("worktree_head_changed")
@@ -54,7 +54,7 @@ def source_proof(row):
             "validation_hash": digest(row["task"]["validation"]), "author_worker": result["author_worker"]}
 
 
-def _current_candidate(store, row, *, allow_completed=False):
+def _current_candidate(store, row, *, allow_completed=False, inspect_snapshot=snapshot):
     candidate = row["result"].get("candidate")
     historical = allow_completed and row["state"] == "COMPLETED"
     if historical:
@@ -66,15 +66,15 @@ def _current_candidate(store, row, *, allow_completed=False):
         proof = {"task_hash": digest(row["task"]), "validation_hash": digest(row["task"]["validation"])}
         check_scope(row["task"], candidate.get("manifest", {}))
     else:
-        proof = source_proof(row)
+        proof = source_proof(row, inspect_snapshot=inspect_snapshot)
     if not isinstance(candidate, dict): raise HarnessError("independent_review_required")
     if any(candidate.get(k) != v for k, v in proof.items()): raise HarnessError("candidate_evidence_stale")
     if candidate.get("profile_hash") != digest(project_paths(store.root)):
         raise HarnessError("evidence_validation_changed")
     if git(store.root, "rev-parse", "HEAD").strip() != candidate["base_sha"]:
         raise HarnessError("candidate_base_advanced")
-    tree = _tree(store, candidate["candidate_root"], candidate["candidate_sha"])
-    if snapshot(tree, base=candidate["base_sha"]) != candidate["manifest"]:
+    tree = _tree(store, candidate["candidate_root"], candidate["candidate_sha"], inspect_snapshot=inspect_snapshot)
+    if inspect_snapshot(tree, base=candidate["base_sha"]) != candidate["manifest"]:
         raise HarnessError("candidate_manifest_changed")
     if git(tree, "rev-parse", "HEAD^{tree}").strip() != candidate["tree_sha"]:
         raise HarnessError("candidate_tree_changed")
@@ -145,7 +145,7 @@ def _checks(store, row, tree, note_row=None):
     return checks
 
 
-def _review_proof(store, row, candidate):
+def _review_proof(store, row, candidate, *, inspect_snapshot=snapshot):
     item = row["result"].get("review_evidence")
     if not isinstance(item, dict) or item.get("candidate_hash") != digest(candidate):
         raise HarnessError("independent_review_required")
@@ -164,7 +164,8 @@ def _review_proof(store, row, candidate):
             raise HarnessError("review_dispatch_proof_required")
         if row["state"] != "COMPLETED":
             from .runtime import workspace_path
-            _tree(store, str(workspace_path(binding["workspace_id"])), candidate["candidate_sha"])
+            _tree(store, str(workspace_path(binding["workspace_id"])), candidate["candidate_sha"],
+                  inspect_snapshot=inspect_snapshot)
     elif item.get("identity_authority") != "operator_attested":
         raise HarnessError("local_reviewer_attestation_required")
     return item
