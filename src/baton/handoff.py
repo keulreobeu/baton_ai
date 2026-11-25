@@ -20,7 +20,9 @@ import uuid
 
 from .autocommit import eligible_paths, scan_content as _legacy_scan_content
 from .contracts import HarnessError, SENSITIVE_FIELDS, digest, encode, identifier, overlaps, replace_file
-from .isolation import repository_lock
+from .git_observation import GitObservation, git_layout
+from .git_publication import Publication, observe_publication, publish_ref, repository_for
+from .isolation import repository_lock, repository_lock_at
 from .managed import ManagedStore, validate
 
 VERSION = 1
@@ -192,17 +194,19 @@ def _restored_mode_matches(info, expected, *, windows):
 
 
 class Handoff:
-    def __init__(self, root, state_dir=None):
+    def __init__(self, root, state_dir=None, *, authority=None):
+        self.authority = authority
         if any(os.environ.get(name) for name in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")):
             raise HarnessError("handoff_external_git_override")
         self.root = Path(root).resolve()
-        self.common = Path(_text(self.root, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
+        self.common = (git_layout(self.root)[1] if authority is not None else
+                       Path(_text(self.root, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve())
         self.anchor = self.common.parent
         self.directory = _safe_file(self.root, ".local_runtime/handoff")
         state = Path(state_dir or self.root / ".local_runtime/harness-managed").resolve()
         if not state.is_relative_to(self.root / ".local_runtime"):
             raise HarnessError("state_directory_must_be_local_runtime")
-        self.store = ManagedStore(state, self.root)
+        self.store = ManagedStore(state, self.root) if authority is None else None
 
     def _locks(self, tree):
         stack = ExitStack()
@@ -353,6 +357,8 @@ class Handoff:
                 "unverified": True}, payloads
 
     def backup(self, task_id, *, include=(), required=(), wait_seconds=10):
+        if self.authority is not None:
+            raise HarnessError("handoff_requires_author_host")
         started = time.monotonic()
         identifier(task_id)
         if type(wait_seconds) not in {int, float} or not 0 <= wait_seconds <= 30:
@@ -460,11 +466,15 @@ class Handoff:
                         scan_content(content, item["path"])
         return manifest, blobs
 
-    def _remote(self, remote, base_ref):
+    @staticmethod
+    def _remote_names(remote, base_ref):
         if not isinstance(remote, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,60}", remote):
             raise HarnessError("handoff_invalid_remote")
         if not re.fullmatch(r"refs/heads/[A-Za-z0-9][A-Za-z0-9_./-]{0,150}", base_ref) or ".." in base_ref:
             raise HarnessError("handoff_invalid_base_ref")
+
+    def _remote(self, remote, base_ref):
+        self._remote_names(remote, base_ref)
         url = _text(self.root, "remote", "get-url", remote)
         if url.startswith("-") or "\n" in url: raise HarnessError("handoff_invalid_remote")
         return url
@@ -481,59 +491,75 @@ class Handoff:
     def publish(self, checkpoint, *, remote="origin", base_ref="refs/heads/main"):
         """Only the delegated Git actor invokes this explicit operation."""
         started = time.monotonic()
-        with self._locks(self.root):
+        with repository_lock_at(self.common), GitObservation.open(self.root, expected_common=self.common) as view:
             manifest, blobs = self._load(checkpoint)
-            self._remote(remote, base_ref)
+            self._remote_names(remote, base_ref)
             directory = self._checkpoint(checkpoint)
             previous = _read(directory / "receipt.json")
+            intent = previous.get("publish_intent")
+            commit = previous.get("commit_sha")
             ref = "refs/heads/codex/handoff/" + checkpoint
             if manifest["missing_paths"]:
                 raise HarnessError("handoff_missing_required_portable_files")
             try:
-                if self._remote_sha(self.root, remote, base_ref) != manifest["base_sha"]:
+                repository = repository_for(self.authority, manifest["task_id"], "read_base" if intent else "handoff")
+                view.bind(self.root, remote, repository)
+                scan_content(encode(manifest).encode("utf-8"), "manifest.json")
+                observed = observe_publication(self.authority, intent, repository, manifest["task_id"],
+                                               "handoff", ref, manifest_sha=checkpoint, base_ref=base_ref,
+                                               base=manifest["base_sha"], head=commit)
+                if view.remote_sha(base_ref) != manifest["base_sha"]:
+                    if observed:
+                        return self._receipt(checkpoint, "local_saved", started, manifest_sha256=checkpoint,
+                                             commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref,
+                                             publish_intent=observed, observed_publication_sha=observed["head"],
+                                             error_code="handoff_remote_base_mismatch", next_action="review_advanced_base")
                     raise HarnessError("handoff_remote_base_mismatch")
-                publisher = directory / "publisher"
-                commit = previous.get("commit_sha")
-                if not commit:
-                    if publisher.exists(): raise HarnessError("handoff_publisher_requires_review")
-                    _git(self.root, "worktree", "add", "--detach", str(publisher), manifest["base_sha"])
-                    _git(publisher, "checkout", "--orphan", "codex/handoff/" + checkpoint)
-                    # Separate index, same common hooks/config. Source index is untouched.
-                    env = dict(os.environ, GIT_INDEX_FILE=str(directory / "publish.index"))
-                    _git(publisher, "read-tree", "--empty", env=env)
-                    files = {"handoff/manifest.json": (encode(manifest) + "\n").encode()}
-                    files.update({"handoff/blobs/" + sha: content for sha, content in blobs.items()})
-                    for name, content in files.items():
-                        path = _safe_file(publisher, name)
-                        path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
-                        # hash-object avoids .gitattributes clean filters changing the bytes.
-                        blob = _git(publisher, "hash-object", "-w", "--stdin", data=content).decode().strip()
-                        _git(publisher, "update-index", "--add", "--cacheinfo", "100644," + blob + "," + name, env=env)
-                    _git(publisher, "commit", "-m", "WIP handoff " + checkpoint, env=env)
-                    commit = _text(publisher, "rev-parse", "HEAD")
+                files = {"handoff/manifest.json": (encode(manifest) + "\n").encode()}
+                files.update({"handoff/blobs/" + sha: content for sha, content in blobs.items()})
+                if not commit and (directory / "publisher").exists():
+                    raise HarnessError("handoff_publisher_requires_review")
+                commit, artifact_tree = view.orphan(checkpoint, files, commit)
+                found = view.remote_sha(ref)
+                if found and found != commit:
+                    raise HarnessError("handoff_remote_checkpoint_conflict")
+                operation = Publication("handoff", repository, manifest["task_id"], ref, base_ref,
+                                        manifest["base_sha"], commit, artifact_tree,
+                                        None, tuple(sorted(files)), checkpoint)
+
+                def record(new_intent):
+                    nonlocal intent
+                    intent = new_intent
                     self._receipt(checkpoint, "local_saved", started, manifest_sha256=checkpoint,
-                                  commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref, next_action="push_pending")
-                # Check exactly what hooks committed, not merely the input manifest.
-                if _text(self.root, "rev-list", "--count", commit) != "1": raise HarnessError("handoff_non_orphan_history")
-                expected = {"handoff/manifest.json", *("handoff/blobs/" + sha for sha in blobs)}
-                if _names(self.root, "ls-tree", "-r", "--name-only", commit) != expected:
-                    raise HarnessError("handoff_publisher_modified")
-                for name in expected:
-                    content = _object(self.root, commit + ":" + name, MAX_MANIFEST if name.endswith("manifest.json") else MAX_FILE)
-                    wanted = (encode(manifest) + "\n").encode() if name.endswith("manifest.json") else blobs[name.rsplit("/", 1)[1]]
-                    if content != wanted: raise HarnessError("handoff_publisher_modified")
-                found = self._remote_sha(self.root, remote, ref)
-                if found and found != commit: raise HarnessError("handoff_remote_checkpoint_conflict")
-                if not found: _git(self.root, "push", remote, commit + ":" + ref)
-                if self._remote_sha(self.root, remote, ref) != commit: raise HarnessError("handoff_remote_readback_failed")
+                                  commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref,
+                                  publish_intent=intent, next_action="push_pending")
+
+                if observed:
+                    if observed["tree"] != artifact_tree:
+                        raise HarnessError("git_publication_provenance_mismatch")
+                    intent = observed
+                else:
+                    if intent and repository_for(self.authority, manifest["task_id"], "handoff") != repository:
+                        raise HarnessError("publisher_repository_changed")
+                    intent = publish_ref(self.authority, operation, self.common / "objects", record, intent)
+                if view.remote_sha(ref) != commit: raise HarnessError("handoff_remote_readback_failed")
+                if view.remote_sha(base_ref) != manifest["base_sha"]:
+                    return self._receipt(checkpoint, "local_saved", started, manifest_sha256=checkpoint,
+                                         commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref,
+                                         publish_intent=intent, observed_publication_sha=intent["observed_head"],
+                                         error_code="handoff_remote_base_mismatch", next_action="review_advanced_base")
                 return self._receipt(checkpoint, "portable_verified", started, manifest_sha256=checkpoint,
-                                     commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref, next_action="restore_on_destination")
+                                     commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref,
+                                     publish_intent=intent, next_action="restore_on_destination")
             except HarnessError as error:
+                code = "handoff_git_push" if str(error) == "git_publication_push_failed" else str(error)
                 return self._receipt(checkpoint, "local_saved", started, manifest_sha256=checkpoint,
-                                     commit_sha=locals().get("commit"), ref=ref, remote=remote, base_ref=base_ref,
-                                     error_code=str(error), next_action="retry_delegated_publish")
+                                     commit_sha=commit, ref=ref, remote=remote, base_ref=base_ref, publish_intent=intent,
+                                     error_code=code, next_action="retry_delegated_publish")
 
     def restore(self, checkpoint, *, expected_sha, remote="origin", base_ref="refs/heads/main"):
+        if self.authority is not None:
+            raise HarnessError("handoff_requires_author_host")
         started = time.monotonic()
         self._checkpoint(checkpoint)
         if not isinstance(expected_sha, str) or not SHA.fullmatch(expected_sha): raise HarnessError("handoff_invalid_expected_sha")

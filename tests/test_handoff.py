@@ -14,12 +14,14 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from baton.contracts import HarnessError, digest
+from baton.git_observation import GitObservation
 from baton.handoff import Handoff, _git, _text, _index_hash, _path, _worktree_mode
 from baton.isolation import repository_lock, prepare_worktree
 from baton.managed import ManagedStore
 from baton.managed_cli import main
 from baton.orchestrator import Orchestrator
 from baton.execution import ExecutionResult, run_process
+from tests.test_git_github import FixtureAuthority
 
 
 class HandoffTests(unittest.TestCase):
@@ -49,6 +51,7 @@ class HandoffTests(unittest.TestCase):
                      "acceptance_criteria": ["AC1"], "execution": {"preferred_provider": "mock"},
                      "validation": [{"argv": ["git", "diff", "--check"], "acs": ["AC1"]}]}
         self.handoff = Handoff(self.root)
+        self.publisher = Handoff(self.root, authority=FixtureAuthority(self.remote))
         self.handoff.store.create(self.body)
 
     def wip(self):
@@ -63,9 +66,25 @@ class HandoffTests(unittest.TestCase):
 
     def published(self):
         saved = self.saved()
-        result = self.handoff.publish(saved["checkpoint"])
+        result = self.publisher.publish(saved["checkpoint"])
         self.assertEqual(result["status"], "portable_verified", result)
         return result
+
+    def test_orphan_publication_needs_host_approval(self):
+        self.wip()
+        local = self.saved()
+        receipt = Handoff(self.root).publish(local["checkpoint"])
+        self.assertEqual(receipt["status"], "local_saved")
+        self.assertEqual(receipt["error_code"], "publisher_authority_required")
+        self.assertIsNone(self.handoff._remote_sha(self.root, "origin", receipt["ref"]))
+        published = self.publisher.publish(local["checkpoint"])
+        self.assertTrue(published["unverified"])
+        self.assertEqual(published["publish_intent"]["purpose"], "handoff")
+        self.assertEqual(published["publish_intent"]["manifest_sha"], local["checkpoint"])
+        unbound_issuer = Handoff(self.root, authority=FixtureAuthority(self.remote))
+        unknown = unbound_issuer.publish(local["checkpoint"])
+        self.assertEqual(unknown["status"], "local_saved")
+        self.assertEqual(unknown["error_code"], "git_publication_provenance_mismatch")
 
     def receiver(self):
         other = self.folder / "receiver"
@@ -117,7 +136,7 @@ class HandoffTests(unittest.TestCase):
         self.handoff.store.create(body)
         self.wip()
         saved = self.handoff.backup("TASK-ORCA")
-        published = self.handoff.publish(saved["checkpoint"])
+        published = self.publisher.publish(saved["checkpoint"])
         receiver = self.receiver()
         result = receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
         self.assertEqual(result["status"], "restore_verified", result)
@@ -181,11 +200,11 @@ class HandoffTests(unittest.TestCase):
         entry = next(i for i in manifest["inventory"] if i["path"] == "src/generated.txt")
         self.assertTrue(entry["ignored"])
         with self.assertRaisesRegex(HarnessError, "missing_required_portable"):
-            self.handoff.publish(local["checkpoint"])
+            self.publisher.publish(local["checkpoint"])
         with self.assertRaisesRegex(HarnessError, "required_file_excluded"):
             self.handoff.backup("TASK-WIP", required=["src/generated.txt"])
         included = self.handoff.backup("TASK-WIP", include=["src/generated.txt"], required=["src/generated.txt"])
-        published = self.handoff.publish(included["checkpoint"])
+        published = self.publisher.publish(included["checkpoint"])
         self.assertEqual(published["status"], "portable_verified", published)
         receiver = self.receiver()
         result = receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
@@ -274,7 +293,7 @@ class HandoffTests(unittest.TestCase):
         path = self.handoff._checkpoint(published["checkpoint"]) / "blobs" / sha
         path.write_bytes(b"tampered")
         with self.assertRaisesRegex(HarnessError, "blob_mismatch"):
-            self.handoff.publish(published["checkpoint"])
+            self.publisher.publish(published["checkpoint"])
         hostile = deepcopy(manifest)
         next(i for i in hostile["inventory"] if i["included"])["path"] = "../outside.py"
         with self.assertRaisesRegex(HarnessError, "unsafe_path"):
@@ -286,15 +305,15 @@ class HandoffTests(unittest.TestCase):
         hook = self.remote / "hooks/pre-receive"
         hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         hook.chmod(0o755)
-        failed = self.handoff.publish(local["checkpoint"])
+        failed = self.publisher.publish(local["checkpoint"])
         self.assertEqual(failed["status"], "local_saved", failed)
         self.assertIsNotNone(failed["commit_sha"])
         self.assertEqual(failed["error_code"], "handoff_git_push")
         hook.unlink()
-        success = self.handoff.publish(local["checkpoint"])
+        success = self.publisher.publish(local["checkpoint"])
         self.assertEqual(success["status"], "portable_verified", success)
         self.assertEqual(success["commit_sha"], failed["commit_sha"])
-        self.assertEqual(self.handoff.publish(local["checkpoint"])["commit_sha"], success["commit_sha"])
+        self.assertEqual(self.publisher.publish(local["checkpoint"])["commit_sha"], success["commit_sha"])
 
     def test_manifest_limits_and_structured_cli_failures(self):
         self.wip()
@@ -325,18 +344,21 @@ class HandoffTests(unittest.TestCase):
     def test_remote_readback_failure_does_not_claim_portable_and_reconciles(self):
         self.wip()
         local = self.saved()
-        original = self.handoff._remote_sha
+        original = GitObservation.remote_sha
         calls = 0
         def readback(*args):
             nonlocal calls
             calls += 1
             if calls == 3: raise HarnessError("handoff_remote_readback_failed")
             return original(*args)
-        with patch.object(self.handoff, "_remote_sha", side_effect=readback):
-            failed = self.handoff.publish(local["checkpoint"])
+        with patch.object(GitObservation, "remote_sha", autospec=True, side_effect=readback):
+            failed = self.publisher.publish(local["checkpoint"])
         self.assertEqual(failed["status"], "local_saved")
         self.assertEqual(failed["error_code"], "handoff_remote_readback_failed")
-        result = self.handoff.publish(local["checkpoint"])
+        authority = self.publisher.authority
+        with patch.object(authority, "repository", side_effect=lambda task, purpose:
+                          authority.registered if purpose == "read_base" else None):
+            result = self.publisher.publish(local["checkpoint"])
         self.assertEqual(result["status"], "portable_verified")
         self.assertEqual(result["commit_sha"], failed["commit_sha"])
 
@@ -353,8 +375,14 @@ class HandoffTests(unittest.TestCase):
         _git(receiver.root, "push", "origin", "main")
         with self.assertRaisesRegex(HarnessError, "remote_base_mismatch"):
             receiver.restore(published["checkpoint"], expected_sha=published["commit_sha"])
-        pending = self.handoff.publish(published["checkpoint"])
+        authority = self.publisher.authority
+        with patch.object(authority, "repository", side_effect=lambda task, purpose:
+                          authority.registered if purpose == "read_base" else None), \
+                patch.object(authority, "confirm", wraps=authority.confirm) as confirm:
+            pending = self.publisher.publish(published["checkpoint"])
+            confirm.assert_called_once()
         self.assertEqual(pending["status"], "local_saved")
+        self.assertEqual(pending["observed_publication_sha"], published["commit_sha"])
         self.assertEqual(pending["error_code"], "handoff_remote_base_mismatch")
 
     def test_conflict_index_and_changed_head_are_rejected(self):
@@ -486,7 +514,7 @@ class HandoffTests(unittest.TestCase):
         self.wip()
         with patch("baton.handoff._worktree_mode", return_value="100755"):
             saved = self.saved()
-        published = self.handoff.publish(saved["checkpoint"])
+        published = self.publisher.publish(saved["checkpoint"])
         result = self.receiver().restore(published["checkpoint"], expected_sha=published["commit_sha"])
         self.assertEqual(result["status"], "restore_verified", result)
 
