@@ -16,3 +16,7 @@ specs = ["docs/specs/SDD-001.md"]
 4. 별도 Git worker가 후보를 저장하고 독립 검토한다. 이후 정확한 최종 후보에서 공식 순차 검증 1회를 수행한다.
 5. 새 SHA 게시는 최종 검토 범위의 별도 승인 후 진행한다. 실제 Windows CI 시간을 다시 기록한다.
    공식 검증·독립 검토·CI 전에는 부모 Task와 이 Task를 verified로 올리지 않는다.
+
+## 2026-11-25 offline job budget supersession
+
+For the 2026-11-25 standalone CI-TIME follow-up, remove only the offline job limit. Preserve plan and gate limits and run the existing full Windows matrix and required gate through a ready PR. Keep prior measurements as historical evidence.
