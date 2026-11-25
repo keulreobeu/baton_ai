@@ -69,6 +69,17 @@ failures = 0
 errors = 0
 skipped = 0
 expected_failures = 0
+
+[[verification]]
+command = ".venv/Scripts/python.exe -B -X utf8 -m unittest (Markdown 발급 경계와 영수증 재시도·경합 회귀 3개)"
+result = "passed"
+evidence = "docs/tasks/TASK-HANDOFF-FLOW-001.md#markdown-발급-직전-재확인"
+acs = ["HANDOFF-FLOW-ENTRY-001-AC-04"]
+tests_run = 3
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
 ```
 
 ### Phase 2~3 승인과 산출물
@@ -188,3 +199,13 @@ V1 선택과 6개 직접 모듈의 고유 219건이 232.942초에 통과했다. 
 - 전용 venv에서 위 5개 저장소 테스트 PASS(199.780초, 실패·오류·skip 0). 세 R5 사례는 각각 로컬·fake Orca에서 실행했다. 실행 원문은 `.local_runtime/w3-r5-recovery/r5-matrix.txt`에 있다.
 - 동일 코드로 진입점 모듈 전체 22건 PASS(341.045초, 실패·오류·skip 0). 실행 원문은 `.local_runtime/w3-r5-recovery/entry-regression.txt`에 있다.
 - Task base 정적 SDD는 25개 변경 경로에서 PASS했다. 로컬 checkpoint planner는 `CBM_WRONG_ROOT` 및 `REGRESSION_UNMAPPED`로 V3를 선택했다. 작성자 직접 회귀를 기록하고 V2 판정은 미실행으로 둔다. 공식 V3은 고정 후보의 독립 검토 PASS가 선행 조건이다.
+
+### Markdown 발급 직전 재확인
+
+독립 검토에서 후보 `eb65cc317abdb79da01ee783d9372e8b336a48cf`의 최종 발급 경계를 FAIL로 판정했다(`msg_c3c3323eef94`, 복구 작업 디렉터리의 `W3-independent-eb65cc31.md`). 영수증을 기록하고 나서 또는 기존 영수증 시각으로 재렌더링하면서 작성 권한을 잃어도 Markdown이 저장되는 경로였다.
+
+신규 영수증 작성과 최종 Markdown 발급을 각각 재관측으로 보호한다. 최종 재관측은 경합 영수증을 읽거나 문서를 다시 렌더링한 뒤에 실행한다. 중단된 발급의 영수증은 원본 바이트와 시각을 유지하고 작성 권한 회복 뒤 같은 문서를 발급한다. 기존 정착 결과와 정상 영수증 재사용을 유지한다.
+
+저장소 회귀 `test_markdown_publication_rechecks_after_seal_and_rerender`는 수정 전 최초 경계에서 실패했고, 수정 후 중단 발급 재시도 및 수동·자동 경합 대조군과 함께 3건 PASS(15.668초, 실패·오류·skip 0)했다.
+
+W1 제품 `24cce5585c8caa007fbba88c9ef91cef75bd6162`의 Git blob과 W3 코드·템플릿으로 만든 격리 작업 디렉터리에서 기존 복원 영수증 소비 테스트 1건이 PASS했다(10.989초, 실패·오류·skip 0). W3가 소비하는 영수증의 위치, 복원 Task 결속, manifest digest, commit SHA와 ref, `unverified` 표기를 검사했다. 원문은 `.local_runtime/w3-r5-recovery/w1-product-compatibility.txt`에 있다. W1 실환경 최종 증거는 대기 중이다.

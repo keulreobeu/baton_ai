@@ -479,6 +479,53 @@ class HandoffEntryTests(FlowFixture, unittest.TestCase):
             code, retry = self.cli("runtime", "ingest", "--task", "ORCA", "--request", self.json_file(event))
             self.assertEqual((code, retry["handoff"]["receipt"]["document_hash"], client.starts), (0, digest, 1))
 
+    def test_markdown_publication_rechecks_after_seal_and_rerender(self):
+        self.author()
+        original_save = handoff_flow._save_bytes
+        original_prepare = handoff_flow.prepare
+        request = {"kind": "REPORT", "receiver": "Coordinator", "report_stage": "checkpoint"}
+        cards = self.store.directory / "handoff-cards"
+        author = self.store.get("FLOW")["result"]["author_worker"]
+
+        def set_author(value):
+            with self.store.tx() as db:
+                db.execute("UPDATE managed_tasks SET result=json_set(result, '$.author_worker', ?) WHERE id='FLOW'",
+                           (value,))
+
+        def after_seal(path, data):
+            result = original_save(path, data)
+            if path.suffix == ".json":
+                set_author(None)
+            return result
+
+        with patch.object(handoff_flow, "_save_bytes", side_effect=after_seal):
+            code, _ = self.prepare(request)
+        self.assertEqual(code, 3)
+        self.assertFalse(list(cards.glob("*.md")))
+        seal, = (cards / ".receipts").glob("*.json")
+        prior = seal.read_bytes(), seal.stat().st_mtime_ns
+        set_author(author)
+
+        def after_rerender(*args, **kwargs):
+            card = original_prepare(*args, **kwargs)
+            if rendering.call_count == 2:
+                set_author(None)
+            return card
+
+        with patch.object(handoff_flow, "prepare", side_effect=after_rerender) as rendering:
+            code, _ = self.prepare(request)
+        self.assertEqual((code, rendering.call_count), (3, 2))
+        self.assertFalse(list(cards.glob("*.md")))
+        self.assertEqual((seal.read_bytes(), seal.stat().st_mtime_ns), prior)
+        set_author(author)
+        code, prepared = self.prepare(request)
+        self.assertEqual(code, 0)
+        document = cards / prepared["artifact"]
+        original = document.read_bytes(), document.stat().st_mtime_ns
+        self.assertEqual(self.prepare(request), (0, prepared))
+        self.assertEqual((document.read_bytes(), document.stat().st_mtime_ns), original)
+        self.assertEqual((seal.read_bytes(), seal.stat().st_mtime_ns), prior)
+
     def test_uncertain_or_replaced_reservation_preserves_original_ingest(self):
         client = self.orca()
         client.settle("dispatch-1")

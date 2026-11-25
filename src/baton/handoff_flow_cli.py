@@ -519,11 +519,11 @@ def _write(root, directory, task, body, notification=None, accepted=None, reserv
     origin = _origin(row, role)
     existing_card = path.exists()
     seal = _sealed(directory, path.stem)
-    current = reobserve()
     if seal is None:
         require(not existing_card and (notification is None or reservation is not None), "unconfirmed_original")
         claim = dict(version=card.receipt.version, slot=path.stem, document=card.receipt.document_hash, time=obs.observed_at,
                      observations=card.receipt.observed_hash, origin=origin)
+        reobserve()
         try:
             flow._save_bytes(receipts / (path.stem + ".json"), json.dumps(claim, sort_keys=True).encode())
         except HarnessError as exc:
@@ -533,15 +533,14 @@ def _write(root, directory, task, body, notification=None, accepted=None, reserv
     require(seal and seal.get("origin") == origin and seal.get("observations") == card.receipt.observed_hash,
             "event_conflict")
     prior_time = seal["time"]
-    # A concurrent first writer may have observed the event after our second
-    # capture. Re-read its source before accepting that later receipt.
-    if flow._instant(prior_time) > flow._instant(current.observed_at):
-        current = reobserve()
-    require(row["event_at"] <= flow._instant(prior_time).timestamp()
-            <= flow._instant(current.observed_at).timestamp(), "event_conflict")
+    require(row["event_at"] <= flow._instant(prior_time).timestamp(), "event_conflict")
     if prior_time != obs.observed_at:
         card = flow.prepare(request, replace(obs, observed_at=prior_time), changes, created_at=prior_time)
     require(seal["document"] == card.receipt.document_hash, "event_conflict")
+    # Seal handling and replay rendering can outlast the earlier observation.
+    # Fence Markdown publication separately, including a concurrent seal.
+    current = reobserve()
+    require(flow._instant(prior_time) <= flow._instant(current.observed_at), "event_conflict")
     flow.save(cards, card, replace(obs, observed_at=current.observed_at))
     return {"status": "prepared", "artifact": path.name, "receipt": asdict(card.receipt),
             "unknown_notes": sorted(key for key, value in changes.items() if value == UNKNOWN),

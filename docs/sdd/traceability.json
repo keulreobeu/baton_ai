@@ -101,7 +101,8 @@
           "id": "HANDOFF-FLOW-ENTRY-001-AC-04",
           "tests": [
             {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_projection_failure_preserves_settlement_and_exit"},
-            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_checkpoint_reobserves_previous_candidate_authority"}
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_checkpoint_reobserves_previous_candidate_authority"},
+            {"file": "tests/test_handoff_flow_cli.py", "symbol": "HandoffEntryTests.test_markdown_publication_rechecks_after_seal_and_rerender"}
           ]
         }
       ]
