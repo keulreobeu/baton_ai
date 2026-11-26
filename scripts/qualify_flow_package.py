@@ -1,4 +1,4 @@
-"""Build/install BATON in an ignored scratch directory; no network/model calls."""
+"""Build/install BATON in a temporary scratch directory; no network/model calls."""
 from __future__ import annotations
 
 import json
@@ -12,11 +12,13 @@ import tempfile
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    scratch = root / ".local_runtime/pq"
-    scratch.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="q-", dir=scratch))
+    # Deeply nested worktrees can exceed the Windows wheel builder's path limit.
+    work = Path(tempfile.mkdtemp(prefix="baton-pq-"))
     source = work / "s"; source.mkdir()
     shutil.copy2(root / "pyproject.toml", source / "pyproject.toml")
+    shutil.copy2(root / "SETUP.md", source / "SETUP.md")
+    (source / "docs").mkdir()
+    shutil.copy2(root / "docs/setup-policies.md", source / "docs/setup-policies.md")
     shutil.copytree(root / "src/baton", source / "src/baton", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copytree(root / "skills", source / "skills")
     (source / "scripts").mkdir(); shutil.copy2(root / "scripts/install_flow_skill.py", source / "scripts/install_flow_skill.py")
@@ -36,6 +38,13 @@ def main():
     run([sys.executable, "-m", "pip", "wheel", str(source), "--no-deps", "--no-build-isolation", "--no-index", "--wheel-dir", str(wheels)])
     wheel = next(wheels.glob("*.whl"))
     run([sys.executable, "-m", "pip", "install", "--no-deps", "--no-index", "--target", str(installed), str(wheel)])
+    # Confirm the normal venv data scheme as well as the explicit --target layout.
+    venv = work / "venv"
+    run([sys.executable, "-m", "venv", "--without-pip", str(venv)])
+    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    run([sys.executable, "-m", "pip", "--python", str(python), "install", "--no-deps", "--no-index", str(wheel)])
+    setup_path = run([str(python), "-I", "-c", "from pathlib import Path; import sysconfig; "
+                      "print(Path(sysconfig.get_path('data')) / 'share/baton/SETUP.md')"])
     environment.update(PYTHONPATH=str(installed), ORCA_CLI_COMMAND="missing-orca-qualification", BATON_HOME=str(work / "home"))
     help_result = run([sys.executable, "-B", "-m", "baton", "--help"])
     assert "runtime" in help_result.stdout and "evidence" in help_result.stdout
@@ -47,9 +56,13 @@ def main():
     assert helper.is_file()
     run([sys.executable, "-B", str(helper), "--host", "codex", "--destination", str(work / "workspace")])
     assert (work / "workspace/.agents/skills/baton-flow/SKILL.md").is_file()
+    for entry in (installed / "share/baton/SETUP.md", Path(setup_path.stdout.strip())):
+        assert entry.read_bytes() == (root / "SETUP.md").read_bytes()
+        assert "](docs/setup-policies.md)" in entry.read_text(encoding="utf-8")
+        assert (entry.parent / "docs/setup-policies.md").read_bytes() == (root / "docs/setup-policies.md").read_bytes()
     print(json.dumps({"status": "PASS", "wheel": wheel.name, "isolated_import": True,
                       "missing_orca_local_cli": True, "doctor_state_writes": 0, "installed_skill_integrity": True,
-                      "provider_calls": 0, "artifact_root": str(work)}, ensure_ascii=False))
+                      "setup_documents_installed": True, "provider_calls": 0, "artifact_root": str(work)}, ensure_ascii=False))
     return 0
 
 
