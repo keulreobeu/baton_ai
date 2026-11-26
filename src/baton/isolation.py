@@ -15,7 +15,14 @@ from .contracts import HarnessError, canonical_path, overlaps, safe
 def repository_lock(root, *, wait_seconds=0):
     """OS-owned repository mutex shared even by distinct state directory settings."""
     from .runtime import repository_key
-    path = repository_key(root).parent / ".local_runtime/harness-managed/repository.lock"
+    with repository_lock_at(repository_key(root), wait_seconds=wait_seconds):
+        yield
+
+
+@contextmanager
+def repository_lock_at(common, *, wait_seconds=0):
+    """Take the same mutex using the caller's verified Git common directory."""
+    path = common.parent / ".local_runtime/harness-managed/repository.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     stream = path.open("a+b")
     acquired = False

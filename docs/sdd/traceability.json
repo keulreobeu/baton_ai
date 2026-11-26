@@ -59,7 +59,11 @@
     "docs/specs/HANDOFF-FLOW-LOCAL-001.md",
     "docs/specs/HANDOFF-FLOW-ENTRY-001.md",
     "docs/plans/handoff-flow-v5.md",
-    "docs/adr/ADR-HANDOFF-FLOW-001.md"
+    "docs/adr/ADR-HANDOFF-FLOW-001.md",
+    "docs/adr/ADR-GIT-R1-001.md",
+    "docs/plans/git-r1.md",
+    "docs/specs/GIT-R1-001.md",
+    "docs/tasks/TASK-GIT-R1-001.md"
   ],
   "features": [
     {
@@ -2147,6 +2151,87 @@
             {
               "file": "tests/test_adapt_docs.py",
               "symbol": "AdaptFenceVariantTests.test_fence_closing_rules"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GIT-R1-001",
+      "spec": "docs/specs/GIT-R1-001.md",
+      "requirements": [
+        {
+          "id": "GIT-R1-001-REQ-01",
+          "acs": [
+            "GIT-R1-001-AC-01",
+            "GIT-R1-001-AC-02"
+          ]
+        },
+        {
+          "id": "GIT-R1-001-REQ-02",
+          "acs": [
+            "GIT-R1-001-AC-03"
+          ]
+        },
+        {
+          "id": "GIT-R1-001-REQ-03",
+          "acs": [
+            "GIT-R1-001-AC-04",
+            "GIT-R1-001-AC-05"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "GIT-R1-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "GitLifecycleTests.test_advanced_main_refresh_reverify_and_prepare_finish"
+            }
+          ]
+        },
+        {
+          "id": "GIT-R1-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "GitLifecycleTests.test_local_candidate_can_publish_same_commit_once"
+            }
+          ]
+        },
+        {
+          "id": "GIT-R1-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_git_github.py",
+              "symbol": "GitHubTests.test_registration_and_trusted_checks"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "GitLifecycleTests.test_advanced_main_blocks_cli_merge_before_reservation"
+            }
+          ]
+        },
+        {
+          "id": "GIT-R1-001-AC-04",
+          "tests": [
+            {
+              "file": "tests/test_git_github.py",
+              "symbol": "GitHubTests.test_receipt_requires_exact_pr_parents_and_tree"
+            },
+            {
+              "file": "tests/test_git_lifecycle.py",
+              "symbol": "GitLifecycleTests.test_advanced_main_blocks_cli_merge_after_reservation"
+            }
+          ]
+        },
+        {
+          "id": "GIT-R1-001-AC-05",
+          "tests": [
+            {
+              "file": "tests/test_git_github.py",
+              "symbol": "GitHubTests.test_main_stability_and_preservation"
             }
           ]
         }
