@@ -141,10 +141,22 @@ errors = 0
 skipped = 0
 expected_failures = 0
 
+[[verification]]
+command = ".venv/Scripts/python.exe -u -X utf8 scripts/verify_environment.py --base f7d3ab2c6242c841e4d79d08acd1e79e419d2b88"
+result = "passed"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#final-post-w3-local-evidence"
+acs = ["CI-VERIFY-SHADOW-001-AC-01", "CI-VERIFY-SHADOW-001-AC-02", "CI-VERIFY-SHADOW-001-AC-03", "CI-VERIFY-SHADOW-001-AC-04"]
+candidate_sha = "de5bfbacdf2d95c2e2f47114153dd992e0a8f6e1"
+tests_run = 876
+failures = 0
+errors = 0
+skipped = 0
+expected_failures = 0
+
 [independent_review]
 result = "passed"
-evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#ac-01-isolation-final-local-evidence"
-candidate_sha = "7eebe272ca46b5ef26a8185676877a1315eeea84"
+evidence = "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md#final-post-w3-local-evidence"
+candidate_sha = "de5bfbacdf2d95c2e2f47114153dd992e0a8f6e1"
 ```
 
 착수 base `a8b5fc1d57825df3afde2218ad39b63d1399902b`, branch `keulreobeu/ci-verification-rev3`. 선행 문서 검토는 `TASK-CI-VERIFY-ASSESS-001`에 귀속된다. 이 Task는 오프라인 shadow 제품 동작만 소유한다. 검토·회귀·공식 V3·원격 CI·게시 상태는 후보별로 기록한다.
@@ -297,3 +309,10 @@ Independent A round 5 on 778c2c9 rejected a distinct AC-02 case-only rename mani
 The final shadow topic takes workflow, workflow contract tests and CI-TIME records directly from actual main f7d3ab2c6242c841e4d79d08acd1e79e419d2b88. The offline timeout removal is already upstream. The earlier topic-only removal of plan/gate limits is superseded; both retain 25 minutes. Shared evidence retains W3 registration/completion readers and W4 private snapshot and union behavior. The registry preserves upstream entries and adds the four shadow documents and one feature. Earlier reviews and CI remain tied to their original candidates.
 
 Focused final integration: 8/8 in 96.260 s, including workflow contract, W3 candidate owner readback and W4 nonauthoritative observation, private inspection, and filter preflight on reviewer/integration paths. Static SDD: 10 paths, 91 ACs, PASS.
+
+## Final post-W3 local evidence
+
+- Exact local product `de5bfbacdf2d95c2e2f47114153dd992e0a8f6e1`, tree `066a27662a8ddc5c44d96225b834ddae265fabbe`, actual main `f7d3ab2c6242c841e4d79d08acd1e79e419d2b88`. Current main contributes its own W3 evidence readers and CI-TIME workflow and tests. Only the W4 shadow paths differ from main.
+- Same W4 A sample, round 7 independent coordinator PASS, 2026-11-25T23:48:16.1972903Z to 23:50:03.7839427Z. New and recurring findings 0. Ordinary snapshot parity groups and a read-only CLI comparison passed; the fixture kept official REVIEW_REQUIRED and V3 NOT_RUN while showing shadow PASS. Immutable DB and Git observations remain fixture-scoped. Evidence request `msg_ba74efa60d67`, verdict `msg_ef4a1db411c4`, report SHA-256 `def7263b2f61cd4b78cc8aed94b1cacc93b10ea624e7875f3265714fdcccdb20`. Review request, assignment, approval and rework intervals not observed.
+- Official sequential V3: 876 tests in 3079.809 s; total 3089.471 s, 2026-11-26T00:16:06.8747563+00:00 to 2026-11-26T01:07:36.3454061+00:00; exit 0, no failures, errors, skips or expected failures; no provider calls or reuse. Main-base static SDD: 10 paths and 91 ACs.
+- Publication scope: current remote refs and complete main-to-topic history audited for content, metadata and scope. The new integration uses already-public current main, preserving existing CI-TIME files and W3 readers. This Task-only receipt does not change product code or workflow. Remote verification must attest the actual PR head and merge ref.
