@@ -1,5 +1,11 @@
 # BATON
 
+새 프로젝트나 새 PC에서는 사용할 프로젝트를 연 AI에 [SETUP.md](SETUP.md)를 전달한다. wheel을 일반 가상환경에 설치했다면 아래 명령으로 설치 위치를 확인한다. `pip install --target DIR` 설치에서는 `DIR/share/baton/SETUP.md`를 연다. 사용자별 설치에서는 같은 Python의 `python -m pip show -f baton-ai`가 표시하는 Location과 SETUP.md 상대 경로를 함께 확인한다.
+
+```shell
+python -c "from pathlib import Path; import sysconfig; print(Path(sysconfig.get_path('data')) / 'share/baton/SETUP.md')"
+```
+
 이 컴퓨터의 개발 환경: [설치·활성화·검증 상태](docs/environment-20261106.md). 하네스 전용 checkout에서 `scripts/setup-environment.ps1` → `. ./scripts/enter-environment.ps1`을 사용한다.
 
 2026-11-06 작업 재개: [브랜치·분리 현황](docs/workspace-recovery-20261106.md) · [Codex/Claude 스킬](docs/development-skills.md).

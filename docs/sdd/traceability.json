@@ -63,7 +63,11 @@
     "docs/specs/CI-VERIFY-SHADOW-001.md",
     "docs/plans/ci-verification-shadow.md",
     "docs/adr/ADR-CI-VERIFY-SHADOW-001.md",
-    "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md"
+    "docs/tasks/TASK-CI-VERIFY-SHADOW-001.md",
+    "docs/specs/SETUP-001.md",
+    "docs/plans/setup-mvp.md",
+    "docs/adr/ADR-SETUP-001.md",
+    "docs/tasks/TASK-SETUP-001.md"
   ],
   "features": [
     {
@@ -2245,6 +2249,75 @@
             {
               "file": "tests/test_adapt_docs.py",
               "symbol": "AdaptFenceVariantTests.test_fence_closing_rules"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SETUP-001",
+      "spec": "docs/specs/SETUP-001.md",
+      "requirements": [
+        {
+          "id": "SETUP-001-REQ-01",
+          "acs": [
+            "SETUP-001-AC-01"
+          ]
+        },
+        {
+          "id": "SETUP-001-REQ-02",
+          "acs": [
+            "SETUP-001-AC-02"
+          ]
+        },
+        {
+          "id": "SETUP-001-REQ-03",
+          "acs": [
+            "SETUP-001-AC-03"
+          ]
+        }
+      ],
+      "acs": [
+        {
+          "id": "SETUP-001-AC-01",
+          "tests": [
+            {
+              "file": "tests/test_setup_docs.py",
+              "symbol": "SetupDocsTests.test_checkout_entry_and_policy_navigation"
+            },
+            {
+              "file": "tests/test_flow_skill.py",
+              "symbol": "FlowSkillTests.test_all_host_targets_install_identical_bytes_and_repeat_is_noop"
+            }
+          ]
+        },
+        {
+          "id": "SETUP-001-AC-02",
+          "tests": [
+            {
+              "file": "tests/test_setup_docs.py",
+              "symbol": "SetupDocsTests.test_preset_table_preserves_the_five_independent_choices"
+            },
+            {
+              "file": "tests/test_setup_docs.py",
+              "symbol": "SetupDocsTests.test_checker_triggers_follow_validation_for_every_sdd_choice"
+            },
+            {
+              "file": "tests/test_input_check.py",
+              "symbol": "InputCheckTests.test_only_skipped_tests_are_unknown_and_runtime_output_does_not_change_identity"
+            }
+          ]
+        },
+        {
+          "id": "SETUP-001-AC-03",
+          "tests": [
+            {
+              "file": "tests/test_flow_skill.py",
+              "symbol": "FlowSkillTests.test_all_host_targets_install_identical_bytes_and_repeat_is_noop"
+            },
+            {
+              "file": "tests/test_flow_skill.py",
+              "symbol": "FlowSkillTests.test_unmanaged_or_modified_skill_is_preserved"
             }
           ]
         }

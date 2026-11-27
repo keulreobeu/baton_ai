@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 프로젝트 Setup MVP
+
+[TASK-SETUP-001](TASK-SETUP-001.md) · 프로젝트용 AI 초기 환경 구성과 독립 운영 정책. 2026-11-26 최종안을 바탕으로 Markdown과 배포본을 준비한다. 소유 범위·후보·검증은 Task에 기록한다.
+
 ## 기존 SDD 이관 대조
 
 [TASK-META-INVENTORY-001](TASK-META-INVENTORY-001.md)에서 등록 외 문서와 분기별 차이를 확인한다. git-r1 계약은 d19900f에서 다시 대조했으며 별도 draft 보기로 보존한다.
