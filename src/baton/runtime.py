@@ -159,6 +159,17 @@ class OrcaCLI:
         workspace_path(workspace)
         return workspace
 
+    def check_route(self, requested):
+        """Check current host capabilities without starting an agent or reading account state."""
+        agents = self.call("agent", "installed", "--json").get("agents")
+        if not isinstance(agents, list) or not any(
+                isinstance(agent, dict) and agent.get("id") == requested["provider"] for agent in agents):
+            raise HarnessError("routing_agent_not_installed")
+        help_text = self.call("orchestration", "worker-start", "--help", text=True)
+        flags = help_text.split()
+        if "--model" not in flags or (requested["effort"] != "default" and "--effort" not in flags):
+            raise HarnessError("routing_orca_option_unavailable")
+
     def start(self, config, task, prompt, workspace):
         arguments = ["orchestration", "worker-start", "--run", config["run_id"], "--spec", prompt,
                      "--worktree", "id:" + workspace, "--agent", task["execution"]["preferred_provider"], "--json"]
@@ -402,15 +413,37 @@ def _keep_owner(old, failed):
     return {**old, "failed_redispatches": (old.get("failed_redispatches", []) + [attempt])[-10:]}
 
 
-def dispatch(store, task_id, client=None, *, review=False):
+def _observe_route(binding, projection):
+    route = binding.get("routing")
+    if route:
+        observed = {key: projection.get(key) for key in ("provider", "model")}
+        mismatch = [key for key, value in observed.items() if value is not None and value != route["requested"][key]]
+        binding["routing"] = {**route, "observed": {**route["observed"], **observed},
+                              "host_mismatch": sorted(set(route.get("host_mismatch", [])) | set(mismatch))}
+
+
+def dispatch(store, task_id, client=None, *, review=False, review_request=None):
     client = client or OrcaCLI()
     key = "review_runtime" if review else "runtime"
     with execution_lock(store.root, "task", task_id):
         row = store.get(task_id)
         old = row["result"].get(key)
+        task = row["task"]
+        selection = task["execution"].get("routing_selection")
+        recovery = review_request is not None
+        if recovery:
+            safe(review_request)
+            if not review or not selection or "reviewer" in selection:
+                raise HarnessError("routing_review_recovery_requires_author_only_route")
+            if not isinstance(review_request, dict) or set(review_request) != {"candidate_sha", "approved"}:
+                raise HarnessError("invalid_routing_review_request")
+            candidate = row["result"].get("candidate") or {}
+            if not candidate or review_request["candidate_sha"] != candidate.get("candidate_sha"):
+                raise HarnessError("routing_review_candidate_mismatch")
+            if old and not old.get("settled") and old.get("recovery_approval") != review_request:
+                raise HarnessError("routing_review_approval_conflict")
         if old and old.get("phase") != "settled":
             return store.export(task_id)  # No repeat of an uncertain side effect.
-        task = row["task"]
         # A workspace that no longer exists holds nothing to preserve; start fresh from HEAD.
         reusable = (not review and old and old.get("settled") and old.get("workspace_id")
                     and Path(old["workspace_id"].split("::", 1)[-1]).is_dir())
@@ -419,13 +452,27 @@ def dispatch(store, task_id, client=None, *, review=False):
             raise HarnessError("orca_coordinator_configuration_required")
         if not client.doctor().get("available"):
             raise HarnessError("orca_runtime_unavailable")
+        role = "reviewer" if review else "author"
+        routing = None
         if review:
             if not row["result"].get("candidate"):
                 raise HarnessError("review_requires_candidate")
             if row["lease"] or row["state"] != "REVIEW_REQUIRED" or row["control"]:
                 raise HarnessError("review_requires_idle_candidate")
             base = row["result"]["candidate"]["candidate_sha"]
-        else:
+        if selection:
+            from .routing import check_registered, recover_reviewer
+            if recovery:
+                from .evidence import _current_candidate
+                _current_candidate(store, row)
+                routing = recover_reviewer(store.root, review_request["approved"])
+            else:
+                routing = check_registered(store.root, task["execution"], role)
+            client.check_route(routing["requested"])
+            if not review and "reviewer" in selection:
+                reviewer_route = check_registered(store.root, task["execution"], "reviewer")
+                client.check_route(reviewer_route["requested"])
+        if not review:
             _reservation(store, task_id, check_only=True, cap=config.get("max_active_tasks", 2))
             base = git(store.root, "rev-parse", "HEAD").strip()  # Before claim: a failure here holds no lease.
             row = store.claim(task_id)
@@ -434,7 +481,6 @@ def dispatch(store, task_id, client=None, *, review=False):
                 # base_commit describes row["worktree"], which a failed bind may not have reached.
                 bound = row["worktree"] and Path(row["worktree"]).resolve() == Path(old["workspace_id"].split("::", 1)[-1]).resolve()
                 base = (row["result"].get("base_commit") if bound else None) or old["base_sha"]
-        role = "reviewer" if review else "author"
         try:
             _reserve_slot(store, task_id, role, config.get("max_active_tasks", 2))
         except (HarnessError, OSError):
@@ -452,6 +498,10 @@ def dispatch(store, task_id, client=None, *, review=False):
                    # Every earlier dispatch: a finished one still reads as owned and must stay unadoptable.
                    "previous_dispatch_ids": ((old or {}).get("previous_dispatch_ids", [])
                                              + ([old["dispatch_id"]] if old and old.get("dispatch_id") else []))}
+        if routing:
+            binding["routing"] = routing
+        if recovery:
+            binding["recovery_approval"] = review_request
         if reusable:
             # Carry it from the start: a failure before reuse must not orphan a workspace holding edits.
             binding["workspace_id"] = old["workspace_id"]
@@ -507,6 +557,13 @@ def dispatch(store, task_id, client=None, *, review=False):
                 for routing_key in ("model", "effort"):
                     if config.get("review_" + routing_key) is not None:
                         routed_task["execution"][routing_key] = config["review_" + routing_key]
+            if routing:
+                option = routing["requested"]
+                execution = routed_task["execution"]
+                execution.update(preferred_provider=option["provider"], model=option["model"])
+                execution.pop("effort", None)
+                if option["effort"] != "default":
+                    execution["effort"] = option["effort"]
             receipt = client.start(config, routed_task, prompt, workspace)
             if receipt.get("run_id") != config["run_id"]:
                 raise HarnessError("orca_run_mismatch")
@@ -518,6 +575,7 @@ def dispatch(store, task_id, client=None, *, review=False):
                 raise HarnessError("orca_dispatch_identity_mismatch")
             submitted = dict(binding)
             binding.update(observed)
+            _observe_route(binding, observed)
             path = register_workspace(store, binding, base)
             binding["phase"] = "running"
             _save_binding(store, task_id, key, binding, submitted)
@@ -598,6 +656,7 @@ def ingest(store, task_id, receipt, client=None):
             raise
         with execution_lock(store.root, "worktree", path):
             binding.update(observed, phase="settled", settled=True, sequence=sequence)
+            _observe_route(binding, observed)
             binding["events"][event_id] = event_hash
             try:
                 changes = snapshot(path, base=binding["base_sha"])
@@ -852,6 +911,7 @@ def reconcile(store, task_id, request, client=None):
         # A worker can finish before its lost start reply is reconciled.
         path = register_workspace(store, observed, binding["base_sha"], finished=True)
         replacement = {**binding, **observed, "phase": "running", "adopted_by": binding["coordinator_id"]}
+        _observe_route(replacement, observed)
         _save_binding(store, task_id, key, replacement, binding)
         if key == "runtime":
             _bind_author(store, task_id, row["lease"], path, replacement)

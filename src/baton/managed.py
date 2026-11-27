@@ -1,10 +1,11 @@
 """Durable management state. Existing native/manual Store is intentionally unchanged."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import time
 import uuid
@@ -20,7 +21,60 @@ STATES = ACTIVE | TERMINAL | {"CREATED", "READY", "REVIEW_REQUIRED", "FAILED", "
 PRIORITIES = {"high": 0, "normal": 1, "low": 2}
 
 
-def validate(body, root):
+def _validate_orca_settings(model, effort):
+    if model is not None and (not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}", model)):
+        raise HarnessError("invalid_orca_model")
+    if effort is not None and effort not in ("low", "medium", "high", "xhigh", "max"):
+        raise HarnessError("invalid_orca_effort")
+
+
+def _replace_orca_settings(execution, provider, model, effort):
+    previous = execution["preferred_provider"]
+    if effort is not None and model is None:
+        raise HarnessError("orca_effort_requires_model")
+    _validate_orca_settings(model, effort)
+    if previous != provider and model is None and (execution.get("model") or execution.get("effort")):
+        raise HarnessError("replacement_orca_model_required")
+    before = {"provider": previous, "model": execution.get("model"), "effort": execution.get("effort")}
+    if model is not None:
+        execution["model"] = model
+        execution.pop("effort", None)
+        if effort is not None:
+            execution["effort"] = effort
+    after = {"provider": provider, "model": execution.get("model"), "effort": execution.get("effort")}
+    if before == after:
+        return {}
+    review = execution["orca"]
+    if any(review.get(key) for key in ("review_provider", "review_model", "review_effort")):
+        review_provider = review.get("review_provider", previous)
+        if provider != previous:
+            review["review_provider"] = review_provider
+        for field in ("model", "effort"):
+            if review.get("review_" + field) is not None:
+                continue
+            # Unset reviewer options inherit from a same-provider author. Keep the
+            # existing effective request, including omissions that meant host default.
+            inherited = before[field] if review_provider == previous else None
+            new_default = after[field] if review_provider == provider else None
+            if inherited != new_default:
+                if inherited is None:
+                    raise HarnessError("replacement_would_change_reviewer_settings")
+                review["review_" + field] = inherited
+    return {"previous_author": before, "requested_author": after}
+
+
+def _require_orca_model(execution):
+    if execution["runtime"] != "orca":
+        return
+    config = execution["orca"]
+    if execution.get("effort") and not execution.get("model"):
+        raise HarnessError("orca_effort_requires_model")
+    review_inherits = config.get("review_provider", execution["preferred_provider"]) == execution["preferred_provider"]
+    if config.get("review_effort") and not (config.get("review_model") or (review_inherits and execution.get("model"))):
+        raise HarnessError("orca_effort_requires_model")
+
+
+def validate(body, root, *, for_registration=False):
     safe(body)
     if not isinstance(body, dict):
         raise HarnessError("invalid_task")
@@ -44,6 +98,8 @@ def validate(body, root):
         if priority not in PRIORITIES:
             raise HarnessError("invalid_priority")
         execution = dict(body.get("execution", {}))
+        if "routing" in execution and "routing_selection" not in execution and "preferred_provider" in execution:
+            raise HarnessError("routing_conflicts_with_explicit_execution")
         defaults = {"preferred_provider": "codex", "fallback_provider": "none", "max_attempts": 2,
                     "timeout_seconds": 1800, "total_timeout_seconds": 3600, "sandbox": "workspace-write",
                     "allow_fallback": False, "runtime": "local"}
@@ -67,13 +123,8 @@ def validate(body, root):
             execution["orca"] = {**config, "max_active_tasks": cap}
             if config.get("review_provider", execution["preferred_provider"]) not in providers:
                 raise HarnessError("unsupported_review_provider")
-            import re
-            for model in (execution.get("model"), config.get("review_model")):
-                if model is not None and (not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}", model)):
-                    raise HarnessError("invalid_orca_model")
-            for effort in (execution.get("effort"), config.get("review_effort")):
-                if effort is not None and effort not in {"low", "medium", "high", "xhigh", "max"}:
-                    raise HarnessError("invalid_orca_effort")
+            _validate_orca_settings(execution.get("model"), execution.get("effort"))
+            _validate_orca_settings(config.get("review_model"), config.get("review_effort"))
             if execution["allow_fallback"]: raise HarnessError("orca_implicit_fallback_forbidden")
         # "none" disables quota fallback; existing "gms" values are kept but GMS is opt-in at runtime.
         if execution["fallback_provider"] not in {"codex", "gms", "mock", "none"}:
@@ -140,9 +191,12 @@ def validate(body, root):
             covered.update(check["acs"])
         if not checks or covered != set(acs):
             raise HarnessError("all_criteria_require_validation")
-        return dict(task_id=body["task_id"], objective=body["objective"], priority=priority, scope=scope,
+        result = dict(task_id=body["task_id"], objective=body["objective"], priority=priority, scope=scope,
                     acceptance_criteria=acs, execution=execution, safety=safety, depends_on=deps,
                     context_files=files, validation=checks, documentation=body.get("documentation", {}))
+        if for_registration:
+            return _registration(result, root)
+        return result
     except (KeyError, TypeError, AttributeError):
         raise HarnessError("invalid_task") from None
 
@@ -154,6 +208,18 @@ def legacy_official_v3_failed(checks):
         return False
     planners = [c.get("planner") for c in checks if isinstance(c, dict) and isinstance(c.get("planner"), dict)]
     return any(p.get("effective_tier") == "V3" and p.get("actual_status") == "failed" for p in planners)
+
+
+def _registration(body, root, *, previous=None):
+    execution = body["execution"]
+    if "routing_selection" in execution:
+        raise HarnessError("routing_selection_is_read_only")
+    if "routing" in execution:
+        from .routing import prepare
+        body = prepare(root, body, previous)
+    _require_orca_model(body["execution"])
+    safe(body)
+    return body
 
 
 class ManagedStore:
@@ -222,10 +288,15 @@ class ManagedStore:
         return r
 
     def create(self, body):
+        # Compare an idempotent submission under the original row's input contract.
+        # Every new insert must meet the current Orca launch contract.
         body = validate(body, self.root)
         with self.tx() as c:
             old = c.execute("SELECT hash,body FROM managed_tasks WHERE id=?", (body["task_id"],)).fetchone()
-            if old and old[0] != digest(body) and validate(json.loads(old[1]), self.root) != body:
+            previous = validate(json.loads(old[1]), self.root) if old else None
+            if not old or "routing" in body["execution"] or "routing_selection" in body["execution"]:
+                body = _registration(body, self.root, previous=previous["execution"] if previous else None)
+            if old and old[0] != digest(body) and previous != body:
                 raise HarnessError("task_id_conflict")
             if not old:
                 from .planning import build_plan
@@ -376,21 +447,39 @@ class ManagedStore:
             self.event(c, task, "READY", {"recovered": recover})
         return self.observe_idle_state(task)
 
-    def configure(self, task, *, priority=None, provider=None):
-        with self.tx() as c:
+    def configure(self, task, *, priority=None, provider=None, model=None, effort=None):
+        from .runtime import execution_lock
+        if provider is None and (model is not None or effort is not None):
+            raise HarnessError("provider_required")
+        orca_change = provider is not None and self.get(task)["task"]["execution"].get("runtime") == "orca"
+        lock = execution_lock(self.root, "task", task) if orca_change else nullcontext()
+        with lock, self.tx() as c:
             r = self.row(c, task)
             if r["lease"] or r["state"] in TERMINAL:
                 raise HarnessError("task_busy_or_terminal")
             body = json.loads(r["body"])
+            route_change = {}
             if priority is not None:
                 if priority not in PRIORITIES: raise HarnessError("invalid_priority")
                 body["priority"] = priority
             if provider is not None:
-                choices = {"codex", "claude", "antigravity"} if body["execution"].get("runtime") == "orca" else {"codex", "gms", "mock"}
+                if body["execution"].get("routing_selection"):
+                    raise HarnessError("registered_route_requires_new_task")
+                choices = {"codex", "claude", "antigravity"} if orca_change else {"codex", "gms", "mock"}
                 if provider not in choices: raise HarnessError("unsupported_provider")
+                if orca_change:
+                    review = json.loads(r["result"]).get("review_runtime")
+                    if review and not review.get("settled"):
+                        raise HarnessError("task_busy_or_terminal")
+                    route_change = _replace_orca_settings(body["execution"], provider, model, effort)
+                elif model is not None or effort is not None:
+                    raise HarnessError("orca_settings_require_orca_runtime")
                 body["execution"]["preferred_provider"] = provider
+                if route_change:
+                    _require_orca_model(body["execution"])
+            safe(body)
             c.execute("UPDATE managed_tasks SET body=?,hash=?,priority=? WHERE id=?", (encode(body), digest(body), PRIORITIES[body["priority"]], task))
-            self.event(c, task, "configured", {"priority": body["priority"], "provider": body["execution"]["preferred_provider"]})
+            self.event(c, task, "configured", {"priority": body["priority"], "provider": body["execution"]["preferred_provider"], **route_change})
         return self.get(task)
 
     def approve(self, task, reviewer):

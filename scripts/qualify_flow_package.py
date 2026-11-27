@@ -56,13 +56,22 @@ def main():
     assert helper.is_file()
     run([sys.executable, "-B", str(helper), "--host", "codex", "--destination", str(work / "workspace")])
     assert (work / "workspace/.agents/skills/baton-flow/SKILL.md").is_file()
+    routing_ref = Path("skills/baton-flow/references/model-routing.md")
+    assert (work / "workspace/.agents" / routing_ref).read_bytes() == (root / routing_ref).read_bytes()
+    for command in ([sys.executable, "-B", "-X", "utf8", "-m", "baton"],
+                    [str(python), "-I", "-X", "utf8", "-m", "baton"]):
+        routing = json.loads(run([*command, "routing", "show"]).stdout)
+        assert len(routing["roles"]) == 37
+        assert routing["roles"]["implement-local"]["choice"]["effort"] == "medium"
+        assert Path(routing["path"]).read_bytes() == (root / routing_ref).read_bytes()
     for entry in (installed / "share/baton/SETUP.md", Path(setup_path.stdout.strip())):
         assert entry.read_bytes() == (root / "SETUP.md").read_bytes()
         assert "](docs/setup-policies.md)" in entry.read_text(encoding="utf-8")
         assert (entry.parent / "docs/setup-policies.md").read_bytes() == (root / "docs/setup-policies.md").read_bytes()
     print(json.dumps({"status": "PASS", "wheel": wheel.name, "isolated_import": True,
                       "missing_orca_local_cli": True, "doctor_state_writes": 0, "installed_skill_integrity": True,
-                      "setup_documents_installed": True, "provider_calls": 0, "artifact_root": str(work)}, ensure_ascii=False))
+                      "setup_documents_installed": True, "routing_resource_installed": True,
+                      "provider_calls": 0, "artifact_root": str(work)}, ensure_ascii=False))
     return 0
 
 

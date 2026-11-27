@@ -1,5 +1,9 @@
 # BATON 현재 개발
 
+## 다음 Task 모델 라우팅
+
+[TASK-FLOW-MODEL-ROUTING-001](TASK-FLOW-MODEL-ROUTING-001.md) · 활성 프리셋과 상세 역할을 [모델 라우팅](../../skills/baton-flow/references/model-routing.md)에서 확인한다. 새 Orca Task 등록 전에 지원과 승인 tuple을 대조한다. 독립 검토와 게시 상태는 Task에서 추적한다.
+
 ## 프로젝트 Setup MVP
 
 [TASK-SETUP-001](TASK-SETUP-001.md) · 프로젝트용 AI 초기 환경 구성과 독립 운영 정책. 2026-11-26 최종안을 바탕으로 Markdown과 배포본을 준비한다. 소유 범위·후보·검증은 Task에 기록한다.

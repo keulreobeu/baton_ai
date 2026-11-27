@@ -11,8 +11,20 @@ BATON owns the task, dependency and completion decisions. Orca owns dispatch and
 
 1. Read the current Task and its AC, scope and last verified checkpoint. Check `baton status --task <id>` and the actual branch/worktree. Completed history is not proof for changed content.
 2. Use `baton runtime doctor` before Orca dispatch. Check the supported runtime/coordinator and provider capabilities. An unavailable capability is a named blocker, never permission to substitute a tool or model. Fake tests do not qualify a real host.
-3. Register work through `baton new-task --request <file>` with `execution.runtime=orca` and explicit `execution.orca.run_id`, `repo_id`, and `coordinator_id`, then `baton run --task <id>`. For local execution omit the runtime value or use `local`; BATON must work without Orca. `execution.orca.review_provider` may select an available separate reviewer provider; do not silently change it.
+3. Before registering an Orca task, select the assignments below. Put the reason for each choice in the Task brief and its requested settings in the request to `baton new-task --request <file>`. Set `execution.runtime=orca` and `execution.orca.run_id`, `repo_id`, and `coordinator_id`. Read the registered request back with `baton status --task <id>`, then use `baton run --task <id>`. Local execution uses the existing default or `runtime=local`.
 4. Follow the version-matched Orca guide and the dispatch receipt's supported next action. Give writing workers separate owned workspaces. Start independent ready tasks, then end the coordinator turn so Orca can deliver notifications. Do not add a polling loop or steer a supervised worker through terminal input.
+
+### Select a model and effort
+
+At task start, read [Model routing](references/model-routing.md) and run `baton routing show`. Pick a detailed author and reviewer role from the active profile. Include the roles and Task-approved exact options in `execution.routing`, preview the selection, then register and dispatch through the normal commands above. Save the active provider and preset, group changes and individual role pins in `baton-routing.md`. The host owns the already-open coordinator session and any host-native child launch.
+
+An omitted reviewer selects `review-final`. Approve both roles before registration. When Cross applies, explicitly select its required different review provider. For a stored author-only routed Task with a frozen candidate, follow the candidate-specific recovery request in [Model routing](references/model-routing.md#이전에-등록한-작성-전용-task의-검토-복구).
+
+Resolve each choice to an exact Task-authorized provider, model and supported effort using the execution host's capabilities. If a required value lacks support or approval, keep that assignment pending. A cost tier or model family name cannot authorize a substitution. Preserve existing explicit settings and the host-default behavior of existing unpinned tasks.
+
+For manual assignment, set `execution.preferred_provider`, `execution.model` and `execution.effort` for the author. Set `execution.orca.review_provider`, `review_model` and `review_effort` for the reviewer. Specify a model whenever requesting effort. On an idle manually assigned Task, use `baton provider --task <id> --name <provider> --model <id> [--effort <level>]` to replace a pinned author. Omitted effort delegates it to that model's host default. Confirm that choice is authorized before running the Task.
+
+In the Task evidence, link the reason and requested tuple to the attempt and dispatch ID. Record the Orca-reported provider/model and any independently verified provider-session values with their sources. Record each unavailable value, including actual effort, as `unknown`. Follow the existing reconciliation path for an uncertain start.
 
 ## Receive and verify
 
