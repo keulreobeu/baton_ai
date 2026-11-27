@@ -6,8 +6,8 @@
 
 1. `baton routing show`로 실제 읽는 프로필 경로, 활성 프리셋, 묶음과 개별 역할을 확인한다. 저장소 배포본과 설치된 baton-flow는 이 문서를 제공한다. 편집은 이 파일을 작업 루트의 `baton-routing.md`에 복사해 진행한다. `[active]`에 provider와 preset을 저장하면 다음 Task는 이 값을 읽는다. Task별로 다르게 선택할 때만 요청에 `provider` 또는 `preset`을 추가한다. CLI는 로컬 파일이 있으면 전체 내용을 검사하고 사용한다. 실수로 잘못 편집한 경우 구버전으로 묵시적으로 돌아가지 않는다.
 2. 승인된 호스트와 구독에서 확인한 정확한 모델 ID와 지원 조건을 작업 루트의 `.local_runtime/routing-support.md`에 기록한다. 아래 갱신 절차를 따른다. 이 파일은 로컬 운영 증거이며 커밋하지 않는다.
-3. 일반 Orca Task JSON의 `execution`에 아래 선택을 추가한다. `author`는 작성, 조사 등의 상세 역할이다. `reviewer`에 `review-code` 또는 `review-final` 등을 넣으면 독립 검토를 별도로 해석한다. 필요시 `review_provider`로 해당 검토의 provider를 명시한다. `approved`에는 이 Task에서 허용한 정확한 **provider 모델 ID effort speed**를 적는다. `reason`으로 왜 그 역할을 선택했는지 남길 수 있다. 이미 열린 조율 세션 또는 호스트 네이티브 하위 워커는 그 호스트가 배정한다.
-4. `baton routing preview --request <file>`에서 선택, 제외 이유와 검토자 tuple을 확인한 후 `baton new-task --request <file>`로 등록하고 기존 `baton run --task <id>` 및 `baton runtime review --task <id>`를 사용한다. 미리보기는 로컬 지원 목록만 읽는다. 배정 직전 Orca의 설치 목록 및 모델·effort 플래그와 지원 목록의 유효성을 다시 확인한다. 승인·후보·소유권 게이트는 그대로 적용된다. 기존 명시 launch 필드와 라우팅 선택은 한 요청에 섞을 수 없다.
+3. 일반 Orca Task JSON의 `execution`에 아래 선택을 추가한다. `author`는 작성, 조사 등의 상세 역할이다. `reviewer`를 생략하면 `review-final`을 사용한다. `review-code`처럼 다른 검토 역할을 명시할 수도 있다. `review_provider`로 검토 provider를 고정한다. `approved`에는 작성과 필수 검토에 허용한 정확한 **provider 모델 ID effort speed**를 적는다. `reason`으로 역할 선택 근거를 남길 수 있다. 이미 열린 조율 세션 또는 호스트 네이티브 하위 워커는 그 호스트가 배정한다.
+4. `baton routing preview --request <file>`에서 선택, 제외 이유와 검토자 조합을 확인한 후 `baton new-task --request <file>`로 등록한다. 기존 `baton run --task <id>` 및 `baton runtime review --task <id>`를 사용한다. 미리보기는 로컬 지원 목록을 읽으며 작성자와 검토자 중 하나라도 승인 또는 지원이 없으면 등록이 대기한다. 작성자 시작 전 두 역할의 지원 목록과 Orca의 설치·모델·effort 전달을 다시 확인한다. 검토 시작 전에는 검토자 설정을 다시 확인한다. 승인·후보·소유권 게이트를 적용한다. 기존 명시 launch 필드와 라우팅 선택은 한 요청에 섞을 수 없다.
 
 ```json
 "routing": {
@@ -21,7 +21,7 @@
 
 - 프리셋은 `economy`(가성비), `standard`(표준), `accelerated`(가속)이다. provider는 `codex`, `claude`, `antigravity`(Gemini 단일 모델)다. 가속은 표준의 모델과 effort를 유지한다. Codex 일부 행에서 속도만 바뀐다. `direct_response: true`는 직접 응답인 Codex 행의 `direct-fast`를 Fast 요청으로 해석한다.
 - 개별 역할 고정 → 묶음 고정 → 프리셋 기본 순서다. 개별 키를 지우면 묶음 또는 프리셋을 상속한다. 고정 선택은 `provider family effort speed [exact-id]` 형식이다. 끝의 ID가 없으면 해당 계열의 최신 호환 정식판을 추적한다. `default`는 승인된 모델 기본 effort 요청이며 실제 effort는 미관측 상태로 기록한다.
-- 최종 검토는 별도 고정 후보·세션에서 수행한다. 명시 provider나 사용자 역할/묶음 고정이 없으면 승인되고 지원되는 다른 provider가 우선한다. 같은 provider의 프리셋은 명시적으로 해당 provider를 선택하거나 승인된 다른 검토 provider가 없는 경우 사용한다. 승인에 있는 다른 provider가 모두 차단되면 검토 배정을 대기시킨다.
+- 최종 검토는 별도 고정 후보·세션에서 수행한다. 명시 provider나 사용자 역할/묶음 고정이 없으면, 검토 행의 계열·effort·속도에 승인된 조합이 있는 다른 provider를 찾고 지원되는 조합을 우선한다. 다른 provider에 작성 행에만 맞는 조합이 있으면 현재 작성자의 provider에 승인된 검토 행을 사용한다. 검토 행에 맞는 다른 provider 승인 조합이 모두 차단되면 검토 배정은 대기한다. 프로젝트의 Cross 정책이 다른 provider 검토를 요구하면 해당 실행을 승인할 때 `review_provider`에 다른 provider를 명시한다. 명시한 provider가 차단된 경우 그 상태를 보고하며 Setup의 선행 검토와 검증 요건도 적용한다.
 - 편집 전 복사본을 보존하고 `baton routing show --provider <provider> --preset <preset>`를 편집 전후에 비교한다. 묶음을 바꿀 때 바뀌는 하위 역할과 유지되는 개별 핀을 모두 비교하고, 적용할 각 역할의 preview가 통과한 뒤 사용한다. 하나라도 미지원이면 편집 후보에서 케이스를 바로잡거나 복원한다. 등록된 Task와 실행 중인 dispatch는 편집으로 바뀌지 않는다. 변경이 필요한 기존 프리셋 Task는 기존 승인/취소 절차로 새 Task를 등록한다. 기존 수동 배정 Task의 명시 교체 절차는 baton-flow 본문을 따른다.
 
 ```toml
@@ -81,11 +81,19 @@ schema = 1
 | review | review-final | 고정 후보 최종 독립 검토 | sol xhigh | astra high | normal | opus medium | opus high | fable high | neon xhigh | carbon high |
 <!-- routing-table:end -->
 
+## 이전에 등록한 작성 전용 Task의 검토 복구
+
+이미 후보를 고정한 이전 버전의 Task에 `execution.routing_selection.reviewer`가 없으면, 그 후보에 승인된 검토자 조합을 `baton runtime review --task <id> --request <approval-file>`로 전달한다. 검토 요구 상태의 현재 후보 SHA와 정확한 모델 조합을 넣는다. Cross의 다른 provider 검토 단계라면 승인된 다른 provider를 지정한다. BATON은 원래 Task와 후보 증거를 보존하고 별도 검토 dispatch에 승인과 후보 SHA를 기록한다. 승인 파일을 다시 제출해도 진행 중인 검토를 중복 시작하지 않는다. 이미 등록된 검토자 조합의 교체는 이 복구 명령에서 차단한다.
+
+```json
+{"candidate_sha":"<fixed-candidate-sha>","approved":"claude <exact-id> high normal"}
+```
+
 ## 로컬 모델 목록 갱신
 
 1. 기존 프로필과 exact pin, 로컬 지원 목록과 진행 중인 dispatch를 보존한다. 사용자가 승인한 변경과 확인 날짜를 기록한다. `orca agent installed --json`과 `orca orchestration worker-start --help`에서 설치된 에이전트와 배정 옵션을 확인한다. 설치된 구독 CLI는 `codex --version`, `claude --version` 또는 해당 Gemini CLI의 버전/도움말로 조회한다. 업데이트나 실제 모델 실행은 별도 승인 대상이다.
 2. 현재 로그인 채널의 정식 출시와 모델 목록에서 같은 계열의 정확한 ID, 정식 출시일, 지원 플랜·effort를 대조한다. 모델 노출만으로 구독 포함, 지역 제한 또는 잔여량을 판단하지 않는다. 사용자가 확인한 인증·과금·한도 조건을 만료일과 함께 기록한다. 미확인·종료·미설치·한도 소진 조합은 후보에서 제외하고 원인을 표시한다. 오프라인에서 자동 다운로드나 모델 호출을 하지 않는다.
-3. 새 릴리스와 구버전의 같은 작업·하네스·effort 조건을 비교한다. 결과가 다른 조건에서 측정됐다면 날짜와 차이를 명시한다. 정식 출시일 기준 최신 호환 ID를 채택하고, 이전 ID 선택 시 최신판이 제외된 이유를 확인한다. 명시 핀의 ID가 폐기되면 승인 가능한 대안을 제시하고 새 선택을 기다린다.
+3. 새 릴리스와 구버전의 같은 작업·하네스·effort 조건을 비교한다. 결과가 다른 조건에서 측정됐다면 날짜와 차이를 명시한다. 정식 출시일 기준 최신 호환 ID를 채택하고, 이전 ID 선택 시 최신판이 제외된 이유를 확인한다. 명시 핀을 쓸 수 없으면 기존 배정을 차단한 채 `eligible_replacements`에 같은 계열·effort·속도에서 지원되고 이미 승인된 ID를 표시한다. 그중 하나를 다시 선택하거나 새로운 승인 조합을 추가한 후 새 배정을 등록한다.
 4. 지원 목록 초안을 원본과 대조한 뒤 교체한다. `baton routing preview`로 이전/제안 tuple을 검증하고, 각각의 개인 핀·상속과 구독 상태가 의도대로인지 확인한다. 변경은 다음 신규 등록부터 적용된다. 등록된 Task의 ID는 고정되며 재시도 전 현재 지원을 재검사한다. 같은 ID가 부적격이면 중단한다. 새 모델로 재시작하려면 새 선택과 승인으로 등록한다.
 
 지원 파일은 아래 예시처럼 **하나의 TOML 코드 블록**을 사용한다. 날짜 문자열은 ISO 날짜다. 날짜 예시는 형식만 보여준다. 모델 상태는 `available`(정식 출시 및 현재 후보), `unverified`, `withdrawn`, `quota-exhausted`다. 같은 provider/모델 ID는 한 행만 사용하고, 출시일이 같은 호환 버전은 명시 핀으로 지정한다. `efforts`에는 확인한 값만 넣고 모델 기본값을 승인할 수 있을 때만 `default`를 넣는다. 지원 파일에 인증값, 계정 이름, 계정 이메일, 원장 또는 설정 덤프를 넣지 않는다.
@@ -114,6 +122,8 @@ status = "unverified"
 실제 지원 목록 파일의 울타리는 이 문서의 예시처럼 물결표를 쓰거나 백틱 세 개를 쓴다. Claude 플랜은 `pro`, `max`, `ultra`다. Codex 플랜은 `plus`, `pro`다. Antigravity 플랜은 `free`, `plus`, `trial`, `pro`, `device-trial`, `ultra`다. Antigravity에는 `single_model = true`를 추가한다. Codex Plus의 Astra는 플랜 한도 영향을 확인한 경우 `plus_astra_ack = true`를 추가한다.
 
 ## 구독·호스트 조건과 결과 판독
+
+지원 목록과 승인에는 정확한 버전 ID를 사용한다. Claude의 `fable`, `opus`, `sonnet`, `haiku`, `best`, `default`, `opusplan`, 컨텍스트 별칭과 provider의 `-latest` 모델 별칭은 배정 대상에서 제외한다. 예를 들어 `claude-fable-5`와 `claude-fable-5-2`는 각각 별도 버전이다. exact pin이 이미 기록된 재시도에서도 별칭은 차단한다. effort의 `default`는 정확한 모델 버전에서 추론 강도 결정을 위임하는 옵션이다.
 
 | 경로 | 적용 조건과 프리셋 예 |
 |---|---|

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from baton.contracts import HarnessError
-from baton.routing import check_registered, profile_path, resolve, show
+from baton.routing import RouteBlocked, check_registered, profile_path, resolve, show
 from baton.runtime import OrcaCLI
 
 
@@ -101,13 +101,14 @@ class RoutingTests(unittest.TestCase):
 
     def test_review_preference_keeps_author_and_explicit_review_distinct(self):
         self.catalog({"codex": host("pro"), "claude": host("max")}, self.older,
-                     model("claude", "fable", "fable", "max"), model("codex", "astra", "astra", "pro"))
+                     model("claude", "fable", "claude-fable-5-2", "max"), model("codex", "astra", "astra", "pro"))
         intent = {**self.intent, "reviewer": "review-final",
-                  "approved": ["codex older medium normal", "codex astra high normal", "claude fable high normal"]}
+                  "approved": ["codex older medium normal", "codex astra high normal", "claude claude-fable-5-2 high normal"]}
         self.assertEqual(resolve(self.root, intent)["reviewer"]["supported"]["provider"], "claude")
         self.assertEqual(resolve(self.root, {**intent, "review_provider": "codex"})["reviewer"]["supported"]["model"], "astra")
-        self.catalog({"codex": host("pro")}, self.older, model("codex", "astra", "astra", "pro"))
-        self.assertEqual(resolve(self.root, intent)["reviewer"]["blocker"], "host_confirmation_missing_or_expired")
+        self.catalog({"codex": host("pro"), "claude": host("max", quota_available=False)}, self.older,
+                     model("claude", "fable", "claude-fable-5-2", "max"), model("codex", "astra", "astra", "pro"))
+        self.assertEqual(resolve(self.root, intent)["reviewer"]["blocker"], "included_quota_unavailable")
 
     def test_adapter_preflight_is_read_only_and_rejects_unsupported_launches(self):
         calls = []
@@ -128,3 +129,51 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(calls, [["agent", "installed", "--json"], ["orchestration", "worker-start", "--help"],
                                  ["agent", "installed", "--json"], ["orchestration", "worker-start", "--help"],
                                  ["agent", "installed", "--json"]])
+
+    def test_writing_only_provider_does_not_claim_final_review(self):
+        self.catalog({"codex": host("pro"), "claude": host("max")}, self.older,
+                     model("codex", "astra", "codex-review", "pro"),
+                     model("claude", "sonnet", "claude-sonnet-5-5", "max"))
+        intent = {**self.intent, "reviewer": "review-final",
+                  "approved": ["codex older medium normal", "codex codex-review high normal",
+                               "claude claude-sonnet-5-5 medium normal"]}
+        self.assertEqual(resolve(self.root, intent)["reviewer"]["supported"]["model"], "codex-review")
+        explicit = resolve(self.root, {**intent, "review_provider": "claude"})["reviewer"]
+        self.assertIsNone(explicit["supported"])
+        self.assertEqual(explicit["proposal"]["provider"], "claude")
+
+    def test_documented_alias_cannot_be_approved_but_full_version_can(self):
+        for alias in ("fable", "FABLE", "best", "opus", "sonnet", "haiku", "opusplan", "default",
+                      "sonnet[1m]", "opus[1m]", "claude-3-7-sonnet-latest"):
+            with self.subTest(alias=alias):
+                self.catalog({"claude": host("max")}, model("claude", "fable", alias, "max"))
+                intent = {"provider": "claude", "preset": "standard", "author": "replan",
+                          "approved": [f"claude {alias} high normal"]}
+                with self.assertRaisesRegex(HarnessError, "routing_floating_model_alias"):
+                    resolve(self.root, intent)
+        for version in ("claude-fable-5", "claude-fable-5-1", "claude-fable-5-2"):
+            with self.subTest(version=version):
+                self.catalog({"claude": host("max")}, model("claude", "fable", version, "max"))
+                self.assertEqual(resolve(self.root, {**intent, "approved": [f"claude {version} high normal"]})
+                                 ["author"]["supported"]["model"], version)
+
+    def test_missing_pin_stays_blocked_and_lists_only_eligible_replacements(self):
+        self.edit('schema = 1\n[roles]\nimplement-local = "codex sol medium normal missing"')
+        self.catalog({"codex": host("pro")}, self.older, self.newer,
+                     model("codex", "astra", "other-family", "pro"))
+        intent = {**self.intent, "approved": ["codex missing medium normal", "codex newer medium normal",
+                                             "codex other-family medium normal"]}
+        author = resolve(self.root, intent)["author"]
+        self.assertIsNone(author["supported"])
+        self.assertEqual(author["blocker"], "pin_unavailable")
+        self.assertEqual([option["model"] for option in author["eligible_replacements"]], ["newer"])
+
+    def test_registered_alias_stays_blocked_and_suggests_exact_version(self):
+        self.catalog({"claude": host("max")}, model("claude", "fable", "fable", "max"),
+                     model("claude", "fable", "claude-fable-5-2", "max"))
+        proposal = {"provider": "claude", "family": "fable", "effort": "high", "speed": "normal", "pin": None}
+        old = {"routing": {"approved": ["claude fable high normal", "claude claude-fable-5-2 high normal"]},
+               "routing_selection": {"author": {"proposal": proposal, "supported": {**proposal, "model": "fable"}}}}
+        with self.assertRaisesRegex(RouteBlocked, "routing_floating_model_alias") as failure:
+            check_registered(self.root, old, "author")
+        self.assertEqual([option["model"] for option in failure.exception.eligible_replacements], ["claude-fable-5-2"])

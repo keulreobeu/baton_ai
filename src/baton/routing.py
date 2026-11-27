@@ -20,6 +20,9 @@ PLANS = {"codex": {"plus", "pro"}, "claude": {"pro", "max", "ultra"},
          "antigravity": {"free", "plus", "trial", "pro", "device-trial", "ultra"}}
 GROUPS = {"coordination", "investigation", "design", "writing", "review"}
 STATES = {"available", "unverified", "withdrawn", "quota-exhausted"}
+CLAUDE_ALIASES = {"default", "best", "fable", "sonnet", "opus", "haiku", "opusplan",
+                  "sonnet[1m]", "opus[1m]"}
+LATEST_PREFIXES = {"claude": ("claude-",), "antigravity": ("gemini-",), "codex": ("chatgpt-", "gpt-")}
 WORD = re.compile(r"[a-z][a-z0-9-]{0,59}")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
 FENCE = re.compile(r"^(?P<fence>`{3}|~{3})toml[ \t]*\n(.*?)^(?P=fence)[ \t]*$", re.M | re.S)
@@ -212,19 +215,40 @@ def _host_reason(provider, family, speed, host, today):
     return None
 
 
+def _floating_model(provider, name):
+    name = name.casefold()
+    return ((provider == "claude" and name in CLAUDE_ALIASES)
+            or (name.startswith(LATEST_PREFIXES[provider]) and name.endswith("-latest")))
+
+
+def _approval(value, *, historical=False):
+    provider, name, effort, speed = _words(value, (4,))
+    if provider in PLANS and _floating_model(provider, name) and not historical:
+        raise HarnessError("routing_floating_model_alias")
+    if (provider not in PLANS or not MODEL.fullmatch(name) or effort not in EFFORTS
+            or speed not in ("normal", "fast")):
+        raise HarnessError("invalid_routing_approval")
+    return provider, name, effort, speed
+
+
+def _family_models(choice, models):
+    return (m for m in models if m["provider"] == choice["provider"] and m["family"] == choice["family"])
+
+
 def _candidates(choice, approved, hosts, models, today):
     provider, family, effort, speed, pin = (choice[k] for k in ("provider", "family", "effort", "speed", "pin"))
     host = hosts.get(provider)
     reason = _host_reason(provider, family, speed, host, today)
     if reason:
-        return None, [], reason
-    rows = sorted((m for m in models if m["provider"] == provider and m["family"] == family
-                   and (pin is None or m["id"] == pin)), key=lambda m: (m["released"], m["id"]), reverse=True)
+        return None, [], reason, []
+    rows = sorted(_family_models(choice, models), key=lambda m: (m["released"], m["id"]), reverse=True)
     rejected = []
     eligible = []
     for model in rows:
         name = model["id"]
-        if model["status"] != "available":
+        if _floating_model(provider, name):
+            reason = "routing_floating_model_alias"
+        elif model["status"] != "available":
             reason = model["status"]
         elif _day(model["released"]) > today:
             reason = "release_not_current"
@@ -237,14 +261,24 @@ def _candidates(choice, approved, hosts, models, today):
         else:
             eligible.append(model)
             continue
-        rejected.append({"model": name, "reason": reason})
+        if pin is None or name == pin:
+            rejected.append({"model": name, "reason": reason})
+
+    def option(model):
+        return {"provider": provider, "model": model["id"], "effort": effort, "speed": speed,
+                "plan": host["plan"], "confirmed": host["confirmed"], "expires": host["expires"]}
+
+    if pin is not None:
+        selected = next((m for m in eligible if m["id"] == pin), None)
+        if selected is not None:
+            return option(selected), rejected, None, []
+        return None, rejected, "pin_unavailable", [option(m) for m in eligible]
     if not eligible:
-        return None, rejected, "pin_unavailable" if pin else "no_supported_approved_model"
+        return None, rejected, "no_supported_approved_model", []
     model = eligible[0]
     if len(eligible) > 1 and eligible[1]["released"] == model["released"]:
-        return None, rejected, "release_order_ambiguous_pin_required"
-    return {"provider": provider, "model": model["id"], "effort": effort, "speed": speed,
-            "plan": host["plan"], "confirmed": host["confirmed"], "expires": host["expires"]}, rejected, None
+        return None, rejected, "release_order_ambiguous_pin_required", []
+    return option(model), rejected, None, []
 
 
 def resolve(root, intent):
@@ -253,23 +287,18 @@ def resolve(root, intent):
     if not isinstance(intent, dict) or set(intent) - allowed:
         raise HarnessError("invalid_routing_request")
     preset, provider = (intent.get(key, active[key]) for key in ("preset", "provider"))
-    author, reviewer = intent.get("author"), intent.get("reviewer")
+    author, reviewer = intent.get("author"), intent.get("reviewer", "review-final")
     review_provider = intent.get("review_provider")
     direct = intent.get("direct_response", False)
     if (preset not in PRESETS or provider not in tuple(PLANS) or author not in tuple(roles)
-            or (reviewer is not None and (reviewer not in tuple(roles) or roles[reviewer]["group"] != "review"))
-            or (review_provider is not None and (reviewer is None or review_provider not in tuple(PLANS)))
+            or reviewer not in tuple(roles) or roles[reviewer]["group"] != "review"
+            or (review_provider is not None and review_provider not in tuple(PLANS))
             or type(direct) is not bool or not isinstance(intent.get("reason", ""), str)):
         raise HarnessError("invalid_routing_request")
     raw_approved = intent.get("approved")
     if not isinstance(raw_approved, list) or not 1 <= len(raw_approved) <= 128:
         raise HarnessError("routing_task_approval_required")
-    approved = set()
-    for value in raw_approved:
-        agent, model, effort, speed = _words(value, (4,))
-        if agent not in PLANS or not MODEL.fullmatch(model) or effort not in EFFORTS or speed not in ("normal", "fast"):
-            raise HarnessError("invalid_routing_approval")
-        approved.add((agent, model, effort, speed))
+    approved = {_approval(value) for value in raw_approved}
     hosts, models, fingerprint = _support(root)
     today = date.today()
 
@@ -277,23 +306,27 @@ def resolve(root, intent):
         choice, source = _proposal(roles, overrides, role, agent, preset, hosts.get(agent, {}).get("plan"))
         if choice["speed"] == "direct-fast":
             choice = {**choice, "speed": "fast" if direct else "normal"}
-        selected, excluded, blocker = _candidates(choice, approved, hosts, models, today)
+        selected, excluded, blocker, replacements = _candidates(choice, approved, hosts, models, today)
         return {"role": role, "source": source, "proposal": choice, "supported": selected,
-                "excluded": excluded, "blocker": blocker}
+                "excluded": excluded, "blocker": blocker, "eligible_replacements": replacements}
 
     author_selection = select(author, provider)
     result = {"profile_sha256": profile_hash, "support_sha256": fingerprint, "provider": provider,
               "preset": preset, "author": author_selection}
-    if reviewer is None:
-        return result
     review_selection = select(reviewer, review_provider or provider)
     if review_provider and review_selection["proposal"]["provider"] != review_provider:
         raise HarnessError("routing_reviewer_provider_conflicts_with_override")
     if reviewer == "review-final" and review_provider is None and review_selection["source"] == "preset":
         author_provider = author_selection["proposal"]["provider"]
-        alternatives = sorted({p for p, *_ in approved if p != author_provider})
-        if alternatives:
-            choices = [select(reviewer, agent) for agent in alternatives]
+        alternatives = {p for p, *_ in approved if p != author_provider}
+        choices = []
+        for agent in sorted(alternatives):
+            candidate = select(reviewer, agent)
+            choice = candidate["proposal"]
+            if any((agent, m["id"], choice["effort"], choice["speed"]) in approved
+                   for m in _family_models(choice, models)):
+                choices.append(candidate)
+        if choices:
             review_selection = next((choice for choice in choices if choice["supported"]), choices[0])
             review_selection = {**review_selection, "alternatives": choices}
         else:
@@ -327,7 +360,9 @@ def prepare(root, body, previous=None):
             continue
         option = selection[role]["supported"]
         if option is None:
-            raise HarnessError("routing_" + role + "_blocked:" + selection[role]["blocker"])
+            blocked = selection[role]
+            raise RouteBlocked("routing_" + role + "_blocked:" + blocked["blocker"],
+                               blocked["eligible_replacements"])
         if role == "author":
             execution.update(preferred_provider=option["provider"], model=option["model"])
             if option["effort"] != "default":
@@ -339,19 +374,41 @@ def prepare(root, body, previous=None):
     return {**body, "execution": execution}
 
 
+class RouteBlocked(HarnessError):
+    def __init__(self, code, replacements):
+        super().__init__(code)
+        self.eligible_replacements = replacements
+
+
+def _check_pin(choice, approved, hosts, models, fingerprint):
+    supported, rejected, blocker, replacements = _candidates(choice, approved, hosts, models, date.today())
+    if supported is None:
+        raise RouteBlocked("routing_dispatch_blocked:" + (rejected[0]["reason"] if rejected else blocker),
+                           replacements)
+    return {"requested": {k: supported[k] for k in ("provider", "model", "effort", "speed")},
+            "supported": supported, "support_sha256": fingerprint,
+            "observed": dict.fromkeys(("provider", "model", "effort", "speed")),
+            "effective": dict.fromkeys(("provider", "model", "effort", "speed"))}
+
+
 def check_registered(root, execution, role):
     """Recheck exactly the registered tuple. Profile edits and refresh cannot reselect it."""
     selection = execution.get("routing_selection", {}).get(role)
     if not selection or not selection["supported"]:
         raise HarnessError("routing_role_not_registered")
     requested = selection["supported"]
-    approved = {(requested["provider"], requested["model"], requested["effort"], requested["speed"])}
-    hosts, models, fingerprint = _support(root)
+    approved = {_approval(value, historical=True) for value in execution.get("routing", {}).get("approved", [])}
+    approved.add(tuple(requested[k] for k in ("provider", "model", "effort", "speed")))
     choice = {**selection["proposal"], "pin": requested["model"]}
-    supported, rejected, blocker = _candidates(choice, approved, hosts, models, date.today())
-    if supported is None:
-        raise HarnessError("routing_dispatch_blocked:" + (rejected[0]["reason"] if rejected else blocker))
-    return {"requested": {k: requested[k] for k in ("provider", "model", "effort", "speed")},
-            "supported": supported, "support_sha256": fingerprint,
-            "observed": dict.fromkeys(("provider", "model", "effort", "speed")),
-            "effective": dict.fromkeys(("provider", "model", "effort", "speed"))}
+    return _check_pin(choice, approved, *_support(root))
+
+
+def recover_reviewer(root, approval):
+    """Resolve an explicitly approved tuple for an already frozen author-only route."""
+    provider, name, effort, speed = _approval(approval)
+    hosts, models, fingerprint = _support(root)
+    selected = next((m for m in models if m["provider"] == provider and m["id"] == name), None)
+    if selected is None:
+        raise RouteBlocked("routing_dispatch_blocked:pin_unavailable", [])
+    choice = {"provider": provider, "family": selected["family"], "effort": effort, "speed": speed, "pin": name}
+    return _check_pin(choice, {(provider, name, effort, speed)}, hosts, models, fingerprint)

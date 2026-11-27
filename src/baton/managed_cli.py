@@ -113,6 +113,8 @@ def main(argv=None, *, workspace=None):
     for name in ("ingest", "review", "reconcile"):
         s = runtime.add_parser(name); s.add_argument("--task", required=True)
         if name in {"ingest", "reconcile"}: s.add_argument("--request", required=True)
+        if name == "review":
+            s.add_argument("--request", help="Exact candidate and reviewer approval for a stored author-only route.")
     evidence = sub.add_parser("evidence").add_subparsers(dest="evidence_command", required=True)
     s = evidence.add_parser("record"); s.add_argument("--task", required=True); s.add_argument("--request", required=True)
     sub.add_parser("codex-gms-check")
@@ -179,7 +181,11 @@ def main(argv=None, *, workspace=None):
         runner = Orchestrator(store, providers)
         if args.command == "runtime":
             from .runtime import ingest, dispatch, reconcile
-            if args.runtime_command == "review": result = dispatch(store, args.task, review=True)
+            if args.runtime_command == "review":
+                request = read_json(args.request) if args.request else None
+                if args.request and request is None:
+                    raise HarnessError("invalid_routing_review_request")
+                result = dispatch(store, args.task, review=True, review_request=request)
             elif args.runtime_command == "ingest":
                 notification = read_json(args.request)
                 try:
@@ -245,7 +251,11 @@ def main(argv=None, *, workspace=None):
         if isinstance(result, dict) and result.get("state") in {"FAILED", "BLOCKED", "INTERRUPTED", "WAITING_FOR_PROVIDER"}: return 3
         return 0
     except HarnessError as exc:
-        print(encode({"status": "error", "error": str(exc)})); return 2
+        from .routing import RouteBlocked
+        result = {"status": "error", "error": str(exc)}
+        if isinstance(exc, RouteBlocked):
+            result["eligible_replacements"] = exc.eligible_replacements
+        print(encode(result)); return 2
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         print(encode({"status": "error", "error": "invalid_input_or_storage"})); return 2
 

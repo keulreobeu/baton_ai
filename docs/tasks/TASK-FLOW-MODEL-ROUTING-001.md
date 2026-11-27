@@ -37,6 +37,8 @@ L3 / A. 구독 비용, 실행 승인, provider launch와 기존 이력에 닿는
 
 ## 로컬 검증 기록
 
+`bd7c959` 독립 검토의 네 항목을 같은 Task base에서 재현했다. 새 Task는 필수 검토 조합이 있어야 등록하고 작성 전에 지원을 다시 확인한다. 저장된 작성 전용 Task는 승인된 정확한 조합을 현재 고정 후보에만 묶어 완료 증거까지 이어갈 수 있다. 다른 provider의 작성 전용 조합은 검토 후보를 만들지 않으며 Cross의 명시 provider 고정을 보존한다. 유동 별칭을 신규 승인과 재시도에서 차단하고, 사용할 수 없는 exact pin은 같은 계열의 승인·지원 조합을 표시한 채 배정을 대기시킨다. 기존 Task 본문·후보 증거·Setup 정책은 복구 과정에서도 유지된다.
+
 - V1은 Task base로 `scripts/ci_plan.py --stage in_progress`를 실행하고 이 checkout의 CBM 인덱스를 생성한 후 범위를 재확인했다. freshness는 checked, coverage는 partial이다. 직접 Markdown/AST 검사 14건을 통과했다. 집중 회귀 15건과 교체/복원/독립 검토 fixture가 통과했다. 전이 영향은 `PARTIAL_IMPACT_SCOPE`다.
 - 체크포인트의 `scripts/ci_plan.py --stage checkpoint`는 불완전한 영향 범위(`INCOMPLETE_IMPACT_SCOPE`, `REGRESSION_UNMAPPED`)로 V3를 선택했다. Task base 대상 `scripts/check_sdd.py --base c9d98e9a473d706f8ec7b553c3ec5165db8d677c`는 경로 17개·문서 67개·AC 94개를 확인했다. 영향 모듈 검사와 설치형 wheel 검사를 별도로 수행했다. `scripts/qualify_flow_package.py`는 일반 venv, pip target, 설치 스킬에서 문서 무결성과 라우팅 탐색을 통과했다.
 - 최종 확인은 합의한 base에서 `.venv/Scripts/python.exe -X utf8 scripts/verify_environment.py --base c9d98e9a473d706f8ec7b553c3ec5165db8d677c`로 전체 오프라인 순차 실행한다. 후보별 종료 상태와 개수는 고정 SHA·tree와 함께 로컬 증거로 기록한다.

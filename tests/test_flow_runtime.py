@@ -60,6 +60,98 @@ class FakeOrca:
 
 
 class FlowRuntimeTests(FlowFixture, unittest.TestCase):
+    def test_author_only_route_recovers_bound_review_on_existing_candidate(self):
+        from baton.contracts import digest, encode
+        from baton.evidence import record
+        from tests.test_routing import host, model
+
+        catalog = self.root / ".local_runtime/routing-support.md"
+        catalog.write_text("\n".join(["~~~toml", "schema = 1", "[hosts.codex]", host("pro"),
+                                     model("codex", "sol", "fixture-writer", "pro"),
+                                     model("codex", "astra", "fixture-reviewer", "pro"), "~~~"]), encoding="utf-8")
+        body = deepcopy(self.body)
+        body["task_id"] = "AUTHOR-ONLY"
+        body["execution"] = {"runtime": "orca",
+                             "orca": {"run_id": "run-one", "repo_id": "repo", "coordinator_id": "coordinator"},
+                             "routing": {"author": "implement-local", "approved": ["codex fixture-writer medium normal",
+                                                                                  "codex fixture-reviewer high normal"]}}
+        task = self.store.create(body)["task"]
+        # Recreate the stored shape produced by the first release. Keep its author approval only.
+        task["execution"]["routing_selection"].pop("reviewer", None)
+        task["execution"]["routing"]["approved"].pop()
+        for key in ("review_provider", "review_model", "review_effort"):
+            task["execution"]["orca"].pop(key, None)
+        with self.store.tx() as db:
+            db.execute("UPDATE managed_tasks SET body=?,hash=? WHERE id=?", (encode(task), digest(task), "AUTHOR-ONLY"))
+        client = FakeOrca(self.root)
+        client.check_route = lambda option: None
+        row = dispatch(self.store, "AUTHOR-ONLY", client)
+        (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        ingest(self.store, "AUTHOR-ONLY", self.receipt(), client)
+        self.candidate("AUTHOR-ONLY")
+        frozen = self.store.get("AUTHOR-ONLY")
+        with self.assertRaisesRegex(HarnessError, "routing_role_not_registered"):
+            dispatch(self.store, "AUTHOR-ONLY", client, review=True)
+        self.assertEqual(client.starts, 1)
+        request = {"candidate_sha": "0" * 40, "approved": "codex fixture-reviewer high normal"}
+        path = self.root / "review-request.json"
+        path.write_text(json.dumps(request), encoding="utf-8")
+        args = ["--state-dir", ".local_runtime/state", "runtime", "review", "--task", "AUTHOR-ONLY",
+                "--request", str(path)]
+        with patch("baton.runtime.OrcaCLI", return_value=client):
+            with redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(main(args, workspace=self.root), 2)
+            self.assertIn("routing_review_candidate_mismatch", out.getvalue())
+            self.assertEqual(client.starts, 1)
+            request["candidate_sha"] = self.candidate_sha
+            path.write_text(json.dumps(request), encoding="utf-8")
+            with redirect_stdout(io.StringIO()), patch.object(client, "start", wraps=client.start) as start:
+                self.assertEqual(main(args, workspace=self.root), 0)
+            self.assertEqual(start.call_args.args[1]["execution"]["model"], "fixture-reviewer")
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(main(args, workspace=self.root), 0)
+        rebound = self.store.get("AUTHOR-ONLY")
+        self.assertEqual(client.starts, 2)
+        self.assertEqual(rebound["task"], frozen["task"])
+        self.assertEqual(rebound["result"]["candidate"], frozen["result"]["candidate"])
+        self.assertEqual(rebound["result"]["review_runtime"]["base_sha"], self.candidate_sha)
+        client.report = {"candidate_sha": self.candidate_sha, "base_sha": self.base, "verdict": "PASS", "findings": []}
+        client.settle("dispatch-2")
+        ingest(self.store, "AUTHOR-ONLY", self.receipt("dispatch-2", role="reviewer"), client)
+        record(self.store, "AUTHOR-ONLY", self.proof("review", task_id="AUTHOR-ONLY", reviewer_worker="orca:dispatch-2"))
+        record(self.store, "AUTHOR-ONLY", self.proof("integration", task_id="AUTHOR-ONLY"))
+        self.assertEqual(self.store.approve("AUTHOR-ONLY", "operator")["state"], "COMPLETED")
+
+    def test_new_author_only_route_requires_a_supported_default_reviewer(self):
+        from tests.test_routing import host, model
+
+        catalog = self.root / ".local_runtime/routing-support.md"
+        catalog.write_text("\n".join(["~~~toml", "schema = 1", "[hosts.codex]", host("pro"),
+                                     model("codex", "sol", "fixture-writer", "pro"),
+                                     model("codex", "astra", "fixture-reviewer", "pro"), "~~~"]), encoding="utf-8")
+        body = deepcopy(self.body)
+        body["task_id"] = "NEW-REVIEW"
+        intent = {"author": "implement-local", "approved": ["codex fixture-writer medium normal"]}
+        body["execution"] = {"runtime": "orca",
+                             "orca": {"run_id": "run-one", "repo_id": "repo", "coordinator_id": "coordinator"},
+                             "routing": intent}
+        with self.assertRaisesRegex(HarnessError, "routing_reviewer_blocked"):
+            self.store.create(body)
+        with self.assertRaisesRegex(HarnessError, "unknown_task"):
+            self.store.get("NEW-REVIEW")
+        intent["approved"].append("codex fixture-reviewer high normal")
+        route = self.store.create(body)["task"]["execution"]
+        self.assertEqual(route["orca"]["review_model"], "fixture-reviewer")
+        self.assertEqual(route["routing_selection"]["reviewer"]["role"], "review-final")
+        support = catalog.read_text(encoding="utf-8").rsplit('status = "available"', 1)
+        catalog.write_text('status = "withdrawn"'.join(support), encoding="utf-8")
+        client = FakeOrca(self.root)
+        client.check_route = lambda option: None
+        with self.assertRaisesRegex(HarnessError, "routing_dispatch_blocked:withdrawn"):
+            dispatch(self.store, "NEW-REVIEW", client)
+        self.assertEqual((client.starts, client.workspaces, self.store.get("NEW-REVIEW")["attempt"]), (0, 0, 0))
+
     def test_next_task_routing_uses_local_edits_and_preserves_registered_choice(self):
         from datetime import date
         from baton.routing import profile_path
@@ -171,7 +263,7 @@ status = "available"
         self.assertNotIn("effort", review_execution)
         self.assertEqual(review["routing"]["requested"]["effort"], "default")
         self.assertNotEqual(review["workspace_id"].split("::", 1)[1], row["worktree"])
-        self.assertEqual(checked, ["fixture-old", "fixture-new"])
+        self.assertEqual(checked, ["fixture-old", "fixture-new", "fixture-new"])
         manual = self.orca("MANUAL")
         self.assertNotIn("routing_selection", self.store.get(manual["task_id"])["task"]["execution"])
 

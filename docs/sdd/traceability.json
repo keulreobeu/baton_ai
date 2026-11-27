@@ -805,6 +805,18 @@
             },
             {
               "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_author_only_route_recovers_bound_review_on_existing_candidate"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_new_author_only_route_requires_a_supported_default_reviewer"
+            },
+            {
+              "file": "tests/test_routing.py",
+              "symbol": "RoutingTests.test_writing_only_provider_does_not_claim_final_review"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_replacing_author_preserves_partially_pinned_reviewer_at_dispatch"
             },
             {
@@ -926,6 +938,18 @@
             {
               "file": "tests/test_handoff.py",
               "symbol": "HandoffTests.test_handoff_can_reload_and_restore_preexisting_orca_settings"
+            },
+            {
+              "file": "tests/test_routing.py",
+              "symbol": "RoutingTests.test_documented_alias_cannot_be_approved_but_full_version_can"
+            },
+            {
+              "file": "tests/test_routing.py",
+              "symbol": "RoutingTests.test_registered_alias_stays_blocked_and_suggests_exact_version"
+            },
+            {
+              "file": "tests/test_routing.py",
+              "symbol": "RoutingTests.test_missing_pin_stays_blocked_and_lists_only_eligible_replacements"
             },
             {
               "file": "tests/test_flow_runtime.py",

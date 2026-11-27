@@ -422,15 +422,28 @@ def _observe_route(binding, projection):
                               "host_mismatch": sorted(set(route.get("host_mismatch", [])) | set(mismatch))}
 
 
-def dispatch(store, task_id, client=None, *, review=False):
+def dispatch(store, task_id, client=None, *, review=False, review_request=None):
     client = client or OrcaCLI()
     key = "review_runtime" if review else "runtime"
     with execution_lock(store.root, "task", task_id):
         row = store.get(task_id)
         old = row["result"].get(key)
+        task = row["task"]
+        selection = task["execution"].get("routing_selection")
+        recovery = review_request is not None
+        if recovery:
+            safe(review_request)
+            if not review or not selection or "reviewer" in selection:
+                raise HarnessError("routing_review_recovery_requires_author_only_route")
+            if not isinstance(review_request, dict) or set(review_request) != {"candidate_sha", "approved"}:
+                raise HarnessError("invalid_routing_review_request")
+            candidate = row["result"].get("candidate") or {}
+            if not candidate or review_request["candidate_sha"] != candidate.get("candidate_sha"):
+                raise HarnessError("routing_review_candidate_mismatch")
+            if old and not old.get("settled") and old.get("recovery_approval") != review_request:
+                raise HarnessError("routing_review_approval_conflict")
         if old and old.get("phase") != "settled":
             return store.export(task_id)  # No repeat of an uncertain side effect.
-        task = row["task"]
         # A workspace that no longer exists holds nothing to preserve; start fresh from HEAD.
         reusable = (not review and old and old.get("settled") and old.get("workspace_id")
                     and Path(old["workspace_id"].split("::", 1)[-1]).is_dir())
@@ -441,17 +454,25 @@ def dispatch(store, task_id, client=None, *, review=False):
             raise HarnessError("orca_runtime_unavailable")
         role = "reviewer" if review else "author"
         routing = None
-        if task["execution"].get("routing_selection"):
-            from .routing import check_registered
-            routing = check_registered(store.root, task["execution"], role)
-            client.check_route(routing["requested"])
         if review:
             if not row["result"].get("candidate"):
                 raise HarnessError("review_requires_candidate")
             if row["lease"] or row["state"] != "REVIEW_REQUIRED" or row["control"]:
                 raise HarnessError("review_requires_idle_candidate")
             base = row["result"]["candidate"]["candidate_sha"]
-        else:
+        if selection:
+            from .routing import check_registered, recover_reviewer
+            if recovery:
+                from .evidence import _current_candidate
+                _current_candidate(store, row)
+                routing = recover_reviewer(store.root, review_request["approved"])
+            else:
+                routing = check_registered(store.root, task["execution"], role)
+            client.check_route(routing["requested"])
+            if not review and "reviewer" in selection:
+                reviewer_route = check_registered(store.root, task["execution"], "reviewer")
+                client.check_route(reviewer_route["requested"])
+        if not review:
             _reservation(store, task_id, check_only=True, cap=config.get("max_active_tasks", 2))
             base = git(store.root, "rev-parse", "HEAD").strip()  # Before claim: a failure here holds no lease.
             row = store.claim(task_id)
@@ -479,6 +500,8 @@ def dispatch(store, task_id, client=None, *, review=False):
                                              + ([old["dispatch_id"]] if old and old.get("dispatch_id") else []))}
         if routing:
             binding["routing"] = routing
+        if recovery:
+            binding["recovery_approval"] = review_request
         if reusable:
             # Carry it from the start: a failure before reuse must not orphan a workspace holding edits.
             binding["workspace_id"] = old["workspace_id"]
