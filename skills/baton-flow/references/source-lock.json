@@ -1,8 +1,9 @@
 {
   "adapted_files": {
-    "SKILL.md": "608032d0d7bfe26cfb6fc606cd198a98abf6804bc462b62850b190f8eedc58fe",
+    "SKILL.md": "3a353cbe503fed857a8a76cce6425e434cbfa0ea31c5e2ca1736586a3f7e08ba",
     "references/comparison.md": "0cc2e69a18ade76c63b2313089584f19cc5aee9f2c00a8e0d4ca4d9ef95e1953",
     "references/evidence.md": "d4e54c18d905fde249819c6af8564067c61d376f66a62ed65fb86a58a417a24f",
+    "references/model-routing.md": "06e00e1e87177b34d1518b47482c633b84f194d0515804b6f09d676931b4a974",
     "references/provenance.md": "a673acb4fe583c15d7f13111e5aa74ff1d09a27ffe2ea80bfadf6b02f78f2d72",
     "references/recovery.md": "53e2033fe7a33946017f3c804c68d12af588fa8e103cc89b57064c16a9436f06"
   },

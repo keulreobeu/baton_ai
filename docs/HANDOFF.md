@@ -17,6 +17,10 @@ rules: AGENTS.md 적용. 설계 후보 84e5fee의 Fable PASS는 구현 검토와
 ```
 <!-- BATON_RESUME_END -->
 
+## 다음 Orca Task의 역할 배정
+
+[모델 라우팅](../skills/baton-flow/references/model-routing.md)과 [라우팅 Task](tasks/TASK-FLOW-MODEL-ROUTING-001.md)를 읽는다. `baton routing show`로 작업 루트의 활성 프로필을 확인하고, 적용할 역할과 정확한 승인 tuple을 `execution.routing`에 넣어 미리보기 후 등록한다.
+
 ## ADAPT-001 RULES 통합 준비
 
 [RULES Task](tasks/TASK-ADAPT-RULES-001.md)의 승인과 검증을 확인한다.

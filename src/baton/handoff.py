@@ -660,7 +660,11 @@ class Handoff:
                 body["task_id"] = new_task_id
                 body["depends_on"] = []
                 # Orca dispatch would start from the controller HEAD and ignore the restored WIP.
-                body["execution"] = {**{k: v for k, v in body["execution"].items() if k != "orca"}, "runtime": "local",
+                orca_fields = {"orca"}
+                if "routing_selection" in body["execution"]:
+                    # This new local attempt cannot carry the Orca-specific approval or model pin.
+                    orca_fields.update(("routing", "routing_selection", "model", "effort"))
+                body["execution"] = {**{k: v for k, v in body["execution"].items() if k not in orca_fields}, "runtime": "local",
                                      "preferred_provider": "codex", "fallback_provider": "codex", "allow_fallback": False, "resume_session": False}
                 store = self.store
                 store.create(body)

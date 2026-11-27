@@ -60,6 +60,121 @@ class FakeOrca:
 
 
 class FlowRuntimeTests(FlowFixture, unittest.TestCase):
+    def test_next_task_routing_uses_local_edits_and_preserves_registered_choice(self):
+        from datetime import date
+        from baton.routing import profile_path
+
+        source = profile_path(self.root)
+        self.assertEqual(source.name, "model-routing.md")
+        local = self.root / "baton-routing.md"
+        local.write_text(source.read_text(encoding="utf-8").replace(
+            'schema = 1', 'schema = 1\n[active]\nprovider = "codex"\npreset = "economy"\n'
+            '[groups]\nwriting = "codex sol high normal"\n'
+            '[roles]\nimplement-local = "codex sol medium normal fixture-old"\n'
+            'review-small = "codex sol default normal fixture-new"'), encoding="utf-8")
+        day = date.today().isoformat()
+        support = self.root / ".local_runtime/routing-support.md"
+        support.write_text(f"""~~~toml
+schema = 1
+[hosts.codex]
+plan = "pro"
+confirmed = "{day}"
+expires = "{day}"
+subscription_only = true
+overages_disabled = true
+normal_speed = true
+quota_available = true
+[[models]]
+provider = "codex"
+family = "sol"
+id = "fixture-old"
+released = "2024-01-01"
+plans = ["pro"]
+efforts = ["medium", "high"]
+status = "available"
+[[models]]
+provider = "codex"
+family = "sol"
+id = "fixture-new"
+released = "2024-02-01"
+plans = ["pro"]
+efforts = ["default", "medium", "high", "xhigh"]
+status = "available"
+~~~
+""", encoding="utf-8")
+        body = deepcopy(self.body)
+        body["task_id"] = "ROUTED"
+        body["execution"] = {"runtime": "orca",
+                             "orca": {"run_id": "run-one", "repo_id": "repo", "coordinator_id": "coordinator"},
+                             "routing": {"author": "implement-local", "reviewer": "review-small",
+                                         "approved": ["codex fixture-old medium normal", "codex fixture-new high normal",
+                                                      "codex fixture-new default normal"]}}
+        explicit = deepcopy(body)
+        explicit["execution"]["preferred_provider"] = "codex"
+        with self.assertRaisesRegex(HarnessError, "routing_conflicts_with_explicit_execution"):
+            self.store.create(explicit)
+        request = self.root / "request.json"
+        request.write_text(json.dumps(body), encoding="utf-8")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["--state-dir", ".local_runtime/state", "new-task", "--request", str(request)],
+                                  workspace=self.root), 0)
+        local.write_text(local.read_text(encoding="utf-8").replace(
+            'implement-local = "codex sol medium normal fixture-old"', ''), encoding="utf-8")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["--state-dir", ".local_runtime/state", "new-task", "--request", str(request)],
+                                  workspace=self.root), 0)
+        body["task_id"] = "NEXT"
+        next_row = self.store.create(body)
+        self.assertEqual(next_row["task"]["execution"]["model"], "fixture-new")
+        self.assertEqual(next_row["task"]["execution"]["effort"], "high")
+        self.assertEqual(next_row["task"]["execution"]["routing_selection"]["preset"], "economy")
+        unpinned = deepcopy(body)
+        unpinned["task_id"] = "SAVED-PRESET"
+        unpinned["execution"]["routing"]["author"] = "clarify"
+        unpinned["execution"]["routing"]["approved"].append("codex fixture-new xhigh normal")
+        inherited = self.store.create(unpinned)["task"]["execution"]
+        self.assertEqual((inherited["preferred_provider"], inherited["model"], inherited["effort"]),
+                         ("codex", "fixture-new", "xhigh"))
+        client = FakeOrca(self.root)
+        checked = []
+        client.check_route = lambda option: checked.append(option["model"])
+        original_support = support.read_text(encoding="utf-8")
+        support.write_text(original_support.replace('status = "available"', 'status = "withdrawn"', 1), encoding="utf-8")
+        runner = Orchestrator(self.store, runtime_client=client)
+        with self.assertRaisesRegex(HarnessError, "routing_dispatch_blocked:withdrawn"):
+            runner.run("ROUTED")
+        self.assertEqual((client.starts, client.workspaces), (0, 0))
+        support.write_text(original_support, encoding="utf-8")
+        original_inspect = client.inspect
+        client.inspect = lambda dispatch_id: {**original_inspect(dispatch_id), "model": "orca-reported"}
+        with patch.object(client, "start", wraps=client.start) as start:
+            row = runner.run("ROUTED")
+        forwarded = start.call_args.args[1]["execution"]
+        self.assertEqual((forwarded["preferred_provider"], forwarded["model"], forwarded["effort"]),
+                         ("codex", "fixture-old", "medium"))
+        route = row["result"]["runtime"]["routing"]
+        self.assertEqual(route["requested"]["model"], "fixture-old")
+        self.assertEqual(route["requested"]["effort"], "medium")
+        self.assertEqual(route["observed"]["model"], "orca-reported")
+        self.assertEqual(route["host_mismatch"], ["model"])
+        self.assertIsNone(route["effective"]["model"])
+        self.assertIsNone(route["effective"]["effort"])
+        self.assertEqual(client.starts, 1)
+        (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+        client.settle("dispatch-1")
+        ingest(self.store, "ROUTED", self.receipt(), client)
+        self.candidate("ROUTED")
+        with patch.object(client, "start", wraps=client.start) as review_start:
+            review = dispatch(self.store, "ROUTED", client, review=True)["result"]["review_runtime"]
+        review_execution = review_start.call_args.args[1]["execution"]
+        self.assertEqual(review_execution["model"], "fixture-new")
+        self.assertNotIn("effort", review_execution)
+        self.assertEqual(review["routing"]["requested"]["effort"], "default")
+        self.assertNotEqual(review["workspace_id"].split("::", 1)[1], row["worktree"])
+        self.assertEqual(checked, ["fixture-old", "fixture-new"])
+        manual = self.orca("MANUAL")
+        self.assertNotIn("routing_selection", self.store.get(manual["task_id"])["task"]["execution"])
+
     def orca(self, name="ORCA", **execution):
         body = deepcopy(self.body); body["task_id"] = name
         body["execution"].update(runtime="orca", preferred_provider="codex", max_attempts=2, orca={"run_id": "run-one", "repo_id": "repo", "coordinator_id": "coordinator"})
@@ -817,6 +932,101 @@ class FlowRuntimeTests(FlowFixture, unittest.TestCase):
         self.assertEqual(calls[0][-4:], ["--model", "requested-model", "--effort", "high"])
         body["task_id"] = "BAD-MODEL"; body["execution"]["model"] = "--unsafe-option"
         with self.assertRaisesRegex(HarnessError, "invalid_orca_model"): self.store.create(body)
+
+    def test_orca_effort_requires_a_model_for_the_effective_provider(self):
+        cfg = {"run_id": "run", "repo_id": "repo", "coordinator_id": "coord", "review_effort": "low"}
+        for settings in ({"effort": "medium"}, {"orca": cfg},
+                         {"model": "author-model", "orca": {**cfg, "review_provider": "claude"}}):
+            with self.subTest(settings=settings), self.assertRaisesRegex(HarnessError, "orca_effort_requires_model"):
+                self.orca(**settings)
+        self.orca(model="inherited-by-review", orca=cfg)
+        preview = deepcopy(self.store.get("ORCA")["task"])
+        del preview["execution"]["model"]
+        request = self.root / "proposal.json"
+        request.write_text(json.dumps({"objective": "preview", "tasks": [preview]}), encoding="utf-8")
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(["plan", "--request", str(request)], workspace=self.root), 2)
+        self.assertEqual(json.loads(output.getvalue())["error"], "orca_effort_requires_model")
+
+    def test_repeated_registration_of_legacy_effort_only_task_preserves_history(self):
+        from baton.contracts import digest, encode
+        request = self.orca(model="old-model", effort="high")
+        stored = self.store.get("ORCA")["task"]
+        del request["execution"]["model"], stored["execution"]["model"]
+        # This shape was accepted before effort/model pairing became mandatory.
+        with self.store.tx() as db:
+            db.execute("UPDATE managed_tasks SET body=?,hash=? WHERE id=?", (encode(stored), digest(stored), "ORCA"))
+        events = self.store.events("ORCA")
+        self.assertEqual(self.store.create(request)["task"], stored)
+        self.assertEqual(self.store.events("ORCA"), events)
+
+    def test_provider_replacement_is_atomic_and_preserves_the_original_attempt(self):
+        self.orca(model="first-model", effort="high")
+        client = FakeOrca(self.root)
+        dispatch(self.store, "ORCA", client)
+        client.settle("dispatch-1", "failed")
+        ingest(self.store, "ORCA", self.receipt(), client)
+        self.store.ready("ORCA")
+        row = self.store.get("ORCA")
+        events = self.store.events("ORCA")
+        for settings, error in (({}, "replacement_orca_model_required"),
+                                ({"effort": "low"}, "orca_effort_requires_model"),
+                                ({"model": "--invalid"}, "invalid_orca_model"),
+                                ({"model": "sk-" + "synthetic" * 2}, "unsafe_payload"),
+                                ({"model": "second-model", "effort": "unsupported"}, "invalid_orca_effort")):
+            with self.subTest(settings=settings), self.assertRaisesRegex(HarnessError, error):
+                self.store.configure("ORCA", provider="claude", **settings)
+            self.assertEqual(self.store.get("ORCA"), row)
+            self.assertEqual(self.store.events("ORCA"), events)
+        same = self.store.configure("ORCA", provider="codex")
+        self.assertEqual(same["task"], row["task"])
+        with redirect_stdout(io.StringIO()):
+            result = main(["--state-dir", ".local_runtime/state", "provider", "--task", "ORCA",
+                           "--name", "claude", "--model", "second-model"], workspace=self.root)
+        self.assertEqual(result, 0)
+        changed = self.store.get("ORCA")
+        execution = changed["task"]["execution"]
+        self.assertEqual(execution["preferred_provider"], "claude")
+        self.assertEqual(execution["model"], "second-model")
+        self.assertNotIn("effort", execution)
+        self.assertEqual((changed["result"], changed["attempt"]), (row["result"], row["attempt"]))
+        audit = self.store.events("ORCA")
+        self.assertEqual(audit[:len(events)], events)
+        self.assertEqual(audit[-1]["body"]["previous_author"], {"provider": "codex", "model": "first-model", "effort": "high"})
+        self.assertEqual(audit[-1]["body"]["requested_author"], {"provider": "claude", "model": "second-model", "effort": None})
+
+    def test_replacing_author_preserves_partially_pinned_reviewer_at_dispatch(self):
+        config = {"run_id": "run-one", "repo_id": "repo", "coordinator_id": "coordinator", "review_effort": "low"}
+        self.orca(model="author-one", effort="medium", orca=config)
+        self.store.configure("ORCA", provider="claude", model="author-two", effort="high")
+        client = FakeOrca(self.root)
+        with patch.object(client, "start", wraps=client.start) as start:
+            row = dispatch(self.store, "ORCA", client)
+            (Path(row["worktree"]) / "src/value.py").write_text("value = 2\n", encoding="utf-8")
+            client.settle("dispatch-1")
+            ingest(self.store, "ORCA", self.receipt(), client)
+            self.candidate("ORCA")
+            dispatch(self.store, "ORCA", client, review=True)
+        routes = [call.args[1]["execution"] for call in start.call_args_list]
+        self.assertEqual([(r["preferred_provider"], r["model"], r["effort"]) for r in routes],
+                         [("claude", "author-two", "high"), ("codex", "author-one", "low")])
+        with self.assertRaisesRegex(HarnessError, "task_busy_or_terminal"):
+            self.store.configure("ORCA", provider="codex", model="third-model")
+        self.assertEqual(client.starts, 2)
+
+    def test_replacement_cannot_add_unrequested_settings_to_pinned_reviewer(self):
+        # Explicitly pinned destination with host-default effort, or partial same-provider pin.
+        for index, provider in enumerate(("claude", "codex")):
+            name = "PARTIAL-" + str(index)
+            cfg = {"run_id": "run", "repo_id": "repo", "coordinator_id": "coord",
+                   "review_provider": provider, "review_model": "review-model"}
+            self.orca(name, model="old-model", orca=cfg)
+            before = self.store.get(name)
+            with self.assertRaisesRegex(HarnessError, "replacement_would_change_reviewer_settings"):
+                self.store.configure(name, provider=provider, model="new-model", effort="high")
+            self.assertEqual(self.store.get(name), before)
+            after = self.store.configure(name, provider=provider, model="new-model")
+            self.assertEqual(after["task"]["execution"]["orca"], before["task"]["execution"]["orca"])
 
     def test_crashed_submit_can_be_reconciled_but_not_automatically_restarted(self):
         self.orca()

@@ -134,6 +134,46 @@ class HandoffTests(unittest.TestCase):
         Orchestrator(store, {"codex": ResumedProvider()}).run(result["new_task_id"])
         self.assertEqual(seen, [b"unfinished = (\r\n"])
 
+    def test_handoff_can_reload_and_restore_preexisting_orca_settings(self):
+        from baton.contracts import encode
+        receiver = self.receiver()
+        self.wip()
+        for name in ("INHERITED-REVIEW", "LEGACY-EFFORT", "ROUTED-ORCA"):
+            with self.subTest(task=name):
+                body = deepcopy(self.body)
+                body["task_id"] = name
+                body["execution"] = {
+                    "runtime": "orca", "preferred_provider": "claude", "model": "fixture-author",
+                    "effort": "high", "orca": {"run_id": "run", "repo_id": "repo",
+                        "coordinator_id": "coordinator", "review_provider": "claude", "review_effort": "high"},
+                }
+                original = self.handoff.store.create(body)["task"]
+                if name != "INHERITED-REVIEW":
+                    if name == "LEGACY-EFFORT":
+                        # Earlier versions accepted effort-only Orca requests.
+                        del original["execution"]["model"]
+                    else:
+                        # A previous dispatch pinned a Claude model to the Orca host.
+                        original["execution"]["routing"] = {"author": "implement-local"}
+                        original["execution"]["routing_selection"] = {"author": {"supported": {"model": "fixture-author"}}}
+                    with self.handoff.store.tx() as db:
+                        db.execute("UPDATE managed_tasks SET body=?,hash=? WHERE id=?",
+                                   (encode(original), digest(original), name))
+                saved = self.handoff.backup(name)
+                self.assertTrue(self.handoff.backup(name)["reused"])
+                manifest, _ = self.handoff._load(saved["checkpoint"])
+                self.assertEqual(manifest["task"], original)
+                published = self.handoff.publish(saved["checkpoint"])
+                restored = receiver.restore(saved["checkpoint"], expected_sha=published["commit_sha"])
+                self.assertEqual(restored["status"], "restore_verified", restored)
+                restored_task = receiver.store.get(restored["new_task_id"])
+                self.assertEqual(restored_task["state"], "PAUSED")
+                self.assertEqual(restored_task["task"]["execution"]["runtime"], "local")
+                if name == "ROUTED-ORCA":
+                    for field in ("routing", "routing_selection", "model", "effort"):
+                        self.assertNotIn(field, restored_task["task"]["execution"])
+                self.assertEqual((Path(restored["destination"]) / "src/a.py").read_bytes(), b"unfinished = (\r\n")
+
     def test_remote_independent_restore_new_task_and_manual_edit_protection(self):
         self.wip()
         initial = _index_hash(self.root)

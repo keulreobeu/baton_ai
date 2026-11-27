@@ -85,10 +85,21 @@ def main(argv=None, *, workspace=None):
     for name in ("new-task", "create"):
         s = sub.add_parser(name); s.add_argument("--request", required=True)
     s = sub.add_parser("plan"); s.add_argument("--request", required=True)
+    routing = sub.add_parser("routing", help="Inspect model profiles and preview a Task's Orca routing.")
+    routes = routing.add_subparsers(dest="routing_command", required=True)
+    s = routes.add_parser("show")
+    from .routing import PLANS, PRESETS
+    s.add_argument("--provider", choices=tuple(PLANS))
+    s.add_argument("--preset", choices=PRESETS)
+    s.add_argument("--plan", help="Plan for the proposal display, for example Claude max.")
+    s = routes.add_parser("preview"); s.add_argument("--request", required=True)
     for name in ("run", "report", "pause", "cancel", "resume", "retry", "approve", "provider", "priority", "validate"):
         s = sub.add_parser(name); s.add_argument("--task", required=True)
         if name == "approve": s.add_argument("--reviewer", required=True)
-        if name == "provider": s.add_argument("--name", choices=("codex", "claude", "antigravity", "gms", "mock"), required=True)
+        if name == "provider":
+            s.add_argument("--name", choices=("codex", "claude", "antigravity", "gms", "mock"), required=True)
+            s.add_argument("--model", help="Replacement Orca author model for this provider.")
+            s.add_argument("--effort", help="Optional effort for the replacement model.")
         if name == "priority": s.add_argument("--value", choices=("high", "normal", "low"), required=True)
         if name == "resume": s.add_argument("--recover-running", action="store_true")
         if name == "validate":
@@ -123,6 +134,16 @@ def main(argv=None, *, workspace=None):
             # Per-user ledger (BATON_HOME): usage windows belong to the account, not the workspace.
             from .quota_window_cli import run as quota_run
             return quota_run(args)
+        if args.command == "routing":
+            from .routing import resolve, routing_intent, show
+            if args.routing_command == "show":
+                print(encode(show(root, args.provider, args.preset, args.plan)))
+                return 0
+            from .managed import validate
+            task = validate(read_json(args.request), root)
+            result = resolve(root, routing_intent(task))
+            print(encode(result))
+            return 3 if any(result[role]["blocker"] for role in ("author", "reviewer") if role in result) else 0
         if args.command == "runtime" and args.runtime_command == "doctor":
             from .runtime import OrcaCLI
             result = OrcaCLI().doctor()
@@ -187,7 +208,7 @@ def main(argv=None, *, workspace=None):
             from .planning import build_plan
             values = read_json(args.request)
             safe(values)
-            tasks = [validate(t, root) for t in values["tasks"]]
+            tasks = [validate(t, root, for_registration=True) for t in values["tasks"]]
             result = {"objective": values["objective"], "order": build_plan(tasks), "tasks": tasks, "registered": False}
         elif args.command in {"tasks", "status"}:
             result = store.get(args.task) if args.task else store.tasks(args.state)
@@ -216,7 +237,8 @@ def main(argv=None, *, workspace=None):
             with repository_lock(store.root):
                 store.approve(args.task, args.reviewer)
                 result = auto_commit_task(store, args.task)
-        elif args.command == "provider": result = store.configure(args.task, provider=args.name)
+        elif args.command == "provider":
+            result = store.configure(args.task, provider=args.name, model=args.model, effort=args.effort)
         elif args.command == "priority": result = store.configure(args.task, priority=args.value)
         elif args.command == "validate": result = runner.verify(args.task, base_sha=args.base, stage=args.stage)
         print(encode(result))

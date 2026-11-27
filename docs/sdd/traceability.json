@@ -13,6 +13,7 @@
     "docs/adr/ADR-QW-STATUS-001.md",
     "docs/specs/FLOW-001.md",
     "docs/tasks/TASK-FLOW-001.md",
+    "docs/tasks/TASK-FLOW-MODEL-ROUTING-001.md",
     "docs/plans/multi-agent-flow.md",
     "docs/adr/ADR-FLOW-001.md",
     "docs/tasks/TASK-RECOVERY-20261106.md",
@@ -637,6 +638,22 @@
           "tests": [
             {
               "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_next_task_routing_uses_local_edits_and_preserves_registered_choice"
+            },
+            {
+              "file": "tests/test_routing.py",
+              "symbol": "RoutingTests.test_cost_speed_quota_and_channel_blockers"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_orca_effort_requires_a_model_for_the_effective_provider"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_provider_replacement_is_atomic_and_preserves_the_original_attempt"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_real_cli_adapter_parses_full_projection_and_never_uses_shell"
             },
             {
@@ -783,6 +800,18 @@
           "id": "FLOW-001-AC-04",
           "tests": [
             {
+              "file": "tests/test_routing.py",
+              "symbol": "RoutingTests.test_review_preference_keeps_author_and_explicit_review_distinct"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_replacing_author_preserves_partially_pinned_reviewer_at_dispatch"
+            },
+            {
+              "file": "tests/test_flow_runtime.py",
+              "symbol": "FlowRuntimeTests.test_replacement_cannot_add_unrequested_settings_to_pinned_reviewer"
+            },
+            {
               "file": "tests/test_flow_evidence.py",
               "symbol": "FlowEvidenceTests.test_author_cannot_self_review_and_raw_pass_is_not_evidence"
             },
@@ -894,6 +923,10 @@
         {
           "id": "FLOW-001-AC-08",
           "tests": [
+            {
+              "file": "tests/test_handoff.py",
+              "symbol": "HandoffTests.test_handoff_can_reload_and_restore_preexisting_orca_settings"
+            },
             {
               "file": "tests/test_flow_runtime.py",
               "symbol": "FlowRuntimeTests.test_orca_author_independent_review_integration_and_completion"
